@@ -53,7 +53,7 @@ These may be bundled as constants in the SDK. Everything in §3 may **not**.
 | Value | How to read | Init / current | Governance path |
 |---|---|---|---|
 | Minimum net debt | `borrowerOperations.minNetDebt()` | `1800e18` | `proposeMinNetDebt` → `approveMinNetDebt` (≥ `MIN_NET_DEBT_MIN`) |
-| Borrowing fee | `borrowerOperations.getBorrowingFee(uint256 _debt)` view | (Handbook quoted ~0.1% — treat as snapshot) | `proposeBorrowingRate` → `approveBorrowingRate` |
+| Borrowing fee | `borrowerOperations.getBorrowingFee(uint256 _debt)` view | **flat 0.1% (10 bps) of the draw, NO floor/cap** (verified Phase 4: `fee(d) = d/1000` exactly at 1.8k–1M MUSD) — still governable, so READ it | `proposeBorrowingRate` → `approveBorrowingRate` |
 | Redemption rate | governable; 0% if redeemer holds a loan, else current rate (~0.75%) | ~0.75% | `proposeRedemptionRate` → `approveRedemptionRate` |
 | Global interest rate | `interestRateManager.interestRate()` → `uint16` (bips) | 1–5% band | `proposeInterestRate(uint16)` → `approveInterestRate` |
 | Oracle price (BTC/USD) | `priceFeed.fetchPrice()` view → uint (1e18-scaled) | live | n/a (oracle) |
@@ -278,6 +278,13 @@ For `previewOpen` / `getBorrowingPower`:
 - **Simple (non-compounding), time-based, linear.** Interest accrues by *elapsed
   seconds*, not blocks:
   `new_interest = interest_numerator × (current_timestamp − last_update) / seconds_per_year`.
+- **`SECONDS_PER_YEAR = 31_556_952`** (= 365.2425 days × 86400, the **Gregorian** year —
+  NOT 365 (31_536_000) nor 365.25 (31_557_600)). Verified on the fork (Phase 4): open,
+  warp a known elapsed, read `getEntireDebtAndColl.interest`, back out the constant; the
+  forward prediction `interest = principal · rateBips · elapsed / (10_000 · 31_556_952)`
+  matches to the wei.
+- **Interest base = the full stored principal** (`draw + fee + 200` gas comp), not the
+  net draw — verified (a 5,000-draw Trove accrues on `principal = 5,205`).
 - **Rates are in basis points** (`interestRate()` is `uint16`).
 - **Per-Trove interest updates only on interaction** with that Trove → the *stored*
   `interestOwed` is stale between interactions. **For live entire-debt, read

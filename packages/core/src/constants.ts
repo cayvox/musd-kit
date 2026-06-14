@@ -19,6 +19,16 @@ export const DECIMAL_PRECISION = 1_000_000_000_000_000_000n
 export const MIN_NET_DEBT_MIN = 50_000_000_000_000_000_000n
 
 /**
+ * Seconds per year used by the interest model = 365.2425 days × 86400 (the Gregorian
+ * year). Verified on the fork (Phase 4) — NOT 365 (31_536_000) nor 365.25 (31_557_600).
+ * Fixed in the contract (no setter), so it is bundled. See `docs/01-ground-truth.md` §7.
+ */
+export const SECONDS_PER_YEAR = 31_556_952n
+
+/** Basis-point denominator (10_000 bps = 100%). */
+export const BPS_DIVISOR = 10_000n
+
+/**
  * Canonical Multicall3, verified deployed on Mezo (14 Jun 2026, Phase 2) at the
  * standard cross-chain address. Used to batch live reads into a single same-block
  * snapshot. Note: `@mezo-org/chains` does NOT declare `contracts.multicall3`, so we
