@@ -39,6 +39,23 @@ import {
   getTrove,
   isLiquidatable,
 } from '../read'
+import {
+  type AdjustTroveParams,
+  type BorrowParams,
+  type ClaimResult,
+  type OpenTroveParams,
+  type WriteDeps,
+  type WriteResult,
+  addCollateral,
+  adjustTrove,
+  borrow,
+  claim,
+  close,
+  openTrove,
+  refinance,
+  repay,
+  withdrawCollateral,
+} from '../trove'
 
 /**
  * Thrown when an on-chain fixed constant disagrees with the value bundled in the
@@ -130,6 +147,26 @@ export interface MusdClient {
   previewOpen(params: PreviewOpenParams): Promise<OpenPreview>
   /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
   getBorrowingPower(params: GetBorrowingPowerParams): Promise<bigint>
+
+  // --- lifecycle writes (see `trove/`; require a walletClient; simulate-before-send) ---
+  /** `openTrove(debt, hints)` payable — opens a Trove with hints absorbed. */
+  openTrove(params: OpenTroveParams): Promise<WriteResult>
+  /** `addColl(hints)` payable — top up collateral. */
+  addCollateral(params: { amount: bigint }): Promise<WriteResult>
+  /** `withdrawMUSD(amount, hints)` — borrow more (mint). */
+  borrow(params: BorrowParams): Promise<WriteResult>
+  /** `repayMUSD(amount, hints)` — reduce debt (no approval needed). */
+  repay(params: { amount: bigint }): Promise<WriteResult>
+  /** `withdrawColl(amount, hints)` — take collateral out. */
+  withdrawCollateral(params: { amount: bigint }): Promise<WriteResult>
+  /** `adjustTrove(...)` — combined collateral ± and/or debt ± (validated). */
+  adjustTrove(params: AdjustTroveParams): Promise<WriteResult>
+  /** `closeTrove()` — full payoff (needs `entireDebt − 200` MUSD; returns 200 + collateral). */
+  close(): Promise<WriteResult>
+  /** `refinance(hints)` — move to the current global rate (adds a refinancing fee). */
+  refinance(): Promise<WriteResult>
+  /** `claimCollateral()` — claim surplus; a safe no-op when there is none. */
+  claim(): Promise<ClaimResult>
 }
 
 /**
@@ -178,6 +215,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     addresses,
     getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
   }
+  const writeDeps: WriteDeps = { publicClient, walletClient, addresses }
 
   return {
     chainId,
@@ -200,5 +238,14 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     computeEntireDebt,
     previewOpen: (params) => previewOpen(mathDeps, params),
     getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
+    openTrove: (params) => openTrove(writeDeps, params),
+    addCollateral: (params) => addCollateral(writeDeps, params),
+    borrow: (params) => borrow(writeDeps, params),
+    repay: (params) => repay(writeDeps, params),
+    withdrawCollateral: (params) => withdrawCollateral(writeDeps, params),
+    adjustTrove: (params) => adjustTrove(writeDeps, params),
+    close: () => close(writeDeps),
+    refinance: () => refinance(writeDeps),
+    claim: () => claim(writeDeps),
   }
 }

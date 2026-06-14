@@ -155,21 +155,38 @@ explicitly.
 ### 5.1 `IBorrowerOperations` (Trove lifecycle — writes + a fee read)
 
 ```solidity
-openTrove(uint256 _debtAmount, address _upperHint, address _lowerHint) payable   // NO maxFeePercentage
-addColl(address _upperHint, address _lowerHint) payable                          // collateral top-up
-withdrawColl(...)                                                                 // collateral out
-withdrawMUSD(...)                                                                 // borrow more (mint)
-repayMUSD(...)                                                                    // reduce debt (snapshots interest first)
-adjustTrove(...)                                                                  // combined collateral ± and/or debt ±
-closeTrove()                                                                      // full payoff + close
-refinance(address _upperHint, address _lowerHint)                                // move to current global rate
-claimCollateral()                                                                // surplus after redemption/liquidation
-getBorrowingFee(uint256 _debt) view returns (uint)                               // read the fee for a draw
+// FULL SIGNATURES — verified from the artifacts (Phase 5). NO maxFeePercentage on ANY
+// of these (C5 extends beyond openTrove). Hints are (_upperHint, _lowerHint).
+openTrove(uint256 _debtAmount, address _upperHint, address _lowerHint) payable
+addColl(address _upperHint, address _lowerHint) payable                          // collateral via msg.value
+withdrawColl(uint256 _amount, address _upperHint, address _lowerHint)            // collateral out
+withdrawMUSD(uint256 _amount, address _upperHint, address _lowerHint)            // borrow more (mint)
+repayMUSD(uint256 _amount, address _upperHint, address _lowerHint)               // reduce debt
+adjustTrove(uint256 _collWithdrawal, uint256 _debtChange, bool _isDebtIncrease,
+            address _upperHint, address _lowerHint) payable                      // add-coll via msg.value
+closeTrove()
+refinance(address _upperHint, address _lowerHint)
+claimCollateral()
+getBorrowingFee(uint256 _debt) view returns (uint)
+refinancingFeePercentage() view returns (uint)                                   // governable refinance fee
 ```
 
 Note both `addColl`/`withdrawMUSD` (single-axis) and `adjustTrove` (combined) exist;
 route single-axis SDK intents to the dedicated functions, combined ones to
 `adjustTrove`.
+
+**Write mechanics verified on the fork (Phase 5):**
+- **No ERC-20 approval needed for `repayMUSD`/`closeTrove`.** BorrowerOperations has
+  protocol burn authority and burns MUSD directly from the caller — `repayMUSD`
+  succeeds with allowance 0. The SDK sends no `approve`.
+- **`closeTrove` payoff:** the caller must hold **`entireDebt − 200`** MUSD (the net
+  debt; the 200 gas reserve is burned from the GasPool, not the caller). On close the
+  **200 reserve + the collateral are returned** to the caller, and `getTroveStatus`
+  becomes **2 (closedByOwner)** → `getTrove.exists == false`.
+- **`refinance` adds a refinancing fee to the debt** (`refinancingFeePercentage`,
+  governable) and moves the Trove to the current global rate (unchanged if already at
+  it). Hints recomputed from the current position are "good enough" (placement is
+  contract-guaranteed; hints only affect gas).
 
 ### 5.2 `IHintHelpers` (insertion + redemption hints; pure CR helpers)
 

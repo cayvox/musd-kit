@@ -74,6 +74,25 @@ export {
   type GetBorrowingPowerParams,
 } from './math'
 
+// Lifecycle write types (the methods live on the client; require a walletClient).
+export type {
+  OpenTroveParams,
+  BorrowParams,
+  AdjustTroveParams,
+  WriteResult,
+  ClaimResult,
+} from './trove'
+
+// Errors (minimal write subset; full taxonomy in Phase 7).
+export {
+  MusdError,
+  MissingWalletClient,
+  MaxFeeExceeded,
+  InsufficientMusdBalance,
+  InvalidAdjustment,
+  ContractCallFailed,
+} from './errors'
+
 // Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers
 // and examples get the canonical viem `Chain` objects from one place.
 export { mezoMainnet, mezoTestnet } from '@mezo-org/chains'
