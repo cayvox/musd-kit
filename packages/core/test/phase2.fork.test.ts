@@ -71,10 +71,13 @@ describe('Phase 2 — read/ live position via contract getters', () => {
     const fork = connectFork()
     // Fresh, comfortable position (~290% ICR).
     const fresh = testAccount(11)
+    // numTrials:15 keeps these opens fast — Phase 2 only needs troves to read; hint
+    // quality/heuristic is Phase 3's concern.
     await openTroveRaw(fork, {
       collateralBtc: 10n ** 17n, // 0.1 BTC
       debtMusd: 2_000n * 10n ** 18n,
       account: fresh,
+      numTrials: 15,
     })
     freshAddr = fresh.address
 
@@ -91,9 +94,9 @@ describe('Phase 2 — read/ live position via contract getters', () => {
     const approxFee = await c.getBorrowingFee(entireDebtTarget)
     const draw = entireDebtTarget - MUSD_GAS_COMPENSATION - approxFee
     const near = testAccount(12)
-    await openTroveRaw(fork, { collateralBtc: coll, debtMusd: draw, account: near })
+    await openTroveRaw(fork, { collateralBtc: coll, debtMusd: draw, account: near, numTrials: 15 })
     nearAddr = near.address
-  }, 120_000)
+  }, 180_000)
 
   it('fresh position: every field equals the contract getters (to the wei)', async () => {
     const trove = await client().getTrove(freshAddr)
@@ -193,6 +196,7 @@ describe('Phase 2 — read/ live position via contract getters', () => {
       collateralBtc: 10n ** 17n,
       debtMusd: 2_000n * 10n ** 18n,
       account: acct,
+      numTrials: 15,
     })
     const addr = acct.address
 

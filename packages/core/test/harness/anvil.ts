@@ -116,12 +116,9 @@ export async function startFork(opts: StartForkOptions = {}): Promise<ForkHandle
   }
   process.once('exit', onProcessExit)
 
-  const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(rpcUrl) })
-  const testClient = createTestClient({
-    chain: mezoTestnet,
-    mode: 'anvil',
-    transport: http(rpcUrl),
-  })
+  const transport = http(rpcUrl, { timeout: 180_000 })
+  const publicClient = createPublicClient({ chain: mezoTestnet, transport })
+  const testClient = createTestClient({ chain: mezoTestnet, mode: 'anvil', transport })
 
   // Wait until anvil answers, or fail with its stderr.
   const deadline = Date.now() + READY_TIMEOUT_MS

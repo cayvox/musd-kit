@@ -4,13 +4,7 @@
 // exercising the raw hint dance against the real contracts.
 import { http, type Address, type Hex, type PrivateKeyAccount, createWalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import {
-  MUSD_GAS_COMPENSATION,
-  borrowerOperationsAbi,
-  getAddresses,
-  hintHelpersAbi,
-  sortedTrovesAbi,
-} from '../../src'
+import { MUSD_GAS_COMPENSATION, borrowerOperationsAbi, computeHints, getAddresses } from '../../src'
 import { mezoTestnet } from './constants'
 import type { ForkConnection } from './index'
 
@@ -27,13 +21,19 @@ export interface OpenTroveRawParams {
   /** The requested draw (the borrower receives this; owes draw + fee + 200). */
   debtMusd: bigint
   account: PrivateKeyAccount
-  numTrials?: bigint
+  /** Override the hint trial count; omit to use the size-scaled default. */
+  numTrials?: number
   seed?: bigint
+  /** Bypass `computeHints` and use these exact hints (for the gas-comparison gate). */
+  hintsOverride?: { upperHint: Address; lowerHint: Address }
 }
 
 export interface OpenTroveRawResult {
   owner: Address
   txHash: Hex
+  gasUsed: bigint
+  /** The composite/entire debt the trove was opened with (draw + fee + 200). */
+  entireDebt: bigint
 }
 
 /**
@@ -43,13 +43,10 @@ export interface OpenTroveRawResult {
  */
 export async function openTroveRaw(
   fork: ForkConnection,
-  { collateralBtc, debtMusd, account, numTrials = 15n, seed = 42n }: OpenTroveRawParams,
+  { collateralBtc, debtMusd, account, numTrials, seed = 42n, hintsOverride }: OpenTroveRawParams,
 ): Promise<OpenTroveRawResult> {
   const { publicClient } = fork
   const wallet = createWalletClient({ account, chain: mezoTestnet, transport: http(fork.rpcUrl) })
-
-  // Keep the oracle fresh — openTrove reads fetchPrice and reverts if it is stale.
-  await fork.refreshOracle()
 
   // Fund the account with collateral + a generous BTC gas buffer.
   await fork.fundAccount(account.address, collateralBtc + 5n * 10n ** 18n)
@@ -63,34 +60,38 @@ export async function openTroveRaw(
   })
   const compositeDebt = debtMusd + fee + MUSD_GAS_COMPENSATION
 
-  // NICR of the new position, then the hint ritual.
-  const nicr = await publicClient.readContract({
-    address: TESTNET.hintHelpers,
-    abi: hintHelpersAbi,
-    functionName: 'computeNominalCR',
-    args: [collateralBtc, compositeDebt],
-  })
-  const [approxHint] = await publicClient.readContract({
-    address: TESTNET.hintHelpers,
-    abi: hintHelpersAbi,
-    functionName: 'getApproxHint',
-    args: [nicr, numTrials, seed],
-  })
-  const [upperHint, lowerHint] = await publicClient.readContract({
-    address: TESTNET.sortedTroves,
-    abi: sortedTrovesAbi,
-    functionName: 'findInsertPosition',
-    args: [nicr, approxHint, approxHint],
-  })
+  // Dogfood the SDK's insertion-hint module (Phase 3) instead of hand-writing the ritual.
+  const { upperHint, lowerHint } =
+    hintsOverride ??
+    (await computeHints(
+      { publicClient, addresses: TESTNET },
+      {
+        collateral: collateralBtc,
+        entireDebt: compositeDebt,
+        randomSeed: seed,
+        ...(numTrials !== undefined ? { numTrials } : {}),
+      },
+    ))
 
-  const txHash = await wallet.writeContract({
+  // Refresh the oracle RIGHT BEFORE the tx — the hint ritual above can take many
+  // seconds on a fork (lazy state loading), and openTrove reverts on a stale price.
+  await fork.refreshOracle()
+
+  // Simulate first so any revert surfaces with its reason (a reverted tx otherwise
+  // produces a receipt with status:'reverted' and no throw).
+  const { request } = await publicClient.simulateContract({
+    account,
     address: TESTNET.borrowerOperations,
     abi: borrowerOperationsAbi,
     functionName: 'openTrove',
     args: [debtMusd, upperHint, lowerHint],
     value: collateralBtc,
   })
-  await publicClient.waitForTransactionReceipt({ hash: txHash })
+  const txHash = await wallet.writeContract(request)
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+  if (receipt.status !== 'success') {
+    throw new Error(`openTrove tx reverted for ${account.address}`)
+  }
 
-  return { owner: account.address, txHash }
+  return { owner: account.address, txHash, gasUsed: receipt.gasUsed, entireDebt: compositeDebt }
 }

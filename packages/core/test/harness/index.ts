@@ -44,12 +44,11 @@ export function connectFork(): ForkConnection {
     )
   }
 
-  const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(rpcUrl) })
-  const testClient = createTestClient({
-    chain: mezoTestnet,
-    mode: 'anvil',
-    transport: http(rpcUrl),
-  })
+  // Generous request timeout: a single getApproxHint() eth_call can trigger many
+  // lazy upstream-state fetches inside anvil and take tens of seconds on a cold fork.
+  const transport = http(rpcUrl, { timeout: 180_000 })
+  const publicClient = createPublicClient({ chain: mezoTestnet, transport })
+  const testClient = createTestClient({ chain: mezoTestnet, mode: 'anvil', transport })
 
   return {
     rpcUrl,
