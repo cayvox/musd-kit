@@ -1,13 +1,12 @@
 # musd-kit
 
-**A typed TypeScript client SDK for building MUSD applications on Mezo — the layer
-between *connected* and *working*.**
+**The typed SDK for MUSD on Mezo** — the layer between *connected* and *working*.
 
 > ⚠️ **Community tooling, not official.** `musd-kit` is an independent, open-source
-> library built by [Cayvox Labs](https://github.com/anilkaracay). It is **not**
-> affiliated with or endorsed by Mezo. "MUSD" is Mezo's asset. The name `musd-kit`
-> is provisional pending an availability check. **Status: pre-1.0 — for testnet and
-> evaluation** until it carries full test coverage and third-party use.
+> library built by [Cayvox Labs](https://github.com/anilkaracay). It is **not
+> affiliated with or endorsed by Mezo**. "MUSD" is Mezo's asset; this is an unofficial
+> community Mezo MUSD SDK. **Status: pre-1.0 — for testnet and evaluation** until it
+> carries full test coverage and third-party use.
 
 ---
 
