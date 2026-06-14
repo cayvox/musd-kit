@@ -7,7 +7,7 @@ import {
   createTestClient,
 } from 'viem'
 import { mezoTestnet } from './constants'
-import { setPrice as setOraclePrice } from './oracle'
+import { refreshOracle as refreshOracleShim, setPrice as setOraclePrice } from './oracle'
 
 export { startFork } from './anvil'
 export type { ForkHandle, StartForkOptions } from './anvil'
@@ -28,6 +28,8 @@ export interface ForkConnection {
   warpTime(seconds: number | bigint): Promise<void>
   fundAccount(address: Address, btcWei: bigint): Promise<void>
   setPrice(usdPerBtc1e18: bigint): Promise<void>
+  /** Keep the oracle shim fresh (bump updatedAt to the current block) — price unchanged. */
+  refreshOracle(): Promise<void>
 }
 
 /**
@@ -60,5 +62,6 @@ export function connectFork(): ForkConnection {
     },
     fundAccount: (address, btcWei) => testClient.setBalance({ address, value: btcWei }),
     setPrice: (usdPerBtc1e18) => setOraclePrice(testClient, publicClient, usdPerBtc1e18),
+    refreshOracle: () => refreshOracleShim(testClient, publicClient),
   }
 }

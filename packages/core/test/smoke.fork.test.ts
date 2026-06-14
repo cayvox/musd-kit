@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { TESTNET, connectFork } from './harness'
 
 // Phase 1 will move these addresses + full ABIs into addresses/ and clients/.
@@ -34,6 +34,8 @@ const priceFeedAbi = [
  * harness is real.
  */
 describe('Phase 0 smoke gate (forked Mezo)', () => {
+  beforeEach(() => connectFork().refreshOracle())
+
   it('reads MCR == 1.1e18 from TroveManager on the fork', async () => {
     const { publicClient } = connectFork()
 

@@ -100,3 +100,18 @@ export async function setPrice(
   await writeSlot(testClient, ORACLE_SLOT.startedAt, block.timestamp)
   await writeSlot(testClient, ORACLE_SLOT.updatedAt, block.timestamp)
 }
+
+/**
+ * Bump the shim's `startedAt`/`updatedAt` to the current block time WITHOUT changing
+ * the price. anvil advances block timestamps by wall-clock, so the seeded oracle
+ * eventually trips the PriceFeed's "Oracle is stale" guard during a long run; call
+ * this before price-dependent operations to keep it fresh. The answer is untouched.
+ */
+export async function refreshOracle(
+  testClient: TestClient,
+  forkClient: PublicClient,
+): Promise<void> {
+  const block = await forkClient.getBlock({ blockTag: 'latest' })
+  await writeSlot(testClient, ORACLE_SLOT.startedAt, block.timestamp)
+  await writeSlot(testClient, ORACLE_SLOT.updatedAt, block.timestamp)
+}

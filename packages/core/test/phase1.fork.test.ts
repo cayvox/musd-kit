@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { DEPLOYMENTS, MCR, MIN_NET_DEBT_MIN, UnsupportedChain, createMusdClient } from '../src'
 import { connectFork } from './harness'
 
 // The pure address cross-check vs ground-truth §4 lives in `addresses.test.ts`.
 
 describe('Phase 1 — createMusdClient on the fork (31611)', () => {
+  beforeEach(() => connectFork().refreshOracle())
+
   it('resolves every dev-facing address', () => {
     const { publicClient } = connectFork()
     const musd = createMusdClient({ chainId: 31611, publicClient })
