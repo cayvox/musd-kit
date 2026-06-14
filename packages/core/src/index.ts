@@ -58,6 +58,22 @@ export {
   type Hints,
 } from './hints'
 
+// Preview math (the only client-side compute — Law 2 preview side; non-throwing).
+export {
+  computeICR,
+  computeLiquidationPrice,
+  getHealthFactor,
+  computeEntireDebt,
+  previewOpen,
+  getBorrowingPower,
+  type ComputeICRParams,
+  type ComputeLiquidationPriceParams,
+  type ComputeEntireDebtParams,
+  type PreviewOpenParams,
+  type OpenPreview,
+  type GetBorrowingPowerParams,
+} from './math'
+
 // Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers
 // and examples get the canonical viem `Chain` objects from one place.
 export { mezoMainnet, mezoTestnet } from '@mezo-org/chains'

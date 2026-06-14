@@ -15,6 +15,21 @@ import {
   computeNICR,
 } from '../hints'
 import {
+  type ComputeEntireDebtParams,
+  type ComputeICRParams,
+  type ComputeLiquidationPriceParams,
+  type GetBorrowingPowerParams,
+  type MathDeps,
+  type OpenPreview,
+  type PreviewOpenParams,
+  computeEntireDebt,
+  computeICR,
+  computeLiquidationPrice,
+  getBorrowingPower,
+  getHealthFactor,
+  previewOpen,
+} from '../math'
+import {
   type ReadDeps,
   type SystemState,
   type Trove,
@@ -101,6 +116,20 @@ export interface MusdClient {
   computeNICR(params: ComputeNICRParams): bigint
   /** The insertion-hint ritual → `{ upperHint, lowerHint, nicr }` for a position of the given shape. */
   computeHints(params: ComputeHintsParams): Promise<Hints>
+
+  // --- preview math (see `math/`; preview side of Law 2 — non-throwing) ---
+  /** `(collateral × price) / entireDebt` (== contract `computeCR`). Pure. */
+  computeICR(params: ComputeICRParams): bigint
+  /** Price at which a position hits MCR = `(MCR × entireDebt) / collateral`. Pure. */
+  computeLiquidationPrice(params: ComputeLiquidationPriceParams): bigint
+  /** `icr / MCR` as a number (1.0 at MCR). Pure. */
+  getHealthFactor(params: { icr: bigint }): number
+  /** Project entire debt with simple time-based interest. Pure. */
+  computeEntireDebt(params: ComputeEntireDebtParams): bigint
+  /** Preview opening a Trove: fee, debt, ICR, liquidation price, and the floor/RM flags. */
+  previewOpen(params: PreviewOpenParams): Promise<OpenPreview>
+  /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
+  getBorrowingPower(params: GetBorrowingPowerParams): Promise<bigint>
 }
 
 /**
@@ -144,6 +173,11 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
   }
 
   const readDeps: ReadDeps = { publicClient, addresses }
+  const mathDeps: MathDeps = {
+    publicClient,
+    addresses,
+    getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
+  }
 
   return {
     chainId,
@@ -160,5 +194,11 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     balanceOf: (address) => balanceOf(readDeps, address),
     computeNICR,
     computeHints: (params) => computeHints(readDeps, params),
+    computeICR,
+    computeLiquidationPrice,
+    getHealthFactor,
+    computeEntireDebt,
+    previewOpen: (params) => previewOpen(mathDeps, params),
+    getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
   }
 }
