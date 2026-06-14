@@ -1,4 +1,4 @@
-import type { PublicClient, WalletClient } from 'viem'
+import type { Address, PublicClient, WalletClient } from 'viem'
 import { type MusdAddresses, getAddresses } from '../addresses'
 import { type MusdContracts, createContracts } from '../clients'
 import {
@@ -7,6 +7,16 @@ import {
   FIXED_CONSTANTS,
   type FixedConstants,
 } from '../constants'
+import {
+  type ReadDeps,
+  type SystemState,
+  type Trove,
+  balanceOf,
+  getOraclePrice,
+  getSystemState,
+  getTrove,
+  isLiquidatable,
+} from '../read'
 
 /**
  * Thrown when an on-chain fixed constant disagrees with the value bundled in the
@@ -66,6 +76,18 @@ export interface MusdClient {
    * @throws {MismatchedDeployment}
    */
   verifyDeployment(): Promise<void>
+
+  // --- live reads (Law 2 — contract-authoritative; see `read/`) ---
+  /** A fully-typed live position, correct by construction. */
+  getTrove(address: Address): Promise<Trove>
+  /** Protocol-wide live state ({ tcr, isRecoveryMode, price }). */
+  getSystemState(): Promise<SystemState>
+  /** Normal-mode liquidatability (`getCurrentICR < MCR`). */
+  isLiquidatable(address: Address): Promise<boolean>
+  /** BTC/USD from `PriceFeed.fetchPrice()`. */
+  getOraclePrice(): Promise<bigint>
+  /** MUSD ERC-20 balance. */
+  balanceOf(address: Address): Promise<bigint>
 }
 
 /**
@@ -108,6 +130,8 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     return contracts.borrowerOperations.read.getBorrowingFee([debt])
   }
 
+  const readDeps: ReadDeps = { publicClient, addresses }
+
   return {
     chainId,
     addresses,
@@ -116,5 +140,10 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     getConstants,
     getBorrowingFee,
     verifyDeployment,
+    getTrove: (address) => getTrove(readDeps, address),
+    getSystemState: () => getSystemState(readDeps),
+    isLiquidatable: (address) => isLiquidatable(readDeps, address),
+    getOraclePrice: () => getOraclePrice(readDeps),
+    balanceOf: (address) => balanceOf(readDeps, address),
   }
 }
