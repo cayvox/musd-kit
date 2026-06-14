@@ -18,12 +18,17 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate": "node scripts/generate-contracts.mjs"
   },
   "peerDependencies": {
     "viem": "^2.22.8"
   },
+  "dependencies": {
+    "@mezo-org/chains": "0.0.1"
+  },
   "devDependencies": {
+    "@mezo-org/musd-contracts": "1.1.0",
     "tsup": "8.3.5",
     "typescript": "5.7.3",
     "viem": "2.22.8"

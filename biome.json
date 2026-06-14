@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["dist", "coverage", "node_modules", "**/*.md"]
+    "ignore": ["dist", "coverage", "node_modules", "**/*.md", "**/src/_generated/**"]
   },
   "organizeImports": {
     "enabled": true

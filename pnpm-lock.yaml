@@ -25,7 +25,14 @@ importers:
         version: 2.1.8(@types/node@20.17.10)
 
   packages/core:
+    dependencies:
+      '@mezo-org/chains':
+        specifier: 0.0.1
+        version: 0.0.1(viem@2.22.8(typescript@5.7.3))
     devDependencies:
+      '@mezo-org/musd-contracts':
+        specifier: 1.1.0
+        version: 1.1.0
       tsup:
         specifier: 8.3.5
         version: 8.3.5(postcss@8.5.15)(typescript@5.7.3)
@@ -407,6 +414,14 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@mezo-org/chains@0.0.1':
+    resolution: {integrity: sha512-uJqqmmwABVvZrmROs2SQpSWP29ZJwFyjVtWkXPG6BFJr3iTeaFz0/8CAX0GQptYroNbOd5NV0+QFyfRa1NF0cw==}
+    peerDependencies:
+      viem: ^2.0.0
+
+  '@mezo-org/musd-contracts@1.1.0':
+    resolution: {integrity: sha512-pjo6v8rYAj3csiVxQ5qTSX8vmqvXrxBHbeJR/O38Qhz5DrtNzTqJQReLGsDVKhWMZ6/89JdE1584flZFZQT9Dg==}
 
   '@noble/curves@1.7.0':
     resolution: {integrity: sha512-UTMhXK9SeDhFJVrHeUJ5uZlI6ajXg10O6Ddocf9S6GjbSBVZsJo88HzKwXznNfGpMTRDyJkqMjNDPYgf0qFWnw==}
@@ -1179,6 +1194,12 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@mezo-org/chains@0.0.1(viem@2.22.8(typescript@5.7.3))':
+    dependencies:
+      viem: 2.22.8(typescript@5.7.3)
+
+  '@mezo-org/musd-contracts@1.1.0': {}
 
   '@noble/curves@1.7.0':
     dependencies:
