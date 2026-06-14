@@ -8,6 +8,13 @@ import {
   type FixedConstants,
 } from '../constants'
 import {
+  type ComputeHintsParams,
+  type ComputeNICRParams,
+  type Hints,
+  computeHints,
+  computeNICR,
+} from '../hints'
+import {
   type ReadDeps,
   type SystemState,
   type Trove,
@@ -88,6 +95,12 @@ export interface MusdClient {
   getOraclePrice(): Promise<bigint>
   /** MUSD ERC-20 balance. */
   balanceOf(address: Address): Promise<bigint>
+
+  // --- insertion hints (see `hints/`) ---
+  /** Nominal collateral ratio `(collateral × 1e20) / entireDebt` (pure, no network). */
+  computeNICR(params: ComputeNICRParams): bigint
+  /** The insertion-hint ritual → `{ upperHint, lowerHint, nicr }` for a position of the given shape. */
+  computeHints(params: ComputeHintsParams): Promise<Hints>
 }
 
 /**
@@ -145,5 +158,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     isLiquidatable: (address) => isLiquidatable(readDeps, address),
     getOraclePrice: () => getOraclePrice(readDeps),
     balanceOf: (address) => balanceOf(readDeps, address),
+    computeNICR,
+    computeHints: (params) => computeHints(readDeps, params),
   }
 }

@@ -227,7 +227,17 @@ fetchPrice() view returns (uint)   // BTC/USD, 1e18-scaled. In MUSD this is view
 
 `findInsertPosition(uint256 _NICR, address _prevId, address _nextId) view returns
 (address upperHint, address lowerHint)` — called with the approx hint from
-`getApproxHint` as both `_prevId` and `_nextId`.
+`getApproxHint` as both `_prevId` and `_nextId`. Also exposes `getSize() → uint256`,
+`getFirst()/getLast()`, `getPrev(id)/getNext(id)`, `contains(id) → bool`, and
+`validInsertPosition(_NICR, _prevId, _nextId) → bool`.
+
+**Ordering = DESCENDING NICR (verified on the fork, Phase 3).** `getFirst()` is the
+highest NICR, `getLast()` the lowest; `getNext(id)` walks toward lower NICR (the
+tail), `getPrev(id)` toward higher (the head). So for an insert position,
+**`upperHint` (prev) has NICR ≥ the new NICR, `lowerHint` (next) has NICR ≤ it.**
+`NICR = computeNominalCR(coll, debt) = coll · 1e20 / debt` (NICR_PRECISION = 1e20,
+verified exact). Insertion-hint trial count uses the Liquity heuristic
+`numTrials = ceil(15·√getSize())`, clamped to `[15, 2500]`.
 
 ### 5.7 MUSD token
 

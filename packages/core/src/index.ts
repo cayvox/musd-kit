@@ -46,6 +46,18 @@ export {
 // Live-read types (Law 2 — contract-authoritative).
 export { TroveStatus, type Trove, type SystemState } from './read'
 
+// Insertion-hint module.
+export {
+  computeNICR,
+  computeHints,
+  trialsForSize,
+  NICR_PRECISION,
+  DEFAULT_HINT_RANDOM_SEED,
+  type ComputeNICRParams,
+  type ComputeHintsParams,
+  type Hints,
+} from './hints'
+
 // Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers
 // and examples get the canonical viem `Chain` objects from one place.
 export { mezoMainnet, mezoTestnet } from '@mezo-org/chains'
