@@ -1,5 +1,48 @@
 // @musd-kit/core — public surface.
 //
-// Phase 0 ships only the forked-Mezo test harness (see `test/harness/`); no SDK
-// modules are implemented yet. Phase 1 introduces `addresses/` and `clients/`.
-export {}
+// Phase 1: address maps, typed viem clients, and `createMusdClient` (resolves
+// addresses + reads/caches the governable constants). Reads (`getTrove`), preview
+// math, hints, writes, redemption, and errors arrive in later phases.
+
+// Fixed constants (bundled — Law 3 keeps governable values off this list).
+export * from './constants'
+
+// Address resolution.
+export {
+  getAddresses,
+  isSupportedChainId,
+  UnsupportedChain,
+  SUPPORTED_CHAIN_IDS,
+  DEPLOYMENTS,
+  SOURCE_PACKAGE_VERSION,
+  type MusdAddresses,
+  type MusdContractName,
+  type SupportedChainId,
+} from './addresses'
+
+// Typed contract clients + the official `as const` ABIs.
+export {
+  createContracts,
+  type MusdContracts,
+  borrowerOperationsAbi,
+  troveManagerAbi,
+  sortedTrovesAbi,
+  hintHelpersAbi,
+  priceFeedAbi,
+  interestRateManagerAbi,
+  musdAbi,
+} from './clients'
+
+// The entry point.
+export {
+  createMusdClient,
+  MismatchedDeployment,
+  type MusdClient,
+  type CreateMusdClientParams,
+  type MusdConstants,
+  type GovernableConstants,
+} from './client/createMusdClient'
+
+// Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers
+// and examples get the canonical viem `Chain` objects from one place.
+export { mezoMainnet, mezoTestnet } from '@mezo-org/chains'

@@ -1,19 +1,8 @@
-import { defineChain } from 'viem'
-
-/**
- * Mezo Testnet ("matsnet"), chainId 31611. Native gas is BTC with 18 decimals.
- * See `docs/01-ground-truth.md` §1.
- */
-export const mezoTestnet = defineChain({
-  id: 31_611,
-  name: 'Mezo Testnet',
-  nativeCurrency: { name: 'Bitcoin', symbol: 'BTC', decimals: 18 },
-  rpcUrls: {
-    // Placeholder; the harness always points clients at the local anvil fork.
-    default: { http: ['http://127.0.0.1:8545'] },
-  },
-  testnet: true,
-})
+// Mezo Testnet ("matsnet"), chainId 31611, BTC (18 decimals) gas — the canonical
+// viem `Chain` from `@mezo-org/chains` (decision O10). The harness always points
+// its clients at the local anvil fork via an explicit transport, so the chain's
+// own rpcUrls are unused here.
+export { mezoTestnet } from '@mezo-org/chains'
 
 /**
  * Verified Mezo Testnet addresses used by the Phase-0 smoke gate.
