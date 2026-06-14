@@ -1,0 +1,35 @@
+{
+  "name": "@musd-kit/core",
+  "version": "0.0.0",
+  "description": "Typed, framework-agnostic client SDK for MUSD on Mezo: Trove lifecycle, hints, and preview math, made correct.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "README.md"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "viem": "^2.22.8"
+  },
+  "devDependencies": {
+    "tsup": "8.3.5",
+    "typescript": "5.7.3",
+    "viem": "2.22.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

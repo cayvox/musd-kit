@@ -1,0 +1,53 @@
+# MAINTAINER: add the repo secret `MEZO_TESTNET_RPC_URL` (Settings → Secrets and
+# variables → Actions). It must be a Mezo Testnet RPC (chainId 31611), e.g. the
+# public endpoint https://rpc.test.mezo.org or your own provider. The fork harness
+# reads it from the environment and never hardcodes a URL.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Test (forked-Mezo gate)
+        run: pnpm test
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
