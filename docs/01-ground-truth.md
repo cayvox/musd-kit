@@ -137,6 +137,17 @@ PCV, and StabilityPool are protocol-internal; bundle their addresses for
 completeness and read-through where needed. ABIs are taken from the repo
 interfaces / artifacts and bundled, typed, per package.
 
+**Multicall3 (verified on the fork, Phase 2):** deployed on Mezo at the canonical
+cross-chain address **`0xcA11bde05977b3631167028862bE2a173976CA11`** (code present,
+`getBlockNumber()` answers). `musd-kit` uses it to batch live reads into one
+same-block snapshot. Note `@mezo-org/chains` does **not** declare
+`contracts.multicall3`, so the SDK passes this address to viem `multicall`
+explicitly.
+
+**No MUSD/USD peg oracle:** `PriceFeed` exposes only `fetchPrice()` (BTC/USD) +
+`oracle()`; there is no MUSD/USD price source on-chain. `getPeg()` is therefore
+**not implemented** (it would require guessing a peg). See `09-open-questions.md`.
+
 ---
 
 ## 5. The ABI surface `musd-kit` wraps
@@ -175,14 +186,20 @@ computeCR(uint256 _coll, uint256 _debt, uint256 _price) pure returns (uint)
 
 ```solidity
 // READS — use these for LIVE position data (Law 2)
-getEntireDebtAndColl(address _borrower) returns (...)   // authoritative entire debt + coll
+// VERIFIED SHAPE (fork, Phase 2): 6 fields, computed TO NOW.
+getEntireDebtAndColl(address _borrower) view returns (
+    uint256 coll, uint256 principal, uint256 interest,
+    uint256 pendingCollateral, uint256 pendingPrincipal, uint256 pendingInterest)
+// → entireDebt = principal + interest  (== the debt getCurrentICR uses; proven via computeCR).
 getCurrentICR(address _borrower, uint256 _price) view returns (uint)
 getNominalICR(address _borrower) view returns (uint)
-getTroveInterestOwed(address _borrower) view returns (uint)
-getTroveDebt(address _borrower) view returns (uint)
+getTroveInterestOwed(address _borrower) view returns (uint)  // ⚠ STORED (STALE) snapshot — see §7
+getTroveDebt(address _borrower) view returns (uint)          // ⚠ STORED principal (incl gas+fee), no live interest
 getTroveColl(address _borrower) view returns (uint)
-getTroveStatus(address _borrower) view returns (Status)   // enum
-getTroveInterestRate(address _borrower) view returns (uint)
+getTroveStatus(address _borrower) view returns (uint8 Status) // enum: 0 nonExistent, 1 active (verified);
+                                                              // 2 closedByOwner, 3 closedByLiquidation,
+                                                              // 4 closedByRedemption (source order)
+getTroveInterestRate(address _borrower) view returns (uint16) // basis points
 getTCR(uint256 _price) view returns (uint)
 checkRecoveryMode(uint256 _price) view returns (bool)
 
@@ -254,8 +271,16 @@ For `previewOpen` / `getBorrowingPower`:
 - **Rates are in basis points** (`interestRate()` is `uint16`).
 - **Per-Trove interest updates only on interaction** with that Trove → the *stored*
   `interestOwed` is stale between interactions. **For live entire-debt, read
-  `getEntireDebtAndColl` / `getTroveInterestOwed`, which compute to the current
-  time. Never read the stored value and call it current.**
+  `getEntireDebtAndColl`, which computes to the current time. Never read the stored
+  value and call it current.**
+  - **CORRECTION (verified on the fork, Phase 2):** `getTroveInterestOwed` and
+    `getTroveDebt` return the **STORED (stale)** snapshot — they do NOT compute to
+    now. After a 30-day clock warp, `getEntireDebtAndColl.interest` grew to ~1.81
+    MUSD while `getTroveInterestOwed` stayed `0`. So the to-now interest is
+    `getEntireDebtAndColl.interest`, and live `entireDebt = principal + interest`
+    from that one getter. `musd-kit`'s `getTrove` sources `interestOwed`/`principal`
+    from `getEntireDebtAndColl`, never from the stored getters. (Earlier drafts of
+    this section lumped `getTroveInterestOwed` in with the to-now getter — it is not.)
 - **A Trove's fixed rate is set at open from its maximum borrowing capacity at 110%
   CR**, not from the initial draw. `refinance` moves a Trove to the current global
   rate.
