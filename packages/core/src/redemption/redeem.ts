@@ -1,6 +1,12 @@
 import type { Abi, Hex } from 'viem'
-import { borrowerOperationsAbi, hintHelpersAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { MaxFeeExceeded, RedemptionFailed, StaleHint } from '../errors'
+import {
+  borrowerOperationsAbi,
+  hintHelpersAbi,
+  musdAbi,
+  priceFeedAbi,
+  troveManagerAbi,
+} from '../clients'
+import { InsufficientMusdBalance, MaxFeeExceeded, assertPositiveAmount } from '../errors'
 import { findHintsForNICR } from '../hints'
 import { type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
 
@@ -35,14 +41,17 @@ export interface RedeemResult {
  * (verified Phase 6: it applies to ALL redeemers, including loan holders — the
  * "0% for loan holders" rule does not hold in this deployment). The redemption-hint
  * ritual runs immediately before sending and does NOT mine a block in between (interest
- * drift invalidates the partial hint). Simulate-before-send maps reverts to typed errors.
+ * drift invalidates the partial hint). Simulate-before-send routes any revert through the
+ * decoder ({@link mapRevert}): a nothing-redeemable / stale-hint revert ("Unable to redeem
+ * any amount") becomes `RedemptionFailed`.
  */
 export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<RedeemResult> {
   const wallet = requireWallet(deps)
   const { amount } = params
+  assertPositiveAmount('amount', amount)
   const maxIterations = params.maxIterations ?? DEFAULT_REDEMPTION_MAX_ITERATIONS
 
-  const [price, fee] = await Promise.all([
+  const [price, fee, balance] = await Promise.all([
     deps.publicClient.readContract({
       address: deps.addresses.priceFeed,
       abi: priceFeedAbi,
@@ -53,8 +62,16 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
       abi: borrowerOperationsAbi,
       functionName: 'redemptionRate',
     }),
+    deps.publicClient.readContract({
+      address: deps.addresses.musd,
+      abi: musdAbi,
+      functionName: 'balanceOf',
+      args: [wallet.account.address],
+    }),
   ])
 
+  // `redeemCollateral` requires the caller to hold the full `amount` (it is burned).
+  if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
   if (params.maxFeePercentage !== undefined && fee > params.maxFeePercentage) {
     throw new MaxFeeExceeded(params.maxFeePercentage, fee, fee)
   }
@@ -77,12 +94,7 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
     TM_ABI,
     'redeemCollateral',
     [amount, firstRedemptionHint, upperHint, lowerHint, partialNICR, maxIterations],
-    {
-      onRevert: (error, reason) => {
-        if (/unable to redeem any amount/i.test(reason)) throw new RedemptionFailed(reason, error)
-        if (/hint/i.test(reason)) throw new StaleHint(error)
-      },
-    },
+    { revert: { operation: 'redeem', address: wallet.account.address } },
   )
 
   return { hash, truncatedAmount, fee }

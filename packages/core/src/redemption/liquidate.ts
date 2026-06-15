@@ -1,15 +1,14 @@
 import type { Abi, Address } from 'viem'
 import { troveManagerAbi } from '../clients'
-import { NothingToLiquidate } from '../errors'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 
 const TM_ABI = troveManagerAbi as unknown as Abi
 
 /**
  * Liquidate an under-collateralized Trove (permissionless keeper surface). Simulates
- * first: if the Trove is not liquidatable the simulation reverts and a
- * `NothingToLiquidate` is thrown (nothing is sent). On success the caller receives the
- * reward (200 MUSD + 0.5% of the Trove's BTC).
+ * first: if the Trove is not liquidatable the simulation reverts ("TroveManager: nothing
+ * to liquidate") and the decoder throws `NothingToLiquidate` (nothing is sent). On success
+ * the caller receives the reward (200 MUSD + 0.5% of the Trove's BTC).
  */
 export function liquidate(deps: WriteDeps, borrower: Address): Promise<WriteResult> {
   const wallet = requireWallet(deps)
@@ -21,9 +20,7 @@ export function liquidate(deps: WriteDeps, borrower: Address): Promise<WriteResu
     'liquidate',
     [borrower],
     {
-      onRevert: () => {
-        throw new NothingToLiquidate([borrower])
-      },
+      revert: { operation: 'liquidate', borrowers: [borrower] },
     },
   )
 }
@@ -41,10 +38,6 @@ export function batchLiquidate(
     TM_ABI,
     'batchLiquidateTroves',
     [borrowers],
-    {
-      onRevert: () => {
-        throw new NothingToLiquidate(borrowers)
-      },
-    },
+    { revert: { operation: 'batchLiquidateTroves', borrowers } },
   )
 }

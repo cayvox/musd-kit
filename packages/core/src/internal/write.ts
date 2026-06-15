@@ -1,6 +1,7 @@
 import type { Abi, Account, Address, Hex, PublicClient, WalletClient } from 'viem'
 import type { MusdAddresses } from '../addresses'
-import { ContractCallFailed, MissingWalletClient, revertReason } from '../errors'
+import { MissingWalletClient } from '../errors'
+import { type RevertContext, mapRevert } from '../errors/mapRevert'
 
 /** Deps every write needs (a `walletClient` is required to send). */
 export interface WriteDeps {
@@ -28,15 +29,18 @@ export function requireWallet(deps: WriteDeps): Wallet {
 export interface SimulateSendOptions {
   value?: bigint
   /**
-   * Map a simulation revert to a specific typed error. If it throws, that error
-   * propagates; if it returns, the default `ContractCallFailed` is thrown.
+   * Context handed to the revert decoder ({@link mapRevert}) so a simulation revert maps
+   * to the precise typed error (operation disambiguates the Panic case; address/borrowers
+   * fill in error context). Defaults `operation` to `functionName`.
    */
-  onRevert?: (error: unknown, reason: string) => void
+  revert?: RevertContext
 }
 
 /**
  * Simulate first (surfaces reverts — never a silent reverted receipt), then send.
- * Returns the tx hash without waiting (the caller waits for the receipt).
+ * Returns the tx hash without waiting (the caller waits for the receipt). Any simulation
+ * revert is decoded by {@link mapRevert} into a typed `MusdError` (unmapped →
+ * `ContractCallFailed`, original error preserved — never swallowed).
  */
 export async function simulateAndSend(
   deps: WriteDeps,
@@ -58,8 +62,6 @@ export async function simulateAndSend(
     const hash = await wallet.walletClient.writeContract(request as any)
     return { hash }
   } catch (error) {
-    const reason = revertReason(error)
-    opts?.onRevert?.(error, reason)
-    throw new ContractCallFailed(`${functionName} reverted: ${reason}`, error)
+    throw mapRevert(error, { operation: functionName, ...opts?.revert })
   }
 }
