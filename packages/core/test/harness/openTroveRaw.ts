@@ -87,10 +87,31 @@ export async function openTroveRaw(
     args: [debtMusd, upperHint, lowerHint],
     value: collateralBtc,
   })
+  // Refresh AGAIN right before sending. anvil stamps each block with wall-clock time,
+  // and the staleness window is measured to the block where the tx actually MINES, not
+  // where it simulated. The (slow, cold-fork) simulateContract above can open a gap large
+  // enough to trip "oracle is stale" on a loaded CI runner even though the simulate
+  // passed. This second bump closes that gap to ~one block. (Verified flake fix: phase3.)
+  await fork.refreshOracle()
   const txHash = await wallet.writeContract(request)
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
   if (receipt.status !== 'success') {
-    throw new Error(`openTrove tx reverted for ${account.address}`)
+    // Reverted AFTER a passing simulate (shared-fork state drift). Re-simulate at the
+    // post-mine state to surface the on-chain reason instead of an opaque "reverted".
+    let reason = 'reason unavailable (state changed since revert)'
+    try {
+      await publicClient.simulateContract({
+        account,
+        address: TESTNET.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'openTrove',
+        args: [debtMusd, upperHint, lowerHint],
+        value: collateralBtc,
+      })
+    } catch (e) {
+      reason = (e as { shortMessage?: string }).shortMessage ?? String(e)
+    }
+    throw new Error(`openTrove tx reverted for ${account.address}: ${reason}`)
   }
 
   return { owner: account.address, txHash, gasUsed: receipt.gasUsed, entireDebt: compositeDebt }

@@ -120,8 +120,12 @@ describe('Phase 3 — hints/ insertion-hint module', () => {
     let opened = 0
 
     for (let i = 0; i < 22; i++) {
-      const collBtc = BigInt(Math.floor((0.05 + rnd() * 0.25) * 1e18)) // 0.05–0.30 BTC
-      const targetIcr = BigInt(Math.floor((1.2 + rnd() * 2.5) * 1e18)) // 1.2–3.7
+      // ICR ≥ 1.6 (> CCR) on every open so they succeed whether or not the shared,
+      // clock-warped fork is in Recovery Mode (which gates opens at ICR ≥ CCR). Coll is
+      // large enough that the min-debt clamp can't pull ICR near the MCR/CCR boundary.
+      // NICR diversity (what the placement test exercises) is unaffected.
+      const collBtc = BigInt(Math.floor((0.15 + rnd() * 0.25) * 1e18)) // 0.15–0.40 BTC
+      const targetIcr = BigInt(Math.floor((1.6 + rnd() * 2.1) * 1e18)) // 1.6–3.7
       const entireDebtTarget = (collBtc * price) / targetIcr
       const fee = await c.getBorrowingFee(entireDebtTarget)
       let draw = entireDebtTarget - GAS - fee
