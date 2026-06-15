@@ -323,15 +323,46 @@ For `previewOpen` / `getBorrowingPower`:
 
 ## 8. Protocol mechanics (verified)
 
-- **Liquidation** is permissionless (anyone): `liquidate(borrower)`,
-  `batchLiquidateTroves(addrs[])`. Liquidator reward = 200 MUSD (gas pool) + 0.5% of
-  the Trove's BTC (`PERCENT_DIVISOR = 200`). Triggered when ICR < MCR (110%).
+- **Liquidation** is permissionless (anyone): `liquidate(address _borrower)`,
+  `batchLiquidateTroves(address[] _troveArray)`. **Liquidator reward (verified on the
+  fork, Phase 6, via the `Liquidation` event): 200 MUSD** (`_gasCompensation`, paid to
+  the caller's MUSD balance) **+ 0.5% of the Trove's BTC** (`_collGasCompensation` =
+  coll/`PERCENT_DIVISOR`). On liquidation the Trove's status → **3 (closedByLiquidation)**.
+- **Liquidatability (refines the Phase-2 normal-mode-only note):** **normal mode** (TCR ≥
+  CCR) → liquidatable iff `ICR < MCR`; **Recovery Mode** (TCR < CCR) → liquidatable iff
+  `ICR < CCR` (a Trove with `ICR ≥ CCR` is never liquidated). Verified normal mode on the
+  fork; RM is inducible via `setPrice` (TCR < CCR). Useful events:
+  `Liquidation(_liquidatedPrincipal, _liquidatedInterest, _liquidatedColl,
+  _collGasCompensation, _gasCompensation)` and `TroveLiquidated(address indexed _borrower,
+  uint256 _debt, uint256 _coll, uint8 operation)`.
 - **Recovery Mode** activates when system TCR < CCR (150%); borrowing rules tighten.
-- **Redemption** (any MUSD holder): burns MUSD for BTC from the lowest-ICR Troves
-  above 110%. `getRedemptionHints` returns `truncatedAmount` (the redeemable amount
-  given the `minNetDebt` floor on the last touched Trove). Fee = 0% for a redeemer
-  who holds a loan, else the current redemption rate. Hints go stale if someone
-  redeems first → compute immediately before sending.
+- **Redemption** (any MUSD holder): burns MUSD for BTC from the lowest-ICR Troves above
+  110%. **Signature (verified): `redeemCollateral(uint256 _amount, address
+  _firstRedemptionHint, address _upperPartialRedemptionHint, address
+  _lowerPartialRedemptionHint, uint256 _partialRedemptionHintNICR, uint256 _maxIterations)`
+  — NO `_maxFeePercentage`** (C5 extends to redemption; any fee guard is SDK-side).
+  - **Ritual:** `getRedemptionHints(amount, price, maxIterations) → (firstRedemptionHint,
+    partialRedemptionHintNICR, truncatedAmount)`; then `getApproxHint(partialNICR) →
+    findInsertPosition(partialNICR, approx, approx)` → pass `(first, upper, lower,
+    partialNICR, maxIterations)` to `redeemCollateral`.
+  - **FEE — CORRECTION (verified on the fork, Phase 6):** the **`0%-for-loan-holders` rule
+    does NOT hold in this deployment.** A redeemer who holds an open loan paid the **full
+    `borrowerOperations.redemptionRate()` = 0.75%** (measured from the `Redemption` event:
+    `_collateralFee / (_collateralSent + _collateralFee) ≈ 0.744%`). The SDK reads
+    `redemptionRate()` and applies it to all redeemers (governable — never hardcode 0.75%).
+  - **`truncatedAmount`** is the redeemable amount given the `minNetDebt` floor on the last
+    touched Trove (and `maxIterations`). The `Redemption` event reports
+    `(_attemptedAmount, _actualAmount, _collateralSent, _collateralFee)` — the **actual**
+    redeemed amount can be **less than `truncatedAmount`** when the redemption needs a
+    *partial* of the last Trove and the partial hint drifts (the partial is skipped, full
+    Troves still redeem). Truncation that lands on full-Trove boundaries (e.g. the
+    `minNetDebt` floor) redeems exactly `truncatedAmount`. Compute hints immediately before
+    sending and **do not mine a block between** the hint and the redeem (interest drift
+    invalidates the partial hint).
+  - **Surplus/claim:** a fully-redeemed Trove (status → 4, closedByRedemption) and an
+    RM-liquidated above-MCR Trove leave surplus collateral in the **CollSurplusPool**
+    (`0xB4C35747…`, `getCollateral(address)`); the borrower withdraws it via
+    `claimCollateral()`. A liquidation at `ICR ≈ 1.0` leaves no surplus.
 
 ---
 
