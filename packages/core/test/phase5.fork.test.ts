@@ -32,6 +32,18 @@ function clientFor(account: PrivateKeyAccount) {
 const wait = (hash: Address) => connectFork().publicClient.waitForTransactionReceipt({ hash })
 const fundBtc = (a: Address, v: bigint) => connectFork().fundAccount(a, v)
 
+/**
+ * Refresh the oracle, then run an SDK write and wait for its receipt. These lifecycle tests
+ * issue many sequential writes; the shared anvil fork stamps blocks with wall-clock time, so
+ * across several slow steps a later write's price-dependent simulate can pass while the tx
+ * mines against a now-stale oracle and reverts (a silent reverted receipt — the debt simply
+ * doesn't change). Refreshing immediately before each write keeps the price fresh.
+ */
+const sent = async (call: () => Promise<{ hash: Address }>) => {
+  await connectFork().refreshOracle()
+  return wait((await call()).hash)
+}
+
 const balanceMusd = (a: Address) =>
   connectFork().publicClient.readContract({
     address: T.musd,
@@ -105,7 +117,7 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     const musd = clientFor(L)
 
     // open
-    await wait((await musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })).hash) // 0.5 BTC
+    await sent(() => musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })) // 0.5 BTC
     let t = await musd.getTrove(L.address)
     const fee = await musd.getBorrowingFee(5_000n * MUSD)
     expect(t.exists).toBe(true)
@@ -114,33 +126,33 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     await assertPlaced(L.address)
 
     // addCollateral 0.1
-    await wait((await musd.addCollateral({ amount: BTC / 10n })).hash)
+    await sent(() => musd.addCollateral({ amount: BTC / 10n }))
     t = await musd.getTrove(L.address)
     expect(t.collateral).toBe((6n * BTC) / 10n)
     await assertPlaced(L.address)
 
     // borrow 1000
     const dbefore = (await musd.getTrove(L.address)).entireDebt
-    await wait((await musd.borrow({ amount: 1_000n * MUSD })).hash)
+    await sent(() => musd.borrow({ amount: 1_000n * MUSD }))
     t = await musd.getTrove(L.address)
     near(t.entireDebt, dbefore + 1_000n * MUSD + (await musd.getBorrowingFee(1_000n * MUSD)))
     await assertPlaced(L.address)
 
     // repay 500
     const beforeRepay = (await musd.getTrove(L.address)).entireDebt
-    await wait((await musd.repay({ amount: 500n * MUSD })).hash)
+    await sent(() => musd.repay({ amount: 500n * MUSD }))
     t = await musd.getTrove(L.address)
     near(t.entireDebt, beforeRepay - 500n * MUSD)
     await assertPlaced(L.address)
 
     // withdrawCollateral 0.05
-    await wait((await musd.withdrawCollateral({ amount: (5n * BTC) / 100n })).hash)
+    await sent(() => musd.withdrawCollateral({ amount: (5n * BTC) / 100n }))
     t = await musd.getTrove(L.address)
     expect(t.collateral).toBe((6n * BTC) / 10n - (5n * BTC) / 100n) // 0.55
     await assertPlaced(L.address)
 
     // refinance
-    await wait((await musd.refinance()).hash)
+    await sent(() => musd.refinance())
     t = await musd.getTrove(L.address)
     expect(t.exists).toBe(true)
     await assertPlaced(L.address)
@@ -151,7 +163,7 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     const musdBefore = await balanceMusd(L.address)
     const btcBefore = await connectFork().publicClient.getBalance({ address: L.address })
     const collAtClose = t.collateral
-    await wait((await musd.close()).hash)
+    await sent(() => musd.close())
 
     const closed = await musd.getTrove(L.address)
     expect(closed.exists).toBe(false)
@@ -166,11 +178,11 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     const A = testAccount(410)
     await fundBtc(A.address, 20n * BTC)
     const musd = clientFor(A)
-    await wait((await musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })).hash)
+    await sent(() => musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD }))
 
     // (a) add collateral + borrow in one call
     const before = await musd.getTrove(A.address)
-    await wait((await musd.adjustTrove({ addCollateral: BTC / 10n, borrow: 1_000n * MUSD })).hash)
+    await sent(() => musd.adjustTrove({ addCollateral: BTC / 10n, borrow: 1_000n * MUSD }))
     let t = await musd.getTrove(A.address)
     expect(t.collateral).toBe(before.collateral + BTC / 10n)
     near(
@@ -181,8 +193,8 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
 
     // (b) withdraw collateral + repay in one call
     const before2 = await musd.getTrove(A.address)
-    await wait(
-      (await musd.adjustTrove({ withdrawCollateral: (5n * BTC) / 100n, repay: 500n * MUSD })).hash,
+    await sent(() =>
+      musd.adjustTrove({ withdrawCollateral: (5n * BTC) / 100n, repay: 500n * MUSD }),
     )
     t = await musd.getTrove(A.address)
     expect(t.collateral).toBe(before2.collateral - (5n * BTC) / 100n)
@@ -215,7 +227,7 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     const R = testAccount(421)
     await fundBtc(R.address, 20n * BTC)
     const musd = clientFor(R)
-    await wait((await musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })).hash)
+    await sent(() => musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD }))
 
     // withdraw almost all collateral → ICR < MCR → revert surfaced
     await expect(musd.withdrawCollateral({ amount: (49n * BTC) / 100n })).rejects.toThrow()
@@ -229,7 +241,7 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     const C = testAccount(430)
     await fundBtc(C.address, 20n * BTC)
     const musd = clientFor(C)
-    await wait((await musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })).hash)
+    await sent(() => musd.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD }))
 
     const res = await musd.claim()
     expect(res.claimed).toBe(false)
