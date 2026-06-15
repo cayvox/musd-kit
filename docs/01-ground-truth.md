@@ -54,7 +54,7 @@ These may be bundled as constants in the SDK. Everything in §3 may **not**.
 |---|---|---|---|
 | Minimum net debt | `borrowerOperations.minNetDebt()` | `1800e18` | `proposeMinNetDebt` → `approveMinNetDebt` (≥ `MIN_NET_DEBT_MIN`) |
 | Borrowing fee | `borrowerOperations.getBorrowingFee(uint256 _debt)` view | **flat 0.1% (10 bps) of the draw, NO floor/cap** (verified Phase 4: `fee(d) = d/1000` exactly at 1.8k–1M MUSD) — still governable, so READ it | `proposeBorrowingRate` → `approveBorrowingRate` |
-| Redemption rate | governable; 0% if redeemer holds a loan, else current rate (~0.75%) | ~0.75% | `proposeRedemptionRate` → `approveRedemptionRate` |
+| Redemption rate | `borrowerOperations.redemptionRate()` — governable; applied to ALL redeemers (⚠ the "0% if redeemer holds a loan" rule was **disproven on the fork in Phase 6** — see §8) | ~0.75% | `proposeRedemptionRate` → `approveRedemptionRate` |
 | Global interest rate | `interestRateManager.interestRate()` → `uint16` (bips) | 1–5% band | `proposeInterestRate(uint16)` → `approveInterestRate` |
 | Oracle price (BTC/USD) | `priceFeed.fetchPrice()` view → uint (1e18-scaled) | live | n/a (oracle) |
 

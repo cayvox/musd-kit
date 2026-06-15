@@ -60,8 +60,9 @@ cases:
 5. **Redemption truncation** — a redemption large enough to hit the `minNetDebt`
    floor on the last Trove; confirm `truncatedAmount` and the actual redeemed amount
    agree.
-6. **Fee-is-zero-for-borrower** — a redeemer who holds a loan pays 0%; one who does
-   not pays the current rate.
+6. **Redemption fee** — confirm a loan-holder and a no-loan redeemer BOTH pay the live
+   `redemptionRate()` (the "0% for loan holders" rule was disproven on the fork in Phase 6;
+   see `01-ground-truth.md` §8).
 7. **Full lifecycle** — open → addColl → borrow → repay → withdrawColl → refinance →
    close; assert state at each step and that the 200 gas reserve returns on close.
 

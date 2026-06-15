@@ -129,8 +129,9 @@ combined collateral-and-debt changes.
 ## 5. Redemption and liquidation (permissionless)
 
 ```ts
-// Redeem MUSD for BTC — uses getRedemptionHints, applies the correct fee
-// (0% if the caller holds a loan, else the current redemption rate), handles truncatedAmount.
+// Redeem MUSD for BTC — uses getRedemptionHints, applies the live redemptionRate()
+// (to ALL redeemers — the "0% for loan holders" rule was disproven in Phase 6, see
+//  01-ground-truth §8), handles truncatedAmount.
 await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10 });
 
 // Keeper surface — typed, with a precheck

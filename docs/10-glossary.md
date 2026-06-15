@@ -61,8 +61,9 @@ and docs. Where a term has a verified on-chain value, it links to
   `liquidate(borrower)` / `batchLiquidateTroves(addrs[])`.
 
 - **Redemption** — any MUSD holder burning MUSD for $1-of-BTC each, taken from the
-  lowest-ICR Troves above 110%. Fee 0% for a redeemer holding a loan, else the
-  current redemption rate. Uses `getRedemptionHints`; respects the `minNetDebt`
+  lowest-ICR Troves above 110%. Fee = the current `redemptionRate()`, applied to ALL
+  redeemers (the "0% for loan holders" rule was disproven on the fork in Phase 6 — see
+  `01-ground-truth.md` §8). Uses `getRedemptionHints`; respects the `minNetDebt`
   floor via `truncatedAmount`.
 
 - **Borrowing power** — the maximum MUSD drawable against given collateral at a price

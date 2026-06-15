@@ -167,8 +167,9 @@ opening/adjusting one requires supplying correct insertion hints
   than requested).
 - **Hints go stale** if someone redeems before the tx lands → compute immediately
   before sending; document the stale-hint revert path and a retry.
-- **Fee:** 0% if the redeemer holds an outstanding loan, else the current redemption
-  rate (read on-chain, C2).
+- **Fee:** the current `redemptionRate()` (read on-chain, C2), applied to ALL redeemers
+  including loan holders. (The "0% for loan holders" rule was disproven on the fork in
+  Phase 6 — see `01-ground-truth.md` §8.)
 
 ---
 
