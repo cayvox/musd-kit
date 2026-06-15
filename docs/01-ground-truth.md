@@ -403,3 +403,47 @@ Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
   own products. The "wagmi+RainbowKit-of-MUSD / Liquity-lib-react-for-Mezo" niche is
   unoccupied. Full write-up in `COMPETITIVE-LANDSCAPE.md`. (Re-run once more right
   before grant submission for freshness.)
+
+---
+
+## 11. Revert reasons (the real corpus — triggered on the fork, Phase 7)
+
+**Form (verified):** every MUSD protocol-logic revert reachable from the SDK surface is a
+classic Liquity **require-string** (`Error(string)`), **not** a Solidity custom error. The
+only custom errors in the trove/manager ABIs are OpenZeppelin boilerplate
+(`OwnableUnauthorizedAccount`, `InvalidInitialization`, …) which the SDK never triggers;
+the MUSD token carries OZ ERC-20 custom errors but BorrowerOperations' own require fires
+first (see `InsufficientMusdBalance` below). **One exception:** repaying more than owed is a
+**Panic(0x11)** (arithmetic underflow), not a string.
+
+Each row was produced by triggering the scenario against the forked contracts and capturing
+viem's decoded `reason` (via `ContractFunctionRevertedError`):
+
+| Scenario (how triggered) | Exact revert | Form | → typed error |
+|---|---|---|---|
+| `openTrove` with `draw+fee < minNetDebt` | `BorrowerOps: Trove's net debt must be greater than minimum` | require | `BelowMinimumDebt` |
+| `openTrove`/`withdrawColl`/`adjustTrove` leaving `ICR < MCR` (normal mode) | `BorrowerOps: An operation that would result in ICR < MCR is not permitted` | require | `ICRBelowMCR` |
+| `openTrove` with `MCR ≤ ICR < CCR` while system in Recovery Mode | `BorrowerOps: Operation must leave trove with ICR >= CCR` | require | `RecoveryModeRestriction` |
+| `repayMUSD` more than owed | `Arithmetic operation resulted in underflow or overflow.` (Panic `0x11`) | panic | `RepayExceedsDebt` |
+| `repayMUSD` with insufficient MUSD held | `BorrowerOps: Caller doesnt have enough mUSD to make repayment` | require | `InsufficientMusdBalance` |
+| op on an address with no Trove (`withdrawColl`/`closeTrove`/…) | `BorrowerOps: Trove does not exist or is closed` | require | `TroveNotFound` |
+| `openTrove` when one is already open | `BorrowerOps: Trove is active` | require | `TroveAlreadyExists` |
+| `liquidate` a healthy Trove | `TroveManager: nothing to liquidate` | require | `NothingToLiquidate` |
+| `redeemCollateral` that can redeem nothing (incl. a stale/bad partial hint) | `TroveManager: Unable to redeem any amount` | require | `RedemptionFailed` |
+
+**Not reachable from the SDK surface (Law 1 — marked, not invented):**
+- **`StaleHint`** — there is **no distinct "stale hint" revert**. A stale/incorrect
+  redemption partial hint does not produce its own error; it makes the redemption redeem
+  nothing → `TroveManager: Unable to redeem any amount` (→ `RedemptionFailed`). Insertion
+  hints never revert (open/adjust re-traverse from a bad hint). `StaleHint` remains a
+  defined, exported error (public API since Phase 6) but is documented as not distinctly
+  reachable; redemption-hint staleness surfaces as `RedemptionFailed`.
+- **`Unauthorized`** — the SDK surface calls no governance/permission-gated function, so the
+  `OwnableUnauthorizedAccount` path is unreachable. Defined/exported for completeness only.
+- **`InsufficientCollateral`** — the on-chain `ICR < MCR` revert maps to `ICRBelowMCR`
+  (contract-authoritative, Law 2). `InsufficientCollateral` is retained as the *preview-time*
+  sibling (for the math/React layer); the write path surfaces `ICRBelowMCR`.
+
+**Decoder discipline:** `mapRevert` matches on the distinctive substring of each reason
+(case-insensitive), maps the repay Panic via operation context, and sends anything
+unrecognized to `ContractCallFailed` with the raw viem error preserved in `cause`.
