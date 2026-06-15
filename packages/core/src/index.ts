@@ -90,17 +90,35 @@ export {
   type RedeemResult,
 } from './redemption'
 
-// Errors (minimal write + keeper subset; full taxonomy in Phase 7).
+// Errors — the full discriminated taxonomy (docs/06). `UnsupportedChain` and
+// `MismatchedDeployment` are also `MusdError`s but re-exported from their original modules
+// above to avoid duplicate exports.
 export {
   MusdError,
-  MissingWalletClient,
+  MusdErrorCode,
+  ALL_MUSD_ERROR_CODES,
+  mapRevert,
+  revertReason,
+  // validation / preview-time
+  BelowMinimumDebt,
   MaxFeeExceeded,
-  InsufficientMusdBalance,
+  InsufficientCollateral,
+  TroveNotFound,
+  TroveAlreadyExists,
+  InvalidAmount,
   InvalidAdjustment,
-  ContractCallFailed,
-  NothingToLiquidate,
+  // protocol reverts
+  ICRBelowMCR,
+  RecoveryModeRestriction,
+  RepayExceedsDebt,
   StaleHint,
+  InsufficientMusdBalance,
+  NothingToLiquidate,
   RedemptionFailed,
+  Unauthorized,
+  // infrastructure
+  MissingWalletClient,
+  ContractCallFailed,
 } from './errors'
 
 // Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers

@@ -1,7 +1,11 @@
 import type { Address } from 'viem'
 import { DEPLOYMENTS, SOURCE_PACKAGE_VERSION } from '../_generated/addresses'
+import { UnsupportedChain } from '../errors'
 
 export { DEPLOYMENTS, SOURCE_PACKAGE_VERSION }
+// `UnsupportedChain` is part of the unified `errors/` taxonomy (a `MusdError`); re-export
+// it from here so existing `from './addresses'` imports keep working.
+export { UnsupportedChain } from '../errors'
 
 /** The dev-facing contract set the SDK wraps (`docs/01-ground-truth.md` §4/§5). */
 export type MusdContractName = keyof (typeof DEPLOYMENTS)[31611]
@@ -13,19 +17,6 @@ export type MusdAddresses = Record<MusdContractName, Address>
 export type SupportedChainId = keyof typeof DEPLOYMENTS
 
 export const SUPPORTED_CHAIN_IDS = [31611, 31612] as const satisfies readonly SupportedChainId[]
-
-/** Thrown when a chainId has no MUSD deployment and no override was supplied. */
-export class UnsupportedChain extends Error {
-  override readonly name = 'UnsupportedChain'
-  readonly code = 'UNSUPPORTED_CHAIN' as const
-  readonly chainId: number
-  constructor(chainId: number) {
-    super(
-      `Unsupported chainId ${chainId}. MUSD is deployed on 31611 (Mezo Testnet) and 31612 (Mezo Mainnet). Pass \`addresses\` to override for a custom deployment.`,
-    )
-    this.chainId = chainId
-  }
-}
 
 export function isSupportedChainId(chainId: number): chainId is SupportedChainId {
   return chainId === 31611 || chainId === 31612

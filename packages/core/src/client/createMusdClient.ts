@@ -7,6 +7,7 @@ import {
   FIXED_CONSTANTS,
   type FixedConstants,
 } from '../constants'
+import { MismatchedDeployment } from '../errors'
 import {
   type ComputeHintsParams,
   type ComputeNICRParams,
@@ -65,24 +66,9 @@ import {
   withdrawCollateral,
 } from '../trove'
 
-/**
- * Thrown when an on-chain fixed constant disagrees with the value bundled in the
- * SDK — i.e. the deployment is not the one this SDK version was built against.
- * Surfacing it early prevents silently trusting a stale bundled constant.
- */
-export class MismatchedDeployment extends Error {
-  override readonly name = 'MismatchedDeployment'
-  readonly code = 'MISMATCHED_DEPLOYMENT' as const
-  constructor(
-    readonly constantName: string,
-    readonly bundled: bigint,
-    readonly onchain: bigint,
-  ) {
-    super(
-      `On-chain ${constantName} (${onchain}) does not match the bundled ${constantName} (${bundled}). The MUSD deployment may have changed — do not trust the bundled fixed constants for this chain.`,
-    )
-  }
-}
+// `MismatchedDeployment` now lives in the unified `errors/` taxonomy (a `MusdError`);
+// re-exported here so existing `from './client/createMusdClient'` imports keep working.
+export { MismatchedDeployment } from '../errors'
 
 /** Governable values read live (never bundled — Law 3). */
 export interface GovernableConstants {
