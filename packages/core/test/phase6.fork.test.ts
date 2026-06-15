@@ -11,6 +11,9 @@ import {
   CCR,
   MCR,
   NothingToLiquidate,
+  type RedeemParams,
+  type RedeemResult,
+  RedemptionFailed,
   createMusdClient,
   getAddresses,
   hintHelpersAbi,
@@ -71,6 +74,31 @@ async function walletWrite(
   return wait(await wallet.writeContract(request))
 }
 
+/**
+ * Redeem with a refresh-and-retry. `getRedemptionHints` is slow the first time it
+ * traverses a not-yet-warm sorted tail on the cold fork; that latency lets the oracle go
+ * stale before `redeemCollateral` mines, so the marginal lowest-ICR Trove reads under MCR
+ * and the contract reverts "Unable to redeem any amount" (→ RedemptionFailed). The first
+ * attempt warms the traversal; the retry refreshes the oracle and runs fast, so it mines
+ * against a fresh price. Genuine non-staleness failures still surface after the retries.
+ */
+async function redeemFresh(
+  client: { redeem(p: RedeemParams): Promise<RedeemResult> },
+  params: RedeemParams,
+): Promise<RedeemResult> {
+  let last: unknown
+  for (let i = 0; i < 4; i++) {
+    await connectFork().refreshOracle()
+    try {
+      return await client.redeem(params)
+    } catch (e) {
+      if (!(e instanceof RedemptionFailed)) throw e
+      last = e
+    }
+  }
+  throw last
+}
+
 describe('Phase 6 — redemption + liquidation keeper surface', () => {
   let originalPrice: bigint
   beforeAll(async () => {
@@ -101,15 +129,6 @@ describe('Phase 6 — redemption + liquidation keeper surface', () => {
       numTrials: 15,
     })
     const musdR = clientFor(R)
-    // Warp forward ~1 year: the lowest-ICR redeemable Trove on this fork sits right at
-    // MCR and interest-drifts below it during the redeem (razor-edge). Aging the system
-    // pushes those marginal Troves clearly under MCR so the firstRedemptionHint is a
-    // comfortable Trove that survives the sub-second drift to the redeem block.
-    await fork.warpTime(31_556_952)
-    expect((await musdR.getSystemState()).isRecoveryMode).toBe(false) // redemption needs TCR ≥ MCR
-    const res = await musdR.redeem({ amount: 2_000n * MUSD })
-    expect(res.fee).toBe(rate)
-    expect(res.truncatedAmount).toBeGreaterThan(0n)
     const redemptionEv = async (hash: Hex) => {
       const ev = parseEventLogs({
         abi: troveManagerAbi,
@@ -118,37 +137,63 @@ describe('Phase 6 — redemption + liquidation keeper surface', () => {
       })[0]!
       return ev.args
     }
-    const evR = await redemptionEv(res.hash)
-    const feeFracR = Number(evR._collateralFee) / Number(evR._collateralSent + evR._collateralFee)
-    console.log(
-      `[phase6] LOAN-HOLDER feeFrac=${feeFracR} (rate=${Number(rate) / 1e16}%) actual=${evR._actualAmount}`,
-    )
-    expect(evR._actualAmount).toBeGreaterThan(0n)
-    expect(Math.abs(feeFracR - Number(rate) / 1e18)).toBeLessThan(0.001)
 
-    // No-loan redeemer
-    const N = testAccount(1001)
-    await fork.fundAccount(N.address, 5n * BTC)
-    await walletWrite(R, T.musd, musdAbi, 'transfer', [N.address, 5_000n * MUSD])
-    const resN = await clientFor(N).redeem({ amount: 2_000n * MUSD })
-    const evN = await redemptionEv(resN.hash)
-    const feeFracN = Number(evN._collateralFee) / Number(evN._collateralSent + evN._collateralFee)
-    console.log(`[phase6] NO-LOAN feeFrac=${feeFracN}`)
-    expect(Math.abs(feeFracN - feeFracR)).toBeLessThan(0.0005) // same rate → 0%-loan-holder rule disproven
+    // The fork's lowest ~12 Troves are underwater (ICR 0.89–1.03 < MCR) and the first
+    // redeemable Trove sits at ICR ≈ 1.1005 — a razor-thin 0.05% margin above MCR. A cold
+    // getRedemptionHints traversal is slow enough that the oracle goes stale before the
+    // redeem mines, so redeemCollateral re-reads a lower price and that marginal Trove is
+    // under MCR → "Unable to redeem any amount". Fix: redeem at a +50% price so the lowest
+    // redeemable Trove has comfortable margin (≈1.35), and redeemFresh warms the traversal
+    // then retries with a fresh oracle. The redemption fee is a price-INDEPENDENT fraction
+    // (collateralFee / collateralSent = redemptionRate), so every rate assertion holds.
+    // Price is restored in `finally` so later tests/files are unaffected.
+    const origPrice = await musdR.getOraclePrice()
+    try {
+      await fork.setPrice((origPrice * 3n) / 2n)
+      await fork.refreshOracle()
+      expect((await musdR.getSystemState()).isRecoveryMode).toBe(false) // redemption needs TCR ≥ MCR
 
-    // Truncation: redeemCollateral requires requested ≤ caller's balance, so request all
-    // of R's balance but cap iterations → only a few Troves redeemable → truncated < requested.
-    const rBal = await fork.publicClient.readContract({
-      address: T.musd,
-      abi: musdAbi,
-      functionName: 'balanceOf',
-      args: [R.address],
-    })
-    const resT = await musdR.redeem({ amount: rBal, maxIterations: 2n })
-    expect(resT.truncatedAmount).toBeLessThan(rBal)
-    console.log(`[phase6] TRUNCATION: requested=${rBal} truncated=${resT.truncatedAmount}`)
-    await wait(resT.hash)
-  }, 300_000)
+      // Redeem 5,000: enough to fully close the lowest one or two Troves (each ~2,200 debt)
+      // rather than leave one below minNetDebt (an invalid partial → "Unable to redeem any
+      // amount"). truncatedAmount is whatever those whole Troves sum to.
+      const res = await redeemFresh(musdR, { amount: 5_000n * MUSD })
+      expect(res.fee).toBe(rate)
+      expect(res.truncatedAmount).toBeGreaterThan(0n)
+      const evR = await redemptionEv(res.hash)
+      const feeFracR = Number(evR._collateralFee) / Number(evR._collateralSent + evR._collateralFee)
+      console.log(
+        `[phase6] LOAN-HOLDER feeFrac=${feeFracR} (rate=${Number(rate) / 1e16}%) actual=${evR._actualAmount}`,
+      )
+      expect(evR._actualAmount).toBeGreaterThan(0n)
+      expect(Math.abs(feeFracR - Number(rate) / 1e18)).toBeLessThan(0.001)
+
+      // No-loan redeemer pays the SAME rate (disproving the "0% for loan holders" rule).
+      const N = testAccount(1001)
+      await fork.fundAccount(N.address, 5n * BTC)
+      await walletWrite(R, T.musd, musdAbi, 'transfer', [N.address, 8_000n * MUSD])
+      const resN = await redeemFresh(clientFor(N), { amount: 5_000n * MUSD })
+      const evN = await redemptionEv(resN.hash)
+      const feeFracN = Number(evN._collateralFee) / Number(evN._collateralSent + evN._collateralFee)
+      console.log(`[phase6] NO-LOAN feeFrac=${feeFracN}`)
+      expect(Math.abs(feeFracN - feeFracR)).toBeLessThan(0.0005)
+
+      // Truncation: redeemCollateral requires requested ≤ caller's balance, so request all
+      // of R's balance but cap iterations → only a few Troves redeemable → truncated < requested.
+      const rBal = await fork.publicClient.readContract({
+        address: T.musd,
+        abi: musdAbi,
+        functionName: 'balanceOf',
+        args: [R.address],
+      })
+      const resT = await redeemFresh(musdR, { amount: rBal, maxIterations: 2n })
+      expect(resT.truncatedAmount).toBeLessThan(rBal)
+      console.log(`[phase6] TRUNCATION: requested=${rBal} truncated=${resT.truncatedAmount}`)
+      await wait(resT.hash)
+    } finally {
+      await fork.setPrice(origPrice)
+      await fork.refreshOracle()
+    }
+  }, 600_000)
 
   it('normal-mode liquidation: isLiquidatable transitions, reward (200 + 0.5%), status → 3', async () => {
     const fork = connectFork()
