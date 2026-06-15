@@ -1,46 +1,20 @@
-import type { Account, Address, Hex, PublicClient, WalletClient } from 'viem'
-import type { MusdAddresses } from '../addresses'
+import type { Abi, Address } from 'viem'
 import { borrowerOperationsAbi, musdAbi, troveManagerAbi } from '../clients'
 import { MUSD_GAS_COMPENSATION } from '../constants'
-import {
-  ContractCallFailed,
-  InsufficientMusdBalance,
-  InvalidAdjustment,
-  MaxFeeExceeded,
-  MissingWalletClient,
-  revertReason,
-} from '../errors'
+import { InsufficientMusdBalance, InvalidAdjustment, MaxFeeExceeded } from '../errors'
 import { computeHints } from '../hints'
+import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 
-export interface WriteDeps {
-  publicClient: PublicClient
-  walletClient: WalletClient | undefined
-  addresses: MusdAddresses
-}
-
-/** Result of a write — wagmi-idiomatic; the caller waits for the receipt. */
-export interface WriteResult {
-  hash: Hex
-}
+export type { WriteDeps, WriteResult } from '../internal/write'
 
 /** `claim()` is a no-op when there is no surplus → `hash` may be `null`. */
 export interface ClaimResult {
   claimed: boolean
-  hash: Hex | null
+  hash: Address | null
 }
 
 const ONE = 10n ** 18n
-
-interface Wallet {
-  walletClient: WalletClient
-  account: Account
-}
-
-function requireWallet(deps: WriteDeps): Wallet {
-  const wc = deps.walletClient
-  if (!wc || !wc.account) throw new MissingWalletClient()
-  return { walletClient: wc, account: wc.account }
-}
+const BO_ABI = borrowerOperationsAbi as unknown as Abi
 
 /** Current (collateral, entireDebt) of `owner`, to-now, from the contract (Law 2). */
 async function currentPosition(
@@ -82,34 +56,17 @@ function hintsFor(deps: WriteDeps, collateral: bigint, entireDebt: bigint) {
   )
 }
 
-/** Simulate first (surface reverts), then send. Returns the tx hash (no wait). */
-async function simulateAndSend(
-  deps: WriteDeps,
-  wallet: Wallet,
-  functionName: string,
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous write args; the ABI is typed at the call sites.
-  args: readonly any[],
-  value?: bigint,
-): Promise<WriteResult> {
-  try {
-    // Dynamic dispatch over the BorrowerOperations write set; viem's per-function
-    // typing can't be expressed generically here, so the params object is untyped.
-    // biome-ignore lint/suspicious/noExplicitAny: see above.
-    const sim: any = {
-      account: wallet.account,
-      address: deps.addresses.borrowerOperations,
-      abi: borrowerOperationsAbi,
-      functionName,
-      args,
-    }
-    if (value !== undefined) sim.value = value
-    const { request } = await deps.publicClient.simulateContract(sim)
-    // biome-ignore lint/suspicious/noExplicitAny: request type follows the dynamic dispatch above.
-    const hash = await wallet.walletClient.writeContract(request as any)
-    return { hash }
-  } catch (error) {
-    throw new ContractCallFailed(`${functionName} reverted: ${revertReason(error)}`, error)
-  }
+const send = (deps: WriteDeps, fn: string, args: readonly unknown[], value?: bigint) => {
+  const wallet = requireWallet(deps)
+  return simulateAndSend(
+    deps,
+    wallet,
+    deps.addresses.borrowerOperations,
+    BO_ABI,
+    fn,
+    args,
+    value !== undefined ? { value } : undefined,
+  )
 }
 
 export interface OpenTroveParams {
@@ -120,13 +77,13 @@ export interface OpenTroveParams {
 }
 
 export async function openTrove(deps: WriteDeps, params: OpenTroveParams): Promise<WriteResult> {
-  const wallet = requireWallet(deps)
+  requireWallet(deps)
   const { collateral, debt } = params
   const fee = await getBorrowingFee(deps, debt)
   assertFeeWithinCap(debt, fee, params.maxFeePercentage)
   const entireDebt = debt + fee + MUSD_GAS_COMPENSATION
   const { upperHint, lowerHint } = await hintsFor(deps, collateral, entireDebt)
-  return simulateAndSend(deps, wallet, 'openTrove', [debt, upperHint, lowerHint], collateral)
+  return send(deps, 'openTrove', [debt, upperHint, lowerHint], collateral)
 }
 
 export async function addCollateral(
@@ -136,7 +93,7 @@ export async function addCollateral(
   const wallet = requireWallet(deps)
   const pos = await currentPosition(deps, wallet.account.address)
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral + amount, pos.entireDebt)
-  return simulateAndSend(deps, wallet, 'addColl', [upperHint, lowerHint], amount)
+  return send(deps, 'addColl', [upperHint, lowerHint], amount)
 }
 
 export interface BorrowParams {
@@ -155,14 +112,14 @@ export async function borrow(deps: WriteDeps, params: BorrowParams): Promise<Wri
     pos.collateral,
     pos.entireDebt + amount + fee,
   )
-  return simulateAndSend(deps, wallet, 'withdrawMUSD', [amount, upperHint, lowerHint])
+  return send(deps, 'withdrawMUSD', [amount, upperHint, lowerHint])
 }
 
 export async function repay(deps: WriteDeps, { amount }: { amount: bigint }): Promise<WriteResult> {
   const wallet = requireWallet(deps)
   const pos = await currentPosition(deps, wallet.account.address)
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.entireDebt - amount)
-  return simulateAndSend(deps, wallet, 'repayMUSD', [amount, upperHint, lowerHint])
+  return send(deps, 'repayMUSD', [amount, upperHint, lowerHint])
 }
 
 export async function withdrawCollateral(
@@ -172,7 +129,7 @@ export async function withdrawCollateral(
   const wallet = requireWallet(deps)
   const pos = await currentPosition(deps, wallet.account.address)
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral - amount, pos.entireDebt)
-  return simulateAndSend(deps, wallet, 'withdrawColl', [amount, upperHint, lowerHint])
+  return send(deps, 'withdrawColl', [amount, upperHint, lowerHint])
 }
 
 export interface AdjustTroveParams {
@@ -212,9 +169,8 @@ export async function adjustTrove(
   const resultingDebt = pos.entireDebt + (brw !== undefined ? brw + fee : 0n) - (rpy ?? 0n)
   const { upperHint, lowerHint } = await hintsFor(deps, resultingColl, resultingDebt)
 
-  return simulateAndSend(
+  return send(
     deps,
-    wallet,
     'adjustTrove',
     [collWithdrawal, debtChange, isDebtIncrease, upperHint, lowerHint],
     collAdd > 0n ? collAdd : undefined,
@@ -234,7 +190,7 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
     args: [owner],
   })
   if (balance < required) throw new InsufficientMusdBalance(required, balance)
-  return simulateAndSend(deps, wallet, 'closeTrove', [])
+  return send(deps, 'closeTrove', [])
 }
 
 export async function refinance(deps: WriteDeps): Promise<WriteResult> {
@@ -243,14 +199,13 @@ export async function refinance(deps: WriteDeps): Promise<WriteResult> {
   // position are good enough (placement is contract-guaranteed — hints only affect gas).
   const pos = await currentPosition(deps, wallet.account.address)
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.entireDebt)
-  return simulateAndSend(deps, wallet, 'refinance', [upperHint, lowerHint])
+  return send(deps, 'refinance', [upperHint, lowerHint])
 }
 
 /**
  * Claim collateral surplus (after a redemption/liquidation left some). With no surplus
- * `claimCollateral` reverts, so this simulates first and returns a clean no-op
- * (`{ claimed: false, hash: null }`) instead of throwing. Full claim-after-redemption
- * validation is Phase 6.
+ * `claimCollateral` reverts, so this simulates first and returns a clean no-op instead
+ * of throwing.
  */
 export async function claim(deps: WriteDeps): Promise<ClaimResult> {
   const wallet = requireWallet(deps)

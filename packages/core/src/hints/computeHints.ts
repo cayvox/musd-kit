@@ -51,14 +51,27 @@ export interface HintsDeps {
  * RESULTING entire debt (for an open: `draw + getBorrowingFee(draw) + 200`); this
  * does not compute the debt itself.
  */
-export async function computeHints(
-  { publicClient, addresses }: HintsDeps,
-  params: ComputeHintsParams,
-): Promise<Hints> {
-  const { collateral, entireDebt, randomSeed = DEFAULT_HINT_RANDOM_SEED } = params
-  const nicr = computeNICR({ collateral, entireDebt })
+export async function computeHints(deps: HintsDeps, params: ComputeHintsParams): Promise<Hints> {
+  const nicr = computeNICR({ collateral: params.collateral, entireDebt: params.entireDebt })
+  const opts: { numTrials?: number; randomSeed?: bigint } = {}
+  if (params.numTrials !== undefined) opts.numTrials = params.numTrials
+  if (params.randomSeed !== undefined) opts.randomSeed = params.randomSeed
+  const { upperHint, lowerHint } = await findHintsForNICR(deps, nicr, opts)
+  return { upperHint, lowerHint, nicr }
+}
 
-  let numTrials = params.numTrials
+/**
+ * Insertion hints `{ upperHint, lowerHint }` for a position with a known NICR — the
+ * same ritual as {@link computeHints} but starting from a NICR directly (used for the
+ * partial-redemption hint, whose NICR comes from `getRedemptionHints`).
+ */
+export async function findHintsForNICR(
+  { publicClient, addresses }: HintsDeps,
+  nicr: bigint,
+  opts?: { numTrials?: number; randomSeed?: bigint },
+): Promise<{ upperHint: Address; lowerHint: Address }> {
+  const randomSeed = opts?.randomSeed ?? DEFAULT_HINT_RANDOM_SEED
+  let numTrials = opts?.numTrials
   if (numTrials === undefined) {
     const size = await publicClient.readContract({
       address: addresses.sortedTroves,
@@ -67,20 +80,17 @@ export async function computeHints(
     })
     numTrials = trialsForSize(size)
   }
-
   const [approxHint] = await publicClient.readContract({
     address: addresses.hintHelpers,
     abi: hintHelpersAbi,
     functionName: 'getApproxHint',
     args: [nicr, BigInt(numTrials), randomSeed],
   })
-
   const [upperHint, lowerHint] = await publicClient.readContract({
     address: addresses.sortedTroves,
     abi: sortedTrovesAbi,
     functionName: 'findInsertPosition',
     args: [nicr, approxHint, approxHint],
   })
-
-  return { upperHint, lowerHint, nicr }
+  return { upperHint, lowerHint }
 }
