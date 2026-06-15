@@ -79,7 +79,7 @@ export async function openTroveRaw(
 
   // Simulate first so any revert surfaces with its reason (a reverted tx otherwise
   // produces a receipt with status:'reverted' and no throw).
-  const { request } = await publicClient.simulateContract({
+  await publicClient.simulateContract({
     account,
     address: TESTNET.borrowerOperations,
     abi: borrowerOperationsAbi,
@@ -93,7 +93,22 @@ export async function openTroveRaw(
   // enough to trip "oracle is stale" on a loaded CI runner even though the simulate
   // passed. This second bump closes that gap to ~one block. (Verified flake fix: phase3.)
   await fork.refreshOracle()
-  const txHash = await wallet.writeContract(request)
+  // Send with a generous FIXED gas limit rather than the simulate's estimate. The estimate
+  // is taken one block before the tx mines; one block of accrued interest shifts the
+  // SortedTroves insert traversal, so on a loaded CI runner the real insert can need more
+  // gas than estimated and the tx reverts out-of-gas (re-simulating with a high cap then
+  // "passes" — the tell-tale of OOG, not a logic revert). A fixed 6M cap removes the
+  // estimate-vs-execute mismatch; openTrove inserts cost well under this. (Flake fix: phase3.)
+  const txHash = await wallet.writeContract({
+    account,
+    chain: mezoTestnet,
+    address: TESTNET.borrowerOperations,
+    abi: borrowerOperationsAbi,
+    functionName: 'openTrove',
+    args: [debtMusd, upperHint, lowerHint],
+    value: collateralBtc,
+    gas: 6_000_000n,
+  })
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
   if (receipt.status !== 'success') {
     // Reverted AFTER a passing simulate (shared-fork state drift). Re-simulate at the
