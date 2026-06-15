@@ -34,11 +34,19 @@ import {
   type SystemState,
   type Trove,
   balanceOf,
+  getClaimableCollateral,
   getOraclePrice,
   getSystemState,
   getTrove,
   isLiquidatable,
 } from '../read'
+import {
+  type RedeemParams,
+  type RedeemResult,
+  batchLiquidate,
+  liquidate,
+  redeem,
+} from '../redemption'
 import {
   type AdjustTroveParams,
   type BorrowParams,
@@ -167,6 +175,16 @@ export interface MusdClient {
   refinance(): Promise<WriteResult>
   /** `claimCollateral()` — claim surplus; a safe no-op when there is none. */
   claim(): Promise<ClaimResult>
+
+  // --- redemption + permissionless keeper surface (see `redemption/`) ---
+  /** Redeem MUSD for BTC (hints + governable fee + truncation surfaced). */
+  redeem(params: RedeemParams): Promise<RedeemResult>
+  /** Liquidate one Trove; throws `NothingToLiquidate` if it isn't liquidatable. */
+  liquidate(borrower: Address): Promise<WriteResult>
+  /** Liquidate several Troves in one call. */
+  batchLiquidate(borrowers: readonly Address[]): Promise<WriteResult>
+  /** BTC surplus claimable by `address` (CollSurplusPool) — pair with `claim()`. */
+  getClaimableCollateral(address: Address): Promise<bigint>
 }
 
 /**
@@ -247,5 +265,9 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     close: () => close(writeDeps),
     refinance: () => refinance(writeDeps),
     claim: () => claim(writeDeps),
+    redeem: (params) => redeem(writeDeps, params),
+    liquidate: (borrower) => liquidate(writeDeps, borrower),
+    batchLiquidate: (borrowers) => batchLiquidate(writeDeps, borrowers),
+    getClaimableCollateral: (address) => getClaimableCollateral(readDeps, address),
   }
 }

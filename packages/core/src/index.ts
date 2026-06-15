@@ -83,7 +83,14 @@ export type {
   ClaimResult,
 } from './trove'
 
-// Errors (minimal write subset; full taxonomy in Phase 7).
+// Redemption + keeper surface types.
+export {
+  DEFAULT_REDEMPTION_MAX_ITERATIONS,
+  type RedeemParams,
+  type RedeemResult,
+} from './redemption'
+
+// Errors (minimal write + keeper subset; full taxonomy in Phase 7).
 export {
   MusdError,
   MissingWalletClient,
@@ -91,6 +98,9 @@ export {
   InsufficientMusdBalance,
   InvalidAdjustment,
   ContractCallFailed,
+  NothingToLiquidate,
+  StaleHint,
+  RedemptionFailed,
 } from './errors'
 
 // Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers

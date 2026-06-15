@@ -80,6 +80,40 @@ export class ContractCallFailed extends MusdError {
   }
 }
 
+/** `liquidate`/`batchLiquidate` found nothing liquidatable (the simulation reverted). */
+export class NothingToLiquidate extends MusdError {
+  constructor(borrowers: readonly string[]) {
+    super(
+      'NOTHING_TO_LIQUIDATE',
+      `None of the given Trove(s) are liquidatable: ${borrowers.join(', ')}.`,
+      {
+        context: { borrowers: [...borrowers] },
+      },
+    )
+    this.name = 'NothingToLiquidate'
+  }
+}
+
+/** A redemption (or insertion) hint went stale — recompute and retry. */
+export class StaleHint extends MusdError {
+  constructor(cause: unknown) {
+    super(
+      'STALE_HINT',
+      'A redemption hint went stale (the Trove list moved first). Recompute and retry.',
+      { cause },
+    )
+    this.name = 'StaleHint'
+  }
+}
+
+/** A redemption could not redeem any amount (e.g. nothing redeemable within maxIterations). */
+export class RedemptionFailed extends MusdError {
+  constructor(message: string, cause: unknown) {
+    super('REDEMPTION_FAILED', message, { cause })
+    this.name = 'RedemptionFailed'
+  }
+}
+
 /** Best-effort revert reason from a viem error (without re-implementing Phase 7). */
 export function revertReason(error: unknown): string {
   if (error && typeof error === 'object') {
