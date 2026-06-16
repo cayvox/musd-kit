@@ -1,0 +1,70 @@
+# Publish @musd-kit/core + @musd-kit/react to npm with provenance.
+#
+# THIS WORKFLOW IS NOT RUN AUTOMATICALLY — it is the deliberate, credentialed go-live.
+# Before the first publish, the maintainer (Anıl) must:
+#   1. Make the GitHub repo `cayvox/musd-kit` PUBLIC  — npm provenance (--provenance) signs
+#      the build via OIDC and generally requires a public repo. (The grant narrative is
+#      public-good infrastructure anyway.) If you choose to stay private / skip provenance
+#      for the first publish, drop `--provenance` from the publish step and the
+#      `id-token: write` permission below.
+#   2. Add the `NPM_TOKEN` repository secret (an npm automation token with publish rights to
+#      the @musd-kit scope).
+#   3. Trigger this workflow (Actions → Release → Run workflow), or push a `v*` tag.
+#
+# It builds + runs the forked-Mezo gate, then publishes only the two PUBLIC packages
+# (examples/docs are private and skipped).
+name: Release
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write # npm provenance (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Test (forked-Mezo gate)
+        run: pnpm test
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+
+      - name: Publish to npm (provenance)
+        run: pnpm publish -r --access public --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

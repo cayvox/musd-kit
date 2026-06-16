@@ -61,3 +61,12 @@ jobs:
         run: pnpm test
         env:
           MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+
+      # Pack the two public packages and prove a clean install works (ESM + CJS + types) in a
+      # fresh project, with the tarballs shipping only dist + README + LICENSE. Does NOT publish.
+      - name: Release smoke (pack + clean-install, no publish)
+        run: bash scripts/release-smoke.sh
+
+      # The docs site (TypeDoc API ref + Vitepress) must build.
+      - name: Docs build
+        run: pnpm docs:build
