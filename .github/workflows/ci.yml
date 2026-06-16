@@ -36,11 +36,13 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Typecheck
-        run: pnpm typecheck
-
+      # Build first: @musd-kit/react typechecks against @musd-kit/core's built types
+      # (dist/index.d.ts), so the workspace must be built before the cross-package typecheck.
       - name: Build
         run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Install Foundry (anvil)
         uses: foundry-rs/foundry-toolchain@v1
