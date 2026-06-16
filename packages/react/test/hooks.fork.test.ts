@@ -129,9 +129,18 @@ describe('@musd-kit/react — read hooks (fork)', () => {
     const before = result.current.data?.collateral as bigint
 
     // Change reader's position OUT OF BAND (its own signer), then expect block-watch refetch.
+    // Warm the hint traversal + refresh the oracle so the addColl mines cleanly: a cold
+    // computeHints on a loaded CI runner would let the oracle go stale and the addColl would
+    // mine-revert (a silent reverted receipt) — leaving the position unchanged and making
+    // this look like a block-watch miss when it isn't. We assert the receipt succeeded.
     const fork = connectFork()
+    const rdebt = (await coreClient.getTrove(reader)).entireDebt
+    await coreClient.computeHints({ collateral: before + BTC / 10n, entireDebt: rdebt })
     await fork.refreshOracle()
-    await waitTx((await coreClientFor(testAccount(800)).addCollateral({ amount: BTC / 10n })).hash)
+    const rc = await waitTx(
+      (await coreClientFor(testAccount(800)).addCollateral({ amount: BTC / 10n })).hash,
+    )
+    expect(rc.status).toBe('success')
 
     await waitFor(() => expect(result.current.data?.collateral).toBe(before + BTC / 10n), {
       timeout: 30_000,
