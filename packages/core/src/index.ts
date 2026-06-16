@@ -7,6 +7,9 @@
 // Fixed constants (bundled — Law 3 keeps governable values off this list).
 export * from './constants'
 
+// Unit helpers (docs/08 §5) — readable 18-decimal parse/format for BTC + MUSD, and bps.
+export { parseBtc, formatBtc, parseMusd, formatMusd, parseBps } from './units'
+
 // Address resolution.
 export {
   getAddresses,
