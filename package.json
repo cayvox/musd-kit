@@ -12,17 +12,21 @@
   "scripts": {
     "lint": "biome check .",
     "format": "biome format --write .",
-    "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck",
+    "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck && tsc --noEmit -p scripts/tsconfig.json",
     "build": "pnpm -r --filter \"./packages/*\" run build",
     "test": "vitest run",
     "docs:api": "typedoc",
-    "docs:build": "pnpm docs:api && pnpm --filter @musd-kit/docs build"
+    "docs:build": "pnpm docs:api && pnpm --filter @musd-kit/docs build",
+    "testnet:e2e": "tsx scripts/testnet-e2e.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@changesets/cli": "2.27.10",
+    "@mezo-org/chains": "0.0.1",
+    "@musd-kit/core": "workspace:*",
     "@types/node": "20.17.10",
     "@vitest/coverage-v8": "2.1.8",
+    "tsx": "4.19.2",
     "typedoc": "0.27.6",
     "typescript": "5.7.3",
     "viem": "2.22.8",
