@@ -5,5 +5,6 @@
     "outDir": "dist",
     "types": ["node"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": ["test/phase9-keeper.fork.test.ts"]
 }
