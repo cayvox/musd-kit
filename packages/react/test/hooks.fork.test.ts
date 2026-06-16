@@ -63,6 +63,39 @@ async function connectedWrapper() {
   return makeWrapper(config, newQueryClient())
 }
 
+interface MutationSlice {
+  hash: Address | null
+  isSuccess: boolean
+  isError: boolean
+  reset: () => void
+}
+
+/**
+ * Fire a write-hook action and confirm its tx actually MINED (receipt status `success`),
+ * retrying on a silent revert. The core returns `{ hash }` without awaiting the receipt
+ * (caller waits), so a revert that happens AFTER a passing simulate — possible on a loaded,
+ * wall-clock-stamped shared fork — slips through as `isSuccess`. We check the receipt and,
+ * on a revert, refresh the oracle and re-fire. Genuine failures still throw after the retries.
+ */
+async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Promise<void> {
+  let last: unknown
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await connectFork().refreshOracle()
+    act(() => fire())
+    await waitFor(() => expect(mut().isSuccess || mut().isError).toBe(true), { timeout: 60_000 })
+    const hash = mut().hash
+    if (hash) {
+      const receipt = await connectFork().publicClient.waitForTransactionReceipt({ hash })
+      if (receipt.status === 'success') return
+      last = new Error(`tx ${hash} reverted (attempt ${attempt + 1})`)
+    } else {
+      last = new Error('mutation errored without a tx hash')
+    }
+    act(() => mut().reset())
+  }
+  throw last ?? new Error('write did not mine after retries')
+}
+
 beforeAll(async () => {
   const fork = connectFork()
   rpcUrl = fork.rpcUrl
@@ -166,19 +199,14 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
     expect(result.current.trove.data?.exists).toBe(false)
     expect(result.current.open.isPending).toBe(false)
 
-    // Warm the insertion-hint traversal (getApproxHint) so the SDK's openTrove is fast, then
-    // refresh the oracle RIGHT before the send. The shared fork stamps blocks with wall-clock
-    // time; a slow (cold) computeHints between refresh and the mined open would let the oracle
-    // go stale and the open would mine-revert (a silent reverted receipt) though simulate
-    // passed. (In the full suite phase3 already warmed this; warming keeps the test robust
-    // when run alone.) The warm cache + holder's Trove then cover the later write tests.
+    // Warm the insertion-hint traversal so the SDK's openTrove is fast; ensureWriteMined
+    // confirms the open actually mined (retrying any silent revert). The warm cache + holder's
+    // Trove then cover the later write tests.
     await coreClient.computeHints({ collateral: (5n * BTC) / 10n, entireDebt: 5_205n * MUSD })
-    await connectFork().refreshOracle()
-    act(() => {
-      result.current.open.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })
-    })
-
-    await waitFor(() => expect(result.current.open.isSuccess).toBe(true), { timeout: 60_000 })
+    await ensureWriteMined(
+      () => result.current.open.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD }),
+      () => result.current.open,
+    )
     expect(result.current.open.hash).toMatch(/^0x[0-9a-fA-F]+$/)
     // Post-write invalidation + block-watch → useTrove reflects the new position.
     await waitFor(() => expect(result.current.trove.data?.exists).toBe(true), { timeout: 30_000 })
@@ -198,9 +226,10 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
     await waitFor(() => expect(result.current.trove.data?.exists).toBe(true), { timeout: 30_000 })
     const before = result.current.trove.data?.entireDebt as bigint
 
-    await connectFork().refreshOracle()
-    act(() => result.current.repay.repay({ amount: 500n * MUSD }))
-    await waitFor(() => expect(result.current.repay.isSuccess).toBe(true), { timeout: 60_000 })
+    await ensureWriteMined(
+      () => result.current.repay.repay({ amount: 500n * MUSD }),
+      () => result.current.repay,
+    )
     await waitFor(
       () => expect((result.current.trove.data?.entireDebt as bigint) < before).toBe(true),
       { timeout: 30_000 },
@@ -229,9 +258,10 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
         wrapper,
       })
       await waitFor(() => expect(result.current.wallet.data).toBeTruthy(), { timeout: 30_000 })
-      await fork.refreshOracle() // fresh right before the redeem (after the wallet wait)
-      act(() => result.current.redeem.redeem({ amount: 3_000n * MUSD }))
-      await waitFor(() => expect(result.current.redeem.isSuccess).toBe(true), { timeout: 90_000 })
+      await ensureWriteMined(
+        () => result.current.redeem.redeem({ amount: 3_000n * MUSD }),
+        () => result.current.redeem,
+      )
       expect(result.current.redeem.hash).toMatch(/^0x/)
       expect(result.current.redeem.data?.truncatedAmount).toBeGreaterThan(0n)
       expect(result.current.redeem.data?.fee).toBeGreaterThan(0n)
@@ -258,24 +288,37 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
       address: T.musd,
       abi: musdAbi,
       functionName: 'transfer',
-      args: [holder.address, pos.entireDebt],
+      args: [holder.address, pos.entireDebt + 50n * MUSD],
     })
     await waitTx(await fwallet.writeContract(request))
 
-    const { result } = renderHook(
-      () => ({
-        close: useCloseTrove(),
-        trove: useTrove({ address: holder.address }),
-        wallet: useWalletClient(),
-      }),
-      { wrapper },
-    )
-    await waitFor(() => expect(result.current.wallet.data).toBeTruthy(), { timeout: 30_000 })
-    await waitFor(() => expect(result.current.trove.data?.exists).toBe(true), { timeout: 30_000 })
-    await connectFork().refreshOracle() // fresh right before the close
-    act(() => result.current.close.closeTrove())
-    await waitFor(() => expect(result.current.close.isSuccess).toBe(true), { timeout: 60_000 })
-    await waitFor(() => expect(result.current.trove.data?.exists).toBe(false), { timeout: 30_000 })
+    // closeTrove reads the price and is blocked in Recovery Mode — lift +20% so the system is
+    // clearly normal-mode (price restored after; the "Trove is gone" assertion is price-free).
+    const origPrice = await coreClient.getOraclePrice()
+    try {
+      await fork.setPrice((origPrice * 12n) / 10n)
+      await fork.refreshOracle()
+      const { result } = renderHook(
+        () => ({
+          close: useCloseTrove(),
+          trove: useTrove({ address: holder.address }),
+          wallet: useWalletClient(),
+        }),
+        { wrapper },
+      )
+      await waitFor(() => expect(result.current.wallet.data).toBeTruthy(), { timeout: 30_000 })
+      await waitFor(() => expect(result.current.trove.data?.exists).toBe(true), { timeout: 30_000 })
+      await ensureWriteMined(
+        () => result.current.close.closeTrove(),
+        () => result.current.close,
+      )
+      await waitFor(() => expect(result.current.trove.data?.exists).toBe(false), {
+        timeout: 30_000,
+      })
+    } finally {
+      await fork.setPrice(origPrice)
+      await fork.refreshOracle()
+    }
   }, 150_000)
 })
 
