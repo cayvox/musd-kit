@@ -1,0 +1,20 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["packages/core/src/index.ts", "packages/react/src/index.ts"],
+  "tsconfig": "tsconfig.typedoc.json",
+  "out": "docs/public/api",
+  "name": "musd-kit API reference",
+  "readme": "none",
+  "githubPages": false,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "externalPattern": ["**/node_modules/**"],
+  "validation": {
+    "notExported": false,
+    "invalidLink": true,
+    "notDocumented": true
+  },
+  "exclude": ["**/_generated/**", "**/dist/**", "**/*.test.ts", "**/test/**"],
+  "requiredToBeDocumented": ["Enum", "Variable", "Function", "Class", "Interface", "TypeAlias"],
+  "treatWarningsAsErrors": true
+}

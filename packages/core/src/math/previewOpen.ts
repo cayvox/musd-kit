@@ -3,6 +3,7 @@ import { CCR, MUSD_GAS_COMPENSATION } from '../constants'
 import { computeICR, computeLiquidationPrice } from './compute'
 import type { MathDeps } from './deps'
 
+/** Inputs to {@link MusdClient.previewOpen}: the collateral + draw to preview. */
 export interface PreviewOpenParams {
   collateral: bigint
   /** Requested draw (MUSD received; the borrower owes draw + fee + 200). */
@@ -11,6 +12,7 @@ export interface PreviewOpenParams {
   price?: bigint
 }
 
+/** Result of {@link MusdClient.previewOpen}: fee, debt, ICR, liquidation price, and the floor/RM flags. */
 export interface OpenPreview {
   /** `getBorrowingFee(debt)` — read on-chain (governable). */
   fee: bigint

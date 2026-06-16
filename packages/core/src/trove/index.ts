@@ -101,6 +101,7 @@ const send = (
   })
 }
 
+/** Parameters for {@link MusdClient.openTrove}: the BTC collateral + MUSD draw (+ optional fee cap). */
 export interface OpenTroveParams {
   collateral: bigint
   debt: bigint
@@ -146,6 +147,7 @@ export async function addCollateral(
   })
 }
 
+/** Parameters for {@link MusdClient.borrow}: the MUSD to draw (+ optional fee cap). */
 export interface BorrowParams {
   amount: bigint
   maxFeePercentage?: bigint
@@ -202,6 +204,7 @@ export async function withdrawCollateral(
   })
 }
 
+/** Parameters for {@link MusdClient.adjustTrove}: a combined collateral ± and/or debt ± change (validated). */
 export interface AdjustTroveParams {
   addCollateral?: bigint
   withdrawCollateral?: bigint

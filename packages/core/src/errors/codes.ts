@@ -1,7 +1,8 @@
-// The discriminant for every SDK error. These string values are a STABLE PUBLIC API:
-// adding a code is a minor change; renaming or removing one is a breaking change (semver).
-// Consumers branch on `error.code` in a switch, or on `error instanceof <Subclass>`.
-
+/**
+ * The discriminant for every SDK error. These string values are a STABLE PUBLIC API:
+ * adding a code is a minor change; renaming or removing one is a breaking change (semver).
+ * Consumers branch on `error.code` in a switch, or on `error instanceof <Subclass>`.
+ */
 export const MusdErrorCode = {
   // — Validation / preview-time (thrown before sending — fail fast) —
   BELOW_MINIMUM_DEBT: 'BELOW_MINIMUM_DEBT',

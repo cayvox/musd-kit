@@ -15,6 +15,7 @@ const TM_ABI = troveManagerAbi as unknown as Abi
 /** Sane default trove-scan bound for a redemption (override per call). */
 export const DEFAULT_REDEMPTION_MAX_ITERATIONS = 100n
 
+/** Parameters for {@link MusdClient.redeem}. */
 export interface RedeemParams {
   /** MUSD to redeem for BTC (burned from the caller). */
   amount: bigint
@@ -24,6 +25,7 @@ export interface RedeemParams {
   maxFeePercentage?: bigint
 }
 
+/** Result of {@link MusdClient.redeem}: the tx hash plus the estimated redeemable amount and live fee. */
 export interface RedeemResult {
   hash: Hex
   /**

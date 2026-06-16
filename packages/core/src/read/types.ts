@@ -11,6 +11,7 @@ export const TroveStatus = {
   closedByLiquidation: 3,
   closedByRedemption: 4,
 } as const
+/** A `TroveManager` status ordinal (0–4); see {@link TroveStatus}. */
 export type TroveStatus = (typeof TroveStatus)[keyof typeof TroveStatus]
 
 /**

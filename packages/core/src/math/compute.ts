@@ -5,6 +5,7 @@ import { BPS_DIVISOR, MCR, MUSD_GAS_COMPENSATION, SECONDS_PER_YEAR } from '../co
 // NON-throwing — they return values/flags, never protocol errors. Every formula is
 // dual-validated against forked-Mezo behavior and the contract's pure helpers.
 
+/** Inputs to {@link computeICR}: collateral, entire debt, and a BTC/USD price. */
 export interface ComputeICRParams {
   collateral: bigint
   entireDebt: bigint
@@ -22,6 +23,7 @@ export function computeICR({ collateral, entireDebt, price }: ComputeICRParams):
   return (collateral * price) / entireDebt
 }
 
+/** Inputs to {@link computeLiquidationPrice}: a position's collateral + entire debt. */
 export interface ComputeLiquidationPriceParams {
   collateral: bigint
   entireDebt: bigint
@@ -47,6 +49,7 @@ export function getHealthFactor({ icr }: { icr: bigint }): number {
   return Number((icr * 1_000_000n) / MCR) / 1_000_000
 }
 
+/** Inputs to {@link computeEntireDebt}: the draw, fee, rate, and elapsed time. */
 export interface ComputeEntireDebtParams {
   /** Requested draw (MUSD the borrower receives). */
   draw: bigint

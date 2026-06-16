@@ -7,9 +7,13 @@ import type { Address } from 'viem'
  * `JSON.stringify`, which throws on bigint.
  */
 export const musdQueryKeys = {
+  /** Query key for a Trove read (shared by `useTrove`/`useHealthFactor`/`useLiquidationPrice`). */
   trove: (chainId: number, address: Address) => ['musd', chainId, 'trove', address] as const,
+  /** Query key for the oracle BTC/USD price. */
   oraclePrice: (chainId: number) => ['musd', chainId, 'oraclePrice'] as const,
+  /** Query key for an MUSD balance read. */
   balance: (chainId: number, address: Address) => ['musd', chainId, 'balance', address] as const,
+  /** Query key for a borrowing-power preview (collateral stringified — keys are JSON-hashed). */
   borrowingPower: (chainId: number, collateral: bigint) =>
     ['musd', chainId, 'borrowingPower', collateral.toString()] as const,
 } as const

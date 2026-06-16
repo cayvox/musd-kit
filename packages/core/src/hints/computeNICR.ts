@@ -4,6 +4,7 @@
  */
 export const NICR_PRECISION = 100_000_000_000_000_000_000n
 
+/** Inputs to {@link computeNICR}: a position's collateral + entire debt. */
 export interface ComputeNICRParams {
   /** Collateral in BTC wei (1e18). */
   collateral: bigint

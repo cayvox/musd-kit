@@ -47,4 +47,5 @@ export const FIXED_CONSTANTS = {
   MIN_NET_DEBT_MIN,
 } as const
 
+/** The bundled, non-governable constants ({@link FIXED_CONSTANTS}): MCR, CCR, gas comp, precision. */
 export type FixedConstants = typeof FIXED_CONSTANTS

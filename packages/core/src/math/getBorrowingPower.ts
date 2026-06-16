@@ -3,6 +3,7 @@ import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
 import { computeICR } from './compute'
 import type { MathDeps } from './deps'
 
+/** Inputs to {@link MusdClient.getBorrowingPower}: the collateral to size a draw against. */
 export interface GetBorrowingPowerParams {
   collateral: bigint
   /** Override the price; defaults to `fetchPrice()`. */

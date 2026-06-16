@@ -23,6 +23,7 @@ export function trialsForSize(size: bigint): number {
   return Math.min(MAX_TRIALS, Math.max(MIN_TRIALS, trials))
 }
 
+/** Inputs to {@link computeHints}: the position shape plus optional trial/seed overrides. */
 export interface ComputeHintsParams extends ComputeNICRParams {
   /** Override the auto-scaled trial count (skips the `getSize()` read). */
   numTrials?: number
@@ -30,6 +31,7 @@ export interface ComputeHintsParams extends ComputeNICRParams {
   randomSeed?: bigint
 }
 
+/** The insertion-hint pair (+ the position's NICR) for a SortedTroves insert. */
 export interface Hints {
   /** SortedTroves neighbor with NICR ≥ this position's (descending list). */
   upperHint: Address

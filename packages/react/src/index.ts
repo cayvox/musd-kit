@@ -28,6 +28,16 @@ export {
   useRefinance,
   useRedeem,
   type MusdWriteResult,
+  type UseOpenTroveResult,
+  type UseAddCollateralResult,
+  type UseBorrowResult,
+  type UseRepayResult,
+  type UseWithdrawCollateralResult,
+  type UseAdjustTroveResult,
+  type UseCloseTroveResult,
+  type UseClaimCollateralResult,
+  type UseRefinanceResult,
+  type UseRedeemResult,
 } from './hooks/writes'
 
 // The internal client builder — exported for advanced consumers who want the core client

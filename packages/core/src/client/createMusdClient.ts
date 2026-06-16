@@ -81,6 +81,7 @@ export interface GovernableConstants {
 /** The bundled fixed constants plus the live-read governable ones. */
 export type MusdConstants = FixedConstants & GovernableConstants
 
+/** Inputs to {@link createMusdClient}: the chain, a viem public client, and (for writes) a wallet client; `addresses` overrides the bundled deployment. */
 export interface CreateMusdClientParams {
   chainId: number
   publicClient: PublicClient
@@ -90,6 +91,7 @@ export interface CreateMusdClientParams {
   addresses?: Partial<MusdAddresses>
 }
 
+/** The `createMusdClient` surface: live reads, preview math, hints, lifecycle writes, and the redemption/keeper functions, all bound to one chain + clients. */
 export interface MusdClient {
   readonly chainId: number
   readonly addresses: MusdAddresses
