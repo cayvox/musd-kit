@@ -1,0 +1,33 @@
+{
+  "name": "@musd-kit/example-open-and-manage",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reference React dApp on @musd-kit/react + @mezo-org/passport: preview → open → monitor → repay.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mezo-org/chains": "0.0.1",
+    "@mezo-org/passport": "^0.17.2",
+    "@musd-kit/core": "workspace:*",
+    "@musd-kit/react": "workspace:*",
+    "@rainbow-me/rainbowkit": "2.0.7",
+    "@tanstack/react-query": "^5.28.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "viem": "^2.22.8",
+    "wagmi": "^2.5.12"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "5.7.3",
+    "vite": "^5.4.11"
+  }
+}
