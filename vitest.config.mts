@@ -41,5 +41,8 @@ export default defineConfig({
     fileParallelism: false,
     pool: 'forks',
     sequence: { sequencer: AlphabeticalSequencer },
+    // The @musd-kit/react hook tests need a DOM (React Testing Library); the core fork
+    // tests stay on node. Everything still shares the one anvil fork via globalSetup.
+    environmentMatchGlobs: [['**/packages/react/test/**', 'jsdom']],
   },
 })
