@@ -44,6 +44,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # Reference apps (Phase 9) — built/typechecked but NOT published. The keeper's
+      # no-React boundary + its real fork liquidation run inside `pnpm test`.
+      - name: Build examples
+        run: pnpm -r --filter "./examples/*" build
+
+      - name: Typecheck examples
+        run: pnpm -r --filter "./examples/*" typecheck
+
       - name: Install Foundry (anvil)
         uses: foundry-rs/foundry-toolchain@v1
         with:

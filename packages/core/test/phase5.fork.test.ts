@@ -157,21 +157,35 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     expect(t.exists).toBe(true)
     await assertPlaced(L.address)
 
-    // close: fund L with the net debt + a little, then close
-    const required = t.entireDebt - GAS
-    await fundMusd(L.address, required + 5n * MUSD)
-    const musdBefore = await balanceMusd(L.address)
-    const btcBefore = await connectFork().publicClient.getBalance({ address: L.address })
-    const collAtClose = t.collateral
-    await sent(() => musd.close())
+    // close: lift the price +20% so the system is clearly NOT in Recovery Mode — closeTrove
+    // reads the price, and when the live fork price tips the system into RM the close
+    // mine-reverts (a silent reverted receipt). The burned-MUSD and returned-collateral
+    // assertions are price-INDEPENDENT, so the lift doesn't affect them. Price restored after.
+    const origPrice = await musd.getOraclePrice()
+    try {
+      await connectFork().setPrice((origPrice * 12n) / 10n)
+      await connectFork().refreshOracle()
+      const pre = await musd.getTrove(L.address)
+      const required = pre.entireDebt - GAS
+      await fundMusd(L.address, required + 50n * MUSD)
+      const musdBefore = await balanceMusd(L.address)
+      const btcBefore = await connectFork().publicClient.getBalance({ address: L.address })
+      const collAtClose = pre.collateral
 
-    const closed = await musd.getTrove(L.address)
-    expect(closed.exists).toBe(false)
-    // close payoff: burned ~ entireDebt − 200; collateral (+200 reserve) returned.
-    near(musdBefore - (await balanceMusd(L.address)), required, 10n ** 16n)
-    const btcDelta =
-      (await connectFork().publicClient.getBalance({ address: L.address })) - btcBefore
-    expect(btcDelta).toBeGreaterThan(collAtClose - BTC / 100n) // ~collateral back, minus gas
+      const closeReceipt = await sent(() => musd.close())
+      expect(closeReceipt.status).toBe('success')
+
+      const closed = await musd.getTrove(L.address)
+      expect(closed.exists).toBe(false)
+      // close payoff: burned ~ entireDebt − 200; collateral (+200 reserve) returned.
+      near(musdBefore - (await balanceMusd(L.address)), required, 10n ** 16n)
+      const btcDelta =
+        (await connectFork().publicClient.getBalance({ address: L.address })) - btcBefore
+      expect(btcDelta).toBeGreaterThan(collAtClose - BTC / 100n) // ~collateral back, minus gas
+    } finally {
+      await connectFork().setPrice(origPrice)
+      await connectFork().refreshOracle()
+    }
   }, 300_000)
 
   it('adjustTrove combined + mutual-exclusion validation', async () => {
