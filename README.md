@@ -65,8 +65,11 @@ helpers.
 ## Quick start
 
 ```bash
-pnpm add @musd-kit/core @musd-kit/react viem wagmi @tanstack/react-query
+pnpm add @musd-kit/core @musd-kit/react viem@^2 wagmi@^2 @tanstack/react-query@^5 react@^18
 ```
+
+> The pinned majors match the Passport ecosystem (wagmi 2.x, React 18). In a Passport app
+> they're already present, so `pnpm add @musd-kit/core @musd-kit/react` is enough.
 
 ```ts
 import { createMusdClient, parseBtc, parseMusd } from '@musd-kit/core';

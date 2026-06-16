@@ -36,6 +36,6 @@ health, computes borrowing power, and manages a loan.
 
 ```sh
 npm install @musd-kit/core viem
-# React:
-npm install @musd-kit/react wagmi @tanstack/react-query
+# React (pinned to the Passport ecosystem — wagmi 2.x / React 18):
+npm install @musd-kit/react wagmi@^2 @tanstack/react-query@^5 react@^18
 ```

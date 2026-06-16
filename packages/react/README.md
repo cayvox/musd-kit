@@ -12,12 +12,18 @@ wagmi setup) already established. There is **no musd-kit provider**.
 ## Install
 
 ```sh
-npm install @musd-kit/react @musd-kit/core wagmi viem @tanstack/react-query
+npm install @musd-kit/react @musd-kit/core wagmi@^2 viem@^2 @tanstack/react-query@^5 react@^18
 ```
 
 Peer deps (match Passport's ranges so both resolve to single singletons): `wagmi ^2.5.12`,
 `viem ^2.22.8`, `@tanstack/react-query ^5.28.4`, `react ^18.2.0`. Peer-depends on **wagmi,
 not Passport** — usable with any wagmi connection layer.
+
+> **In a Passport app these are already satisfied** — `@mezo-org/passport` pins wagmi 2.x and
+> React 18, so you only need `npm install @musd-kit/react @musd-kit/core`. The pinned
+> majors above (`wagmi@^2`, `react@^18`) are for a standalone install: wagmi 3.x / React 19
+> are not yet validated against the Passport ecosystem (see the React-19 note in
+> `docs/04-react-api.md`), so install latest of those unpinned and the peer ranges won't match.
 
 ## Usage
 
