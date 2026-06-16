@@ -63,17 +63,33 @@ core; the React layer adds only the reactive wrapper.
 
 ---
 
-## 3. The v1 hook set
+## 3. The v1 hook set (as shipped, Phase 8)
 
 **Read:** `useTrove`, `useBorrowingPower`, `useLiquidationPrice`, `useHealthFactor`,
-`useMusdBalance`, `useMusdPeg`, `useOraclePrice`.
+`useMusdBalance`, `useOraclePrice`.
 
-**Write:** `useOpenTrove`, `useAdjustTrove`, `useRepay`, `useWithdrawCollateral`,
-`useCloseTrove`, `useClaimCollateral`, `useRefinance`, `useRedeem`.
+`useHealthFactor` and `useLiquidationPrice` are selectors over the **same** `useTrove`
+query (shared key + `select`) — three hooks for one address dedupe to a single fetch. All
+read hooks refetch on new blocks (`useBlockNumber({ watch })` → invalidate).
 
-(There is no `useBorrow`/`useAddCollateral` requirement separate from
-`useAdjustTrove` in v1; expose dedicated single-axis hooks if the examples show they
-read better — they map to `withdrawMUSD`/`addColl` in core.)
+> **`useMusdPeg` is deferred.** The core `getPeg` is unimplemented — Mezo exposes no
+> MUSD/USD oracle (Phase 2 / `09-open-questions`). Shipping a hook that returns a guessed
+> peg would violate the prime directive, so it is **omitted from v1** and will land if/when
+> a peg oracle exists.
+
+**Write (1:1 with the core write methods):** `useOpenTrove`, `useAddCollateral`,
+`useBorrow`, `useRepay`, `useWithdrawCollateral`, `useAdjustTrove`, `useCloseTrove`,
+`useClaimCollateral`, `useRefinance`, `useRedeem`.
+
+We ship the **dedicated single-axis hooks** (`useAddCollateral` → `addColl`, `useBorrow` →
+`withdrawMUSD`, `useRepay`, `useWithdrawCollateral`) alongside `useAdjustTrove` — they read
+better in a form-per-action UI and each maps to exactly one core method. Each write hook is
+a `useMutation` returning the wagmi-style shape `{ <action>, isPending, isSuccess, error,
+hash, data }` where `error` is the core's typed `MusdError`; `useRedeem`'s `data` carries
+`{ hash, truncatedAmount, fee }`. After a successful write the caller's `useTrove` /
+`useMusdBalance` queries are invalidated so the UI refreshes. Receipt-waiting is left to the
+consumer (`useWaitForTransactionReceipt({ hash })`); v1 does not block the mutation on
+confirmation.
 
 ---
 
