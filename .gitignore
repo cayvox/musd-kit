@@ -24,3 +24,8 @@ anvil*.log
 .idea/
 .vscode/
 *.log
+
+# docs site (generated)
+docs/public/api
+docs/.vitepress/dist
+docs/.vitepress/cache
