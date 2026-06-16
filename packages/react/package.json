@@ -1,11 +1,34 @@
 {
   "name": "@musd-kit/react",
-  "version": "0.0.0",
-  "description": "wagmi-idiomatic React hooks over @musd-kit/core. Consumes any wagmi context (e.g. @mezo-org/passport).",
+  "version": "0.1.0",
+  "description": "wagmi-idiomatic React hooks for MUSD on Mezo (Mezo MUSD SDK), over @musd-kit/core. Consumes any wagmi context (e.g. @mezo-org/passport).",
   "license": "MIT",
+  "author": "Cayvox Labs <info@cayvox.com>",
+  "homepage": "https://github.com/cayvox/musd-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cayvox/musd-kit.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/cayvox/musd-kit/issues"
+  },
+  "keywords": [
+    "mezo",
+    "musd",
+    "bitcoin",
+    "stablecoin",
+    "trove",
+    "cdp",
+    "defi",
+    "viem",
+    "wagmi",
+    "react",
+    "hooks"
+  ],
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

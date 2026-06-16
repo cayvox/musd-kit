@@ -114,7 +114,12 @@ Passport (or any wagmi setup) already established.
 - [`docs/02-architecture.md`](docs/02-architecture.md) — packages and the two-source correctness model
 - [`docs/03-core-api.md`](docs/03-core-api.md) · [`docs/04-react-api.md`](docs/04-react-api.md) — API surfaces
 - [`docs/05-math-and-hints.md`](docs/05-math-and-hints.md) — the correctness-critical core
-- [`docs/musd-kit-handbook.md`](docs/musd-kit-handbook.md) — the full specification
+- [`docs/06-errors.md`](docs/06-errors.md) · [`docs/10-glossary.md`](docs/10-glossary.md) — the error taxonomy + terms
+- [`docs/musd-kit-handbook-v0.2.md`](docs/musd-kit-handbook-v0.2.md) — the full specification
+
+The docs site (Vitepress) and the generated **API reference** (TypeDoc) build from these:
+`pnpm docs:build` → `docs/.vitepress/dist` (with the API ref at `/api/`). Per-package
+quickstarts: [`@musd-kit/core`](packages/core/README.md) · [`@musd-kit/react`](packages/react/README.md).
 
 ---
 

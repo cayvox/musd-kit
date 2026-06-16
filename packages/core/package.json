@@ -1,11 +1,33 @@
 {
   "name": "@musd-kit/core",
-  "version": "0.0.0",
-  "description": "Typed, framework-agnostic client SDK for MUSD on Mezo: Trove lifecycle, hints, and preview math, made correct.",
+  "version": "0.1.0",
+  "description": "The typed SDK for MUSD on Mezo (Mezo MUSD SDK) — framework-agnostic core: Trove lifecycle, insertion hints, preview math, and typed errors, made correct.",
   "license": "MIT",
+  "author": "Cayvox Labs <info@cayvox.com>",
+  "homepage": "https://github.com/cayvox/musd-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cayvox/musd-kit.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/cayvox/musd-kit/issues"
+  },
+  "keywords": [
+    "mezo",
+    "musd",
+    "bitcoin",
+    "stablecoin",
+    "trove",
+    "cdp",
+    "defi",
+    "viem",
+    "ethereum",
+    "sdk"
+  ],
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "LICENSE"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
