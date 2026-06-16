@@ -13,7 +13,7 @@ messages.
 class MusdError extends Error {
   readonly code: MusdErrorCode;     // discriminant
   readonly cause?: unknown;         // original viem/contract error, preserved
-  readonly context?: Record<string, unknown>;  // e.g. { minNetDebt, attempted }
+  readonly context?: Record<string, unknown>;  // e.g. { minNetDebt, netDebt }
 }
 ```
 

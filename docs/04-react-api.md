@@ -34,8 +34,8 @@ function Position({ address }: { address: `0x${string}` }) {
 
 ```tsx
 // A borrowing-power calculator — no live position needed (preview math)
-const { data } = useBorrowingPower({ collateral: parseBtc('0.05') });
-// data.maxBorrowable, data.atICR, data.liquidationPrice
+const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05') });
+// `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
 ```
 
 ---

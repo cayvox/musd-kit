@@ -132,7 +132,7 @@ combined collateral-and-debt changes.
 // Redeem MUSD for BTC — uses getRedemptionHints, applies the live redemptionRate()
 // (to ALL redeemers — the "0% for loan holders" rule was disproven in Phase 6, see
 //  01-ground-truth §8), handles truncatedAmount.
-await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10 });
+await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10n });
 
 // Keeper surface — typed, with a precheck
 if (await musd.isLiquidatable(borrower)) {
