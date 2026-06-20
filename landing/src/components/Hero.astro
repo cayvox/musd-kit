@@ -1,0 +1,142 @@
+---
+import Constellation from './Constellation.astro'
+import CopyCommand from './CopyCommand.astro'
+import TabbedCode from './TabbedCode.astro'
+
+const coreSnippet = `import { createMusdClient } from '@musd-kit/core'
+
+const musd = createMusdClient({ chainId, publicClient })
+
+// One call → a fully-typed, contract-authoritative live position
+const trove = await musd.getTrove(address)
+//    ^ { collateral, entireDebt, icr, liquidationPrice, healthFactor, ... }`
+
+const reactSnippet = `import { useTrove, useOpenTrove } from '@musd-kit/react'
+
+const { data: trove, isLoading } = useTrove({ address })
+const { openTrove, isPending, error } = useOpenTrove()
+//      error is a typed MusdError (e.g. BelowMinimumDebt)`
+---
+
+<section class="hero">
+  <Constellation />
+  <div class="container hero__inner">
+    <div class="hero__copy">
+      <p class="eyebrow" data-reveal>TYPESCRIPT SDK · MEZO · BITCOIN-BACKED MUSD</p>
+      <h1 class="hero__title" data-reveal>Build on MUSD without rebuilding the hard parts.</h1>
+      <p class="hero__subhead prose" data-reveal>
+        The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin. Open and
+        manage Troves, preview borrows, redeem and liquidate — with the fiddly correctness handled, and React hooks on
+        top.
+      </p>
+      <div class="hero__cta" data-reveal>
+        <CopyCommand command="npm install @musd-kit/core @musd-kit/react" />
+        <div class="hero__links">
+          <a class="btn btn--ghost" href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub&nbsp;→</a>
+          <a class="hero__textlink" href="/docs/">Read the docs&nbsp;→</a>
+        </div>
+      </div>
+      <p class="hero__badge" data-reveal>community · testnet · pre-1.0</p>
+    </div>
+    <div class="hero__proof" data-reveal>
+      <TabbedCode
+        tabs={[
+          { label: 'core', code: coreSnippet, lang: 'ts' },
+          { label: 'react', code: reactSnippet, lang: 'tsx' },
+        ]}
+      />
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    padding-block: clamp(3.5rem, 8vw, 7rem) var(--space-section);
+    overflow: hidden;
+  }
+  .hero__inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(2.5rem, 5vw, 4rem);
+    align-items: center;
+  }
+  @media (min-width: 900px) {
+    .hero__inner {
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    }
+  }
+  .hero__copy {
+    min-width: 0;
+  }
+  .hero__title {
+    font-size: var(--fs-display);
+    font-weight: 600;
+    margin-top: 1.1rem;
+    max-width: 19ch;
+    overflow-wrap: break-word;
+  }
+  .hero__subhead {
+    margin-top: 1.35rem;
+    font-size: var(--fs-h3);
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+  .hero__subhead strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .hero__cta {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 30rem;
+  }
+  .hero__links {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: var(--fs-small);
+    padding: 0.65rem 1.1rem;
+    border-radius: var(--radius-sm);
+    min-height: 44px;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .btn--ghost {
+    color: var(--text);
+    border: 1px solid var(--hairline-2);
+    background: transparent;
+  }
+  .btn--ghost:hover {
+    border-color: var(--ember);
+    color: var(--text);
+    background: var(--ember-faint);
+  }
+  .hero__textlink {
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+  .hero__textlink:hover {
+    color: var(--ember);
+  }
+  .hero__badge {
+    margin-top: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.04em;
+    color: var(--warn);
+  }
+  .hero__proof {
+    min-width: 0;
+  }
+</style>

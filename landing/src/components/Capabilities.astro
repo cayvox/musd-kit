@@ -1,0 +1,117 @@
+---
+import CodeBlock from './CodeBlock.astro'
+
+// turn `inline code` backticks in the copy into <code> chips
+const mark = (s: string) => s.replace(/`([^`]+)`/g, '<code>$1</code>')
+
+const caps = [
+  {
+    lead: 'Read a live position — straight from the contract.',
+    body: '`getTrove` returns the full position from the protocol’s own getters, so the numbers are correct by construction — including interest accrued to this second.',
+    code: `const { collateral, entireDebt, icr, liquidationPrice, healthFactor, isLiquidatable }
+  = await musd.getTrove(address)`,
+    lang: 'ts' as const,
+  },
+  {
+    lead: 'Preview before you sign.',
+    body: '`previewOpen` and `getBorrowingPower` tell the user exactly what they’ll get — fee, total debt, resulting ICR, liquidation price — dual-validated against the chain to the wei.',
+    code: `const preview = await musd.previewOpen({ collateral: parseBtc('0.1'), debt: parseMusd('2000') })
+// → { fee, netDebt, entireDebt, icr, liquidationPrice, meetsMinimum, isRecoveryMode }
+
+const max = await musd.getBorrowingPower({ collateral: parseBtc('0.1') }) // safe max draw`,
+    lang: 'ts' as const,
+  },
+  {
+    lead: 'The full Trove lifecycle — hints absorbed.',
+    body: 'Open, add or withdraw collateral, borrow, repay, adjust, refinance, close. Insertion hints are computed for you; every write simulates before it sends.',
+    code: `await musd.openTrove({ collateral: parseBtc('0.1'), debt: parseMusd('2000') })
+await musd.repay({ amount: parseMusd('500') })
+await musd.close()`,
+    lang: 'ts' as const,
+  },
+  {
+    lead: 'Redemptions & a liquidation keeper.',
+    body: 'Redeem MUSD for BTC (fee and truncation surfaced, never silent), and run a permissionless keeper with mode-aware liquidation checks.',
+    code: `const { hash, truncatedAmount, fee } = await musd.redeem({ amount: parseMusd('1000') })
+
+if (await musd.isLiquidatable(borrower)) await musd.liquidate(borrower)`,
+    lang: 'ts' as const,
+  },
+  {
+    lead: 'React hooks — on your existing wagmi + Passport setup.',
+    body: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. No provider of its own — it consumes the wagmi context Passport already gives you.',
+    code: `const { data: trove, isLoading } = useTrove({ address })
+const { openTrove, isPending, error } = useOpenTrove()
+//      error is a typed MusdError (e.g. BelowMinimumDebt) — not an opaque revert`,
+    lang: 'tsx' as const,
+  },
+]
+---
+
+<section class="section capabilities" aria-labelledby="cap-h">
+  <div class="container">
+    <header class="capabilities__head">
+      <p class="eyebrow eyebrow--ember" data-reveal>CAPABILITIES</p>
+      <h2 id="cap-h" data-reveal>Everything you need to build on MUSD.</h2>
+    </header>
+    <div class="capabilities__list">
+      {
+        caps.map((c) => (
+          <article class="cap" data-reveal>
+            <div class="cap__text">
+              <h3 class="cap__lead" set:html={mark(c.lead)} />
+              <p class="prose cap__body" set:html={mark(c.body)} />
+            </div>
+            <div class="cap__code">
+              <CodeBlock code={c.code} lang={c.lang} />
+            </div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .capabilities__head {
+    max-width: var(--maxw-prose);
+    margin-bottom: clamp(2.5rem, 6vw, 4rem);
+  }
+  .capabilities__head h2 {
+    margin-top: 0.9rem;
+  }
+  .capabilities__list {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(2.75rem, 6vw, 4.5rem);
+  }
+  .cap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: center;
+  }
+  @media (min-width: 880px) {
+    .cap {
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+      gap: 3rem;
+    }
+    .cap:nth-child(even) .cap__text {
+      order: 2;
+    }
+  }
+  .cap__lead {
+    font-size: var(--fs-h3);
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+  .cap__body {
+    margin-top: 0.85rem;
+    font-size: var(--fs-body);
+  }
+  .cap__code {
+    min-width: 0;
+  }
+</style>

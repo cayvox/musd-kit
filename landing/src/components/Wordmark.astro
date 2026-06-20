@@ -1,0 +1,28 @@
+---
+// Wordmark: `musd-kit`, lowercase. The hyphen tinted ember (BRAND §3). Geist-Mono
+// variant in the nav for a "code package" feel.
+interface Props {
+  mono?: boolean
+}
+const { mono = true } = Astro.props
+---
+
+<span class={`wordmark${mono ? ' wordmark--mono' : ''}`}>musd<span class="wordmark__hyphen">-</span>kit</span>
+
+<style>
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.0625rem;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .wordmark--mono {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .wordmark__hyphen {
+    color: var(--ember);
+  }
+</style>

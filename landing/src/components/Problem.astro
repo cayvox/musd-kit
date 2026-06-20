@@ -1,0 +1,39 @@
+---
+---
+
+<section class="section problem" aria-labelledby="problem-h">
+  <div class="container problem__inner">
+    <p class="eyebrow" data-reveal>THE GAP</p>
+    <h2 id="problem-h" data-reveal>Everyone rebuilds the MUSD Trove layer by hand.</h2>
+    <p class="prose problem__body" data-reveal>
+      MUSD is a Liquity-style CDP: opening a loan means computing insertion hints, getting the borrowing fee and gas
+      reserve exactly right, and reading interest that accrues by the second. Mezo connects the wallet — but leaves you
+      to wire all of that yourself. So every team rebuilds the same fragile plumbing: prediction-market and payment apps
+      alike hand-roll borrowing-power math, health factors, and the hint dance, each with their own subtle bugs.
+    </p>
+    <p class="problem__kicker" data-reveal>
+      musd-kit does it once, correctly — and proves it against Mezo's own contracts.
+    </p>
+  </div>
+</section>
+
+<style>
+  .problem__inner {
+    max-width: var(--maxw-prose);
+  }
+  .problem__body {
+    margin-top: 1.25rem;
+    font-size: var(--fs-h3);
+    line-height: 1.6;
+  }
+  .problem__kicker {
+    margin-top: 1.75rem;
+    font-size: var(--fs-h2);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    color: var(--text);
+    border-left: 2px solid var(--ember);
+    padding-left: 1.1rem;
+  }
+</style>

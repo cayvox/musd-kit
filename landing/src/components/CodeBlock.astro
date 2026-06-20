@@ -1,0 +1,23 @@
+---
+import { Code } from 'astro:components'
+import { codeTheme } from '../lib/code-theme.mjs'
+
+interface Props {
+  code: string
+  lang?: 'ts' | 'tsx' | 'bash' | 'json'
+  label?: string
+}
+const { code, lang = 'ts', label } = Astro.props
+const trimmed = code.replace(/^\n+|\n+$/g, '')
+---
+
+<div class="codeblock">
+  <div class="codeblock__bar">
+    {label && <span class="codeblock__label">{label}</span>}
+    <button class="codeblock__copy" type="button" data-copy={trimmed} aria-label="Copy code to clipboard">
+      <span class="codeblock__copy-icon" aria-hidden="true">⧉</span>
+      <span class="codeblock__copy-text">Copy</span>
+    </button>
+  </div>
+  <Code code={trimmed} lang={lang} theme={codeTheme} />
+</div>

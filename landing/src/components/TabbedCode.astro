@@ -1,0 +1,56 @@
+---
+import { Code } from 'astro:components'
+import { codeTheme } from '../lib/code-theme.mjs'
+
+interface Tab {
+  label: string
+  code: string
+  lang?: 'ts' | 'tsx' | 'bash' | 'json'
+}
+interface Props {
+  tabs: Tab[]
+  group?: string
+}
+const { tabs } = Astro.props
+const uid = `tabs-${Math.random().toString(36).slice(2, 8)}`
+---
+
+<div class="codeblock" data-tabs>
+  <div class="codeblock__bar">
+    <div class="codeblock__tabs" role="tablist" aria-label="Code examples">
+      {
+        tabs.map((t, i) => (
+          <button
+            class="codeblock__tab"
+            role="tab"
+            type="button"
+            id={`${uid}-tab-${i}`}
+            aria-controls={`${uid}-panel-${i}`}
+            aria-selected={i === 0 ? 'true' : 'false'}
+            tabindex={i === 0 ? '0' : '-1'}
+          >
+            {t.label}
+          </button>
+        ))
+      }
+    </div>
+    <button class="codeblock__copy" type="button" data-copy={tabs[0].code.replace(/^\n+|\n+$/g, '')} aria-label="Copy code to clipboard">
+      <span class="codeblock__copy-icon" aria-hidden="true">⧉</span>
+      <span class="codeblock__copy-text">Copy</span>
+    </button>
+  </div>
+  {
+    tabs.map((t, i) => (
+      <div
+        class="codeblock__panel"
+        role="tabpanel"
+        id={`${uid}-panel-${i}`}
+        aria-labelledby={`${uid}-tab-${i}`}
+        data-code={t.code.replace(/^\n+|\n+$/g, '')}
+        hidden={i !== 0}
+      >
+        <Code code={t.code.replace(/^\n+|\n+$/g, '')} lang={t.lang ?? 'ts'} theme={codeTheme} />
+      </div>
+    ))
+  }
+</div>
