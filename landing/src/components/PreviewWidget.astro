@@ -1,0 +1,439 @@
+---
+// Task D — the live previewOpen calculator. A lazy, read-only Astro island: on first
+// view it dynamically imports the shipped @musd-kit/core + viem, reads the REAL Mezo
+// testnet oracle once, and computes live previews. Never a wallet, never a write, never
+// mainnet. Degrades to a clearly-labelled fallback price if the RPC is unavailable.
+---
+
+<section class="section widget-section" id="try" aria-labelledby="try-h">
+  <div class="container">
+    <p class="eyebrow eyebrow--ember" data-reveal>TRY IT</p>
+    <h2 id="try-h" data-reveal>Preview a borrow — live, on testnet.</h2>
+    <p class="prose widget-section__lead" data-reveal>
+      This calculator runs the shipped <code>@musd-kit/core</code> in your browser: it reads Mezo testnet's oracle
+      price through the real package, then previews the open. Read-only — no wallet, no transaction.
+    </p>
+
+    <div class="widget" data-widget data-reveal>
+      <div class="widget__head">
+        <span class="widget__live" data-status="loading">
+          <span class="widget__dot" aria-hidden="true"></span>
+          <span class="widget__status-text">connecting to testnet…</span>
+        </span>
+        <span class="widget__price" data-price>BTC/USD <span data-price-val>—</span></span>
+      </div>
+
+      <div class="widget__grid">
+        <div class="widget__inputs">
+          <label class="widget__field">
+            <span class="widget__label">Collateral</span>
+            <span class="widget__inputwrap">
+              <input data-in="collateral" type="text" inputmode="decimal" value="0.05" aria-label="Collateral in BTC" />
+              <span class="widget__unit">BTC</span>
+            </span>
+          </label>
+          <label class="widget__field">
+            <span class="widget__label">Borrow</span>
+            <span class="widget__inputwrap">
+              <input data-in="debt" type="text" inputmode="decimal" value="2500" aria-label="Debt in MUSD" />
+              <span class="widget__unit">MUSD</span>
+            </span>
+          </label>
+        </div>
+
+        <dl class="widget__outputs" data-outputs>
+          <div class="widget__row">
+            <dt>Borrowing fee</dt>
+            <dd data-out="fee">—</dd>
+          </div>
+          <div class="widget__row">
+            <dt>Total debt</dt>
+            <dd data-out="entireDebt">—</dd>
+          </div>
+          <div class="widget__row">
+            <dt>Collateral ratio</dt>
+            <dd data-out="icr">—</dd>
+          </div>
+          <div class="widget__row">
+            <dt>Liquidation price</dt>
+            <dd data-out="liq">—</dd>
+          </div>
+          <div class="widget__row widget__row--min">
+            <dt>Meets minimum</dt>
+            <dd data-out="min">—</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="widget__call">
+        <span class="widget__call-label">SDK call</span>
+        <code data-call>{"await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })"}</code>
+      </div>
+
+      <p class="widget__note" data-note hidden></p>
+    </div>
+    <p class="widget-section__foot prose" data-reveal>
+      Read-only via a public testnet RPC. If the network hiccups, the calculator shows a clearly-labelled fallback
+      price — it never breaks.
+    </p>
+  </div>
+</section>
+
+<script>
+  // The heavy SDK + viem bundle is loaded ONLY when the widget scrolls into view
+  // (dynamic import → its own chunk), so the initial page stays near-zero-JS.
+  const RPC = import.meta.env.PUBLIC_MEZO_TESTNET_RPC_URL || 'https://rpc.test.mezo.org'
+  // Last known-good testnet read (verified in release-acceptance) — the graceful fallback.
+  const FALLBACK_PRICE = 66_395_814_700_000_000_000_000n
+  const GAS_RESERVE = 200n * 10n ** 18n // MUSD_GAS_COMPENSATION
+
+  const root = document.querySelector<HTMLElement>('[data-widget]')
+  if (root) initWhenVisible(root)
+
+  function initWhenVisible(el: HTMLElement) {
+    if (!('IntersectionObserver' in window)) {
+      void boot(el)
+      return
+    }
+    const io = new IntersectionObserver(
+      (entries, obs) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            obs.disconnect()
+            void boot(el)
+          }
+        }
+      },
+      { rootMargin: '200px' },
+    )
+    io.observe(el)
+  }
+
+  async function boot(el: HTMLElement) {
+    const [core, chains, viem] = await Promise.all([
+      import('@musd-kit/core'),
+      import('@mezo-org/chains'),
+      import('viem'),
+    ])
+    const { createMusdClient, parseBtc, parseMusd, computeICR, computeLiquidationPrice } = core
+    const { mezoTestnet } = chains
+    const { createPublicClient, http, formatEther } = viem
+
+    const fmt = (wei: bigint, dp: number) => {
+      const n = Number(formatEther(wei))
+      return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+    }
+
+    const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(RPC) })
+    const musd = createMusdClient({ chainId: 31611, publicClient })
+
+    const statusEl = el.querySelector<HTMLElement>('[data-status]')
+    const statusText = el.querySelector<HTMLElement>('.widget__status-text')
+    const priceValEl = el.querySelector<HTMLElement>('[data-price-val]')
+    const noteEl = el.querySelector<HTMLElement>('[data-note]')
+    const inputs = {
+      collateral: el.querySelector<HTMLInputElement>('[data-in="collateral"]')!,
+      debt: el.querySelector<HTMLInputElement>('[data-in="debt"]')!,
+    }
+    const out = (k: string) => el.querySelector<HTMLElement>(`[data-out="${k}"]`)!
+    const callEl = el.querySelector<HTMLElement>('[data-call]')!
+
+    let price = FALLBACK_PRICE
+    let live = false
+    try {
+      price = await musd.getOraclePrice()
+      live = true
+    } catch {
+      live = false
+    }
+
+    setStatus(live)
+    if (priceValEl) priceValEl.textContent = `$${fmt(price, 2)}`
+
+    function setStatus(isLive: boolean) {
+      if (statusEl) statusEl.dataset.status = isLive ? 'live' : 'fallback'
+      if (statusText) statusText.textContent = isLive ? 'live · Mezo testnet' : 'fallback price'
+      if (noteEl) {
+        if (isLive) {
+          noteEl.hidden = true
+        } else {
+          noteEl.hidden = false
+          noteEl.textContent = 'Live price unavailable — showing a recent testnet value. Calculations are illustrative.'
+        }
+      }
+    }
+
+    function fmtCall(c: string, d: string) {
+      callEl.textContent = `await musd.previewOpen({ collateral: parseBtc('${c}'), debt: parseMusd('${d}') })`
+    }
+
+    let timer = 0
+    async function update() {
+      const cStr = inputs.collateral.value.trim()
+      const dStr = inputs.debt.value.trim()
+      fmtCall(cStr || '0', dStr || '0')
+
+      let collateral: bigint
+      let debt: bigint
+      try {
+        collateral = parseBtc(cStr || '0')
+        debt = parseMusd(dStr || '0')
+      } catch {
+        return
+      }
+      if (collateral <= 0n || debt <= 0n) {
+        for (const k of ['fee', 'entireDebt', 'icr', 'liq', 'min']) out(k).textContent = '—'
+        return
+      }
+
+      // Primary path: the real SDK preview (reads fee + minNetDebt + price on-chain).
+      try {
+        const p = await musd.previewOpen({ collateral, debt })
+        render(p.fee, p.entireDebt, p.icr, p.liquidationPrice, p.meetsMinimum)
+        if (!live) {
+          live = true
+          setStatus(true)
+        }
+      } catch {
+        // Degraded path: pure client-side math off the cached price — page never breaks.
+        const entireDebt = debt + GAS_RESERVE
+        const icr = computeICR({ collateral, entireDebt, price })
+        const liq = computeLiquidationPrice({ collateral, entireDebt })
+        render(null, entireDebt, icr, liq, null)
+        if (live) {
+          live = false
+          setStatus(false)
+        }
+      }
+    }
+
+    function render(fee: bigint | null, entireDebt: bigint, icr: bigint, liq: bigint, meetsMin: boolean | null) {
+      out('fee').textContent = fee === null ? '—' : `${fmt(fee, 2)} MUSD`
+      out('entireDebt').textContent = `${fmt(entireDebt, 2)} MUSD`
+      out('icr').textContent = `${(Number(formatEther(icr)) * 100).toFixed(1)}%`
+      out('liq').textContent = `$${fmt(liq, 0)}`
+      const minEl = out('min')
+      if (meetsMin === null) {
+        minEl.textContent = '—'
+        minEl.dataset.ok = ''
+      } else {
+        minEl.textContent = meetsMin ? '✓ yes' : '✗ below minimum'
+        minEl.dataset.ok = meetsMin ? 'true' : 'false'
+      }
+    }
+
+    for (const input of Object.values(inputs)) {
+      input.addEventListener('input', () => {
+        window.clearTimeout(timer)
+        timer = window.setTimeout(update, 250)
+      })
+    }
+    await update()
+  }
+</script>
+
+<style>
+  .widget-section__lead {
+    margin-top: 1rem;
+    max-width: 60ch;
+  }
+  .widget-section__foot {
+    margin-top: 1.1rem;
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+    max-width: 62ch;
+  }
+  .widget {
+    margin-top: 2rem;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: clamp(1.1rem, 3vw, 1.75rem);
+    max-width: 760px;
+  }
+  .widget__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--hairline);
+    flex-wrap: wrap;
+  }
+  .widget__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .widget__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .widget__live[data-status='live'] {
+    color: var(--verified);
+  }
+  .widget__live[data-status='live'] .widget__dot {
+    background: var(--verified);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--verified) 70%, transparent);
+    animation: widget-pulse 2.2s var(--ease) infinite;
+  }
+  .widget__live[data-status='fallback'] {
+    color: var(--warn);
+  }
+  .widget__live[data-status='fallback'] .widget__dot {
+    background: var(--warn);
+  }
+  @keyframes widget-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--verified) 55%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 6px transparent;
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .widget__dot {
+      animation: none !important;
+    }
+  }
+  .widget__price {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+  }
+  .widget__price [data-price-val] {
+    color: var(--text);
+  }
+  .widget__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    padding-block: 1.4rem;
+  }
+  @media (min-width: 620px) {
+    .widget__grid {
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+      gap: 2rem;
+    }
+  }
+  .widget__inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .widget__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .widget__label {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .widget__inputwrap {
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--hairline-2);
+    border-radius: var(--radius-sm);
+    padding: 0 0.85rem;
+    transition: border-color var(--dur) var(--ease);
+  }
+  .widget__inputwrap:focus-within {
+    border-color: var(--ember);
+  }
+  .widget__inputwrap input {
+    flex: 1;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 1.1rem;
+    padding: 0.7rem 0;
+    min-height: 44px;
+  }
+  .widget__inputwrap input:focus {
+    outline: none;
+  }
+  .widget__unit {
+    font-family: var(--font-mono);
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+    padding-left: 0.5rem;
+  }
+  .widget__outputs {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.1rem;
+  }
+  .widget__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .widget__row:last-child {
+    border-bottom: 0;
+  }
+  .widget__row dt {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .widget__row dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    color: var(--text);
+    text-align: right;
+  }
+  .widget__row--min dd[data-ok='true'] {
+    color: var(--verified);
+  }
+  .widget__row--min dd[data-ok='false'] {
+    color: var(--warn);
+  }
+  .widget__call {
+    margin-top: 0.4rem;
+    padding: 0.8rem 0.95rem;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+  }
+  .widget__call-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 0.35rem;
+  }
+  .widget__call code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .widget__note {
+    margin-top: 0.9rem;
+    font-size: var(--fs-small);
+    color: var(--warn);
+  }
+</style>
