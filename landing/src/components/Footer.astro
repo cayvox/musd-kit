@@ -1,0 +1,105 @@
+---
+import Wordmark from './Wordmark.astro'
+---
+
+<footer class="footer" id="footer">
+  <div class="container footer__inner">
+    <div class="footer__brand">
+      <Wordmark mono={false} />
+      <p class="footer__tagline">The typed SDK for MUSD on Mezo.</p>
+    </div>
+
+    <div class="footer__maturity" role="note">
+      <p>
+        musd-kit is open-source, community-built tooling. It is <strong>not affiliated with or endorsed by Mezo or
+        Thesis</strong>. It is currently intended for <strong>testnet and evaluation</strong> and is
+        <strong>pre-1.0</strong> — APIs may change before a stable release.
+      </p>
+    </div>
+
+    <nav class="footer__links" aria-label="Footer">
+      <a href="/docs/">Docs</a>
+      <a href="/docs/api/">API reference</a>
+      <a href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</a>
+      <a href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener">npm</a>
+      <a href="https://github.com/cayvox/musd-kit/blob/main/LICENSE" rel="noopener">License (MIT)</a>
+    </nav>
+
+    <div class="footer__meta">
+      <p class="footer__credit">
+        Built by Cayvox Labs — from the team behind Cark, winner of the Mezo hackathon MUSD track.
+      </p>
+      <p class="footer__copy">© 2026 Cayvox Labs · MIT</p>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    border-top: 1px solid var(--hairline);
+    background: var(--surface);
+    padding-block: clamp(3rem, 7vw, 5rem);
+  }
+  .footer__inner {
+    display: grid;
+    gap: 2rem;
+  }
+  @media (min-width: 820px) {
+    .footer__inner {
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem 3rem;
+      align-items: start;
+    }
+    .footer__maturity {
+      grid-row: span 2;
+      order: 2;
+    }
+  }
+  .footer__tagline {
+    margin-top: 0.6rem;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  .footer__maturity {
+    max-width: 46ch;
+    padding: 1.1rem 1.25rem;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-left: 2px solid var(--warn);
+    border-radius: var(--radius-sm);
+  }
+  .footer__maturity p {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .footer__maturity strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .footer__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+  }
+  .footer__links a {
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  .footer__links a:hover {
+    color: var(--ember);
+  }
+  .footer__meta {
+    color: var(--text-dim);
+  }
+  .footer__credit {
+    font-size: var(--fs-small);
+    max-width: 52ch;
+  }
+  .footer__copy {
+    margin-top: 0.6rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+  }
+</style>
