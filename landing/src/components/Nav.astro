@@ -65,12 +65,33 @@ import Button from './Button.astro'
     margin-inline: auto;
   }
   .nav__center a {
+    position: relative;
     color: var(--text-muted);
     font-size: var(--fs-small);
     font-weight: 500;
   }
+  .nav__center a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -5px;
+    height: 1.5px;
+    background: var(--red);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur) var(--ease-out);
+  }
   .nav__center a:hover {
     color: var(--text);
+  }
+  .nav__center a:hover::after {
+    transform: scaleX(1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav__center a::after {
+      transition: none;
+    }
   }
   .nav__right {
     display: flex;

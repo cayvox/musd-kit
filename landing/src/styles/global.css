@@ -83,6 +83,10 @@ button {
 .section {
   padding-block: var(--space-section);
 }
+/* anchored sections clear the sticky nav when jumped to */
+main section[id] {
+  scroll-margin-top: 84px;
+}
 .eyebrow {
   font-family: var(--font-mono);
   font-size: var(--fs-mono-lbl);
