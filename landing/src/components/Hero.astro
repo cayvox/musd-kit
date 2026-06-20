@@ -1,0 +1,116 @@
+---
+import Constellation from './Constellation.astro'
+import CopyCommand from './CopyCommand.astro'
+import Badge from './Badge.astro'
+import Button from './Button.astro'
+import PreviewWidget from './PreviewWidget.astro'
+---
+
+<section class="hero">
+  <Constellation />
+  <div class="container hero__inner">
+    <div class="hero__copy">
+      <div data-reveal>
+        <Badge href="https://www.npmjs.com/package/@musd-kit/core">Now on npm</Badge>
+      </div>
+      <h1 class="hero__title" data-reveal>Build on MUSD without rebuilding the hard parts.</h1>
+      <p class="hero__subhead prose" data-reveal>
+        The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin. Open and
+        manage Troves, preview borrows, redeem and liquidate — with the fiddly correctness handled, and React hooks on
+        top.
+      </p>
+      <div class="hero__cta" data-reveal>
+        <div class="hero__buttons">
+          <Button href="/docs/" variant="primary">View Documentation</Button>
+          <Button href="https://github.com/cayvox/musd-kit" rel="noopener" variant="ghost">GitHub&nbsp;→</Button>
+        </div>
+        <CopyCommand command="npm i @musd-kit/core @musd-kit/react" />
+      </div>
+      <p class="hero__honesty" data-reveal>community · testnet · pre-1.0</p>
+    </div>
+
+    <div class="hero__mockup" data-reveal>
+      <p class="hero__mockup-label">
+        <span aria-hidden="true">◆</span> Live preview — change the inputs
+      </p>
+      <PreviewWidget />
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    padding-block: clamp(2.5rem, 6vw, 5rem) var(--space-section);
+    overflow: hidden;
+  }
+  .hero__inner {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(2.5rem, 5vw, 4rem);
+    align-items: center;
+  }
+  @media (min-width: 940px) {
+    .hero__inner {
+      grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+    }
+  }
+  .hero__copy {
+    min-width: 0;
+  }
+  .hero__title {
+    font-size: var(--fs-display);
+    font-weight: 600;
+    margin-top: 1.25rem;
+    max-width: 18ch;
+    overflow-wrap: break-word;
+  }
+  .hero__subhead {
+    margin-top: 1.35rem;
+    font-size: var(--fs-h3);
+    line-height: 1.55;
+    color: var(--text-muted);
+  }
+  .hero__subhead strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .hero__cta {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    align-items: flex-start;
+  }
+  .hero__buttons {
+    display: flex;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+  }
+  .hero__honesty {
+    margin-top: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.04em;
+    color: var(--warn);
+  }
+  .hero__mockup {
+    min-width: 0;
+  }
+  .hero__mockup-label {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .hero__mockup-label span {
+    color: var(--red);
+  }
+</style>
