@@ -1,0 +1,278 @@
+---
+import { Code } from 'astro:components'
+import { codeTheme } from '../lib/code-theme.mjs'
+
+// The layered flow (STRUCTURE §4 / CONTENT §3). Every snippet mirrors the shipped 0.1.0 API
+// (no MusdProvider — @musd-kit/react has no provider of its own; it consumes wagmi context).
+const layers = [
+  {
+    key: 'dapp',
+    name: 'Your dApp',
+    sub: 'consumes your wagmi + Passport context',
+    desc: 'No provider of its own — the hooks read the wagmi context Passport (or any wagmi setup) already established. A few lines to a live position.',
+    code: `// Passport gives you the wagmi context; musd-kit operates MUSD
+const { data: trove } = useTrove({ address })`,
+    lang: 'tsx',
+  },
+  {
+    key: 'react',
+    name: 'React Hooks',
+    sub: 'useTrove · useOpenTrove · useBorrowingPower · …',
+    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors — selectors over one shared query, so health factor and liquidation price share a single fetch.',
+    code: `const { openTrove, isPending, error } = useOpenTrove()
+const { data: max } = useBorrowingPower({ collateral })
+//      error is a typed MusdError (e.g. BelowMinimumDebt)`,
+    lang: 'tsx',
+  },
+  {
+    key: 'core',
+    name: 'musd-kit core',
+    sub: 'read · preview · lifecycle · redemption',
+    desc: 'The framework-agnostic engine (viem). Live reads come straight from the contract getters; previews are the only client-side math. The same core powers a React dApp or a headless Node keeper.',
+    code: `const musd = createMusdClient({ chainId, publicClient })
+const trove = await musd.getTrove(address)         // contract-authoritative
+const preview = await musd.previewOpen({ collateral, debt })`,
+    lang: 'ts',
+    emphasized: true,
+  },
+  {
+    key: 'math',
+    name: 'Hint + Math engine',
+    sub: 'insertion hints · ICR · liquidation price · interest',
+    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR / liquidation-price / borrowing-power and interest projection — dual-validated against a fork and the contracts’ own pure helpers.',
+    code: `const icr = computeICR({ collateral, entireDebt, price })
+const liq = computeLiquidationPrice({ collateral, entireDebt })`,
+    lang: 'ts',
+  },
+  {
+    key: 'contracts',
+    name: 'Mezo contracts',
+    sub: 'BorrowerOperations · TroveManager · SortedTroves · PriceFeed',
+    desc: 'The protocol. Reads are contract-authoritative; every write simulates before it sends. Bundled, verified addresses + the official as-const ABIs.',
+    code: `import { troveManagerAbi, sortedTrovesAbi } from '@musd-kit/core'
+// reads are contract-authoritative; writes simulate before they send`,
+    lang: 'ts',
+  },
+]
+const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
+---
+
+<section class="section arch-section" id="architecture" aria-labelledby="arch-h">
+  <div class="container">
+    <p class="eyebrow eyebrow--red" data-reveal>ARCHITECTURE</p>
+    <h2 id="arch-h" data-reveal>How musd-kit works</h2>
+    <p class="prose arch-section__lead" data-reveal>
+      From your first line of code to a managed Trove — the whole flow, abstracted. Explore each layer.
+    </p>
+
+    <div class="arch" data-arch data-reveal>
+      <div class="arch__layers" role="tablist" aria-orientation="vertical" aria-label="Architecture layers">
+        {
+          layers.map((l, i) => (
+            <button
+              class={`arch__layer${l.emphasized ? ' arch__layer--core' : ''}`}
+              role="tab"
+              type="button"
+              id={`arch-tab-${l.key}`}
+              aria-controls={`arch-panel-${l.key}`}
+              aria-selected={l.emphasized ? 'true' : 'false'}
+              tabindex={l.emphasized ? '0' : '-1'}
+            >
+              <span class="arch__node" aria-hidden="true" />
+              <span class="arch__layer-text">
+                <span class="arch__layer-name">{l.name}</span>
+                <span class="arch__layer-sub">{l.sub}</span>
+              </span>
+              {i === 1 && <span class="arch__passport" aria-hidden="true">via Passport</span>}
+            </button>
+          ))
+        }
+      </div>
+
+      <div class="arch__detail">
+        {
+          layers.map((l) => (
+            <div
+              class="arch__panel"
+              role="tabpanel"
+              id={`arch-panel-${l.key}`}
+              aria-labelledby={`arch-tab-${l.key}`}
+              hidden={!l.emphasized}
+            >
+              <h3 class="arch__panel-title">{l.name}</h3>
+              <p class="arch__panel-desc">{l.desc}</p>
+              <div class="arch__code codeblock">
+                <Code code={trim(l.code)} lang={l.lang as 'ts' | 'tsx'} theme={codeTheme} />
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  for (const group of document.querySelectorAll<HTMLElement>('[data-arch]')) {
+    const tabs = [...group.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    const panels = [...group.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+    const select = (i: number, focus = false) => {
+      tabs.forEach((t, j) => {
+        const on = i === j
+        t.setAttribute('aria-selected', on ? 'true' : 'false')
+        t.tabIndex = on ? 0 : -1
+        panels[j].hidden = !on
+        if (on && focus) t.focus()
+      })
+    }
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => select(i))
+      tab.addEventListener('mouseenter', () => select(i))
+      tab.addEventListener('keydown', (e) => {
+        const k = e.key
+        if (k === 'ArrowDown' || k === 'ArrowRight') { e.preventDefault(); select((i + 1) % tabs.length, true) }
+        else if (k === 'ArrowUp' || k === 'ArrowLeft') { e.preventDefault(); select((i - 1 + tabs.length) % tabs.length, true) }
+        else if (k === 'Home') { e.preventDefault(); select(0, true) }
+        else if (k === 'End') { e.preventDefault(); select(tabs.length - 1, true) }
+      })
+    })
+  }
+</script>
+
+<style>
+  .arch-section {
+    background: var(--surface-2);
+    border-block: 1px solid var(--hairline);
+  }
+  .arch-section h2 {
+    margin-top: 0.9rem;
+  }
+  .arch-section__lead {
+    margin-top: 1rem;
+  }
+  .arch {
+    margin-top: clamp(2rem, 5vw, 3rem);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+  @media (min-width: 860px) {
+    .arch {
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      gap: 2.5rem;
+    }
+  }
+  /* The layer stack — a vertical flow with connector hairline through the nodes */
+  .arch__layers {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    position: relative;
+  }
+  .arch__layer {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 0.95rem 1.1rem;
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+  .arch__layer:not(:last-child)::after {
+    /* connector to the next layer's node */
+    content: '';
+    position: absolute;
+    left: 1.6rem;
+    top: 100%;
+    height: 0.6rem;
+    width: 2px;
+    background: var(--hairline-2);
+  }
+  .arch__node {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--hairline-2);
+    background: var(--surface);
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .arch__layer-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+  .arch__layer-name {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 1rem;
+  }
+  .arch__layer-sub {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+    color: var(--text-dim);
+  }
+  .arch__passport {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--red-ink);
+    background: var(--red-tint);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+  }
+  .arch__layer:hover {
+    border-color: var(--hairline-2);
+    box-shadow: var(--shadow);
+  }
+  .arch__layer[aria-selected='true'] {
+    border-color: var(--red);
+    box-shadow: 0 0 0 1px var(--red) inset, var(--shadow);
+  }
+  .arch__layer[aria-selected='true'] .arch__node {
+    border-color: var(--red);
+    background: var(--red);
+  }
+  /* the core layer is always accented */
+  .arch__layer--core .arch__layer-name {
+    color: var(--red-ink);
+  }
+  .arch__layer--core .arch__node {
+    border-color: var(--red);
+  }
+  /* Detail panel */
+  .arch__detail {
+    position: relative;
+  }
+  .arch__panel[hidden] {
+    display: none;
+  }
+  .arch__panel-title {
+    font-size: var(--fs-h3);
+    font-weight: 600;
+  }
+  .arch__panel-desc {
+    margin-top: 0.6rem;
+    color: var(--text-muted);
+    max-width: 54ch;
+  }
+  .arch__code {
+    margin-top: 1.1rem;
+  }
+  @media (min-width: 860px) {
+    .arch__detail {
+      position: sticky;
+      top: 84px;
+    }
+  }
+</style>
