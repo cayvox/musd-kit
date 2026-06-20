@@ -333,7 +333,7 @@
     background: var(--code-bg);
     border: 1px solid var(--code-hairline);
     border-radius: var(--radius-sm);
-    overflow-x: auto;
+    overflow: hidden;
   }
   .pw__call-label {
     display: block;
@@ -344,11 +344,16 @@
     color: var(--code-dim);
     margin-bottom: 0.3rem;
   }
+  /* the live SDK call fades at the right edge instead of hard-cutting mid-character */
   .pw__call code {
+    display: block;
     font-family: var(--font-mono);
     font-size: 0.8125rem;
     color: var(--text-on-code);
     white-space: nowrap;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
+    mask-image: linear-gradient(to right, #000 88%, transparent);
   }
   .pw__foot {
     margin-top: 0.9rem;

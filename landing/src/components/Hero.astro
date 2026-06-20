@@ -7,29 +7,34 @@ import PreviewWidget from './PreviewWidget.astro'
 ---
 
 <section class="hero">
+  <div class="hero__glow" aria-hidden="true"></div>
   <Constellation />
   <div class="container hero__inner">
     <div class="hero__copy">
-      <div>
-        <Badge href="https://www.npmjs.com/package/@musd-kit/core">Now on npm</Badge>
+      <div class="hero__pill">
+        <Badge href="https://www.npmjs.com/package/@musd-kit/core">
+          <span class="hero__pill-dot" aria-hidden="true"></span>Open source · MIT
+        </Badge>
       </div>
-      <h1 class="hero__title">Build on MUSD without rebuilding the hard parts.</h1>
-      <p class="hero__subhead prose">
-        The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin. Open and
-        manage Troves, preview borrows, redeem and liquidate — with the fiddly correctness handled, and React hooks on
-        top.
+      <h1 class="hero__title">Build on <span class="hero__accent">MUSD</span> <br class="hero__br" />without rebuilding <br class="hero__br" />the hard parts.</h1>
+      <p class="hero__subhead">
+        The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin — the Trove
+        lifecycle, the math, and the hint dance, handled.
       </p>
-      <div class="hero__cta" data-reveal>
+      <div class="hero__cta">
         <div class="hero__buttons">
           <Button href="/docs/" variant="primary">View Documentation</Button>
           <Button href="https://github.com/cayvox/musd-kit" rel="noopener" variant="ghost">GitHub&nbsp;→</Button>
         </div>
         <CopyCommand command="npm i @musd-kit/core @musd-kit/react" />
       </div>
-      <p class="hero__honesty" data-reveal>community · testnet · pre-1.0</p>
+      <p class="hero__trust">
+        <span>v0.1.0</span><span class="hero__trust-sep">·</span><span>MIT</span><span class="hero__trust-sep">·</span>
+        <span class="hero__trust-verified"><span class="hero__trust-dot" aria-hidden="true"></span>verified on Mezo testnet</span>
+      </p>
     </div>
 
-    <div class="hero__mockup" data-reveal>
+    <div class="hero__mockup">
       <p class="hero__mockup-label">
         <span aria-hidden="true">◆</span> Live preview — change the inputs
       </p>
@@ -41,36 +46,74 @@ import PreviewWidget from './PreviewWidget.astro'
 <style>
   .hero {
     position: relative;
-    padding-block: clamp(2.5rem, 6vw, 5rem) var(--space-section);
+    padding-block: clamp(1.75rem, 4vw, 3.25rem) clamp(3.5rem, 8vw, 6rem);
     overflow: hidden;
+  }
+  /* Subtle warm depth behind the widget / upper-right */
+  .hero__glow {
+    position: absolute;
+    z-index: 0;
+    top: -16%;
+    right: -8%;
+    width: 60%;
+    height: 90%;
+    background: radial-gradient(closest-side, var(--red-glow), transparent 72%);
+    opacity: 0.85;
+    pointer-events: none;
+    filter: blur(8px);
   }
   .hero__inner {
     position: relative;
     z-index: 1;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: clamp(2.5rem, 5vw, 4rem);
+    gap: clamp(2.25rem, 4vw, 3.5rem);
     align-items: center;
   }
   @media (min-width: 940px) {
     .hero__inner {
-      grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      gap: clamp(2.5rem, 5vw, 4.5rem);
     }
   }
   .hero__copy {
     min-width: 0;
   }
+  .hero__pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+  }
   .hero__title {
-    font-size: var(--fs-display);
+    font-size: clamp(2.3rem, 1.55rem + 2.6vw, 3.25rem);
     font-weight: 600;
-    margin-top: 1.25rem;
-    max-width: 18ch;
-    overflow-wrap: break-word;
+    line-height: 1.06;
+    letter-spacing: -0.025em;
+    margin-top: 1.1rem;
+    max-width: 20ch;
+    text-wrap: balance;
+  }
+  /* explicit 3-line break on desktop; natural wrap on mobile */
+  .hero__br {
+    display: none;
+  }
+  @media (min-width: 600px) {
+    .hero__br {
+      display: inline;
+    }
+    .hero__title {
+      text-wrap: initial;
+    }
+  }
+  .hero__accent {
+    color: var(--red);
   }
   .hero__subhead {
-    margin-top: 1.35rem;
-    font-size: var(--fs-h3);
-    line-height: 1.55;
+    margin-top: 1.25rem;
+    max-width: 46ch;
+    font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.2rem);
+    line-height: 1.5;
     color: var(--text-muted);
   }
   .hero__subhead strong {
@@ -78,23 +121,41 @@ import PreviewWidget from './PreviewWidget.astro'
     font-weight: 600;
   }
   .hero__cta {
-    margin-top: 2rem;
+    margin-top: 1.85rem;
     display: flex;
     flex-direction: column;
-    gap: 1.1rem;
+    gap: 1rem;
     align-items: flex-start;
   }
   .hero__buttons {
     display: flex;
-    gap: 0.85rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
   }
-  .hero__honesty {
-    margin-top: 1.5rem;
+  .hero__trust {
+    margin-top: 1.65rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     font-family: var(--font-mono);
     font-size: var(--fs-mono-lbl);
-    letter-spacing: 0.04em;
-    color: var(--warn);
+    color: var(--text-dim);
+    letter-spacing: 0.01em;
+  }
+  .hero__trust-sep {
+    color: var(--hairline-2);
+  }
+  .hero__trust-verified {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .hero__trust-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--verified);
   }
   .hero__mockup {
     min-width: 0;
@@ -105,12 +166,23 @@ import PreviewWidget from './PreviewWidget.astro'
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text-dim);
-    margin-bottom: 0.8rem;
+    margin-bottom: 0.75rem;
     display: flex;
     align-items: center;
     gap: 0.4rem;
   }
   .hero__mockup-label span {
     color: var(--red);
+  }
+  /* subtle warm glow directly behind the widget card */
+  .hero__mockup :global(.pw) {
+    position: relative;
+  }
+  @media (max-width: 939px) {
+    .hero__glow {
+      width: 90%;
+      height: 60%;
+      top: 30%;
+    }
   }
 </style>
