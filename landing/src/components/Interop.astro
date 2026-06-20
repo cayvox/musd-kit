@@ -1,0 +1,49 @@
+---
+// CONTENT §7 — a tasteful wordmark row. Text, not logos (crawlable, on-brand, no zoo of color).
+const stack = ['viem', 'wagmi', 'Passport', 'Mezo', 'Node', 'React']
+---
+
+<section class="section interop" aria-labelledby="interop-h">
+  <div class="container">
+    <p class="eyebrow" id="interop-h" data-reveal>INTEROP</p>
+    <ul class="interop__row" role="list" data-reveal>
+      {stack.map((name) => <li class="interop__item">{name}</li>)}
+    </ul>
+    <p class="interop__caption" data-reveal>
+      Framework-agnostic core · wagmi-idiomatic React hooks · runs in Node or the browser.
+    </p>
+  </div>
+</section>
+
+<style>
+  .interop {
+    padding-block: clamp(3rem, 7vw, 5rem);
+  }
+  .interop__row {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: clamp(1.25rem, 5vw, 3rem);
+  }
+  .interop__item {
+    font-family: var(--font-mono);
+    font-size: clamp(1.1rem, 1rem + 1vw, 1.6rem);
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: -0.01em;
+    transition: color var(--dur) var(--ease);
+  }
+  .interop__item:hover {
+    color: var(--text);
+  }
+  .interop__caption {
+    margin-top: 1.75rem;
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    letter-spacing: 0.01em;
+  }
+</style>
