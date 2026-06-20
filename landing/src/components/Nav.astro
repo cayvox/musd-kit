@@ -1,36 +1,182 @@
 ---
-import Wordmark from './Wordmark.astro'
-import Button from './Button.astro'
+// Premium navbar — a floating blurred island, logomark + wordmark, scroll-spy links, a
+// status-dot testnet pill, a GitHub CTA (icon + build-time star count, gracefully omitted
+// when the repo is private), and a polished mobile sheet (focus-trap + Esc).
+const links = [
+  { href: '#features', label: 'Features', id: 'features' },
+  { href: '#architecture', label: 'Architecture', id: 'architecture' },
+  { href: '#quickstart', label: 'Quickstart', id: 'quickstart' },
+  { href: '#faq', label: 'FAQ', id: 'faq' },
+]
+
+// Build-time star count — no client-side fetch, no layout shift. Omit on private/error.
+let stars: number | null = null
+try {
+  const res = await fetch('https://api.github.com/repos/cayvox/musd-kit', {
+    headers: { 'User-Agent': 'musd-kit-site', Accept: 'application/vnd.github+json' },
+  })
+  if (res.ok) {
+    const data = await res.json()
+    if (typeof data?.stargazers_count === 'number') stars = data.stargazers_count
+  }
+} catch {
+  /* private/unavailable → omit gracefully */
+}
+const starLabel = stars === null ? null : stars >= 1000 ? `${(stars / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(stars)
+
+const GH_REPO = 'https://github.com/cayvox/musd-kit'
 ---
 
 <header class="nav" data-nav>
-  <div class="container nav__inner">
+  <div class="nav__island">
     <a href="/" class="nav__brand" aria-label="musd-kit home">
-      <Wordmark />
+      <svg class="nav__mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+        <line x1="6" y1="17" x2="12.5" y2="8" stroke="var(--red)" stroke-width="1.5" stroke-opacity="0.5" stroke-linecap="round" />
+        <line x1="12.5" y1="8" x2="19" y2="15" stroke="var(--red)" stroke-width="1.5" stroke-opacity="0.5" stroke-linecap="round" />
+        <circle cx="6" cy="17" r="2" fill="var(--red)" fill-opacity="0.5" />
+        <circle cx="19" cy="15" r="2" fill="var(--red)" fill-opacity="0.5" />
+        <circle class="nav__mark-core" cx="12.5" cy="8" r="3.2" fill="var(--red)" />
+      </svg>
+      <span class="nav__wordmark">musd<span class="nav__hyphen">-</span>kit</span>
     </a>
 
     <nav class="nav__center" aria-label="Primary">
-      <a href="#features">Features</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#quickstart">Quickstart</a>
-      <a href="#faq">FAQ</a>
+      {links.map((l) => <a class="nav__navlink" href={l.href} data-spy={l.id}>{l.label}</a>)}
     </nav>
 
     <div class="nav__right">
       <a class="nav__link" href="/docs/">Docs</a>
       <a class="nav__link" href="/docs/api/">API</a>
-      <a class="nav__tag" href="#footer">testnet</a>
-      <Button href="https://github.com/cayvox/musd-kit" rel="noopener" variant="primary" class="nav__cta">GitHub</Button>
+      <span class="nav__tag" title="On Mezo testnet (chainId 31611)">
+        <span class="nav__tag-dot" aria-hidden="true"></span>testnet
+      </span>
+      <a class="nav__cta" href={GH_REPO} rel="noopener" aria-label={starLabel ? `GitHub — ${starLabel} stars` : 'GitHub'}>
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor">
+          <path
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+          />
+        </svg>
+        <span>GitHub</span>
+        {starLabel && <span class="nav__stars">★ {starLabel}</span>}
+      </a>
+
+      <button class="nav__burger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="nav-sheet">
+        <span class="nav__burger-box" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
     </div>
+  </div>
+
+  <!-- Mobile sheet -->
+  <div class="nav__backdrop" data-backdrop hidden></div>
+  <div class="nav__sheet" id="nav-sheet" data-sheet hidden>
+    <nav class="nav__sheet-links" aria-label="Mobile">
+      {links.map((l) => <a href={l.href} data-sheet-link>{l.label}</a>)}
+      <a href="/docs/" data-sheet-link>Docs</a>
+      <a href="/docs/api/" data-sheet-link>API reference</a>
+    </nav>
+    <span class="nav__sheet-tag"><span class="nav__tag-dot" aria-hidden="true"></span>testnet · pre-1.0</span>
+    <a class="nav__cta nav__cta--full" href={GH_REPO} rel="noopener" data-sheet-link>
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>{starLabel && <span class="nav__stars">★ {starLabel}</span>}
+    </a>
   </div>
 </header>
 
 <script>
-  const nav = document.querySelector<HTMLElement>('[data-nav]')
-  if (nav) {
-    const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 24)
+  const header = document.querySelector<HTMLElement>('[data-nav]')
+  if (header) {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    // --- Condense on scroll ---
+    const onScroll = () => header.classList.toggle('is-scrolled', window.scrollY > 24)
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
+
+    // --- Scroll-spy: highlight the link for the section in view ---
+    const spyLinks = [...header.querySelectorAll<HTMLAnchorElement>('[data-spy]')]
+    const byId = new Map(spyLinks.map((a) => [a.dataset.spy, a]))
+    const setActive = (id: string | null) => {
+      for (const a of spyLinks) {
+        const on = a.dataset.spy === id
+        a.classList.toggle('is-active', on)
+        if (on) a.setAttribute('aria-current', 'true')
+        else a.removeAttribute('aria-current')
+      }
+    }
+    const sections = spyLinks.map((a) => document.getElementById(a.dataset.spy || '')).filter(Boolean) as HTMLElement[]
+    if (sections.length && 'IntersectionObserver' in window) {
+      const visible = new Set<string>()
+      const spy = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) visible.add(e.target.id)
+            else visible.delete(e.target.id)
+          }
+          // pick the topmost visible section in document order
+          const active = sections.find((s) => visible.has(s.id))
+          setActive(active ? active.id : null)
+        },
+        { rootMargin: '-45% 0px -50% 0px', threshold: 0 },
+      )
+      sections.forEach((s) => spy.observe(s))
+    }
+    void byId
+
+    // --- Mobile sheet (focus-trap + Esc) ---
+    const burger = header.querySelector<HTMLButtonElement>('.nav__burger')
+    const sheet = header.querySelector<HTMLElement>('[data-sheet]')
+    const backdrop = header.querySelector<HTMLElement>('[data-backdrop]')
+    if (burger && sheet && backdrop) {
+      let lastFocus: HTMLElement | null = null
+      const focusables = () => [...sheet.querySelectorAll<HTMLElement>('a[href], button')]
+      const open = () => {
+        lastFocus = document.activeElement as HTMLElement
+        sheet.hidden = false
+        backdrop.hidden = false
+        // next frame → animate in
+        requestAnimationFrame(() => header.classList.add('sheet-open'))
+        burger.setAttribute('aria-expanded', 'true')
+        burger.setAttribute('aria-label', 'Close menu')
+        document.body.style.overflow = 'hidden'
+        focusables()[0]?.focus()
+      }
+      const close = () => {
+        header.classList.remove('sheet-open')
+        burger.setAttribute('aria-expanded', 'false')
+        burger.setAttribute('aria-label', 'Open menu')
+        document.body.style.overflow = ''
+        const finish = () => {
+          sheet.hidden = true
+          backdrop.hidden = true
+        }
+        if (reduce) finish()
+        else window.setTimeout(finish, 260)
+        lastFocus?.focus()
+      }
+      const toggle = () => (burger.getAttribute('aria-expanded') === 'true' ? close() : open())
+      burger.addEventListener('click', toggle)
+      backdrop.addEventListener('click', close)
+      sheet.querySelectorAll('[data-sheet-link]').forEach((a) => a.addEventListener('click', close))
+      document.addEventListener('keydown', (e) => {
+        if (burger.getAttribute('aria-expanded') !== 'true') return
+        if (e.key === 'Escape') {
+          close()
+          burger.focus()
+        } else if (e.key === 'Tab') {
+          const items = focusables()
+          if (!items.length) return
+          const first = items[0]
+          const last = items[items.length - 1]
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault()
+            last.focus()
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault()
+            first.focus()
+          }
+        }
+      })
+    }
   }
 </script>
 
@@ -38,97 +184,349 @@ import Button from './Button.astro'
   .nav {
     position: sticky;
     top: 0;
-    z-index: 50;
-    background: transparent;
-    border-bottom: 1px solid transparent;
-    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    z-index: 60;
+    padding: 14px clamp(0.75rem, 3vw, 1rem) 0;
+    transition: padding-top var(--dur) var(--ease);
   }
   .nav.is-scrolled {
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-    border-bottom-color: var(--hairline);
-    backdrop-filter: blur(10px);
+    padding-top: 8px;
   }
-  .nav__inner {
+
+  /* The floating island */
+  .nav__island {
+    max-width: 1100px;
+    margin-inline: auto;
     display: flex;
     align-items: center;
     gap: 1rem;
-    height: 64px;
+    height: 56px;
+    padding: 0 0.6rem 0 1rem;
+    border-radius: var(--radius);
+    background: rgba(251, 248, 245, 0.62);
+    border: 1px solid color-mix(in srgb, var(--hairline) 65%, transparent);
+    box-shadow: 0 1px 2px rgba(26, 21, 19, 0.03), 0 6px 20px rgba(26, 21, 19, 0.05);
+    backdrop-filter: blur(11px) saturate(1.25);
+    -webkit-backdrop-filter: blur(11px) saturate(1.25);
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+      height var(--dur) var(--ease);
+    animation: nav-in 0.5s var(--ease-out) both;
   }
+  .nav.is-scrolled .nav__island {
+    height: 52px;
+    background: rgba(251, 248, 245, 0.85);
+    border-color: var(--hairline-2);
+    box-shadow: 0 2px 4px rgba(26, 21, 19, 0.05), 0 12px 32px rgba(26, 21, 19, 0.1);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  }
+  @keyframes nav-in {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Brand */
   .nav__brand {
     display: inline-flex;
     align-items: center;
+    gap: 0.55rem;
+    flex-shrink: 0;
   }
+  .nav__mark-core {
+    transition: fill var(--dur) var(--ease), transform var(--dur) var(--ease-out);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .nav__brand:hover .nav__mark-core {
+    fill: var(--red-bright);
+    transform: scale(1.18);
+  }
+  .nav__wordmark {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    font-size: 1.0625rem;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .nav__hyphen {
+    color: var(--red);
+  }
+
+  /* Center links + scroll-spy */
   .nav__center {
     display: flex;
     align-items: center;
-    gap: clamp(1rem, 2.5vw, 2rem);
+    gap: 1.75rem;
     margin-inline: auto;
   }
-  .nav__center a {
+  .nav__navlink {
     position: relative;
     color: var(--text-muted);
-    font-size: var(--fs-small);
+    font-size: 0.9rem;
     font-weight: 500;
+    letter-spacing: -0.005em;
+    padding: 0.35rem 0;
+    transition: color var(--dur) var(--ease);
   }
-  .nav__center a::after {
+  .nav__navlink::after {
     content: '';
     position: absolute;
     left: 0;
     right: 0;
-    bottom: -5px;
+    bottom: 0;
     height: 1.5px;
+    border-radius: 2px;
     background: var(--red);
     transform: scaleX(0);
-    transform-origin: left;
     transition: transform var(--dur) var(--ease-out);
   }
-  .nav__center a:hover {
+  .nav__navlink:hover {
     color: var(--text);
   }
-  .nav__center a:hover::after {
+  .nav__navlink:hover::after,
+  .nav__navlink.is-active::after {
     transform: scaleX(1);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .nav__center a::after {
-      transition: none;
-    }
+  .nav__navlink.is-active {
+    color: var(--text);
   }
+
+  /* Right zone */
   .nav__right {
     display: flex;
     align-items: center;
-    gap: clamp(0.65rem, 1.5vw, 1.1rem);
+    gap: 0.85rem;
+    flex-shrink: 0;
   }
   .nav__link {
     color: var(--text-muted);
-    font-size: var(--fs-small);
+    font-size: 0.9rem;
     font-weight: 500;
+    transition: color var(--dur) var(--ease);
   }
   .nav__link:hover {
     color: var(--text);
   }
   .nav__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     font-family: var(--font-mono);
     font-size: var(--fs-mono-lbl);
-    color: var(--warn) !important;
-    background: var(--warn-tint);
-    border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+    color: var(--warn);
+    background: var(--surface-2);
+    border: 1px solid var(--hairline-2);
     border-radius: 999px;
-    padding: 0.15rem 0.55rem;
-    letter-spacing: 0.02em;
+    padding: 0.2rem 0.6rem 0.2rem 0.5rem;
+    letter-spacing: 0.01em;
+    user-select: none;
   }
-  .nav__cta {
-    padding: 0.5rem 0.95rem;
-    min-height: 38px;
+  .nav__tag-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 55%, transparent);
+    animation: tag-pulse 2.4s var(--ease) infinite;
   }
-  @media (max-width: 880px) {
-    .nav__center {
-      display: none;
+  @keyframes tag-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 50%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 5px transparent;
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
     }
   }
-  @media (max-width: 560px) {
-    .nav__link,
-    .nav__tag {
+
+  /* GitHub CTA */
+  .nav__cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #fff;
+    background: var(--red-deep);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.9rem;
+    min-height: 40px;
+    box-shadow: var(--shadow-sm);
+    transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur-fast) var(--ease);
+  }
+  .nav__cta:hover {
+    background: var(--red);
+    color: #fff;
+    box-shadow: var(--shadow);
+    transform: translateY(-1px);
+  }
+  .nav__cta:active {
+    transform: translateY(0);
+  }
+  .nav__stars {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    padding-left: 0.5rem;
+    margin-left: 0.1rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.28);
+    color: rgba(255, 255, 255, 0.92);
+  }
+
+  /* Burger (mobile) */
+  .nav__burger {
+    display: none;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid var(--hairline-2);
+    border-radius: var(--radius-sm);
+  }
+  .nav__burger-box {
+    position: relative;
+    width: 18px;
+    height: 12px;
+  }
+  .nav__burger-box span {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 1.6px;
+    border-radius: 2px;
+    background: var(--text);
+    transition: transform var(--dur) var(--ease-out), opacity var(--dur) var(--ease);
+  }
+  .nav__burger-box span:nth-child(1) {
+    top: 0;
+  }
+  .nav__burger-box span:nth-child(2) {
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .nav__burger-box span:nth-child(3) {
+    bottom: 0;
+  }
+  .sheet-open .nav__burger-box span:nth-child(1) {
+    transform: translateY(5px) rotate(45deg);
+  }
+  .sheet-open .nav__burger-box span:nth-child(2) {
+    opacity: 0;
+  }
+  .sheet-open .nav__burger-box span:nth-child(3) {
+    transform: translateY(-5px) rotate(-45deg);
+  }
+
+  /* Mobile sheet */
+  .nav__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(26, 21, 19, 0.18);
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .sheet-open .nav__backdrop {
+    opacity: 1;
+  }
+  .nav__sheet {
+    position: fixed;
+    z-index: 58;
+    top: 78px;
+    left: clamp(0.75rem, 3vw, 1rem);
+    right: clamp(0.75rem, 3vw, 1rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 1rem;
+    border-radius: var(--radius);
+    background: rgba(251, 248, 245, 0.92);
+    backdrop-filter: blur(18px) saturate(1.3);
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(-10px) scale(0.99);
+    transform-origin: top center;
+    transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
+  }
+  .sheet-open .nav__sheet {
+    opacity: 1;
+    transform: none;
+  }
+  .nav__sheet-links {
+    display: flex;
+    flex-direction: column;
+  }
+  .nav__sheet-links a {
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 500;
+    padding: 0.7rem 0.5rem;
+    border-radius: var(--radius-sm);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  .nav__sheet-links a:hover {
+    background: var(--surface-2);
+    color: var(--red-ink);
+  }
+  .nav__sheet-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: flex-start;
+    margin: 0.4rem 0.5rem 0.6rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--warn);
+  }
+  .nav__cta--full {
+    justify-content: center;
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .nav__center,
+    .nav__right .nav__link,
+    .nav__right .nav__tag,
+    .nav__right .nav__cta {
       display: none;
+    }
+    .nav__burger {
+      display: inline-flex;
+    }
+  }
+  @media (min-width: 901px) {
+    .nav__sheet,
+    .nav__backdrop {
+      display: none !important;
+    }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .nav__island,
+    .nav__sheet,
+    .nav__backdrop,
+    .nav__tag-dot,
+    .nav__mark-core,
+    .nav__burger-box span {
+      animation: none !important;
+      transition: none !important;
     }
   }
 </style>

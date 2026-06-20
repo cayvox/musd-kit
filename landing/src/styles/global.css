@@ -44,8 +44,10 @@ body {
   background: var(--canvas);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  overflow-x: hidden;
 }
+/* No body `overflow-x` clamp: layout already guarantees no horizontal overflow
+   (grids use minmax(0,1fr); scrollWidth == innerWidth at all widths). Avoiding it keeps
+   `position: sticky` (the nav) pinning AND keeps LCP detection intact on mobile. */
 img,
 svg {
   display: block;
