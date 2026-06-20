@@ -3,26 +3,28 @@ import { Code } from 'astro:components'
 import { codeTheme } from '../lib/code-theme.mjs'
 
 // The layered flow (STRUCTURE §4 / CONTENT §3). Every snippet mirrors the shipped 0.1.0 API
-// (no MusdProvider, @musd-kit/react has no provider of its own; it consumes wagmi context).
+// (no MusdProvider; the React layer consumes your existing wagmi context). desktop geometry
+// (left/top/width, px) drives the absolute-positioned diagram; mobile stacks the same cards.
 const layers = [
   {
     key: 'dapp',
     name: 'Your dApp',
-    sub: 'consumes your wagmi + Passport context',
+    sub: 'consumes your wagmi context (via Passport)',
     desc: 'No provider of its own. The hooks read the wagmi context Passport (or any wagmi setup) already established. A few lines to a live position.',
-    code: `// Passport gives you the wagmi context; musd-kit operates MUSD
+    code: `// uses your existing wagmi + Passport context
 const { data: trove } = useTrove({ address })`,
     lang: 'tsx',
+    box: { l: 50, t: 17, w: 244 },
   },
   {
     key: 'react',
-    name: 'React Hooks',
-    sub: 'useTrove · useOpenTrove · useBorrowingPower · …',
+    name: 'React hooks',
+    sub: 'useTrove · useOpenTrove · useBorrowingPower',
     desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. Selectors over one shared query, so health factor and liquidation price share a single fetch.',
     code: `const { openTrove, isPending, error } = useOpenTrove()
-const { data: max } = useBorrowingPower({ collateral })
-//      error is a typed MusdError (e.g. BelowMinimumDebt)`,
+const { data: max } = useBorrowingPower({ collateral })`,
     lang: 'tsx',
+    box: { l: 50, t: 132, w: 244 },
   },
   {
     key: 'core',
@@ -30,28 +32,53 @@ const { data: max } = useBorrowingPower({ collateral })
     sub: 'read · preview · lifecycle · redemption',
     desc: 'The framework-agnostic engine (viem). Live reads come straight from the contract getters; previews are the only client-side math. The same core powers a React dApp or a headless Node keeper.',
     code: `const musd = createMusdClient({ chainId, publicClient })
-const trove = await musd.getTrove(address)         // contract-authoritative
-const preview = await musd.previewOpen({ collateral, debt })`,
+const trove = await musd.getTrove(address)`,
     lang: 'ts',
-    emphasized: true,
+    value: true,
+    box: { l: 50, t: 247, w: 244 },
   },
   {
     key: 'math',
     name: 'Hint + Math engine',
     sub: 'insertion hints · ICR · liquidation price · interest',
-    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR / liquidation-price / borrowing-power and interest projection, dual-validated against a fork and the contracts’ own pure helpers.',
+    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR, liquidation price, borrowing power, and interest projection, dual-validated against a fork and the contracts’ own pure helpers.',
     code: `const icr = computeICR({ collateral, entireDebt, price })
 const liq = computeLiquidationPrice({ collateral, entireDebt })`,
     lang: 'ts',
+    value: true,
+    engine: true,
+    box: { l: 326, t: 351, w: 218 },
   },
   {
     key: 'contracts',
     name: 'Mezo contracts',
     sub: 'BorrowerOperations · TroveManager · SortedTroves · PriceFeed',
-    desc: 'The protocol. Reads are contract-authoritative; every write simulates before it sends. Bundled, verified addresses + the official as-const ABIs.',
+    desc: 'The protocol. Reads are contract-authoritative; every write simulates before it sends. Bundled, verified addresses with the official as-const ABIs.',
     code: `import { troveManagerAbi, sortedTrovesAbi } from '@musd-kit/core'
 // reads are contract-authoritative; writes simulate before they send`,
     lang: 'ts',
+    box: { l: 50, t: 433, w: 244 },
+  },
+]
+
+const flows = [
+  {
+    key: 'read',
+    label: 'Read',
+    active: ['dapp', 'react', 'core', 'contracts'],
+    caption: 'Reads come straight from the contract getters: contract-authoritative. The Hint and Math engine stays out of the path.',
+  },
+  {
+    key: 'write',
+    label: 'Write',
+    active: ['dapp', 'react', 'core', 'math', 'contracts'],
+    caption: 'Writes route through the Hint and Math engine: insertion hints, fee and gas math, a simulate, then the send.',
+  },
+  {
+    key: 'preview',
+    label: 'Preview',
+    active: ['dapp', 'react', 'core', 'math', 'contracts'],
+    caption: 'Previews run the math engine client-side and read price and fee from the contracts. Nothing is sent.',
   },
 ]
 const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
@@ -62,78 +89,178 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
     <p class="eyebrow eyebrow--red" data-reveal>ARCHITECTURE</p>
     <h2 id="arch-h" data-reveal>How musd-kit works</h2>
     <p class="prose arch-section__lead" data-reveal>
-      From your first line of code to a managed Trove. The whole flow, abstracted. Explore each layer.
+      From your first line of code to a managed Trove: the whole flow, abstracted. Trace a call through the layers.
     </p>
 
     <div class="arch" data-arch data-reveal>
-      <div class="arch__layers" role="tablist" aria-orientation="vertical" aria-label="Architecture layers">
-        {
-          layers.map((l, i) => (
-            <button
-              class={`arch__layer${l.emphasized ? ' arch__layer--core' : ''}`}
-              role="tab"
-              type="button"
-              id={`arch-tab-${l.key}`}
-              aria-controls={`arch-panel-${l.key}`}
-              aria-selected={l.emphasized ? 'true' : 'false'}
-              tabindex={l.emphasized ? '0' : '-1'}
-            >
-              <span class="arch__node" aria-hidden="true" />
-              <span class="arch__layer-text">
-                <span class="arch__layer-name">{l.name}</span>
-                <span class="arch__layer-sub">{l.sub}</span>
-              </span>
-              {i === 1 && <span class="arch__passport" aria-hidden="true">via Passport</span>}
-            </button>
-          ))
-        }
+      <div class="arch__controls">
+        <div class="arch__toggle" role="radiogroup" aria-label="Trace a flow">
+          {
+            flows.map((f, i) => (
+              <button
+                class="arch__toggle-btn"
+                role="radio"
+                type="button"
+                data-flow={f.key}
+                aria-checked={i === 0 ? 'true' : 'false'}
+                tabindex={i === 0 ? '0' : '-1'}
+              >
+                {f.label}
+              </button>
+            ))
+          }
+        </div>
+        <p class="arch__flow-caption" data-flow-caption>{flows[0].caption}</p>
       </div>
 
-      <div class="arch__detail">
-        {
-          layers.map((l) => (
-            <div
-              class="arch__panel"
-              role="tabpanel"
-              id={`arch-panel-${l.key}`}
-              aria-labelledby={`arch-tab-${l.key}`}
-              hidden={!l.emphasized}
-            >
-              <h3 class="arch__panel-title">{l.name}</h3>
-              <p class="arch__panel-desc">{l.desc}</p>
-              <div class="arch__code codeblock">
-                <Code code={trim(l.code)} lang={l.lang as 'ts' | 'tsx'} theme={codeTheme} />
+      <div class="arch__main">
+        <div class="arch__diagram">
+          <svg class="arch__wires" viewBox="0 0 560 516" preserveAspectRatio="xMidYMin meet" aria-hidden="true" focusable="false">
+            <defs>
+              <marker id="arch-arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--red)" />
+              </marker>
+            </defs>
+            {/* base wires (always visible, neutral) */}
+            <path class="arch__wire" d="M72,50 L72,280" />
+            <path class="arch__wire" d="M72,280 L72,466" data-base="direct" />
+            <path class="arch__wire" d="M72,280 C72,330 300,335 300,384" data-base="branch" />
+            <path class="arch__wire" d="M300,384 C300,435 72,428 72,466" data-base="branch" />
+            {/* flow wires (lit + animated for the active route) */}
+            <path class="arch__flow-wire" data-conn="spineTop" d="M72,50 L72,280" />
+            <path class="arch__flow-wire" data-conn="direct" d="M72,280 L72,466" />
+            <path class="arch__flow-wire" data-conn="branchOut" d="M72,280 C72,330 300,335 300,384" />
+            <path class="arch__flow-wire" data-conn="branchIn" d="M300,384 C300,435 72,428 72,466" />
+          </svg>
+
+          <div class="arch__layers" role="tablist" aria-orientation="vertical" aria-label="Architecture layers">
+            {
+              layers.map((l) => (
+                <button
+                  class={`arch__layer${l.value ? ' arch__layer--value' : ''}${l.engine ? ' arch__layer--engine' : ''}`}
+                  role="tab"
+                  type="button"
+                  id={`arch-tab-${l.key}`}
+                  data-layer={l.key}
+                  aria-controls={`arch-panel-${l.key}`}
+                  aria-selected={l.key === 'core' ? 'true' : 'false'}
+                  tabindex={l.key === 'core' ? '0' : '-1'}
+                  data-inflow="on"
+                  style={`--cx:${l.box.l}px;--cy:${l.box.t}px;--cw:${l.box.w}px`}
+                >
+                  <span class="arch__node" aria-hidden="true" />
+                  <span class="arch__layer-text">
+                    <span class="arch__layer-name">{l.name}</span>
+                    <span class="arch__layer-sub">{l.sub}</span>
+                  </span>
+                </button>
+              ))
+            }
+          </div>
+        </div>
+
+        <div class="arch__detail">
+          {
+            layers.map((l) => (
+              <div
+                class="arch__panel"
+                role="tabpanel"
+                id={`arch-panel-${l.key}`}
+                aria-labelledby={`arch-tab-${l.key}`}
+                hidden={l.key !== 'core'}
+              >
+                <h3 class="arch__panel-title">{l.name}</h3>
+                <p class="arch__panel-desc">{l.desc}</p>
+                <div class="arch__code codeblock">
+                  <Code code={trim(l.code)} lang={l.lang as 'ts' | 'tsx'} theme={codeTheme} />
+                </div>
               </div>
-            </div>
-          ))
-        }
+            ))
+          }
+        </div>
       </div>
     </div>
   </div>
 </section>
 
 <script>
-  for (const group of document.querySelectorAll<HTMLElement>('[data-arch]')) {
-    const tabs = [...group.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-    const panels = [...group.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
-    const select = (i: number, focus = false) => {
-      tabs.forEach((t, j) => {
-        const on = i === j
-        t.setAttribute('aria-selected', on ? 'true' : 'false')
-        t.tabIndex = on ? 0 : -1
-        panels[j].hidden = !on
-        if (on && focus) t.focus()
+  type Flow = { key: string; active: string[]; caption: string }
+  const FLOWS: Record<string, Flow> = {
+    read: {
+      key: 'read',
+      active: ['dapp', 'react', 'core', 'contracts'],
+      caption: 'Reads come straight from the contract getters: contract-authoritative. The Hint and Math engine stays out of the path.',
+    },
+    write: {
+      key: 'write',
+      active: ['dapp', 'react', 'core', 'math', 'contracts'],
+      caption: 'Writes route through the Hint and Math engine: insertion hints, fee and gas math, a simulate, then the send.',
+    },
+    preview: {
+      key: 'preview',
+      active: ['dapp', 'react', 'core', 'math', 'contracts'],
+      caption: 'Previews run the math engine client-side and read price and fee from the contracts. Nothing is sent.',
+    },
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-arch]')) {
+    const cards = [...root.querySelectorAll<HTMLButtonElement>('.arch__layer')]
+    const panels = [...root.querySelectorAll<HTMLElement>('.arch__panel')]
+    const wires = [...root.querySelectorAll<SVGPathElement>('.arch__flow-wire')]
+    const wireByConn = new Map(wires.map((w) => [w.dataset.conn, w]))
+    const radios = [...root.querySelectorAll<HTMLButtonElement>('.arch__toggle-btn')]
+    const caption = root.querySelector<HTMLElement>('[data-flow-caption]')
+
+    // ---- Flow trace (Read / Write / Preview) ----
+    const setFlow = (key: string) => {
+      const flow = FLOWS[key]
+      if (!flow) return
+      for (const card of cards) card.dataset.inflow = flow.active.includes(card.dataset.layer || '') ? 'on' : 'off'
+      const useBranch = key !== 'read'
+      const set = (conn: string, on: boolean) => wireByConn.get(conn)?.classList.toggle('is-on', on)
+      set('spineTop', true)
+      set('direct', !useBranch)
+      set('branchOut', useBranch)
+      set('branchIn', useBranch)
+      if (caption) caption.textContent = flow.caption
+      radios.forEach((r) => {
+        const on = r.dataset.flow === key
+        r.setAttribute('aria-checked', on ? 'true' : 'false')
+        r.tabIndex = on ? 0 : -1
       })
     }
-    tabs.forEach((tab, i) => {
-      tab.addEventListener('click', () => select(i))
-      tab.addEventListener('mouseenter', () => select(i))
-      tab.addEventListener('keydown', (e) => {
+    radios.forEach((r, i) => {
+      r.addEventListener('click', () => setFlow(r.dataset.flow || 'read'))
+      r.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+        e.preventDefault()
+        const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1
+        const next = radios[(i + dir + radios.length) % radios.length]
+        setFlow(next.dataset.flow || 'read')
+        next.focus()
+      })
+    })
+    setFlow('read')
+
+    // ---- Progressive detail (select a layer) ----
+    const select = (i: number, focus = false) => {
+      cards.forEach((c, j) => {
+        const on = i === j
+        c.setAttribute('aria-selected', on ? 'true' : 'false')
+        c.tabIndex = on ? 0 : -1
+        panels[j].hidden = !on
+        if (on && focus) c.focus()
+      })
+    }
+    cards.forEach((card, i) => {
+      card.addEventListener('click', () => select(i))
+      card.addEventListener('mouseenter', () => select(i))
+      card.addEventListener('keydown', (e) => {
         const k = e.key
-        if (k === 'ArrowDown' || k === 'ArrowRight') { e.preventDefault(); select((i + 1) % tabs.length, true) }
-        else if (k === 'ArrowUp' || k === 'ArrowLeft') { e.preventDefault(); select((i - 1 + tabs.length) % tabs.length, true) }
+        if (k === 'ArrowDown' || k === 'ArrowRight') { e.preventDefault(); select((i + 1) % cards.length, true) }
+        else if (k === 'ArrowUp' || k === 'ArrowLeft') { e.preventDefault(); select((i - 1 + cards.length) % cards.length, true) }
         else if (k === 'Home') { e.preventDefault(); select(0, true) }
-        else if (k === 'End') { e.preventDefault(); select(tabs.length - 1, true) }
+        else if (k === 'End') { e.preventDefault(); select(cards.length - 1, true) }
       })
     })
   }
@@ -151,56 +278,102 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
     margin-top: 1rem;
   }
   .arch {
-    margin-top: clamp(2rem, 5vw, 3rem);
+    margin-top: clamp(1.75rem, 4vw, 2.5rem);
+  }
+
+  /* Flow toggle */
+  .arch__controls {
+    margin-bottom: clamp(1.75rem, 4vw, 2.5rem);
+  }
+  .arch__toggle {
+    display: inline-flex;
+    gap: 0.2rem;
+    padding: 0.25rem;
+    background: var(--surface);
+    border: 1px solid var(--hairline-2);
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+  }
+  .arch__toggle-btn {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    background: transparent;
+    border: 0;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    min-height: 36px;
+    transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .arch__toggle-btn:hover {
+    color: var(--text);
+  }
+  .arch__toggle-btn[aria-checked='true'] {
+    color: #fff;
+    background: var(--red-deep);
+  }
+  .arch__flow-caption {
+    margin-top: 0.9rem;
+    max-width: 60ch;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    min-height: 2.6em;
+  }
+
+  .arch__main {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 1.25rem;
+    gap: clamp(2rem, 4vw, 2.5rem);
     align-items: start;
   }
-  @media (min-width: 860px) {
-    .arch {
-      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-      gap: 2.5rem;
-    }
+
+  /* ---- Mobile-first: a clean vertical stack with a left rail ---- */
+  .arch__diagram {
+    position: relative;
   }
-  /* The layer stack, a vertical flow with connector hairline through the nodes */
+  .arch__wires {
+    display: none;
+  }
   .arch__layers {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.85rem;
     position: relative;
+  }
+  .arch__layers::before {
+    content: '';
+    position: absolute;
+    left: 28px;
+    top: 22px;
+    bottom: 22px;
+    width: 2px;
+    background: var(--hairline-2);
   }
   .arch__layer {
     position: relative;
+    z-index: 1;
     display: flex;
     align-items: center;
-    gap: 0.9rem;
+    gap: 0.85rem;
     text-align: left;
     background: var(--surface);
     border: 1px solid var(--hairline);
     border-radius: var(--radius);
-    padding: 0.95rem 1.1rem;
+    padding: 0.85rem 1rem;
     box-shadow: var(--shadow-sm);
-    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
-  }
-  .arch__layer:not(:last-child)::after {
-    /* connector to the next layer's node */
-    content: '';
-    position: absolute;
-    left: 1.6rem;
-    top: 100%;
-    height: 0.6rem;
-    width: 2px;
-    background: var(--hairline-2);
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), opacity var(--dur) var(--ease),
+      transform var(--dur) var(--ease);
   }
   .arch__node {
     flex-shrink: 0;
-    width: 12px;
-    height: 12px;
+    width: 13px;
+    height: 13px;
     border-radius: 50%;
     border: 2px solid var(--hairline-2);
     background: var(--surface);
-    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   }
   .arch__layer-text {
     display: flex;
@@ -211,45 +384,43 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
   .arch__layer-name {
     font-weight: 600;
     color: var(--text);
-    font-size: 1rem;
+    font-size: 0.975rem;
+    transition: color var(--dur) var(--ease);
   }
   .arch__layer-sub {
     font-family: var(--font-mono);
-    font-size: 0.6875rem;
-    letter-spacing: 0.02em;
-    color: var(--text-dim);
-  }
-  .arch__passport {
-    margin-left: auto;
-    flex-shrink: 0;
-    font-family: var(--font-mono);
     font-size: 0.625rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--red-ink);
-    background: var(--red-tint);
-    padding: 0.1rem 0.4rem;
-    border-radius: 999px;
+    letter-spacing: 0.01em;
+    color: var(--text-dim);
+    line-height: 1.4;
   }
+
+  /* flow state: in-path vs out-of-path */
+  .arch__layer[data-inflow='off'] {
+    opacity: 0.5;
+  }
+  .arch__layer[data-inflow='on'] .arch__node {
+    border-color: var(--red);
+    background: var(--red);
+  }
+  /* the musd-kit value layers (core + engine) read red when in the path */
+  .arch__layer--value[data-inflow='on'] .arch__layer-name {
+    color: var(--red-ink);
+  }
+  .arch__layer--engine[data-inflow='on'] {
+    border-color: color-mix(in srgb, var(--red) 45%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 30%, transparent), var(--shadow);
+  }
+
+  /* hover / selected (progressive detail) */
   .arch__layer:hover {
     border-color: var(--hairline-2);
-    box-shadow: var(--shadow);
   }
   .arch__layer[aria-selected='true'] {
     border-color: var(--red);
     box-shadow: 0 0 0 1px var(--red) inset, var(--shadow);
   }
-  .arch__layer[aria-selected='true'] .arch__node {
-    border-color: var(--red);
-    background: var(--red);
-  }
-  /* the core layer is always accented */
-  .arch__layer--core .arch__layer-name {
-    color: var(--red-ink);
-  }
-  .arch__layer--core .arch__node {
-    border-color: var(--red);
-  }
+
   /* Detail panel */
   .arch__detail {
     position: relative;
@@ -269,10 +440,69 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
   .arch__code {
     margin-top: 1.1rem;
   }
-  @media (min-width: 860px) {
-    .arch__detail {
-      position: sticky;
-      top: 84px;
+
+  /* ---- Desktop: the real layered diagram (absolute cards + SVG wires) ---- */
+  @media (min-width: 1000px) {
+    .arch__main {
+      grid-template-columns: 560px minmax(0, 1fr);
+      gap: clamp(2.5rem, 5vw, 4rem);
+    }
+    .arch__diagram {
+      width: 560px;
+      height: 516px;
+    }
+    .arch__wires {
+      display: block;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      overflow: visible;
+    }
+    .arch__wire {
+      fill: none;
+      stroke: var(--hairline-2);
+      stroke-width: 2;
+    }
+    .arch__flow-wire {
+      fill: none;
+      stroke: var(--red);
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      opacity: 0;
+      transition: opacity var(--dur) var(--ease);
+    }
+    .arch__flow-wire.is-on {
+      opacity: 1;
+      stroke-dasharray: 5 11;
+      animation: arch-flow 0.95s linear infinite;
+    }
+    @keyframes arch-flow {
+      to {
+        stroke-dashoffset: -16;
+      }
+    }
+    .arch__layers {
+      display: block;
+      position: static;
+    }
+    .arch__layers::before {
+      display: none;
+    }
+    .arch__layer {
+      position: absolute;
+      left: var(--cx);
+      top: var(--cy);
+      width: var(--cw);
+      margin: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .arch__flow-wire.is-on {
+      animation: none;
+      stroke-dasharray: none;
     }
   }
 </style>
