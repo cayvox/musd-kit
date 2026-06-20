@@ -1,30 +1,43 @@
-/* musd-kit — Direction A design tokens (BRAND.md §1–§5). Use verbatim. */
+/* musd-kit — BRAND v2 design tokens (landing/BRAND.md §1, §5). LIGHT warm-white canvas +
+   single Mezo-red accent + DARK code blocks. Values verbatim from BRAND v2, with three
+   AA-required adjustments (BRAND mandates "verify WCAG AA for every text/bg pair"):
+     • --text-dim darkened (#8A8077 → #756B61) to clear 4.5:1 on --canvas AND --surface-2,
+     • --warn darkened (#C9821F → #8A5B10) to clear 4.5:1 as text on white/tint,
+     • --red-ink added — an AA-safe red TEXT shade (plain --red fails 4.5:1 on white/tint).
+   --red stays the brand accent everywhere a fill/border/large-mark is used. */
 :root {
-  /* Canvas & surfaces — warm near-black, never pure #000 */
-  --canvas: #0b0a09;
-  --surface: #131110;
-  --surface-2: #1a1714;
-  --hairline: #262019;
-  --hairline-2: #332b22;
+  /* Surfaces — warm white, Mezo-adjacent (not cold pure-white) */
+  --canvas: #fbf8f5;
+  --surface: #ffffff;
+  --surface-2: #f4efe9;
+  --hairline: #ece5dd;
+  --hairline-2: #ded5cb;
 
-  /* Text — warm off-white ramp */
-  --text: #f6f2ed;
-  --text-muted: #a79e96;
-  /* BRAND lists #6E665E; warm-lightened to #8E847A to clear WCAG AA (4.5:1) for small
-     dim text on the dark surfaces — AA is a hard acceptance criterion. */
-  --text-dim: #8e847a;
+  /* Code surface — DARK on the light page (premium pattern) */
+  --code-bg: #181311;
+  --code-bar: #211a17; /* tab row / toolbar (a touch lighter than --code-bg) */
+  --code-hairline: #2a221e;
+  --text-on-code: #f4eee8; /* text inside dark code/panels */
+  --code-dim: #978c81; /* tab/copy UI labels — AA on the lighter --code-bar (comments use #8A8077 in the theme) */
 
-  /* Brand accent — ember (the ONLY brand color) */
-  --ember: #e0703a;
-  --ember-bright: #f2925a;
-  --ember-deep: #c2562b;
-  --ember-glow: rgba(224, 112, 58, 0.16);
-  --ember-faint: rgba(224, 112, 58, 0.08);
+  /* Text — warm near-black ramp on light */
+  --text: #1a1513;
+  --text-muted: #6b635c;
+  --text-dim: #756b61; /* BRAND lists #8A8077; darkened for AA on canvas + surface-2 */
 
-  /* Quiet semantics — not brand colors */
-  --verified: #5fb08a;
-  --warn: #d9a441;
-  --danger: #d06a5a;
+  /* Brand accent — Mezo-adjacent red. The ONLY brand color (one hue, a tonal range). */
+  --red: #e5483d; /* primary: CTAs, links, key marks, active nodes, hover-brighten */
+  --red-bright: #f26555; /* hover / highlight */
+  --red-deep: #c7382e; /* pressed / the primary-button fill (white text, AA on the fill) */
+  --red-ink: #b5332a; /* AA-safe red TEXT on white OR on the --red-tint chips */
+  --red-tint: #fbe7e4; /* soft red wash: badges, hovers, highlight bg (solid) */
+  --red-glow: rgba(229, 72, 61, 0.16); /* focus rings, glows, motif lines */
+
+  /* Quiet semantics — NOT brand colors */
+  --verified: #2e9e6b; /* proof-panel checks */
+  --warn: #8a5b10; /* BRAND lists #C9821F; darkened for AA as text on white/tint */
+  --warn-tint: #f6ecd8;
+  --danger: #d0463a; /* code error tokens */
 
   /* Type */
   --font-display: 'Satoshi', system-ui, -apple-system, sans-serif;
@@ -38,15 +51,20 @@
   --fs-small: 0.9375rem;
   --fs-mono-lbl: 0.8125rem;
 
-  /* Spacing, radius, layout */
-  --maxw: 1120px;
+  /* Spacing, radius, layout (BRAND §5) */
+  --maxw: 1140px;
   --maxw-prose: 68ch;
   --gutter: clamp(1.25rem, 5vw, 4rem);
-  --radius: 12px;
-  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-sm: 9px;
   --space-section: clamp(5rem, 10vw, 9rem);
 
-  /* Motion */
+  /* Elevation — soft warm shadows (BRAND §4 cards) */
+  --shadow-sm: 0 1px 2px rgba(26, 21, 19, 0.04);
+  --shadow: 0 1px 2px rgba(26, 21, 19, 0.04), 0 8px 24px rgba(26, 21, 19, 0.05);
+  --shadow-lg: 0 2px 4px rgba(26, 21, 19, 0.05), 0 18px 40px rgba(26, 21, 19, 0.08);
+
+  /* Motion (BRAND §8) */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 120ms;

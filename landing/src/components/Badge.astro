@@ -1,0 +1,22 @@
+---
+// Pill badge (BRAND §4) — --red-tint by default; `warn` for the testnet/maturity note.
+interface Props {
+  variant?: 'red' | 'warn'
+  href?: string
+  class?: string
+}
+const { variant = 'red', href, class: cls = '' } = Astro.props
+const klass = `badge${variant === 'warn' ? ' badge--warn' : ''} ${cls}`.trim()
+---
+
+{
+  href ? (
+    <a href={href} class={klass}>
+      <slot />
+    </a>
+  ) : (
+    <span class={klass}>
+      <slot />
+    </span>
+  )
+}

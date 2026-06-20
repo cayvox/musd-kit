@@ -1,5 +1,6 @@
 ---
 import Wordmark from './Wordmark.astro'
+import Button from './Button.astro'
 ---
 
 <header class="nav" data-nav>
@@ -7,18 +8,24 @@ import Wordmark from './Wordmark.astro'
     <a href="/" class="nav__brand" aria-label="musd-kit home">
       <Wordmark />
     </a>
-    <nav class="nav__links" aria-label="Primary">
-      <a href="/docs/">Docs</a>
-      <a href="/docs/api/" class="nav__secondary">API</a>
-      <a href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</a>
-      <a href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener" class="nav__secondary">npm</a>
-      <a href="#footer" class="nav__tag">testnet</a>
+
+    <nav class="nav__center" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#faq">FAQ</a>
     </nav>
+
+    <div class="nav__right">
+      <a class="nav__link" href="/docs/">Docs</a>
+      <a class="nav__link" href="/docs/api/">API</a>
+      <a class="nav__tag" href="#footer">testnet</a>
+      <Button href="https://github.com/cayvox/musd-kit" rel="noopener" variant="primary" class="nav__cta">GitHub</Button>
+    </div>
   </div>
 </header>
 
 <script>
-  // Nav gains a faint surface bg + hairline once scrolled off the hero.
   const nav = document.querySelector<HTMLElement>('[data-nav]')
   if (nav) {
     const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 24)
@@ -34,50 +41,72 @@ import Wordmark from './Wordmark.astro'
     z-index: 50;
     background: transparent;
     border-bottom: 1px solid transparent;
-    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), backdrop-filter var(--dur) var(--ease);
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   }
   .nav.is-scrolled {
-    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
     border-bottom-color: var(--hairline);
     backdrop-filter: blur(10px);
   }
   .nav__inner {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    height: 60px;
+    gap: 1rem;
+    height: 64px;
   }
   .nav__brand {
     display: inline-flex;
     align-items: center;
   }
-  .nav__links {
+  .nav__center {
     display: flex;
     align-items: center;
-    gap: clamp(0.85rem, 2.5vw, 1.75rem);
+    gap: clamp(1rem, 2.5vw, 2rem);
+    margin-inline: auto;
   }
-  .nav__links a {
+  .nav__center a {
     color: var(--text-muted);
     font-size: var(--fs-small);
     font-weight: 500;
   }
-  .nav__links a:hover {
+  .nav__center a:hover {
+    color: var(--text);
+  }
+  .nav__right {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.65rem, 1.5vw, 1.1rem);
+  }
+  .nav__link {
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+  .nav__link:hover {
     color: var(--text);
   }
   .nav__tag {
     font-family: var(--font-mono);
     font-size: var(--fs-mono-lbl);
     color: var(--warn) !important;
-    border: 1px solid color-mix(in srgb, var(--warn) 36%, transparent);
+    background: var(--warn-tint);
+    border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
     border-radius: 999px;
     padding: 0.15rem 0.55rem;
     letter-spacing: 0.02em;
   }
-  .nav__tag:hover {
-    border-color: var(--warn);
+  .nav__cta {
+    padding: 0.5rem 0.95rem;
+    min-height: 38px;
+  }
+  @media (max-width: 880px) {
+    .nav__center {
+      display: none;
+    }
   }
   @media (max-width: 560px) {
-    .nav__secondary {
+    .nav__link,
+    .nav__tag {
       display: none;
     }
   }

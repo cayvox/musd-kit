@@ -1,0 +1,25 @@
+---
+// Button (BRAND §4): primary (--red fill) / ghost / tertiary red text-link.
+// Renders an <a> when `href` is set, otherwise a <button>.
+interface Props {
+  variant?: 'primary' | 'ghost' | 'link'
+  href?: string
+  type?: 'button' | 'submit'
+  rel?: string
+  class?: string
+}
+const { variant = 'primary', href, type = 'button', rel, class: cls = '' } = Astro.props
+const klass = `btn btn--${variant} ${cls}`.trim()
+---
+
+{
+  href ? (
+    <a href={href} class={klass} rel={rel}>
+      <slot />
+    </a>
+  ) : (
+    <button class={klass} type={type}>
+      <slot />
+    </button>
+  )
+}

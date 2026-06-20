@@ -1,4 +1,5 @@
 ---
+// Copy-command pill (BRAND §4). Styling lives in global .cmd; copy logic is global.
 interface Props {
   command: string
 }
@@ -12,54 +13,3 @@ const { command } = Astro.props
     <span class="codeblock__copy-text">Copy</span>
   </button>
 </div>
-
-<style>
-  .cmd {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    background: var(--surface-2);
-    border: 1px solid var(--hairline-2);
-    border-radius: var(--radius-sm);
-    padding: 0.7rem 0.7rem 0.7rem 0.9rem;
-    font-family: var(--font-mono);
-    font-size: 0.875rem;
-    max-width: 100%;
-    overflow: hidden;
-  }
-  .cmd__prompt {
-    color: var(--ember);
-    user-select: none;
-  }
-  .cmd__text {
-    color: var(--text);
-    white-space: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    flex: 1;
-  }
-  .cmd__text::-webkit-scrollbar {
-    display: none;
-  }
-  .cmd__copy {
-    margin-left: auto;
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: var(--fs-mono-lbl);
-    color: var(--text-dim);
-    background: var(--surface);
-    border: 1px solid var(--hairline);
-    padding: 0.35rem 0.7rem;
-    border-radius: 6px;
-    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
-    min-height: 32px;
-  }
-  .cmd__copy:hover {
-    color: var(--text);
-    border-color: var(--hairline-2);
-  }
-  .cmd__copy[data-copied='true'] {
-    color: var(--verified);
-    border-color: color-mix(in srgb, var(--verified) 40%, transparent);
-  }
-</style>

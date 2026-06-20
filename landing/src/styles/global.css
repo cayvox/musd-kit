@@ -52,23 +52,23 @@ svg {
   max-width: 100%;
 }
 a {
-  color: var(--ember);
+  color: var(--red-ink);
   text-decoration: none;
   transition: color var(--dur) var(--ease);
 }
 a:hover {
-  color: var(--ember-bright);
+  color: var(--red);
 }
 button {
   font: inherit;
   cursor: pointer;
 }
 
-/* ---- Focus (visible, ember ring) ---- */
+/* ---- Focus (visible red ring) ---- */
 :focus-visible {
-  outline: 2px solid var(--ember);
+  outline: 2px solid var(--red);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 :focus:not(:focus-visible) {
   outline: none;
@@ -92,8 +92,8 @@ button {
   color: var(--text-dim);
   overflow-wrap: break-word;
 }
-.eyebrow--ember {
-  color: var(--ember);
+.eyebrow--red {
+  color: var(--red-ink);
 }
 
 /* ---- Headings ---- */
@@ -127,31 +127,166 @@ p {
   line-height: 1.3;
 }
 
-/* ---- Inline code (Geist Mono, ember on a chip) ---- */
-:not(pre) > code {
+/* ---- Inline code (Geist Mono, red on a soft red chip) — not the dark copy-pill text ---- */
+:not(pre) > code:not(.cmd__text) {
   font-family: var(--font-mono);
   font-size: 0.875em;
-  background: var(--surface-2);
-  color: var(--ember-bright);
+  background: var(--red-tint);
+  color: var(--red-ink);
   padding: 0.12em 0.4em;
   border-radius: 5px;
-  border: 1px solid var(--hairline);
 }
 
-/* ---- The designed code block (BRAND §7) ---- */
-.codeblock {
-  background: var(--surface-2);
+/* ============================================================
+   COMPONENT KIT (BRAND §4)
+   ============================================================ */
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-small);
+  line-height: 1;
+  padding: 0.7rem 1.15rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  min-height: 44px;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn--primary {
+  background: var(--red-deep);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn--primary:hover {
+  background: var(--red);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.btn--ghost {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--hairline-2);
+}
+.btn--ghost:hover {
+  border-color: var(--red);
+  color: var(--text);
+  background: var(--canvas);
+}
+.btn--link {
+  background: transparent;
+  color: var(--red-ink);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  font-weight: 600;
+}
+.btn--link:hover {
+  color: var(--red);
+}
+
+/* ---- Pill badge ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-lbl);
+  letter-spacing: 0.02em;
+  color: var(--red-ink);
+  background: var(--red-tint);
+  border: 1px solid color-mix(in srgb, var(--red) 22%, transparent);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+}
+.badge--warn {
+  color: var(--warn);
+  background: var(--warn-tint);
+  border-color: color-mix(in srgb, var(--warn) 28%, transparent);
+}
+
+/* ---- Soft-shadow card ---- */
+.card {
+  background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: clamp(1.25rem, 3vw, 1.75rem);
+}
+
+/* ---- Copy-command pill (DARK --code-bg, BRAND §4) ---- */
+.cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  background: var(--code-bg);
+  border: 1px solid var(--code-hairline);
+  border-radius: 999px;
+  padding: 0.5rem 0.55rem 0.5rem 1rem;
+  box-shadow: var(--shadow);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  max-width: 100%;
+}
+.cmd__prompt {
+  color: var(--red-bright);
+  user-select: none;
+}
+.cmd__text {
+  color: var(--text-on-code);
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cmd__text::-webkit-scrollbar {
+  display: none;
+}
+.cmd__copy {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-lbl);
+  color: var(--code-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--code-hairline);
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  min-height: 32px;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.cmd__copy:hover {
+  color: var(--text-on-code);
+  background: rgba(255, 255, 255, 0.1);
+}
+.cmd__copy[data-copied='true'] {
+  color: var(--verified);
+}
+
+/* ---- The dark code-block object (BRAND §7) — a dark island on the light page ---- */
+.codeblock {
+  background: var(--code-bg);
+  border: 1px solid var(--code-hairline);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 .codeblock__bar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.6rem 0.85rem;
-  border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
+  padding: 0.55rem 0.7rem 0.55rem 0.85rem;
+  background: var(--code-bar);
+  border-bottom: 1px solid var(--code-hairline);
 }
 .codeblock__tabs {
   display: flex;
@@ -160,7 +295,7 @@ p {
 .codeblock__tab {
   font-family: var(--font-mono);
   font-size: var(--fs-mono-lbl);
-  color: var(--text-dim);
+  color: var(--code-dim);
   background: transparent;
   border: 0;
   padding: 0.25rem 0.6rem;
@@ -168,17 +303,16 @@ p {
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
 }
 .codeblock__tab[aria-selected='true'] {
-  color: var(--text);
-  background: var(--surface);
+  color: var(--text-on-code);
+  background: rgba(255, 255, 255, 0.06);
 }
 .codeblock__tab:hover {
-  color: var(--text);
+  color: var(--text-on-code);
 }
 .codeblock__label {
   font-family: var(--font-mono);
   font-size: var(--fs-mono-lbl);
-  color: var(--text-dim);
-  letter-spacing: 0.02em;
+  color: var(--code-dim);
 }
 .codeblock__copy {
   margin-left: auto;
@@ -187,12 +321,12 @@ p {
   gap: 0.35rem;
   font-family: var(--font-mono);
   font-size: var(--fs-mono-lbl);
-  color: var(--text-dim);
+  color: var(--code-dim);
   background: transparent;
   border: 1px solid transparent;
   padding: 0.3rem 0.55rem;
   border-radius: var(--radius-sm);
-  opacity: 0.55;
+  opacity: 0.7;
   transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .codeblock:hover .codeblock__copy,
@@ -200,8 +334,8 @@ p {
   opacity: 1;
 }
 .codeblock__copy:hover {
-  color: var(--text);
-  border-color: var(--hairline-2);
+  color: var(--text-on-code);
+  border-color: var(--code-hairline);
 }
 .codeblock__copy[data-copied='true'] {
   color: var(--verified);
@@ -214,6 +348,7 @@ p {
   font-size: 0.875rem;
   line-height: 1.7;
   tab-size: 2;
+  background: var(--code-bg) !important;
 }
 .codeblock pre code {
   font-family: var(--font-mono);
@@ -221,6 +356,54 @@ p {
 }
 .codeblock__panel[hidden] {
   display: none;
+}
+
+/* ---- FAQ accordion primitive (red chevron, height transition) ---- */
+.accordion {
+  border-top: 1px solid var(--hairline);
+}
+.accordion__item {
+  border-bottom: 1px solid var(--hairline);
+}
+.accordion__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 1.15rem 0.25rem;
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: 600;
+  color: var(--text);
+  min-height: 44px;
+}
+.accordion__chevron {
+  flex-shrink: 0;
+  color: var(--red);
+  transition: transform var(--dur) var(--ease);
+}
+.accordion__trigger[aria-expanded='true'] .accordion__chevron {
+  transform: rotate(180deg);
+}
+.accordion__panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-slow) var(--ease);
+}
+.accordion__trigger[aria-expanded='true'] + .accordion__panel {
+  grid-template-rows: 1fr;
+}
+.accordion__inner {
+  overflow: hidden;
+}
+.accordion__body {
+  padding: 0 0.25rem 1.25rem;
+  color: var(--text-muted);
+  max-width: var(--maxw-prose);
 }
 
 /* ---- Reveal-on-scroll (fade + 12px rise, staggered) ---- */
@@ -236,7 +419,7 @@ p {
   transform: none;
 }
 
-/* ---- Reduced motion: show final state, kill drift/parallax/reveals ---- */
+/* ---- Reduced motion: show final state ---- */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -251,6 +434,9 @@ p {
   [data-reveal] {
     opacity: 1;
     transform: none;
+  }
+  .accordion__panel {
+    transition: none;
   }
 }
 
@@ -271,11 +457,12 @@ p {
   left: -999px;
   top: 0;
   z-index: 100;
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
   padding: 0.6rem 1rem;
   border: 1px solid var(--hairline-2);
   border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
 }
 .skip-link:focus {
   left: 1rem;

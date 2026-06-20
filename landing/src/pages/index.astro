@@ -1,28 +1,251 @@
 ---
 import Base from '../layouts/Base.astro'
 import Nav from '../components/Nav.astro'
-import Hero from '../components/Hero.astro'
-import PreviewWidget from '../components/PreviewWidget.astro'
-import Problem from '../components/Problem.astro'
-import Capabilities from '../components/Capabilities.astro'
-import Correctness from '../components/Correctness.astro'
-import Positioning from '../components/Positioning.astro'
-import Interop from '../components/Interop.astro'
-import Quickstart from '../components/Quickstart.astro'
 import Footer from '../components/Footer.astro'
+import Button from '../components/Button.astro'
+import Badge from '../components/Badge.astro'
+import Card from '../components/Card.astro'
+import CopyCommand from '../components/CopyCommand.astro'
+import TabbedCode from '../components/TabbedCode.astro'
+import Accordion from '../components/Accordion.astro'
+
+// Real snippets (mirror the shipped 0.1.0 API) for the code-block primitive demo.
+const coreSnippet = `import { createMusdClient } from '@musd-kit/core'
+
+const musd = createMusdClient({ chainId, publicClient })
+
+// One call → a fully-typed, contract-authoritative live position
+const trove = await musd.getTrove(address)
+//    ^ { collateral, entireDebt, icr, liquidationPrice, healthFactor, ... }`
+
+const reactSnippet = `import { useTrove, useOpenTrove } from '@musd-kit/react'
+
+const { data: trove, isLoading } = useTrove({ address })
+const { openTrove, isPending, error } = useOpenTrove()
+//      error is a typed MusdError (e.g. BelowMinimumDebt)`
+
+const kitFaq = [
+  {
+    q: 'What is this page?',
+    a: 'The v2 foundation — design tokens, fonts, the shared dark code theme, and the reusable component kit. The marketing content sections land in the next build steps.',
+  },
+  {
+    q: 'Why light, and why one red?',
+    a: 'A warm-white canvas with a single Mezo-red accent reads as crafted and calm — `--red` is the only brand color, used as a tonal range (tint, base, deep), never a rainbow.',
+  },
+  {
+    q: 'Is the code theme shared with the docs?',
+    a: 'Yes — the same warm-dark Shiki theme renders code on the landing and in the VitePress docs, so code reads as one brand everywhere.',
+  },
+]
 ---
 
 <Base>
   <Nav />
   <main id="main">
-    <Hero />
-    <PreviewWidget />
-    <Problem />
-    <Capabilities />
-    <Correctness />
-    <Positioning />
-    <Interop />
-    <Quickstart />
+    <!-- Shell hero band (light; the nav is transparent over this) -->
+    <section class="shell-hero section">
+      <div class="container">
+        <p class="eyebrow eyebrow--red" data-reveal>FOUNDATION · BRAND v2</p>
+        <h1 class="shell-hero__title" data-reveal>Light canvas. Warm white. One Mezo red.</h1>
+        <p class="prose shell-hero__lead" data-reveal>
+          The rebuilt foundation for <strong>musdkit.xyz</strong> — design tokens, self-hosted Satoshi + Geist Mono, a
+          shared warm-dark code theme, and a reusable component kit. The content sections come next.
+        </p>
+        <div class="shell-hero__badges" data-reveal>
+          <Badge>component kit</Badge>
+          <Badge variant="warn">community · testnet · pre-1.0</Badge>
+        </div>
+        <div class="shell-hero__cta" data-reveal>
+          <CopyCommand command="npm install @musd-kit/core @musd-kit/react" />
+          <div class="shell-hero__links">
+            <Button href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</Button>
+            <Button href="/docs/" variant="ghost">Read the docs</Button>
+            <Button href="/docs/api/" variant="link">API reference&nbsp;→</Button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Component kit -->
+    <section class="section kit" id="features" aria-labelledby="kit-h">
+      <div class="container">
+        <p class="eyebrow" data-reveal>COMPONENT KIT</p>
+        <h2 id="kit-h" data-reveal>The reusable primitives.</h2>
+
+        <div class="kit__grid">
+          <Card class="reveal-card">
+            <p class="kit__label">Buttons</p>
+            <div class="kit__row">
+              <Button>Primary</Button>
+              <Button variant="ghost">Ghost</Button>
+              <Button variant="link">Text link&nbsp;→</Button>
+            </div>
+          </Card>
+
+          <Card class="reveal-card">
+            <p class="kit__label">Badges</p>
+            <div class="kit__row">
+              <Badge>red-tint pill</Badge>
+              <Badge variant="warn">testnet</Badge>
+            </div>
+          </Card>
+
+          <Card class="reveal-card">
+            <p class="kit__label">Copy-command pill</p>
+            <CopyCommand command="pnpm add @musd-kit/core" />
+          </Card>
+
+          <Card class="reveal-card">
+            <p class="kit__label">Soft-shadow card</p>
+            <p class="kit__note">Warm elevation on the light canvas — the container for grouped content.</p>
+          </Card>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dark code-block object -->
+    <section class="section kit-code" id="architecture" aria-labelledby="code-h">
+      <div class="container kit-code__inner">
+        <div class="kit-code__intro">
+          <p class="eyebrow" data-reveal>CODE BLOCK</p>
+          <h2 id="code-h" data-reveal>A first-class dark code object.</h2>
+          <p class="prose" data-reveal>
+            Dark islands on the light page — a tab row, a subtle copy button, and the shared warm syntax theme. The same
+            theme renders in the docs.
+          </p>
+        </div>
+        <div class="kit-code__block" data-reveal>
+          <TabbedCode
+            tabs={[
+              { label: 'core', code: coreSnippet, lang: 'ts' },
+              { label: 'react', code: reactSnippet, lang: 'tsx' },
+            ]}
+          />
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart anchor (install pill demo) -->
+    <section class="section kit-quick" id="quickstart" aria-labelledby="quick-h">
+      <div class="container">
+        <p class="eyebrow" data-reveal>QUICKSTART</p>
+        <h2 id="quick-h" data-reveal>Install in one line.</h2>
+        <div class="kit-quick__cmd" data-reveal>
+          <CopyCommand command="npm install @musd-kit/core" />
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ accordion -->
+    <section class="section kit-faq" id="faq" aria-labelledby="faq-h">
+      <div class="container kit-faq__inner">
+        <p class="eyebrow" data-reveal>FAQ</p>
+        <h2 id="faq-h" data-reveal>Foundation, answered.</h2>
+        <div data-reveal>
+          <Accordion items={kitFaq} />
+        </div>
+      </div>
+    </section>
   </main>
   <Footer />
 </Base>
+
+<style>
+  .shell-hero {
+    padding-top: clamp(3rem, 7vw, 5.5rem);
+  }
+  .shell-hero__title {
+    font-size: var(--fs-display);
+    margin-top: 1.1rem;
+    max-width: 18ch;
+  }
+  .shell-hero__lead {
+    margin-top: 1.35rem;
+    font-size: var(--fs-h3);
+    line-height: 1.55;
+  }
+  .shell-hero__lead strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .shell-hero__badges {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .shell-hero__cta {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    align-items: flex-start;
+  }
+  .shell-hero__links {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .kit h2,
+  .kit-code h2,
+  .kit-quick h2,
+  .kit-faq h2 {
+    margin-top: 0.9rem;
+  }
+  .kit__grid {
+    margin-top: clamp(2rem, 5vw, 3rem);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    gap: 1.25rem;
+  }
+  .kit__label {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+  }
+  .kit__row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .kit__note {
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  .kit-code {
+    background: var(--surface-2);
+    border-block: 1px solid var(--hairline);
+  }
+  .kit-code__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(2rem, 5vw, 3rem);
+    align-items: center;
+  }
+  @media (min-width: 880px) {
+    .kit-code__inner {
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    }
+  }
+  .kit-code__intro h2 {
+    margin-top: 0.9rem;
+  }
+  .kit-code__intro p {
+    margin-top: 1rem;
+  }
+  .kit-quick__cmd {
+    margin-top: 1.75rem;
+  }
+  .kit-faq__inner {
+    max-width: var(--maxw-prose);
+  }
+  .kit-faq__inner > [data-reveal] {
+    margin-top: 1.75rem;
+  }
+</style>

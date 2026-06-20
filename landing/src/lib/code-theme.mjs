@@ -1,47 +1,46 @@
-// musd-kit — the custom warm Shiki theme (BRAND.md §7). Default themes are cold; this
-// retunes to the ember palette so code reads as one brand on the landing AND in the
-// VitePress docs (both import this single source).
+// musd-kit — the custom code theme (BRAND v2 §7). Code blocks are DARK islands on the light
+// page; this warm theme (values verbatim from BRAND §7) is shared by the landing AND the
+// VitePress docs so code reads as one brand.
 //
-//   comment   → --text-dim (italic)     keyword   → --ember
-//   function  → --ember-bright          string    → --verified (muted)
-//   number    → warm gold               type      → warm neutral
-//   punctuation/operator → --text-muted  variable/plain → --text   error → --danger
+//   comment → #8A8077 (italic)   keyword → --red-bright   function → #F0A38A (warm)
+//   string  → #7FBF9A            number  → #E8B070         type     → #D8C8B8
+//   punctuation/operator → #B8ADA3   variable/plain → --text-on-code   error → --danger
 
-const ember = '#E0703A'
-const emberBright = '#F2925A'
-const verified = '#5FB08A'
-const gold = '#E0B070'
-const typeNeutral = '#C9B8A8'
-const textMuted = '#A79E96'
-const text = '#F6F2ED'
-const textDim = '#8E847A' // AA-readable dim for code comments on --surface-2
-const danger = '#D06A5A'
-const bg = '#1A1714' // --surface-2
+const keyword = '#F26555' // --red-bright
+const fn = '#F0A38A'
+const string = '#7FBF9A'
+const number = '#E8B070'
+const type = '#D8C8B8'
+const punct = '#B8ADA3'
+const text = '#F4EEE8' // --text-on-code
+const comment = '#8A8077'
+const danger = '#D0463A'
+const bg = '#181311' // --code-bg
 
 export const codeTheme = {
-  name: 'musd-kit-ember',
+  name: 'musd-kit-red',
   type: 'dark',
   colors: {
     'editor.background': bg,
     'editor.foreground': text,
   },
   tokenColors: [
-    { scope: ['comment', 'punctuation.definition.comment'], settings: { foreground: textDim, fontStyle: 'italic' } },
+    { scope: ['comment', 'punctuation.definition.comment'], settings: { foreground: comment, fontStyle: 'italic' } },
     {
       scope: ['keyword', 'storage', 'storage.type', 'keyword.control', 'modifier', 'keyword.operator.new', 'keyword.operator.expression'],
-      settings: { foreground: ember },
+      settings: { foreground: keyword },
     },
-    { scope: ['entity.name.function', 'support.function', 'meta.function-call entity.name.function'], settings: { foreground: emberBright } },
-    { scope: ['string', 'string.quoted', 'string.template', 'punctuation.definition.string'], settings: { foreground: verified } },
-    { scope: ['constant.numeric', 'constant.language', 'constant.numeric.bigint'], settings: { foreground: gold } },
+    { scope: ['entity.name.function', 'support.function', 'meta.function-call entity.name.function'], settings: { foreground: fn } },
+    { scope: ['string', 'string.quoted', 'string.template', 'punctuation.definition.string'], settings: { foreground: string } },
+    { scope: ['constant.numeric', 'constant.language', 'constant.numeric.bigint'], settings: { foreground: number } },
     {
       scope: ['entity.name.type', 'support.type', 'entity.name.class', 'support.class', 'entity.other.inherited-class', 'meta.type.annotation'],
-      settings: { foreground: typeNeutral },
+      settings: { foreground: type },
     },
-    { scope: ['punctuation', 'meta.brace', 'keyword.operator', 'meta.delimiter'], settings: { foreground: textMuted } },
+    { scope: ['punctuation', 'meta.brace', 'keyword.operator', 'meta.delimiter'], settings: { foreground: punct } },
     { scope: ['variable', 'variable.other', 'meta.object-literal.key', 'support.variable', 'variable.parameter'], settings: { foreground: text } },
-    { scope: ['entity.name.tag', 'punctuation.definition.tag'], settings: { foreground: ember } },
-    { scope: ['entity.other.attribute-name'], settings: { foreground: emberBright } },
+    { scope: ['entity.name.tag', 'punctuation.definition.tag'], settings: { foreground: keyword } },
+    { scope: ['entity.other.attribute-name'], settings: { foreground: fn } },
     { scope: ['invalid', 'invalid.illegal'], settings: { foreground: danger } },
   ],
 }

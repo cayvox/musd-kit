@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="musd-kit">
-  <rect width="32" height="32" rx="7" fill="#0B0A09"/>
-  <line x1="8" y1="22" x2="16" y2="11" stroke="#E0703A" stroke-width="1.6" stroke-opacity="0.55" stroke-linecap="round"/>
-  <line x1="16" y1="11" x2="24" y2="19" stroke="#E0703A" stroke-width="1.6" stroke-opacity="0.55" stroke-linecap="round"/>
-  <circle cx="8" cy="22" r="2" fill="#E0703A" fill-opacity="0.5"/>
-  <circle cx="24" cy="19" r="2" fill="#E0703A" fill-opacity="0.5"/>
-  <circle cx="16" cy="11" r="3.4" fill="#E0703A"/>
+  <rect width="32" height="32" rx="7" fill="#FBF8F5"/>
+  <line x1="8" y1="22" x2="16" y2="11" stroke="#E5483D" stroke-width="1.6" stroke-opacity="0.45" stroke-linecap="round"/>
+  <line x1="16" y1="11" x2="24" y2="19" stroke="#E5483D" stroke-width="1.6" stroke-opacity="0.45" stroke-linecap="round"/>
+  <circle cx="8" cy="22" r="2" fill="#E5483D" fill-opacity="0.5"/>
+  <circle cx="24" cy="19" r="2" fill="#E5483D" fill-opacity="0.5"/>
+  <circle cx="16" cy="11" r="3.4" fill="#E5483D"/>
 </svg>

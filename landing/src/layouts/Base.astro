@@ -35,7 +35,7 @@ const jsonLd = {
     <title>{title}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
-    <meta name="theme-color" content="#0B0A09" />
+    <meta name="theme-color" content="#FBF8F5" />
     <meta name="generator" content={Astro.generator} />
 
     <!-- Preload the two primary font faces (Satoshi variable + Geist Mono regular) -->
@@ -112,6 +112,14 @@ const jsonLd = {
             select(next)
             tabs[next].focus()
           })
+        })
+      }
+
+      // FAQ accordion — toggle aria-expanded (CSS animates the grid-rows height)
+      for (const trigger of document.querySelectorAll<HTMLButtonElement>('.accordion__trigger')) {
+        trigger.addEventListener('click', () => {
+          const open = trigger.getAttribute('aria-expanded') === 'true'
+          trigger.setAttribute('aria-expanded', open ? 'false' : 'true')
         })
       }
 

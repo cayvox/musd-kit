@@ -9,21 +9,27 @@ import Wordmark from './Wordmark.astro'
       <p class="footer__tagline">The typed SDK for MUSD on Mezo.</p>
     </div>
 
+    <nav class="footer__cols" aria-label="Footer">
+      <div class="footer__col">
+        <p class="footer__heading">Documentation</p>
+        <a href="/docs/">Docs</a>
+        <a href="/docs/api/">API reference</a>
+      </div>
+      <div class="footer__col">
+        <p class="footer__heading">Project</p>
+        <a href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener">npm</a>
+        <a href="https://github.com/cayvox/musd-kit/blob/main/LICENSE" rel="noopener">License (MIT)</a>
+      </div>
+    </nav>
+
     <div class="footer__maturity" role="note">
       <p>
-        musd-kit is open-source, community-built tooling. It is <strong>not affiliated with or endorsed by Mezo or
-        Thesis</strong>. It is currently intended for <strong>testnet and evaluation</strong> and is
-        <strong>pre-1.0</strong> — APIs may change before a stable release.
+        musd-kit is open-source, community-built tooling. It is <strong>not affiliated with or
+        endorsed by Mezo or Thesis</strong>. It is currently intended for <strong>testnet and
+        evaluation</strong> and is <strong>pre-1.0</strong> — APIs may change before a stable release.
       </p>
     </div>
-
-    <nav class="footer__links" aria-label="Footer">
-      <a href="/docs/">Docs</a>
-      <a href="/docs/api/">API reference</a>
-      <a href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</a>
-      <a href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener">npm</a>
-      <a href="https://github.com/cayvox/musd-kit/blob/main/LICENSE" rel="noopener">License (MIT)</a>
-    </nav>
 
     <div class="footer__meta">
       <p class="footer__credit">
@@ -42,17 +48,28 @@ import Wordmark from './Wordmark.astro'
   }
   .footer__inner {
     display: grid;
-    gap: 2rem;
+    gap: 2.5rem 3rem;
+    grid-template-columns: 1fr;
   }
-  @media (min-width: 820px) {
+  @media (min-width: 720px) {
     .footer__inner {
-      grid-template-columns: 1fr 1fr;
-      gap: 2.5rem 3rem;
+      grid-template-columns: 1.1fr 1fr;
       align-items: start;
     }
     .footer__maturity {
-      grid-row: span 2;
-      order: 2;
+      grid-column: 1 / -1;
+    }
+  }
+  @media (min-width: 1000px) {
+    .footer__inner {
+      grid-template-columns: 1.2fr 1fr 1.4fr;
+    }
+    .footer__maturity {
+      grid-column: 3;
+      grid-row: 1 / 3;
+    }
+    .footer__meta {
+      grid-column: 1 / 3;
     }
   }
   .footer__tagline {
@@ -60,10 +77,34 @@ import Wordmark from './Wordmark.astro'
     color: var(--text-muted);
     font-size: var(--fs-small);
   }
+  .footer__cols {
+    display: flex;
+    gap: clamp(2rem, 6vw, 4rem);
+  }
+  .footer__col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .footer__heading {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 0.2rem;
+  }
+  .footer__col a {
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  .footer__col a:hover {
+    color: var(--red-deep);
+  }
   .footer__maturity {
     max-width: 46ch;
     padding: 1.1rem 1.25rem;
-    background: var(--surface-2);
+    background: var(--canvas);
     border: 1px solid var(--hairline);
     border-left: 2px solid var(--warn);
     border-radius: var(--radius-sm);
@@ -77,24 +118,14 @@ import Wordmark from './Wordmark.astro'
     color: var(--text);
     font-weight: 600;
   }
-  .footer__links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem 1.5rem;
-  }
-  .footer__links a {
-    color: var(--text-muted);
-    font-size: var(--fs-small);
-  }
-  .footer__links a:hover {
-    color: var(--ember);
-  }
   .footer__meta {
     color: var(--text-dim);
+    border-top: 1px solid var(--hairline);
+    padding-top: 1.5rem;
   }
   .footer__credit {
     font-size: var(--fs-small);
-    max-width: 52ch;
+    max-width: 60ch;
   }
   .footer__copy {
     margin-top: 0.6rem;
