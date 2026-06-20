@@ -6,8 +6,8 @@ interface Props {
   description?: string
 }
 const {
-  title = 'musd-kit — The typed SDK for MUSD on Mezo',
-  description = "An open-source, type-safe TypeScript SDK for MUSD — Mezo's Bitcoin-backed stablecoin. Open and manage Troves, preview borrows, redeem and liquidate, with React hooks — and correctness verified against Mezo's contracts.",
+  title = 'musd-kit: The typed SDK for MUSD on Mezo',
+  description = "An open-source, type-safe TypeScript SDK for MUSD, Mezo's Bitcoin-backed stablecoin. Open and manage Troves, preview borrows, redeem and liquidate, with React hooks, and correctness verified against Mezo's contracts.",
 } = Astro.props
 
 const canonical = 'https://musdkit.xyz/'
@@ -85,7 +85,7 @@ const jsonLd = {
             label.textContent = prev
           }, 1600)
         } catch {
-          /* clipboard unavailable — no-op */
+          /* clipboard unavailable, no-op */
         }
       })
 
@@ -115,7 +115,7 @@ const jsonLd = {
         })
       }
 
-      // FAQ accordion — toggle aria-expanded (CSS animates the grid-rows height)
+      // FAQ accordion, toggle aria-expanded (CSS animates the grid-rows height)
       for (const trigger of document.querySelectorAll<HTMLButtonElement>('.accordion__trigger')) {
         trigger.addEventListener('click', () => {
           const open = trigger.getAttribute('aria-expanded') === 'true'
@@ -123,7 +123,7 @@ const jsonLd = {
         })
       }
 
-      // Reveal-on-scroll (staggered) — skipped entirely under reduced-motion
+      // Reveal-on-scroll (staggered), skipped entirely under reduced-motion
       const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       const revealEls = document.querySelectorAll<HTMLElement>('[data-reveal]')
       if (reduce || !('IntersectionObserver' in window)) {

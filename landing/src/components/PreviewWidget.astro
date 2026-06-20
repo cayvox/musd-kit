@@ -1,5 +1,5 @@
 ---
-// Task B — the live previewOpen calculator as the hero mockup card. A lazy, read-only Astro
+// Task B, the live previewOpen calculator as the hero mockup card. A lazy, read-only Astro
 // island: on first view it dynamically imports the shipped @musd-kit/core + viem, reads the
 // REAL Mezo testnet oracle once, and previews live. Never a wallet, never a write, never
 // mainnet. Degrades to a clearly-labelled fallback price if the RPC is unavailable.
@@ -11,7 +11,7 @@
       <span class="pw__dot" aria-hidden="true"></span>
       <span class="pw__status-text">connecting to testnet…</span>
     </span>
-    <span class="pw__price">BTC/USD <span data-price-val>—</span></span>
+    <span class="pw__price">BTC/USD <span data-price-val>·</span></span>
   </div>
 
   <div class="pw__inputs">
@@ -32,11 +32,11 @@
   </div>
 
   <dl class="pw__outputs">
-    <div class="pw__row"><dt>Borrowing fee</dt><dd data-out="fee">—</dd></div>
-    <div class="pw__row"><dt>Total debt</dt><dd data-out="entireDebt">—</dd></div>
-    <div class="pw__row"><dt>Collateral ratio</dt><dd data-out="icr">—</dd></div>
-    <div class="pw__row"><dt>Liquidation price</dt><dd data-out="liq">—</dd></div>
-    <div class="pw__row pw__row--min"><dt>Meets minimum</dt><dd data-out="min">—</dd></div>
+    <div class="pw__row"><dt>Borrowing fee</dt><dd data-out="fee">·</dd></div>
+    <div class="pw__row"><dt>Total debt</dt><dd data-out="entireDebt">·</dd></div>
+    <div class="pw__row"><dt>Collateral ratio</dt><dd data-out="icr">·</dd></div>
+    <div class="pw__row"><dt>Liquidation price</dt><dd data-out="liq">·</dd></div>
+    <div class="pw__row pw__row--min"><dt>Meets minimum</dt><dd data-out="min">·</dd></div>
   </dl>
 
   <div class="pw__call">
@@ -44,7 +44,7 @@
     <code data-call>{"await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })"}</code>
   </div>
 
-  <p class="pw__foot" data-note>Read-only via the shipped <code>@musd-kit/core</code> — no wallet, no transaction.</p>
+  <p class="pw__foot" data-note>Read-only via the shipped <code>@musd-kit/core</code>. No wallet, no transaction.</p>
 </div>
 
 <script>
@@ -121,8 +121,8 @@
       if (statusText) statusText.textContent = isLive ? 'live · Mezo testnet' : 'fallback price'
       if (noteEl) {
         noteEl.innerHTML = isLive
-          ? 'Read-only via the shipped <code>@musd-kit/core</code> — no wallet, no transaction.'
-          : 'Live price unavailable — showing a recent testnet value. Calculations are illustrative.'
+          ? 'Read-only via the shipped <code>@musd-kit/core</code>. No wallet, no transaction.'
+          : 'Live price unavailable. Showing a recent testnet value. Calculations are illustrative.'
         noteEl.classList.toggle('pw__foot--warn', !isLive)
       }
     }
@@ -142,7 +142,7 @@
         return
       }
       if (collateral <= 0n || debt <= 0n) {
-        for (const k of ['fee', 'entireDebt', 'icr', 'liq', 'min']) out(k).textContent = '—'
+        for (const k of ['fee', 'entireDebt', 'icr', 'liq', 'min']) out(k).textContent = '·'
         return
       }
 
@@ -158,13 +158,13 @@
     }
 
     function render(fee: bigint | null, entireDebt: bigint, icr: bigint, liq: bigint, meetsMin: boolean | null) {
-      out('fee').textContent = fee === null ? '—' : `${fmt(fee, 2)} MUSD`
+      out('fee').textContent = fee === null ? '·' : `${fmt(fee, 2)} MUSD`
       out('entireDebt').textContent = `${fmt(entireDebt, 2)} MUSD`
       out('icr').textContent = `${(Number(formatEther(icr)) * 100).toFixed(1)}%`
       out('liq').textContent = `$${fmt(liq, 0)}`
       const minEl = out('min')
       if (meetsMin === null) {
-        minEl.textContent = '—'
+        minEl.textContent = '·'
         minEl.dataset.ok = ''
       } else {
         minEl.textContent = meetsMin ? '✓ yes' : '✗ below minimum'

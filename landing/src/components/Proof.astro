@@ -1,16 +1,16 @@
 ---
-// CONTENT §5 — the proof panel (our differentiator over PartyLayer). Verified facts as
+// CONTENT §5, the proof panel (our differentiator over PartyLayer). Verified facts as
 // AA-safe checks, with the standout metrics as Geist-Mono stat tiles.
 const stats = [
-  { n: '0', label: 'hardcoded governable values — min debt, fees, rates all read on-chain' },
+  { n: '0', label: 'hardcoded governable values: min debt, fees, rates all read on-chain' },
   { n: 'Δ 0', label: 'gas vs. near-exact insertion hints on the live list' },
-  { n: 'wei', label: 'preview ↔ on-chain parity — previewOpen equals the contract, exactly' },
+  { n: 'wei', label: 'preview ↔ on-chain parity: previewOpen equals the contract, exactly' },
   { n: '80+', label: 'tests · ESM + CJS · MIT' },
 ]
 const checks = [
   {
     t: 'Verified against real Mezo contracts',
-    d: 'A fork harness backs the whole suite, plus a live testnet pass through the published packages — not mocks.',
+    d: 'A fork harness backs the whole suite, plus a live testnet pass through the published packages, not mocks.',
   },
   {
     t: 'The harness caught three load-bearing bugs',
@@ -22,7 +22,7 @@ const checks = [
   },
   {
     t: 'A headless keeper liquidated real Troves',
-    d: 'Core-only, no React — it closed two under-collateralized positions and collected the __400 MUSD__ reward.',
+    d: 'Core-only, no React. It closed two under-collateralized positions and collected the __400 MUSD__ reward.',
   },
 ]
 const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">$1</span>')
@@ -34,7 +34,7 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
       <p class="eyebrow eyebrow--red" data-reveal>WHY TRUST IT</p>
       <h2 id="proof-h" data-reveal>Correctness is the product.</h2>
       <p class="lead proof__lead" data-reveal>
-        Most SDKs ask you to trust them. musd-kit was built against a fork of real Mezo and verified on testnet — so the
+        Most SDKs ask you to trust them. musd-kit was built against a fork of real Mezo and verified on testnet, so the
         proof is checkable, not promised.
       </p>
     </div>

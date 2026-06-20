@@ -2,7 +2,7 @@
 import TabbedCode from './TabbedCode.astro'
 import Button from './Button.astro'
 
-// CONTENT §7 — tabbed quickstart: Install / Core / React / Keeper. Real 0.1.0 API.
+// CONTENT §7, tabbed quickstart: Install / Core / React / Keeper. Real 0.1.0 API.
 const install = `npm i @musd-kit/core            # core only (Node/keeper)
 npm i @musd-kit/core @musd-kit/react   # + React hooks`
 
@@ -19,7 +19,7 @@ const { openTrove, isPending, error } = useOpenTrove()`
 
 const keeper = `import { createMusdClient } from '@musd-kit/core'
 
-// Core-only — no React. Run a permissionless liquidation keeper.
+// Core-only, no React. Run a permissionless liquidation keeper.
 const musd = createMusdClient({ chainId: 31611, publicClient, walletClient })
 if (await musd.isLiquidatable(borrower)) await musd.liquidate(borrower)`
 ---
@@ -30,7 +30,7 @@ if (await musd.isLiquidatable(borrower)) await musd.liquidate(borrower)`
       <p class="eyebrow eyebrow--red" data-reveal>QUICKSTART</p>
       <h2 id="qs-h" data-reveal>Start in minutes.</h2>
       <p class="prose" data-reveal>
-        Install the core, create a client, read live state — the same calls the widget above runs against testnet.
+        Install the core, create a client, read live state: the same calls the widget above runs against testnet.
       </p>
       <div class="quickstart__cta" data-reveal>
         <Button href="/docs/" variant="primary">Full Documentation</Button>

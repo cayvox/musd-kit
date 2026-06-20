@@ -1,5 +1,5 @@
 ---
-import Constellation from './Constellation.astro'
+import HeroBackdrop from './HeroBackdrop.astro'
 import CopyCommand from './CopyCommand.astro'
 import Badge from './Badge.astro'
 import Button from './Button.astro'
@@ -7,18 +7,15 @@ import PreviewWidget from './PreviewWidget.astro'
 ---
 
 <section class="hero">
-  <div class="hero__glow" aria-hidden="true"></div>
-  <Constellation />
+  <HeroBackdrop />
   <div class="container hero__inner">
     <div class="hero__copy">
       <div class="hero__pill">
-        <Badge href="https://www.npmjs.com/package/@musd-kit/core">
-          <span class="hero__pill-dot" aria-hidden="true"></span>Open source · MIT
-        </Badge>
+        <Badge href="https://www.npmjs.com/package/@musd-kit/core">Open source · MIT</Badge>
       </div>
       <h1 class="hero__title">Build on <span class="hero__accent">MUSD</span> <br class="hero__br" />without rebuilding <br class="hero__br" />the hard parts.</h1>
       <p class="hero__subhead">
-        The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin — the Trove
+        The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin. The Trove
         lifecycle, the math, and the hint dance, handled.
       </p>
       <div class="hero__cta">
@@ -35,9 +32,6 @@ import PreviewWidget from './PreviewWidget.astro'
     </div>
 
     <div class="hero__mockup">
-      <p class="hero__mockup-label">
-        <span aria-hidden="true">◆</span> Live preview — change the inputs
-      </p>
       <PreviewWidget />
     </div>
   </div>
@@ -48,19 +42,6 @@ import PreviewWidget from './PreviewWidget.astro'
     position: relative;
     padding-block: clamp(1.75rem, 4vw, 3.25rem) clamp(3.5rem, 8vw, 6rem);
     overflow: hidden;
-  }
-  /* Subtle warm depth behind the widget / upper-right */
-  .hero__glow {
-    position: absolute;
-    z-index: 0;
-    top: -16%;
-    right: -8%;
-    width: 60%;
-    height: 90%;
-    background: radial-gradient(closest-side, var(--red-glow), transparent 72%);
-    opacity: 0.85;
-    pointer-events: none;
-    filter: blur(8px);
   }
   .hero__inner {
     position: relative;
@@ -78,12 +59,6 @@ import PreviewWidget from './PreviewWidget.astro'
   }
   .hero__copy {
     min-width: 0;
-  }
-  .hero__pill-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--red);
   }
   .hero__title {
     font-size: clamp(2.3rem, 1.55rem + 2.6vw, 3.25rem);
@@ -159,30 +134,5 @@ import PreviewWidget from './PreviewWidget.astro'
   }
   .hero__mockup {
     min-width: 0;
-  }
-  .hero__mockup-label {
-    font-family: var(--font-mono);
-    font-size: var(--fs-mono-lbl);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--text-dim);
-    margin-bottom: 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .hero__mockup-label span {
-    color: var(--red);
-  }
-  /* subtle warm glow directly behind the widget card */
-  .hero__mockup :global(.pw) {
-    position: relative;
-  }
-  @media (max-width: 939px) {
-    .hero__glow {
-      width: 90%;
-      height: 60%;
-      top: 30%;
-    }
   }
 </style>

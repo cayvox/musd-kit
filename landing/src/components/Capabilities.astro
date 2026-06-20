@@ -3,12 +3,12 @@ import { Code } from 'astro:components'
 import { codeTheme } from '../lib/code-theme.mjs'
 import Button from './Button.astro'
 
-// CONTENT §4 — 6 capability cards. Every snippet mirrors the shipped 0.1.0 API.
+// CONTENT §4, 6 capability cards. Every snippet mirrors the shipped 0.1.0 API.
 const caps = [
   {
     label: 'READS',
     title: 'Contract-authoritative reads',
-    desc: '`getTrove` returns the full live position from the protocol’s own getters — correct by construction, interest to the second.',
+    desc: '`getTrove` returns the full live position from the protocol’s own getters. Correct by construction, interest to the second.',
     code: `const t = await musd.getTrove(address)
 // t.icr, t.liquidationPrice, t.healthFactor`,
     lang: 'ts',
@@ -16,7 +16,7 @@ const caps = [
   {
     label: 'PREVIEW',
     title: 'Preview & borrowing power',
-    desc: 'Show users exactly what they’ll get before they sign — dual-validated against the chain to the wei.',
+    desc: 'Show users exactly what they’ll get before they sign, dual-validated against the chain to the wei.',
     code: `const p = await musd.previewOpen({ collateral, debt })
 const max = await musd.getBorrowingPower({ collateral })`,
     lang: 'ts',
@@ -42,7 +42,7 @@ if (await musd.isLiquidatable(borrower))
   {
     label: 'REACT',
     title: 'React hooks',
-    desc: 'Wagmi-idiomatic, block-watching refetch, typed errors — no provider of its own, it consumes the wagmi context Passport already gives you.',
+    desc: 'Wagmi-idiomatic, block-watching refetch, typed errors. No provider of its own; it consumes the wagmi context Passport already gives you.',
     code: `const { data: trove } = useTrove({ address })
 const { openTrove, error } = useOpenTrove()`,
     lang: 'tsx',

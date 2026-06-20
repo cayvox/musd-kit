@@ -1,4 +1,4 @@
-// musd-kit — the custom code theme (BRAND v2 §7). Code blocks are DARK islands on the light
+// musd-kit, the custom code theme (BRAND v2 §7). Code blocks are DARK islands on the light
 // page; this warm theme (values verbatim from BRAND §7) is shared by the landing AND the
 // VitePress docs so code reads as one brand.
 //

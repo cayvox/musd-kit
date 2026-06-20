@@ -1,0 +1,75 @@
+---
+// Engineered blueprint backdrop (BRAND §6 v2): a very faint warm precision grid + a small,
+// deliberately ASCENDING sequence of red position-markers (a real sorted structure, evoking
+// SortedTroves + the "correctness" thesis, not a random constellation). CSS/SVG only, static,
+// edge-faded so it never competes with content. Reduced-motion-safe by construction (static).
+const xs = [120, 232, 344, 456, 568, 680]
+const ys = [452, 408, 372, 300, 248, 196] // strictly ascending (sorted)
+const pts = xs.map((x, i) => [x, ys[i]] as [number, number])
+const emphasized = 4 // one marker reads as the "active" position
+---
+
+<div class="backdrop" aria-hidden="true">
+  <div class="backdrop__grid"></div>
+  <svg class="backdrop__plot" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid slice" focusable="false">
+    <polyline
+      class="backdrop__line"
+      fill="none"
+      points={pts.map(([x, y]) => `${x},${y}`).join(' ')}
+    />
+    {
+      pts.map(([x, y], i) => (
+        <>
+          <line class="backdrop__stem" x1={x} y1={y} x2={x} y2="488" />
+          <circle class={i === emphasized ? 'backdrop__node backdrop__node--on' : 'backdrop__node'} cx={x} cy={y} r={i === emphasized ? 5 : 3.4} />
+        </>
+      ))
+    }
+  </svg>
+</div>
+
+<style>
+  .backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    /* fade toward the edges so the grid/plot is a whisper, never a focal point */
+    -webkit-mask-image: radial-gradient(135% 115% at 68% 26%, #000 32%, transparent 80%);
+    mask-image: radial-gradient(135% 115% at 68% 26%, #000 32%, transparent 80%);
+  }
+  /* the precision grid, warm, very low contrast */
+  .backdrop__grid {
+    position: absolute;
+    inset: -2px;
+    background-image: linear-gradient(to right, rgba(110, 98, 86, 0.055) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(110, 98, 86, 0.055) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .backdrop__plot {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .backdrop__line {
+    stroke: var(--red);
+    stroke-width: 1.5;
+    stroke-opacity: 0.22;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .backdrop__stem {
+    stroke: var(--red);
+    stroke-width: 1;
+    stroke-opacity: 0.06;
+  }
+  .backdrop__node {
+    fill: var(--red);
+    fill-opacity: 0.28;
+  }
+  .backdrop__node--on {
+    fill-opacity: 0.55;
+  }
+</style>

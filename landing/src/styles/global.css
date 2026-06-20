@@ -133,7 +133,7 @@ p {
   line-height: 1.3;
 }
 
-/* ---- Inline code (Geist Mono, red on a soft red chip) — not text on dark surfaces ---- */
+/* ---- Inline code (Geist Mono, red on a soft red chip), not text on dark surfaces ---- */
 :not(pre) > code:not(.cmd__text):not([data-call]) {
   font-family: var(--font-mono);
   font-size: 0.875em;
@@ -278,7 +278,7 @@ p {
   color: var(--verified);
 }
 
-/* ---- The dark code-block object (BRAND §7) — a dark island on the light page ---- */
+/* ---- The dark code-block object (BRAND §7), a dark island on the light page ---- */
 .codeblock {
   background: var(--code-bg);
   border: 1px solid var(--code-hairline);

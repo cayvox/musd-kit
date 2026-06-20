@@ -3,13 +3,13 @@ import { Code } from 'astro:components'
 import { codeTheme } from '../lib/code-theme.mjs'
 
 // The layered flow (STRUCTURE §4 / CONTENT §3). Every snippet mirrors the shipped 0.1.0 API
-// (no MusdProvider — @musd-kit/react has no provider of its own; it consumes wagmi context).
+// (no MusdProvider, @musd-kit/react has no provider of its own; it consumes wagmi context).
 const layers = [
   {
     key: 'dapp',
     name: 'Your dApp',
     sub: 'consumes your wagmi + Passport context',
-    desc: 'No provider of its own — the hooks read the wagmi context Passport (or any wagmi setup) already established. A few lines to a live position.',
+    desc: 'No provider of its own. The hooks read the wagmi context Passport (or any wagmi setup) already established. A few lines to a live position.',
     code: `// Passport gives you the wagmi context; musd-kit operates MUSD
 const { data: trove } = useTrove({ address })`,
     lang: 'tsx',
@@ -18,7 +18,7 @@ const { data: trove } = useTrove({ address })`,
     key: 'react',
     name: 'React Hooks',
     sub: 'useTrove · useOpenTrove · useBorrowingPower · …',
-    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors — selectors over one shared query, so health factor and liquidation price share a single fetch.',
+    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. Selectors over one shared query, so health factor and liquidation price share a single fetch.',
     code: `const { openTrove, isPending, error } = useOpenTrove()
 const { data: max } = useBorrowingPower({ collateral })
 //      error is a typed MusdError (e.g. BelowMinimumDebt)`,
@@ -39,7 +39,7 @@ const preview = await musd.previewOpen({ collateral, debt })`,
     key: 'math',
     name: 'Hint + Math engine',
     sub: 'insertion hints · ICR · liquidation price · interest',
-    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR / liquidation-price / borrowing-power and interest projection — dual-validated against a fork and the contracts’ own pure helpers.',
+    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR / liquidation-price / borrowing-power and interest projection, dual-validated against a fork and the contracts’ own pure helpers.',
     code: `const icr = computeICR({ collateral, entireDebt, price })
 const liq = computeLiquidationPrice({ collateral, entireDebt })`,
     lang: 'ts',
@@ -62,7 +62,7 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
     <p class="eyebrow eyebrow--red" data-reveal>ARCHITECTURE</p>
     <h2 id="arch-h" data-reveal>How musd-kit works</h2>
     <p class="prose arch-section__lead" data-reveal>
-      From your first line of code to a managed Trove — the whole flow, abstracted. Explore each layer.
+      From your first line of code to a managed Trove. The whole flow, abstracted. Explore each layer.
     </p>
 
     <div class="arch" data-arch data-reveal>
@@ -163,7 +163,7 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
       gap: 2.5rem;
     }
   }
-  /* The layer stack — a vertical flow with connector hairline through the nodes */
+  /* The layer stack, a vertical flow with connector hairline through the nodes */
   .arch__layers {
     display: flex;
     flex-direction: column;
