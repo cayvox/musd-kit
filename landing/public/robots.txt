@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://musdkit.xyz/sitemap-index.xml
