@@ -1,0 +1,55 @@
+/* musd-kit — Direction A design tokens (BRAND.md §1–§5). Use verbatim. */
+:root {
+  /* Canvas & surfaces — warm near-black, never pure #000 */
+  --canvas: #0b0a09;
+  --surface: #131110;
+  --surface-2: #1a1714;
+  --hairline: #262019;
+  --hairline-2: #332b22;
+
+  /* Text — warm off-white ramp */
+  --text: #f6f2ed;
+  --text-muted: #a79e96;
+  /* BRAND lists #6E665E; warm-lightened to #8E847A to clear WCAG AA (4.5:1) for small
+     dim text on the dark surfaces — AA is a hard acceptance criterion. */
+  --text-dim: #8e847a;
+
+  /* Brand accent — ember (the ONLY brand color) */
+  --ember: #e0703a;
+  --ember-bright: #f2925a;
+  --ember-deep: #c2562b;
+  --ember-glow: rgba(224, 112, 58, 0.16);
+  --ember-faint: rgba(224, 112, 58, 0.08);
+
+  /* Quiet semantics — not brand colors */
+  --verified: #5fb08a;
+  --warn: #d9a441;
+  --danger: #d06a5a;
+
+  /* Type */
+  --font-display: 'Satoshi', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'JetBrains Mono', 'SF Mono', monospace;
+
+  --fs-display: clamp(2.75rem, 1.6rem + 5vw, 5rem);
+  --fs-h1: clamp(2rem, 1.4rem + 2.4vw, 3.25rem);
+  --fs-h2: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+  --fs-h3: 1.25rem;
+  --fs-body: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  --fs-small: 0.9375rem;
+  --fs-mono-lbl: 0.8125rem;
+
+  /* Spacing, radius, layout */
+  --maxw: 1120px;
+  --maxw-prose: 68ch;
+  --gutter: clamp(1.25rem, 5vw, 4rem);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --space-section: clamp(5rem, 10vw, 9rem);
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur: 220ms;
+  --dur-slow: 360ms;
+}

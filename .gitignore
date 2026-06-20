@@ -29,3 +29,8 @@ anvil*.log
 docs/public/api
 docs/.vitepress/dist
 docs/.vitepress/cache
+
+# astro
+landing/.astro/
+landing/dist/
+.astro/

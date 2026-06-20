@@ -1,0 +1,142 @@
+---
+import '../styles/global.css'
+
+interface Props {
+  title?: string
+  description?: string
+}
+const {
+  title = 'musd-kit — The typed SDK for MUSD on Mezo',
+  description = "An open-source, type-safe TypeScript SDK for MUSD — Mezo's Bitcoin-backed stablecoin. Open and manage Troves, preview borrows, redeem and liquidate, with React hooks — and correctness verified against Mezo's contracts.",
+} = Astro.props
+
+const canonical = 'https://musdkit.xyz/'
+const ogImage = 'https://musdkit.xyz/og.png'
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareSourceCode',
+  name: 'musd-kit',
+  description: "Type-safe TypeScript SDK for MUSD, Mezo's Bitcoin-backed stablecoin.",
+  programmingLanguage: 'TypeScript',
+  codeRepository: 'https://github.com/cayvox/musd-kit',
+  license: 'https://opensource.org/licenses/MIT',
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Cross-platform',
+  url: 'https://musdkit.xyz',
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta name="theme-color" content="#0B0A09" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Preload the two primary font faces (Satoshi variable + Geist Mono regular) -->
+    <link rel="preload" href="/fonts/satoshi-variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/geist-mono-400.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:site_name" content="musd-kit" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <slot />
+
+    <script>
+      // ---- Progressive enhancement: copy buttons, code tabs, reveal-on-scroll ----
+      // Copy-to-clipboard (event delegation)
+      document.addEventListener('click', async (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')
+        if (!btn) return
+        const text = btn.getAttribute('data-copy') ?? ''
+        try {
+          await navigator.clipboard.writeText(text)
+          const label = btn.querySelector('.codeblock__copy-text') ?? btn
+          const prev = label.textContent
+          btn.dataset.copied = 'true'
+          label.textContent = 'Copied'
+          window.setTimeout(() => {
+            btn.dataset.copied = 'false'
+            label.textContent = prev
+          }, 1600)
+        } catch {
+          /* clipboard unavailable — no-op */
+        }
+      })
+
+      // Code tabs (core / react, etc.)
+      for (const group of document.querySelectorAll<HTMLElement>('[data-tabs]')) {
+        const tabs = [...group.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        const panels = [...group.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+        const copyBtn = group.querySelector<HTMLButtonElement>('[data-copy]')
+        const select = (i: number) => {
+          tabs.forEach((t, j) => {
+            const on = i === j
+            t.setAttribute('aria-selected', on ? 'true' : 'false')
+            t.tabIndex = on ? 0 : -1
+            panels[j].hidden = !on
+          })
+          if (copyBtn) copyBtn.setAttribute('data-copy', panels[i].getAttribute('data-code') ?? '')
+        }
+        tabs.forEach((tab, i) => {
+          tab.addEventListener('click', () => select(i))
+          tab.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'ArrowRight' && ev.key !== 'ArrowLeft') return
+            ev.preventDefault()
+            const next = ev.key === 'ArrowRight' ? (i + 1) % tabs.length : (i - 1 + tabs.length) % tabs.length
+            select(next)
+            tabs[next].focus()
+          })
+        })
+      }
+
+      // Reveal-on-scroll (staggered) — skipped entirely under reduced-motion
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const revealEls = document.querySelectorAll<HTMLElement>('[data-reveal]')
+      if (reduce || !('IntersectionObserver' in window)) {
+        revealEls.forEach((el) => el.classList.add('is-revealed'))
+      } else {
+        const io = new IntersectionObserver(
+          (entries, obs) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue
+              const el = entry.target as HTMLElement
+              const sibs = [...(el.parentElement?.querySelectorAll('[data-reveal]') ?? [])]
+              const idx = Math.max(0, sibs.indexOf(el))
+              el.style.setProperty('--reveal-delay', `${Math.min(idx, 6) * 60}ms`)
+              el.classList.add('is-revealed')
+              obs.unobserve(el)
+            }
+          },
+          { rootMargin: '0px 0px -10% 0px', threshold: 0.1 },
+        )
+        revealEls.forEach((el) => io.observe(el))
+      }
+    </script>
+  </body>
+</html>
