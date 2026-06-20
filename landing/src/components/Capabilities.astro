@@ -1,0 +1,150 @@
+---
+import { Code } from 'astro:components'
+import { codeTheme } from '../lib/code-theme.mjs'
+import Button from './Button.astro'
+
+// CONTENT §4 — 6 capability cards. Every snippet mirrors the shipped 0.1.0 API.
+const caps = [
+  {
+    label: 'READS',
+    title: 'Contract-authoritative reads',
+    desc: '`getTrove` returns the full live position from the protocol’s own getters — correct by construction, interest to the second.',
+    code: `const t = await musd.getTrove(address)
+// t.icr, t.liquidationPrice, t.healthFactor`,
+    lang: 'ts',
+  },
+  {
+    label: 'PREVIEW',
+    title: 'Preview & borrowing power',
+    desc: 'Show users exactly what they’ll get before they sign — dual-validated against the chain to the wei.',
+    code: `const p = await musd.previewOpen({ collateral, debt })
+const max = await musd.getBorrowingPower({ collateral })`,
+    lang: 'ts',
+  },
+  {
+    label: 'LIFECYCLE',
+    title: 'Full Trove lifecycle',
+    desc: 'Open, add/withdraw collateral, borrow, repay, adjust, refinance, close. Hints computed for you; every write simulates first.',
+    code: `await musd.openTrove({ collateral, debt })
+await musd.repay({ amount })
+await musd.close()`,
+    lang: 'ts',
+  },
+  {
+    label: 'KEEPER',
+    title: 'Redemption & keeper',
+    desc: 'Redeem MUSD for BTC (fee + truncation surfaced, never silent) and run a permissionless liquidation keeper with mode-aware checks.',
+    code: `await musd.redeem({ amount })
+if (await musd.isLiquidatable(borrower))
+  await musd.liquidate(borrower)`,
+    lang: 'ts',
+  },
+  {
+    label: 'REACT',
+    title: 'React hooks',
+    desc: 'Wagmi-idiomatic, block-watching refetch, typed errors — no provider of its own, it consumes the wagmi context Passport already gives you.',
+    code: `const { data: trove } = useTrove({ address })
+const { openTrove, error } = useOpenTrove()`,
+    lang: 'tsx',
+  },
+  {
+    label: 'SAFETY',
+    title: 'Typed errors & zero hardcoding',
+    desc: 'A discriminated `MusdError` taxonomy mapped from real reverts; every governable value (min debt, fees, rates) read on-chain, never hardcoded.',
+    code: `catch (e) {
+  if (e instanceof BelowMinimumDebt)
+    showMin(e.context.minNetDebt)
+}`,
+    lang: 'ts',
+  },
+]
+const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
+const mark = (s: string) => s.replace(/`([^`]+)`/g, '<code>$1</code>')
+---
+
+<section class="section caps" id="features" aria-labelledby="caps-h">
+  <div class="container">
+    <p class="eyebrow eyebrow--red" data-reveal>CAPABILITIES</p>
+    <h2 id="caps-h" data-reveal>Everything you need to build on MUSD.</h2>
+
+    <div class="caps__grid">
+      {
+        caps.map((c) => (
+          <article class="caps__card card" data-reveal>
+            <p class="caps__label">{c.label}</p>
+            <h3 class="caps__title">{c.title}</h3>
+            <p class="caps__desc" set:html={mark(c.desc)} />
+            <div class="caps__code codeblock">
+              <Code code={trim(c.code)} lang={c.lang as 'ts' | 'tsx'} theme={codeTheme} />
+            </div>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="caps__cta" data-reveal>
+      <Button href="https://github.com/cayvox/musd-kit" rel="noopener" variant="ghost">Star on GitHub</Button>
+      <Button href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener" variant="link">@musd-kit/core&nbsp;→</Button>
+    </div>
+  </div>
+</section>
+
+<style>
+  .caps h2 {
+    margin-top: 0.9rem;
+  }
+  .caps__grid {
+    margin-top: clamp(2rem, 5vw, 3rem);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    gap: 1.25rem;
+  }
+  .caps__card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+  .caps__card:hover {
+    border-color: var(--hairline-2);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+  .caps__label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    color: var(--red-ink);
+  }
+  .caps__title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .caps__desc {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+  .caps__code {
+    margin-top: auto;
+    background: var(--code-bg);
+  }
+  /* fade the right edge so any long line "continues" gracefully instead of hard-clipping */
+  .caps__code :global(pre) {
+    font-size: 0.72rem;
+    line-height: 1.65;
+    padding: 0.85rem 0.95rem;
+    background: transparent !important;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, #000 90%, transparent);
+    mask-image: linear-gradient(to right, #000 90%, transparent);
+  }
+  .caps__cta {
+    margin-top: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+</style>

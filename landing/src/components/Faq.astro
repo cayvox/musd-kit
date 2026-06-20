@@ -1,0 +1,61 @@
+---
+import Accordion from './Accordion.astro'
+
+// CONTENT §9 — the 6 Q&As (verbatim), using the Prompt-1 accordion primitive.
+const items = [
+  {
+    q: 'Is musd-kit official?',
+    a: 'No — it’s open-source, community-built tooling, not affiliated with or endorsed by Mezo or Thesis. It talks to Mezo’s public contracts.',
+  },
+  {
+    q: 'Is it production-ready?',
+    a: 'It’s **pre-1.0**, intended for testnet and evaluation. The core is fork-verified and testnet-proven, but APIs may change before a stable 1.0 release.',
+  },
+  {
+    q: 'Which networks?',
+    a: 'Mezo testnet (chainId 31611) and mainnet (31612). The client reads the governable parameters live per network.',
+  },
+  {
+    q: 'Does it require Passport?',
+    a: 'No. The React hooks consume any wagmi context (Passport is the easiest way to get one); the core needs only a viem client. musd-kit is a complement to Passport, not a replacement.',
+  },
+  {
+    q: 'Is it open source?',
+    a: 'Yes — MIT. View, fork, and contribute on GitHub.',
+  },
+  {
+    q: 'How is correctness verified?',
+    a: 'Every release runs against a fork of real Mezo plus a live testnet pass through the published packages; previews are validated to the wei; no governable value is hardcoded. See the verification ledger in the docs.',
+  },
+]
+---
+
+<section class="section faq" id="faq" aria-labelledby="faq-h">
+  <div class="container faq__inner">
+    <p class="eyebrow eyebrow--red" data-reveal>FAQ</p>
+    <h2 id="faq-h" data-reveal>Questions, answered.</h2>
+    <div class="faq__list" data-reveal>
+      <Accordion items={items} />
+    </div>
+    <p class="faq__more" data-reveal>
+      Still have questions? <a href="https://github.com/cayvox/musd-kit/discussions" rel="noopener">Start a discussion on GitHub&nbsp;→</a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .faq__inner {
+    max-width: 56rem;
+  }
+  .faq h2 {
+    margin-top: 0.9rem;
+  }
+  .faq__list {
+    margin-top: 1.75rem;
+  }
+  .faq__more {
+    margin-top: 1.75rem;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+</style>

@@ -52,8 +52,7 @@
   const FALLBACK_PRICE = 66_395_814_700_000_000_000_000n // last known-good testnet read
   const GAS_RESERVE = 200n * 10n ** 18n
 
-  const root = document.querySelector<HTMLElement>('[data-widget]')
-  if (root) initWhenVisible(root)
+  for (const root of document.querySelectorAll<HTMLElement>('[data-widget]')) initWhenVisible(root)
 
   function initWhenVisible(el: HTMLElement) {
     if (!('IntersectionObserver' in window)) {

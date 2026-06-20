@@ -1,0 +1,48 @@
+---
+import PreviewWidget from './PreviewWidget.astro'
+
+// CONTENT §8 — the live demo. Re-feature the previewOpen widget full-width (read-only testnet).
+---
+
+<section class="section demo" id="demo" aria-labelledby="demo-h">
+  <div class="container">
+    <div class="demo__head">
+      <p class="eyebrow eyebrow--red" data-reveal>LIVE DEMO</p>
+      <h2 id="demo-h" data-reveal>Try it live.</h2>
+      <p class="prose" data-reveal>
+        Change the collateral and debt — fee, total debt, ICR and liquidation price update from the real Mezo testnet
+        oracle, through the shipped package.
+      </p>
+    </div>
+    <div class="demo__widget" data-reveal>
+      <PreviewWidget />
+    </div>
+    <p class="demo__caption" data-reveal>Read-only, on Mezo testnet — this is musd-kit running.</p>
+  </div>
+</section>
+
+<style>
+  .demo {
+    background: var(--surface-2);
+    border-block: 1px solid var(--hairline);
+  }
+  .demo__head {
+    max-width: var(--maxw-prose);
+  }
+  .demo__head h2 {
+    margin-top: 0.9rem;
+  }
+  .demo__head p {
+    margin-top: 1rem;
+  }
+  .demo__widget {
+    margin-top: clamp(2rem, 4vw, 2.75rem);
+    max-width: 640px;
+  }
+  .demo__caption {
+    margin-top: 1.1rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+  }
+</style>

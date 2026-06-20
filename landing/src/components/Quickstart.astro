@@ -1,0 +1,81 @@
+---
+import TabbedCode from './TabbedCode.astro'
+import Button from './Button.astro'
+
+// CONTENT §7 — tabbed quickstart: Install / Core / React / Keeper. Real 0.1.0 API.
+const install = `npm i @musd-kit/core            # core only (Node/keeper)
+npm i @musd-kit/core @musd-kit/react   # + React hooks`
+
+const core = `import { createMusdClient } from '@musd-kit/core'
+
+const musd = createMusdClient({ chainId, publicClient })
+const price = await musd.getOraclePrice()
+const trove = await musd.getTrove(address)`
+
+const react = `import { useTrove, useOpenTrove } from '@musd-kit/react'
+
+const { data: trove } = useTrove({ address })
+const { openTrove, isPending, error } = useOpenTrove()`
+
+const keeper = `import { createMusdClient } from '@musd-kit/core'
+
+// Core-only — no React. Run a permissionless liquidation keeper.
+const musd = createMusdClient({ chainId: 31611, publicClient, walletClient })
+if (await musd.isLiquidatable(borrower)) await musd.liquidate(borrower)`
+---
+
+<section class="section quickstart" id="quickstart" aria-labelledby="qs-h">
+  <div class="container quickstart__inner">
+    <div class="quickstart__head">
+      <p class="eyebrow eyebrow--red" data-reveal>QUICKSTART</p>
+      <h2 id="qs-h" data-reveal>Start in minutes.</h2>
+      <p class="prose" data-reveal>
+        Install the core, create a client, read live state — the same calls the widget above runs against testnet.
+      </p>
+      <div class="quickstart__cta" data-reveal>
+        <Button href="/docs/" variant="primary">Full Documentation</Button>
+        <Button href="/docs/api/" variant="link">API reference&nbsp;→</Button>
+      </div>
+    </div>
+    <div class="quickstart__code" data-reveal>
+      <TabbedCode
+        tabs={[
+          { label: 'Install', code: install, lang: 'bash' },
+          { label: 'Core', code: core, lang: 'ts' },
+          { label: 'React', code: react, lang: 'tsx' },
+          { label: 'Keeper', code: keeper, lang: 'ts' },
+        ]}
+      />
+    </div>
+  </div>
+</section>
+
+<style>
+  .quickstart__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(2rem, 5vw, 3.5rem);
+    align-items: center;
+  }
+  @media (min-width: 880px) {
+    .quickstart__inner {
+      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    }
+  }
+  .quickstart__head h2 {
+    margin-top: 0.9rem;
+  }
+  .quickstart__head p {
+    margin-top: 1rem;
+  }
+  .quickstart__cta {
+    margin-top: 1.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+  }
+  .quickstart__code {
+    min-width: 0;
+  }
+</style>

@@ -1,0 +1,170 @@
+---
+// CONTENT §5 — the proof panel (our differentiator over PartyLayer). Verified facts as
+// AA-safe checks, with the standout metrics as Geist-Mono stat tiles.
+const stats = [
+  { n: '0', label: 'hardcoded governable values — min debt, fees, rates all read on-chain' },
+  { n: 'Δ 0', label: 'gas vs. near-exact insertion hints on the live list' },
+  { n: 'wei', label: 'preview ↔ on-chain parity — previewOpen equals the contract, exactly' },
+  { n: '80+', label: 'tests · ESM + CJS · MIT' },
+]
+const checks = [
+  {
+    t: 'Verified against real Mezo contracts',
+    d: 'A fork harness backs the whole suite, plus a live testnet pass through the published packages — not mocks.',
+  },
+  {
+    t: 'The harness caught three load-bearing bugs',
+    d: 'A wrong minimum-debt assumption, a stale-interest getter, and a redemption-fee rule that doesn’t match Mezo’s docs. Hardcoding any would have shipped silently-wrong numbers.',
+  },
+  {
+    t: 'Proven live on Mezo testnet',
+    d: 'A real read through the shipped package returned BTC/USD __$66,395.81__ and a system TCR of __194.9%__ via Mezo’s native oracle.',
+  },
+  {
+    t: 'A headless keeper liquidated real Troves',
+    d: 'Core-only, no React — it closed two under-collateralized positions and collected the __400 MUSD__ reward.',
+  },
+]
+const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">$1</span>')
+---
+
+<section class="section proof" id="proof" aria-labelledby="proof-h">
+  <div class="container">
+    <div class="proof__head">
+      <p class="eyebrow eyebrow--red" data-reveal>WHY TRUST IT</p>
+      <h2 id="proof-h" data-reveal>Correctness is the product.</h2>
+      <p class="lead proof__lead" data-reveal>
+        Most SDKs ask you to trust them. musd-kit was built against a fork of real Mezo and verified on testnet — so the
+        proof is checkable, not promised.
+      </p>
+    </div>
+
+    <div class="proof__stats" role="list">
+      {
+        stats.map((s) => (
+          <div class="proof__stat" role="listitem" data-reveal>
+            <span class="proof__stat-n">{s.n}</span>
+            <span class="proof__stat-l">{s.label}</span>
+          </div>
+        ))
+      }
+    </div>
+
+    <ul class="proof__checks" role="list">
+      {
+        checks.map((c) => (
+          <li class="proof__check" data-reveal>
+            <span class="proof__tick" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13">
+                <path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <div>
+              <p class="proof__check-t">{c.t}</p>
+              <p class="proof__check-d" set:html={mark(c.d)} />
+            </div>
+          </li>
+        ))
+      }
+    </ul>
+
+    <p class="proof__caption" data-reveal>
+      See the verification ledger and ground-truth in the <a href="/docs/01-ground-truth">docs</a>.
+    </p>
+  </div>
+</section>
+
+<style>
+  .proof {
+    background: var(--surface-2);
+    border-block: 1px solid var(--hairline);
+  }
+  .proof__head {
+    max-width: var(--maxw-prose);
+  }
+  .proof__head h2 {
+    margin-top: 0.9rem;
+  }
+  .proof__lead {
+    margin-top: 1.3rem;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+  .proof__stats {
+    margin-top: clamp(2.5rem, 5vw, 3.5rem);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .proof__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1.5rem 1.4rem;
+    background: var(--surface);
+  }
+  .proof__stat-n {
+    font-family: var(--font-mono);
+    font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+    font-weight: 500;
+    color: var(--red-ink);
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .proof__stat-l {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+  .proof__checks {
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+    gap: 1.1rem 2rem;
+  }
+  .proof__check {
+    display: flex;
+    gap: 0.85rem;
+    align-items: flex-start;
+  }
+  .proof__tick {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #1e7a4c;
+    background: color-mix(in srgb, var(--verified) 16%, transparent);
+    margin-top: 0.1rem;
+  }
+  .proof__check-t {
+    font-weight: 600;
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+  .proof__check-d {
+    margin-top: 0.3rem;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+  .proof__num {
+    font-family: var(--font-mono);
+    color: var(--red-ink);
+    font-size: 0.92em;
+  }
+  .proof__caption {
+    margin-top: 1.75rem;
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+  }
+</style>
