@@ -1,0 +1,362 @@
+---
+// Task B — the live previewOpen calculator as the hero mockup card. A lazy, read-only Astro
+// island: on first view it dynamically imports the shipped @musd-kit/core + viem, reads the
+// REAL Mezo testnet oracle once, and previews live. Never a wallet, never a write, never
+// mainnet. Degrades to a clearly-labelled fallback price if the RPC is unavailable.
+---
+
+<div class="pw" data-widget>
+  <div class="pw__head">
+    <span class="pw__live" data-status="loading">
+      <span class="pw__dot" aria-hidden="true"></span>
+      <span class="pw__status-text">connecting to testnet…</span>
+    </span>
+    <span class="pw__price">BTC/USD <span data-price-val>—</span></span>
+  </div>
+
+  <div class="pw__inputs">
+    <label class="pw__field">
+      <span class="pw__label">Collateral</span>
+      <span class="pw__inputwrap">
+        <input data-in="collateral" type="text" inputmode="decimal" value="0.05" aria-label="Collateral in BTC" />
+        <span class="pw__unit">BTC</span>
+      </span>
+    </label>
+    <label class="pw__field">
+      <span class="pw__label">Borrow</span>
+      <span class="pw__inputwrap">
+        <input data-in="debt" type="text" inputmode="decimal" value="2500" aria-label="Debt in MUSD" />
+        <span class="pw__unit">MUSD</span>
+      </span>
+    </label>
+  </div>
+
+  <dl class="pw__outputs">
+    <div class="pw__row"><dt>Borrowing fee</dt><dd data-out="fee">—</dd></div>
+    <div class="pw__row"><dt>Total debt</dt><dd data-out="entireDebt">—</dd></div>
+    <div class="pw__row"><dt>Collateral ratio</dt><dd data-out="icr">—</dd></div>
+    <div class="pw__row"><dt>Liquidation price</dt><dd data-out="liq">—</dd></div>
+    <div class="pw__row pw__row--min"><dt>Meets minimum</dt><dd data-out="min">—</dd></div>
+  </dl>
+
+  <div class="pw__call">
+    <span class="pw__call-label">SDK call</span>
+    <code data-call>{"await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })"}</code>
+  </div>
+
+  <p class="pw__foot" data-note>Read-only via the shipped <code>@musd-kit/core</code> — no wallet, no transaction.</p>
+</div>
+
+<script>
+  const RPC = import.meta.env.PUBLIC_MEZO_TESTNET_RPC_URL || 'https://rpc.test.mezo.org'
+  const FALLBACK_PRICE = 66_395_814_700_000_000_000_000n // last known-good testnet read
+  const GAS_RESERVE = 200n * 10n ** 18n
+
+  const root = document.querySelector<HTMLElement>('[data-widget]')
+  if (root) initWhenVisible(root)
+
+  function initWhenVisible(el: HTMLElement) {
+    if (!('IntersectionObserver' in window)) {
+      void boot(el)
+      return
+    }
+    const io = new IntersectionObserver(
+      (entries, obs) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            obs.disconnect()
+            // Defer the heavy SDK import to idle time so it never competes with first paint
+            // (the widget is above the fold). The skeleton shows until it boots.
+            const start = () => void boot(el)
+            if ('requestIdleCallback' in window) (window as Window & typeof globalThis).requestIdleCallback(start, { timeout: 2200 })
+            else window.setTimeout(start, 200)
+          }
+        }
+      },
+      { rootMargin: '300px' },
+    )
+    io.observe(el)
+  }
+
+  async function boot(el: HTMLElement) {
+    // Heavy SDK + viem loaded ONLY now (its own chunk) → initial page stays near-zero-JS.
+    const [core, chains, viem] = await Promise.all([
+      import('@musd-kit/core'),
+      import('@mezo-org/chains'),
+      import('viem'),
+    ])
+    const { createMusdClient, parseBtc, parseMusd, computeICR, computeLiquidationPrice } = core
+    const { mezoTestnet } = chains
+    const { createPublicClient, http, formatEther } = viem
+
+    const fmt = (wei: bigint, dp: number) =>
+      Number(formatEther(wei)).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+
+    const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(RPC) })
+    const musd = createMusdClient({ chainId: 31611, publicClient })
+
+    const statusEl = el.querySelector<HTMLElement>('[data-status]')
+    const statusText = el.querySelector<HTMLElement>('.pw__status-text')
+    const priceValEl = el.querySelector<HTMLElement>('[data-price-val]')
+    const noteEl = el.querySelector<HTMLElement>('[data-note]')
+    const inputs = {
+      collateral: el.querySelector<HTMLInputElement>('[data-in="collateral"]')!,
+      debt: el.querySelector<HTMLInputElement>('[data-in="debt"]')!,
+    }
+    const out = (k: string) => el.querySelector<HTMLElement>(`[data-out="${k}"]`)!
+    const callEl = el.querySelector<HTMLElement>('[data-call]')!
+
+    let price = FALLBACK_PRICE
+    let live = false
+    try {
+      price = await musd.getOraclePrice()
+      live = true
+    } catch {
+      live = false
+    }
+    setStatus(live)
+    if (priceValEl) priceValEl.textContent = `$${fmt(price, 2)}`
+
+    function setStatus(isLive: boolean) {
+      if (statusEl) statusEl.dataset.status = isLive ? 'live' : 'fallback'
+      if (statusText) statusText.textContent = isLive ? 'live · Mezo testnet' : 'fallback price'
+      if (noteEl) {
+        noteEl.innerHTML = isLive
+          ? 'Read-only via the shipped <code>@musd-kit/core</code> — no wallet, no transaction.'
+          : 'Live price unavailable — showing a recent testnet value. Calculations are illustrative.'
+        noteEl.classList.toggle('pw__foot--warn', !isLive)
+      }
+    }
+
+    let timer = 0
+    async function update() {
+      const cStr = inputs.collateral.value.trim()
+      const dStr = inputs.debt.value.trim()
+      callEl.textContent = `await musd.previewOpen({ collateral: parseBtc('${cStr || '0'}'), debt: parseMusd('${dStr || '0'}') })`
+
+      let collateral: bigint
+      let debt: bigint
+      try {
+        collateral = parseBtc(cStr || '0')
+        debt = parseMusd(dStr || '0')
+      } catch {
+        return
+      }
+      if (collateral <= 0n || debt <= 0n) {
+        for (const k of ['fee', 'entireDebt', 'icr', 'liq', 'min']) out(k).textContent = '—'
+        return
+      }
+
+      try {
+        const p = await musd.previewOpen({ collateral, debt })
+        render(p.fee, p.entireDebt, p.icr, p.liquidationPrice, p.meetsMinimum)
+        if (!live) { live = true; setStatus(true) }
+      } catch {
+        const entireDebt = debt + GAS_RESERVE
+        render(null, entireDebt, computeICR({ collateral, entireDebt, price }), computeLiquidationPrice({ collateral, entireDebt }), null)
+        if (live) { live = false; setStatus(false) }
+      }
+    }
+
+    function render(fee: bigint | null, entireDebt: bigint, icr: bigint, liq: bigint, meetsMin: boolean | null) {
+      out('fee').textContent = fee === null ? '—' : `${fmt(fee, 2)} MUSD`
+      out('entireDebt').textContent = `${fmt(entireDebt, 2)} MUSD`
+      out('icr').textContent = `${(Number(formatEther(icr)) * 100).toFixed(1)}%`
+      out('liq').textContent = `$${fmt(liq, 0)}`
+      const minEl = out('min')
+      if (meetsMin === null) {
+        minEl.textContent = '—'
+        minEl.dataset.ok = ''
+      } else {
+        minEl.textContent = meetsMin ? '✓ yes' : '✗ below minimum'
+        minEl.dataset.ok = meetsMin ? 'true' : 'false'
+      }
+    }
+
+    for (const input of Object.values(inputs)) {
+      input.addEventListener('input', () => {
+        window.clearTimeout(timer)
+        timer = window.setTimeout(update, 250)
+      })
+    }
+    await update()
+  }
+</script>
+
+<style>
+  .pw {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: clamp(1.1rem, 2.5vw, 1.6rem);
+    width: 100%;
+  }
+  .pw__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid var(--hairline);
+    flex-wrap: wrap;
+  }
+  .pw__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .pw__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .pw__live[data-status='live'] {
+    color: #1e7a4c;
+  }
+  .pw__live[data-status='live'] .pw__dot {
+    background: var(--verified);
+    animation: pw-pulse 2.2s var(--ease) infinite;
+  }
+  .pw__live[data-status='fallback'] {
+    color: var(--warn);
+  }
+  .pw__live[data-status='fallback'] .pw__dot {
+    background: var(--warn);
+  }
+  @keyframes pw-pulse {
+    0% { box-shadow: 0 0 0 0 var(--red-glow); }
+    70% { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pw__dot { animation: none !important; }
+  }
+  .pw__price {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+  }
+  .pw__price [data-price-val] {
+    color: var(--text);
+  }
+  .pw__inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+    padding-block: 1.1rem;
+  }
+  @media (max-width: 380px) {
+    .pw__inputs { grid-template-columns: 1fr; }
+  }
+  .pw__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .pw__label {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .pw__inputwrap {
+    display: flex;
+    align-items: center;
+    background: var(--canvas);
+    border: 1px solid var(--hairline-2);
+    border-radius: var(--radius-sm);
+    padding: 0 0.8rem;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  .pw__inputwrap:focus-within {
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px var(--red-glow);
+  }
+  .pw__inputwrap input {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 1.05rem;
+    padding: 0.6rem 0;
+    min-height: 44px;
+  }
+  .pw__inputwrap input:focus {
+    outline: none;
+  }
+  .pw__unit {
+    font-family: var(--font-mono);
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+    padding-left: 0.5rem;
+  }
+  .pw__outputs {
+    margin: 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .pw__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .pw__row dt {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .pw__row dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    color: var(--text);
+    text-align: right;
+  }
+  .pw__row--min dd[data-ok='true'] {
+    color: #1e7a4c;
+  }
+  .pw__row--min dd[data-ok='false'] {
+    color: var(--warn);
+  }
+  .pw__call {
+    margin-top: 1rem;
+    padding: 0.7rem 0.85rem;
+    background: var(--code-bg);
+    border: 1px solid var(--code-hairline);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+  }
+  .pw__call-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--code-dim);
+    margin-bottom: 0.3rem;
+  }
+  .pw__call code {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-on-code);
+    white-space: nowrap;
+  }
+  .pw__foot {
+    margin-top: 0.9rem;
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+  }
+  .pw__foot--warn {
+    color: var(--warn);
+  }
+</style>
