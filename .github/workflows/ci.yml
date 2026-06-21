@@ -44,7 +44,7 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      # Reference apps (Phase 9) — built/typechecked but NOT published. The keeper's
+      # Reference apps (Phase 9), built/typechecked but NOT published. The keeper's
       # no-React boundary + its real fork liquidation run inside `pnpm test`.
       - name: Build examples
         run: pnpm -r --filter "./examples/*" build
@@ -67,6 +67,8 @@ jobs:
       - name: Release smoke (pack + clean-install, no publish)
         run: bash scripts/release-smoke.sh
 
-      # The docs site (TypeDoc API ref + Vitepress) must build.
-      - name: Docs build
-        run: pnpm docs:build
+      # Build the combined site (SDK + Astro landing + TypeDoc API ref + VitePress docs assembled
+      # under /docs) and run the internal-link check, which fails on any 404, including every
+      # landing -> docs link. This guards the docs/API routing against future regressions.
+      - name: Build combined site + check links
+        run: pnpm build:site

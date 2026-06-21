@@ -1,59 +1,90 @@
 import { defineConfig } from 'vitepress'
-// The same warm Shiki theme the landing uses (BRAND §7) — so code reads as one brand.
+// The same warm Shiki theme the landing uses (BRAND §7), so code reads as one brand.
 import { codeTheme } from '../../landing/src/lib/code-theme.mjs'
 
-// Thin Vitepress wrapper over the existing docs/*.md + the generated TypeDoc API ref
-// (served from public/api). Content is NOT rewritten — this only adds nav + theme.
-// `DOCS_BASE=/docs/` serves the docs under the landing's /docs subdirectory in the
-// combined deploy; unset, it builds standalone at '/'.
+// VitePress wrapper over the existing docs/*.md + the generated TypeDoc API ref (served from
+// public/api). The brand theme lives in .vitepress/theme. `DOCS_BASE=/docs/` serves the docs
+// under the landing's /docs subdirectory in the combined deploy; unset, it builds at '/'.
+//
+// cleanUrls: true makes internal links extensionless (/03-core-api, not /03-core-api.html),
+// matching the landing's deep links and the Cloudflare Pages / Vercel deploy target. The combined
+// build + scripts/check-links.mjs verify every internal link resolves.
 export default defineConfig({
   title: 'musd-kit',
-  description: 'The typed SDK for MUSD on Mezo',
+  description: 'The typed TypeScript SDK for MUSD, Mezo\'s Bitcoin-backed stablecoin.',
   base: process.env.DOCS_BASE || '/',
-  // The docs cross-link with repo-relative paths; don't fail the build on those.
+  cleanUrls: true,
+  appearance: false, // light only, to match the brand (no dark canvas)
+  lastUpdated: true,
+  // Cross-references to repo-relative paths are intentional; the build link-check covers routes.
   ignoreDeadLinks: true,
+  // Internal-only artifacts are not published as docs pages.
+  srcExclude: [
+    'BUILD-LOG.md',
+    'COMPETITIVE-LANDSCAPE.md',
+    'musd-kit-Roadmap.md',
+    'musd-kit-handbook-v0.2.md',
+    '09-open-questions.md',
+  ],
+  head: [
+    // head hrefs are not base-rewritten by VitePress, so prefix the base explicitly.
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${process.env.DOCS_BASE || '/'}logo.svg` }],
+    ['meta', { name: 'theme-color', content: '#FBF8F5' }],
+  ],
   markdown: {
     theme: { light: codeTheme, dark: codeTheme },
   },
   themeConfig: {
+    logo: '/logo.svg',
+    siteTitle: 'musd-kit',
     nav: [
-      { text: 'Guide', link: '/00-overview' },
-      { text: 'API Reference', link: '/api/' },
-      { text: 'GitHub', link: 'https://github.com/cayvox/musd-kit' },
+      { text: 'Guides', link: '/00-overview', activeMatch: '/(0[0-8]|10)-' },
+      { text: 'API', link: '/api/' },
+      { text: 'npm', link: 'https://www.npmjs.com/package/@musd-kit/core' },
+      { text: 'musdkit.xyz ↗', link: 'https://musdkit.xyz/' },
     ],
     sidebar: [
       {
-        text: 'Introduction',
+        text: 'Get started',
         items: [
-          { text: 'Overview', link: '/00-overview' },
+          { text: 'Introduction', link: '/00-overview' },
           { text: 'Architecture', link: '/02-architecture' },
+        ],
+      },
+      {
+        text: 'Guides',
+        items: [
+          { text: 'Reads, previews, and the Trove lifecycle', link: '/03-core-api' },
+          { text: 'React hooks', link: '/04-react-api' },
+          { text: 'Math and insertion hints', link: '/05-math-and-hints' },
+          { text: 'Typed errors', link: '/06-errors' },
         ],
       },
       {
         text: 'Reference',
         items: [
-          { text: 'Core API', link: '/03-core-api' },
-          { text: 'React API', link: '/04-react-api' },
-          { text: 'Math & hints', link: '/05-math-and-hints' },
-          { text: 'Errors', link: '/06-errors' },
-          { text: 'Glossary', link: '/10-glossary' },
-          { text: 'Generated API ↗', link: '/api/' },
-        ],
-      },
-      {
-        text: 'Internals',
-        items: [
-          { text: 'Ground truth (verified)', link: '/01-ground-truth' },
+          { text: 'Ground truth (verified facts)', link: '/01-ground-truth' },
+          { text: 'API reference ↗', link: '/api/' },
           { text: 'Testing', link: '/07-testing' },
           { text: 'Conventions', link: '/08-conventions' },
-          { text: 'Open questions', link: '/09-open-questions' },
+          { text: 'Glossary', link: '/10-glossary' },
         ],
       },
     ],
-    socialLinks: [{ icon: 'github', link: 'https://github.com/cayvox/musd-kit' }],
+    outline: { level: [2, 3], label: 'On this page' },
+    search: { provider: 'local' },
+    editLink: {
+      pattern: 'https://github.com/cayvox/musd-kit/edit/main/docs/:path',
+      text: 'Edit this page on GitHub',
+    },
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/cayvox/musd-kit' },
+      { icon: 'npm', link: 'https://www.npmjs.com/package/@musd-kit/core' },
+    ],
     footer: {
       message:
-        'Community tooling for Mezo testnet / evaluation — not affiliated with or endorsed by Mezo. MIT.',
+        'Community tooling for Mezo testnet and evaluation. Not affiliated with or endorsed by Mezo or Thesis. MIT licensed.',
+      copyright: 'Built by Cayvox Labs',
     },
   },
 })
