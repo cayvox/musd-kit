@@ -11,7 +11,7 @@ import { codeTheme } from '../../landing/src/lib/code-theme.mjs'
 // build + scripts/check-links.mjs verify every internal link resolves.
 export default defineConfig({
   title: 'musd-kit',
-  description: 'The typed TypeScript SDK for MUSD, Mezo\'s Bitcoin-backed stablecoin.',
+  description: "The typed TypeScript SDK for MUSD, Mezo's Bitcoin-backed stablecoin.",
   base: process.env.DOCS_BASE || '/',
   cleanUrls: true,
   appearance: false, // light only, to match the brand (no dark canvas)
@@ -28,7 +28,10 @@ export default defineConfig({
   ],
   head: [
     // head hrefs are not base-rewritten by VitePress, so prefix the base explicitly.
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${process.env.DOCS_BASE || '/'}logo.svg` }],
+    [
+      'link',
+      { rel: 'icon', type: 'image/svg+xml', href: `${process.env.DOCS_BASE || '/'}logo.svg` },
+    ],
     ['meta', { name: 'theme-color', content: '#FBF8F5' }],
   ],
   markdown: {

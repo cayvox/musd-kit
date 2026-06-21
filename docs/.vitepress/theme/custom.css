@@ -4,22 +4,22 @@
    is rewritten by Vite with the correct /docs/ base. */
 
 @font-face {
-  font-family: 'Satoshi';
-  src: url('./fonts/satoshi-variable.woff2') format('woff2');
+  font-family: "Satoshi";
+  src: url("./fonts/satoshi-variable.woff2") format("woff2");
   font-weight: 300 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Geist Mono';
-  src: url('./fonts/geist-mono-400.woff2') format('woff2');
+  font-family: "Geist Mono";
+  src: url("./fonts/geist-mono-400.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Geist Mono';
-  src: url('./fonts/geist-mono-500.woff2') format('woff2');
+  font-family: "Geist Mono";
+  src: url("./fonts/geist-mono-500.woff2") format("woff2");
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -27,8 +27,8 @@
 
 :root {
   /* Type: the landing's faces */
-  --vp-font-family-base: 'Satoshi', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --vp-font-family-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --vp-font-family-base: "Satoshi", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --vp-font-family-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
 
   /* Brand: single Mezo-red. brand-1 is AA-safe red text (#B5332A); brand-3 carries fills. */
   --vp-c-brand-1: #b5332a;

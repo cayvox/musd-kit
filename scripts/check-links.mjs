@@ -6,8 +6,8 @@
 //
 //   node scripts/check-links.mjs            # checks landing/dist
 //   node scripts/check-links.mjs <distDir>
-import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs'
-import { join, dirname, posix } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -31,11 +31,9 @@ function htmlFiles(dir) {
 
 /** Resolve an absolute site path to a real file, mimicking Cloudflare Pages clean URLs. */
 function resolve(urlPath) {
-  let p = decodeURIComponent(urlPath.split('#')[0].split('?')[0])
+  const p = decodeURIComponent(urlPath.split('#')[0].split('?')[0])
   if (p === '') return true
-  const candidates = p.endsWith('/')
-    ? [p + 'index.html']
-    : [p, p + '.html', p + '/index.html']
+  const candidates = p.endsWith('/') ? [`${p}index.html`] : [p, `${p}.html`, `${p}/index.html`]
   return candidates.some((c) => {
     const fp = join(DIST, c)
     return existsSync(fp) && statSync(fp).isFile()
@@ -47,11 +45,10 @@ const broken = new Map() // link -> Set(pages)
 let linkCount = 0
 
 for (const file of htmlFiles(DIST)) {
-  const rel = '/' + posix.relative(DIST.split(/[/\\]/).join('/'), file.split(/[/\\]/).join('/'))
+  const rel = `/${posix.relative(DIST.split(/[/\\]/).join('/'), file.split(/[/\\]/).join('/'))}`
   const html = readFileSync(file, 'utf8')
-  let m
-  while ((m = LINK_RE.exec(html))) {
-    const raw = m[1].trim()
+  for (const match of html.matchAll(LINK_RE)) {
+    const raw = match[1].trim()
     // Skip external, anchors, and non-navigable schemes.
     if (/^(https?:|mailto:|tel:|data:|javascript:|#)/i.test(raw)) continue
     if (raw === '' || raw.startsWith('//')) continue
@@ -74,6 +71,8 @@ if (broken.size === 0) {
 console.error(`✗ link check: ${broken.size} broken internal link(s) across ${pages} pages:\n`)
 for (const [link, onPages] of broken) {
   const list = [...onPages].slice(0, 4).join(', ')
-  console.error(`  ${link}\n      on: ${list}${onPages.size > 4 ? ` (+${onPages.size - 4} more)` : ''}`)
+  console.error(
+    `  ${link}\n      on: ${list}${onPages.size > 4 ? ` (+${onPages.size - 4} more)` : ''}`,
+  )
 }
 process.exit(1)
