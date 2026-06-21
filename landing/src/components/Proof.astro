@@ -1,24 +1,28 @@
 ---
-// CONTENT §5, the proof panel (our differentiator over PartyLayer). Verified facts as
-// AA-safe checks, with the standout metrics as Geist-Mono stat tiles.
-const stats = [
-  { n: '0', label: 'hardcoded governable values: min debt, fees, rates all read on-chain' },
-  { n: 'Δ 0', label: 'gas vs. near-exact insertion hints on the live list' },
-  { n: 'wei', label: 'preview ↔ on-chain parity: previewOpen equals the contract, exactly' },
-  { n: '80+', label: 'tests · ESM + CJS · MIT' },
+// CONTENT §5, "Correctness is the product" (our second differentiator over PartyLayer).
+// Real, verified facts as evidence: headline metric tiles + the three caught bugs + a
+// verified checklist. Every number is truthful (no inflation). No em/en dashes.
+const tiles = [
+  { n: '0', label: 'hardcoded governable values. Min debt, fees, interest and redemption rate are read on-chain.' },
+  { n: 'wei', label: 'preview to on-chain parity. previewOpen equals what the contract does, exactly.' },
+  { n: 'Δ 0', label: 'gas versus near-exact insertion hints on the live sorted list.' },
+  { n: '80', suffix: '+', count: 80, label: 'tests across a forked-Mezo suite. Ships ESM and CJS, MIT.' },
 ]
+
+const bugs = [
+  'A wrong minimum-debt assumption.',
+  'A stale-interest getter that returned the stored value, not the live one.',
+  'A redemption-fee rule that did not match the docs.',
+]
+
 const checks = [
   {
     t: 'Verified against real Mezo contracts',
-    d: 'A fork harness backs the whole suite, plus a live testnet pass through the published packages, not mocks.',
-  },
-  {
-    t: 'The harness caught three load-bearing bugs',
-    d: 'A wrong minimum-debt assumption, a stale-interest getter, and a redemption-fee rule that doesn’t match Mezo’s docs. Hardcoding any would have shipped silently-wrong numbers.',
+    d: 'A fork harness backs the whole suite, plus a live testnet pass through the published packages. Not mocks.',
   },
   {
     t: 'Proven live on Mezo testnet',
-    d: 'A real read through the shipped package returned BTC/USD __$66,395.81__ and a system TCR of __194.9%__ via Mezo’s native oracle.',
+    d: 'A real read returns the live BTC/USD price and the system TCR through the shipped package. The calculator above runs it.',
   },
   {
     t: 'A headless keeper liquidated real Troves',
@@ -39,40 +43,99 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
       </p>
     </div>
 
-    <div class="proof__stats" role="list">
+    <div class="proof__tiles" role="list">
       {
-        stats.map((s) => (
-          <div class="proof__stat" role="listitem" data-reveal>
-            <span class="proof__stat-n">{s.n}</span>
-            <span class="proof__stat-l">{s.label}</span>
+        tiles.map((t) => (
+          <div class="proof__tile" role="listitem" data-reveal>
+            <span class="proof__tile-n" data-count={t.count ?? undefined} data-suffix={t.suffix ?? undefined}>
+              {t.n}
+              {t.suffix}
+            </span>
+            <span class="proof__tile-l">{t.label}</span>
           </div>
         ))
       }
     </div>
 
-    <ul class="proof__checks" role="list">
-      {
-        checks.map((c) => (
-          <li class="proof__check" data-reveal>
-            <span class="proof__tick" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="13" height="13">
-                <path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </span>
-            <div>
-              <p class="proof__check-t">{c.t}</p>
-              <p class="proof__check-d" set:html={mark(c.d)} />
-            </div>
-          </li>
-        ))
-      }
-    </ul>
+    <div class="proof__grid">
+      <div class="proof__bugs" data-reveal>
+        <p class="proof__bugs-eyebrow">WHAT THE HARNESS CAUGHT</p>
+        <p class="proof__bugs-head">
+          <span class="proof__bugs-n" data-count="3">3</span> load-bearing bugs the docs would have hidden
+        </p>
+        <ol class="proof__bugs-list">
+          {
+            bugs.map((b, i) => (
+              <li class="proof__bug">
+                <span class="proof__bug-i">{String(i + 1).padStart(2, '0')}</span>
+                <span>{b}</span>
+              </li>
+            ))
+          }
+        </ol>
+        <p class="proof__bugs-foot">Hardcoding any of these would have shipped silently wrong numbers.</p>
+      </div>
+
+      <ul class="proof__checks" role="list">
+        {
+          checks.map((c) => (
+            <li class="proof__check" data-reveal>
+              <span class="proof__tick" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="13" height="13">
+                  <path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </span>
+              <div>
+                <p class="proof__check-t">{c.t}</p>
+                <p class="proof__check-d" set:html={mark(c.d)} />
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
 
     <p class="proof__caption" data-reveal>
       See the verification ledger and ground-truth in the <a href="/docs/01-ground-truth">docs</a>.
     </p>
   </div>
 </section>
+
+<script>
+  // Count-up on the metric numerals. The final value is always in the HTML (no-JS / LCP safe);
+  // this only animates from 0 when the tiles scroll into view, once, and never under reduced-motion.
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const nums = [...document.querySelectorAll<HTMLElement>('[data-count]')]
+  if (!reduce && 'IntersectionObserver' in window && nums.length) {
+    const run = (el: HTMLElement) => {
+      const target = Number(el.dataset.count || '0')
+      const suffix = el.dataset.suffix || ''
+      const dur = 850
+      let start = 0
+      const tick = (now: number) => {
+        if (!start) start = now
+        const p = Math.min(1, (now - start) / dur)
+        const eased = 1 - Math.pow(1 - p, 3)
+        el.textContent = Math.round(eased * target) + suffix
+        if (p < 1) requestAnimationFrame(tick)
+        else el.textContent = target + suffix
+      }
+      requestAnimationFrame(tick)
+    }
+    const io = new IntersectionObserver(
+      (entries, obs) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            run(e.target as HTMLElement)
+            obs.unobserve(e.target)
+          }
+        }
+      },
+      { rootMargin: '0px 0px -15% 0px' },
+    )
+    nums.forEach((n) => io.observe(n))
+  }
+</script>
 
 <style>
   .proof {
@@ -90,48 +153,134 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     color: var(--text-muted);
     font-weight: 400;
   }
-  .proof__stats {
+
+  /* Headline metric tiles */
+  .proof__tiles {
     margin-top: clamp(2.5rem, 5vw, 3.5rem);
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 1px;
     background: var(--hairline);
     border: 1px solid var(--hairline);
     border-radius: var(--radius);
     overflow: hidden;
   }
-  .proof__stat {
+  @media (max-width: 720px) {
+    .proof__tiles {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  .proof__tile {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 1.5rem 1.4rem;
+    gap: 0.55rem;
+    padding: clamp(1.25rem, 3vw, 1.75rem) clamp(1.1rem, 2.5vw, 1.5rem);
     background: var(--surface);
   }
-  .proof__stat-n {
+  .proof__tile-n {
     font-family: var(--font-mono);
-    font-size: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+    font-size: clamp(1.9rem, 1.2rem + 2.4vw, 2.75rem);
     font-weight: 500;
     color: var(--red-ink);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
     line-height: 1;
+    font-variant-numeric: tabular-nums;
   }
-  .proof__stat-l {
+  .proof__tile-l {
     font-size: var(--fs-small);
     color: var(--text-muted);
     line-height: 1.45;
   }
+
+  /* Bug panel + checklist */
+  .proof__grid {
+    margin-top: 1.25rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+  }
+  @media (min-width: 880px) {
+    .proof__grid {
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      gap: 2.25rem;
+    }
+  }
+
+  .proof__bugs {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--red);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: clamp(1.25rem, 3vw, 1.6rem);
+  }
+  .proof__bugs-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    color: var(--red-ink);
+  }
+  .proof__bugs-head {
+    margin-top: 0.55rem;
+    font-weight: 600;
+    font-size: 1.0625rem;
+    line-height: 1.35;
+    color: var(--text);
+  }
+  .proof__bugs-n {
+    font-family: var(--font-mono);
+    color: var(--red-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .proof__bugs-list {
+    margin: 1.1rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+  .proof__bug {
+    display: flex;
+    gap: 0.7rem;
+    align-items: baseline;
+    padding: 0.7rem 0;
+    border-top: 1px solid var(--hairline);
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    line-height: 1.45;
+  }
+  .proof__bug-i {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--red-ink);
+  }
+  .proof__bugs-foot {
+    margin-top: 0.9rem;
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
   .proof__checks {
     list-style: none;
-    margin: 1.25rem 0 0;
+    margin: 0;
     padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
-    gap: 1.1rem 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
   .proof__check {
     display: flex;
     gap: 0.85rem;
     align-items: flex-start;
+    padding: 1.1rem 1.25rem;
+    background: var(--surface);
   }
   .proof__tick {
     flex-shrink: 0;
@@ -143,7 +292,7 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     justify-content: center;
     color: #1e7a4c;
     background: color-mix(in srgb, var(--verified) 16%, transparent);
-    margin-top: 0.1rem;
+    margin-top: 0.05rem;
   }
   .proof__check-t {
     font-weight: 600;
@@ -155,7 +304,7 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     margin-top: 0.3rem;
     font-size: var(--fs-small);
     color: var(--text-muted);
-    line-height: 1.55;
+    line-height: 1.5;
   }
   .proof__num {
     font-family: var(--font-mono);
