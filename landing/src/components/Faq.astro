@@ -1,61 +1,105 @@
 ---
 import Accordion from './Accordion.astro'
 
-// CONTENT §9, the 6 Q&As (verbatim), using the Prompt-1 accordion primitive.
+// CONTENT §9, the 6 real objections, tightened to lead with a direct first sentence, then one
+// short supporting line. Dash-free, truthful, with docs links where they help. The display
+// answer may contain links/code; the FAQPage schema below uses the plain-text version.
 const items = [
   {
     q: 'Is musd-kit official?',
-    a: 'No. It’s open-source, community-built tooling, not affiliated with or endorsed by Mezo or Thesis. It talks to Mezo’s public contracts.',
+    a: 'No. It is open-source, community-built tooling, not affiliated with or endorsed by Mezo or Thesis. It talks to Mezo’s public contracts.',
   },
   {
     q: 'Is it production-ready?',
-    a: 'It’s **pre-1.0**, intended for testnet and evaluation. The core is fork-verified and testnet-proven, but APIs may change before a stable 1.0 release.',
+    a: 'Not yet. It is pre-1.0, intended for testnet and evaluation. The core is fork-verified and testnet-proven, but the API may change before a stable 1.0.',
   },
   {
-    q: 'Which networks?',
-    a: 'Mezo testnet (chainId 31611) and mainnet (31612). The client reads the governable parameters live per network.',
+    q: 'Which networks does it support?',
+    a: 'Mezo testnet (chainId 31611) and mainnet (31612). The client reads the governable parameters live per network. See the <a href="/docs/01-ground-truth">ground-truth reference</a>.',
   },
   {
     q: 'Does it require Passport?',
-    a: 'No. The React hooks consume any wagmi context (Passport is the easiest way to get one); the core needs only a viem client. musd-kit is a complement to Passport, not a replacement.',
+    a: 'No. The React hooks consume any wagmi context, and Passport is the easiest way to get one. The core needs only a viem client, so musd-kit complements Passport rather than replacing it.',
   },
   {
     q: 'Is it open source?',
-    a: 'Yes, MIT. View, fork, and contribute on GitHub.',
+    a: 'Yes, MIT licensed. View, fork, and contribute on <a href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</a>.',
   },
   {
     q: 'How is correctness verified?',
-    a: 'Every release runs against a fork of real Mezo plus a live testnet pass through the published packages; previews are validated to the wei; no governable value is hardcoded. See the verification ledger in the docs.',
+    a: 'Every release runs against a fork of real Mezo plus a live testnet pass through the published packages. Previews are validated to the wei and no governable value is hardcoded. See the <a href="/docs/01-ground-truth">verification ledger</a>.',
   },
 ]
+
+// FAQPage structured data, in sync with the visible Q&As (plain-text answers).
+const plain = (s: string) => s.replace(/<[^>]+>/g, '').replace(/`/g, '')
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: items.map((it) => ({
+    '@type': 'Question',
+    name: it.q,
+    acceptedAnswer: { '@type': 'Answer', text: plain(it.a) },
+  })),
+}
 ---
 
 <section class="section faq" id="faq" aria-labelledby="faq-h">
-  <div class="container faq__inner">
-    <p class="eyebrow eyebrow--red" data-reveal>FAQ</p>
-    <h2 id="faq-h" data-reveal>Questions, answered.</h2>
+  <div class="container faq__grid">
+    <div class="faq__intro">
+      <p class="eyebrow eyebrow--red" data-reveal>FAQ</p>
+      <h2 id="faq-h" data-reveal>Questions, answered.</h2>
+      <p class="prose faq__sub" data-reveal>
+        The honest answers: what musd-kit is, what it is not, and how the correctness is checked.
+      </p>
+      <p class="faq__more" data-reveal>
+        Still have questions?
+        <a href="https://github.com/cayvox/musd-kit/discussions" rel="noopener">Start a discussion on GitHub&nbsp;&rarr;</a>
+      </p>
+    </div>
+
     <div class="faq__list" data-reveal>
       <Accordion items={items} />
     </div>
-    <p class="faq__more" data-reveal>
-      Still have questions? <a href="https://github.com/cayvox/musd-kit/discussions" rel="noopener">Start a discussion on GitHub&nbsp;→</a>
-    </p>
   </div>
+
+  <script type="application/ld+json" set:html={JSON.stringify(faqLd)} />
 </section>
 
 <style>
-  .faq__inner {
-    max-width: 56rem;
+  .faq__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(2rem, 4vw, 3rem);
+    align-items: start;
   }
-  .faq h2 {
+  @media (min-width: 880px) {
+    .faq__grid {
+      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+      gap: clamp(3rem, 6vw, 5rem);
+    }
+    .faq__intro {
+      position: sticky;
+      top: 100px;
+    }
+  }
+  .faq__intro h2 {
     margin-top: 0.9rem;
   }
-  .faq__list {
-    margin-top: 1.75rem;
+  .faq__sub {
+    margin-top: 1.1rem;
+    max-width: 36ch;
   }
   .faq__more {
     margin-top: 1.75rem;
     color: var(--text-muted);
     font-size: var(--fs-small);
+  }
+  .faq__more a {
+    color: var(--red-ink);
+    font-weight: 500;
+  }
+  .faq__list {
+    min-width: 0;
   }
 </style>

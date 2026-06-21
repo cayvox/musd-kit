@@ -380,17 +380,25 @@ p {
   text-align: left;
   background: transparent;
   border: 0;
-  padding: 1.15rem 0.25rem;
+  padding: 1.1rem 0.25rem;
   font-family: var(--font-display);
-  font-size: var(--fs-h3);
+  font-size: 1.0625rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text);
   min-height: 44px;
+  transition: color var(--dur) var(--ease);
+}
+.accordion__trigger:hover {
+  color: var(--red-ink);
+}
+.accordion__trigger[aria-expanded='true'] {
+  color: var(--red-ink);
 }
 .accordion__chevron {
   flex-shrink: 0;
   color: var(--red);
-  transition: transform var(--dur) var(--ease);
+  transition: transform var(--dur) var(--ease-out);
 }
 .accordion__trigger[aria-expanded='true'] .accordion__chevron {
   transform: rotate(180deg);
@@ -398,18 +406,37 @@ p {
 .accordion__panel {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--dur-slow) var(--ease);
+  transition: grid-template-rows var(--dur-slow) var(--ease-out);
 }
 .accordion__trigger[aria-expanded='true'] + .accordion__panel {
   grid-template-rows: 1fr;
 }
 .accordion__inner {
   overflow: hidden;
+  /* hide collapsed content from the tab order + AT (answers contain links) */
+  visibility: hidden;
+  transition: visibility 0s linear var(--dur-slow);
+}
+.accordion__trigger[aria-expanded='true'] + .accordion__panel .accordion__inner {
+  visibility: visible;
+  transition-delay: 0s;
 }
 .accordion__body {
-  padding: 0 0.25rem 1.25rem;
+  padding: 0.1rem 0.25rem 1.25rem;
   color: var(--text-muted);
-  max-width: var(--maxw-prose);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+  max-width: 62ch;
+}
+.accordion__body a {
+  color: var(--red-ink);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--red) 35%, transparent);
+}
+.accordion__body a:hover {
+  text-decoration-color: var(--red);
 }
 
 /* ---- Reveal-on-scroll (fade + 12px rise, staggered) ---- */
