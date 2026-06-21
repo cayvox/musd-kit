@@ -3,9 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "musdkit.xyz — the marketing landing (Astro static). Not published.",
+  "description": "musdkit.xyz, the marketing landing (Astro static). Not published.",
   "scripts": {
     "dev": "astro dev",
+    "dev:site": "DOCS_BASE=/docs/ pnpm -w docs:build && astro dev",
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",

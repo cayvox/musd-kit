@@ -120,9 +120,25 @@ Passport (or any wagmi setup) already established.
 - [`docs/06-errors.md`](docs/06-errors.md) · [`docs/10-glossary.md`](docs/10-glossary.md) — the error taxonomy + terms
 - [`docs/musd-kit-handbook-v0.2.md`](docs/musd-kit-handbook-v0.2.md) — the full specification
 
-The docs site (Vitepress) and the generated **API reference** (TypeDoc) build from these:
-`pnpm docs:build` → `docs/.vitepress/dist` (with the API ref at `/api/`). Per-package
-quickstarts: [`@musd-kit/core`](packages/core/README.md) · [`@musd-kit/react`](packages/react/README.md).
+The docs site (VitePress) and the generated **API reference** (TypeDoc) build from these:
+`pnpm docs:build` produces `docs/.vitepress/dist` (with the API ref at `/api/`). Per-package
+quickstarts: [`@musd-kit/core`](packages/core/README.md), [`@musd-kit/react`](packages/react/README.md).
+
+### Running the site locally (landing + docs)
+
+The marketing landing lives in `landing/` (Astro static); the docs are served under `/docs`.
+
+- **`pnpm preview:site`** (repo root): the full, production-identical combined site (landing at `/`,
+  docs at `/docs`, API reference at `/docs/api`), built and served with the same clean-URL resolution
+  as the deploy. Use this to verify exactly what ships.
+- **`cd landing && pnpm dev`**: the landing with hot reload. It also serves the already-built docs
+  under `/docs` (static; the landing hot-reloads, the docs do not). If the docs have never been built,
+  it builds them once on first start, so Docs and API resolve rather than 404.
+- **`cd landing && pnpm dev:site`**: rebuilds the docs fresh, then starts the landing dev server. Use
+  this after editing docs content so `/docs` reflects your changes.
+
+An internal link check (`pnpm check:links`, also run by `pnpm build:site` and CI) fails the build on
+any broken `/docs` link, so the landing and docs stay in sync.
 
 ---
 
