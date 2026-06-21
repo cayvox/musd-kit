@@ -36,6 +36,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # Guardrail: no absolute machine paths (a developer home dir or a Windows drive) or brittle
+      # pnpm-internal references in tracked source/config/scripts. They break on other machines and CI.
+      - name: Check for absolute machine paths
+        run: pnpm check:paths
+
       # Build first: @musd-kit/react typechecks against @musd-kit/core's built types
       # (dist/index.d.ts), so the workspace must be built before the cross-package typecheck.
       - name: Build
