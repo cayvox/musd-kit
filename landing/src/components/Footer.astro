@@ -1,29 +1,99 @@
 ---
-import Wordmark from './Wordmark.astro'
+// CONTENT §10 + STRUCTURE §1. Premium footer: brand block with the nav logomark, populated
+// link columns (real links only), the maturity lockup integrated as a full-width band, a clean
+// bottom bar with a truthful testnet signal, and a faint closing wordmark sign-off.
+const repo = 'https://github.com/cayvox/musd-kit'
+
+const columns = [
+  {
+    heading: 'Documentation',
+    links: [
+      { label: 'Docs', href: '/docs/' },
+      { label: 'API reference', href: '/docs/api/' },
+      { label: 'Quickstart', href: '#quickstart' },
+      { label: 'Ground truth', href: '/docs/01-ground-truth' },
+    ],
+  },
+  {
+    heading: 'Project',
+    links: [
+      { label: 'GitHub', href: repo, ext: true },
+      { label: 'npm', href: 'https://www.npmjs.com/package/@musd-kit/core', ext: true },
+      { label: 'Issues', href: `${repo}/issues`, ext: true },
+      { label: 'Discussions', href: `${repo}/discussions`, ext: true },
+      { label: 'Changelog', href: `${repo}/releases`, ext: true },
+      { label: 'License (MIT)', href: `${repo}/blob/main/LICENSE`, ext: true },
+    ],
+  },
+  {
+    heading: 'Reference',
+    links: [
+      { label: 'Core API', href: '/docs/03-core-api' },
+      { label: 'React hooks', href: '/docs/04-react-api' },
+      { label: 'Typed errors', href: '/docs/06-errors' },
+      { label: 'Keeper example', href: `${repo}/tree/main/examples/keeper`, ext: true },
+    ],
+  },
+]
 ---
 
 <footer class="footer" id="footer">
   <div class="container footer__inner">
-    <div class="footer__brand">
-      <Wordmark mono={false} />
-      <p class="footer__tagline">The typed SDK for MUSD on Mezo.</p>
+    <div class="footer__top">
+      <div class="footer__brand" data-reveal>
+        <a class="footer__brand-lockup" href="#main" aria-label="musd-kit, back to top">
+          <svg class="footer__mark" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" focusable="false">
+            <line x1="6" y1="17" x2="12.5" y2="8" stroke="var(--red)" stroke-width="1.5" stroke-opacity="0.5" stroke-linecap="round" />
+            <line x1="12.5" y1="8" x2="19" y2="15" stroke="var(--red)" stroke-width="1.5" stroke-opacity="0.5" stroke-linecap="round" />
+            <circle cx="6" cy="17" r="2" fill="var(--red)" fill-opacity="0.5" />
+            <circle cx="19" cy="15" r="2" fill="var(--red)" fill-opacity="0.5" />
+            <circle class="footer__mark-core" cx="12.5" cy="8" r="3.2" fill="var(--red)" />
+          </svg>
+          <span class="footer__wordmark">musd<span class="footer__hyphen">-</span>kit</span>
+        </a>
+        <p class="footer__tagline">The typed SDK for MUSD on Mezo.</p>
+
+        <ul class="footer__social" aria-label="Community">
+          <li>
+            <a href={repo} rel="noopener" aria-label="GitHub">
+              <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 012-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+            </a>
+          </li>
+          <li>
+            <a href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener" aria-label="npm">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="currentColor"><path d="M2 4v16h6.857V8.571h3.429V20H22V4H2Zm18.286 14.286h-3.429V6.857h-3.428v11.429H4.286V5.714h16v12.572Z"></path></svg>
+            </a>
+          </li>
+          <li>
+            <a href="mailto:info@cayvox.com" aria-label="Email Cayvox Labs">
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"></rect><path d="m3.5 6.5 8.5 6 8.5-6"></path></svg>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <nav class="footer__cols" aria-label="Footer">
+        {
+          columns.map((col) => (
+            <div class="footer__col" data-reveal>
+              <p class="footer__heading">{col.heading}</p>
+              <ul>
+                {col.links.map((l) => (
+                  <li>
+                    <a href={l.href} {...(l.ext ? { rel: 'noopener' } : {})}>
+                      {l.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        }
+      </nav>
     </div>
 
-    <nav class="footer__cols" aria-label="Footer">
-      <div class="footer__col">
-        <p class="footer__heading">Documentation</p>
-        <a href="/docs/">Docs</a>
-        <a href="/docs/api/">API reference</a>
-      </div>
-      <div class="footer__col">
-        <p class="footer__heading">Project</p>
-        <a href="https://github.com/cayvox/musd-kit" rel="noopener">GitHub</a>
-        <a href="https://www.npmjs.com/package/@musd-kit/core" rel="noopener">npm</a>
-        <a href="https://github.com/cayvox/musd-kit/blob/main/LICENSE" rel="noopener">License (MIT)</a>
-      </div>
-    </nav>
-
-    <div class="footer__maturity" role="note">
+    <div class="footer__maturity" role="note" data-reveal>
+      <span class="footer__maturity-tag" aria-hidden="true">PRE&#8209;1.0</span>
       <p>
         musd-kit is open-source, community-built tooling. It is <strong>not affiliated with or
         endorsed by Mezo or Thesis</strong>. It is currently intended for <strong>testnet and
@@ -31,106 +101,296 @@ import Wordmark from './Wordmark.astro'
       </p>
     </div>
 
-    <div class="footer__meta">
+    <div class="footer__bar">
       <p class="footer__credit">
-        Built by Cayvox Labs. From the team behind Cark, winner of the Mezo hackathon MUSD track.
+        Built by Cayvox Labs, from the team behind Cark, winner of the Mezo hackathon MUSD track.
       </p>
-      <p class="footer__copy">© 2026 Cayvox Labs · MIT</p>
+      <div class="footer__bar-end">
+        <span class="footer__signal">
+          <span class="footer__signal-dot" aria-hidden="true"></span>
+          verified on Mezo testnet
+        </span>
+        <span class="footer__copy">&#169; 2026 Cayvox Labs &middot; MIT</span>
+      </div>
     </div>
+  </div>
+
+  <div class="footer__sign" aria-hidden="true">
+    <span>musd<span class="footer__sign-hyphen">-</span>kit</span>
   </div>
 </footer>
 
 <style>
   .footer {
+    position: relative;
+    overflow: hidden;
     border-top: 1px solid var(--hairline);
-    background: var(--surface);
-    padding-block: clamp(3rem, 7vw, 5rem);
+    background: linear-gradient(to bottom, var(--canvas) 0%, var(--surface-2) 22%);
+    padding-block: clamp(3.5rem, 6vw, 5.5rem) 0;
   }
   .footer__inner {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ---- Top: brand + columns ---- */
+  .footer__top {
     display: grid;
-    gap: 2.5rem 3rem;
     grid-template-columns: 1fr;
+    gap: clamp(2.5rem, 5vw, 4rem);
   }
-  @media (min-width: 720px) {
-    .footer__inner {
-      grid-template-columns: 1.1fr 1fr;
-      align-items: start;
-    }
-    .footer__maturity {
-      grid-column: 1 / -1;
-    }
-  }
-  @media (min-width: 1000px) {
-    .footer__inner {
-      grid-template-columns: 1.2fr 1fr 1.4fr;
-    }
-    .footer__maturity {
-      grid-column: 3;
-      grid-row: 1 / 3;
-    }
-    .footer__meta {
-      grid-column: 1 / 3;
+  @media (min-width: 880px) {
+    .footer__top {
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 2.3fr);
+      align-items: stretch;
+      gap: clamp(2.5rem, 6vw, 5rem);
     }
   }
-  .footer__tagline {
-    margin-top: 0.6rem;
-    color: var(--text-muted);
-    font-size: var(--fs-small);
-  }
-  .footer__cols {
-    display: flex;
-    gap: clamp(2rem, 6vw, 4rem);
-  }
-  .footer__col {
+
+  /* Brand block: socials pin to the bottom so the column fills its height, no left-side void */
+  .footer__brand {
     display: flex;
     flex-direction: column;
+  }
+  .footer__brand-lockup {
+    display: inline-flex;
+    align-items: center;
     gap: 0.6rem;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+  }
+  .footer__mark-core {
+    transition: r var(--dur) var(--ease);
+  }
+  .footer__brand-lockup:hover .footer__mark-core {
+    r: 3.7;
+  }
+  .footer__wordmark {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .footer__hyphen {
+    color: var(--red);
+  }
+  .footer__tagline {
+    margin-top: 0.9rem;
+    max-width: 30ch;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    line-height: 1.5;
+  }
+
+  .footer__social {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: flex;
+    gap: 0.6rem;
+  }
+  @media (min-width: 880px) {
+    .footer__social {
+      margin-top: auto;
+      padding-top: 1.75rem;
+    }
+  }
+  .footer__social a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline-2);
+    background: var(--surface);
+    color: var(--text-muted);
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+      transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  .footer__social a:hover {
+    color: var(--red);
+    border-color: color-mix(in srgb, var(--red) 38%, transparent);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Link columns */
+  .footer__cols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(2rem, 4vw, 2.75rem) 1.5rem;
+  }
+  @media (min-width: 560px) {
+    .footer__cols {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
   }
   .footer__heading {
     font-family: var(--font-mono);
     font-size: var(--fs-mono-lbl);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-dim);
-    margin-bottom: 0.2rem;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    font-weight: 500;
+    margin-bottom: 1rem;
+  }
+  .footer__col ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
   }
   .footer__col a {
+    position: relative;
     color: var(--text-muted);
     font-size: var(--fs-small);
+    text-decoration: none;
+    width: fit-content;
+    transition: color var(--dur) var(--ease);
+  }
+  .footer__col a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -2px;
+    width: 100%;
+    height: 1px;
+    background: var(--red);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur) var(--ease-out);
   }
   .footer__col a:hover {
-    color: var(--red-deep);
+    color: var(--red-ink);
   }
+  .footer__col a:hover::after {
+    transform: scaleX(1);
+  }
+
+  /* ---- Maturity lockup (integrated full-width band) ---- */
   .footer__maturity {
-    max-width: 46ch;
-    padding: 1.1rem 1.25rem;
-    background: var(--canvas);
+    position: relative;
+    margin-top: clamp(2.25rem, 4vw, 3rem);
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.15rem 1.4rem;
+    background: var(--surface);
     border: 1px solid var(--hairline);
-    border-left: 2px solid var(--warn);
+    border-left: 3px solid var(--warn);
     border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+  }
+  .footer__maturity-tag {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.06em;
+    color: var(--warn);
+    background: var(--warn-tint);
+    border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
   }
   .footer__maturity p {
     font-size: var(--fs-small);
     color: var(--text-muted);
     line-height: 1.6;
+    max-width: 92ch;
   }
   .footer__maturity strong {
     color: var(--text);
     font-weight: 600;
   }
-  .footer__meta {
-    color: var(--text-dim);
+
+  /* ---- Bottom bar ---- */
+  .footer__bar {
+    margin-top: clamp(2.25rem, 4vw, 3rem);
+    padding-top: 1.6rem;
+    padding-bottom: clamp(2.5rem, 5vw, 4rem);
     border-top: 1px solid var(--hairline);
-    padding-top: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem 1.5rem;
   }
   .footer__credit {
     font-size: var(--fs-small);
-    max-width: 60ch;
+    color: var(--text-muted);
+    max-width: 56ch;
   }
-  .footer__copy {
-    margin-top: 0.6rem;
+  .footer__bar-end {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+    flex-wrap: wrap;
+  }
+  @media (max-width: 560px) {
+    .footer__bar-end {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.6rem;
+    }
+  }
+  .footer__signal {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
     font-family: var(--font-mono);
     font-size: var(--fs-mono-lbl);
     color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .footer__signal-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--verified);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--verified) 20%, transparent);
+  }
+  .footer__copy {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  /* ---- Closing brand sign-off (a faint whisper, decorative only) ---- */
+  .footer__sign {
+    position: relative;
+    z-index: 0;
+    margin-top: clamp(0.5rem, 2vw, 1.5rem);
+    line-height: 0.78;
+    text-align: center;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 90%);
+    mask-image: linear-gradient(to bottom, #000 0%, transparent 90%);
+  }
+  .footer__sign span {
+    display: block;
+    white-space: nowrap;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(5rem, 22vw, 17rem);
+    letter-spacing: -0.045em;
+    color: color-mix(in srgb, var(--text) 7%, transparent);
+    transform: translateY(0.14em);
+    user-select: none;
+  }
+  .footer__sign-hyphen {
+    color: color-mix(in srgb, var(--red) 18%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .footer__social a,
+    .footer__mark-core,
+    .footer__col a::after {
+      transition: none;
+    }
   }
 </style>
