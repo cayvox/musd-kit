@@ -1,13 +1,13 @@
-# 00 — Overview
+# Overview
 
 `musd-kit` is an open-source, typed TypeScript client SDK for **MUSD**, Mezo's
 Bitcoin-backed stablecoin. It sits between *connected* (handled by
 `@mezo-org/passport`) and *working*: the Trove lifecycle, the insertion-hint dance,
-and the MUSD math — made correct, typed, and reusable, so every MUSD app stops
+and the MUSD math, made correct, typed, and reusable, so every MUSD app stops
 re-deriving them.
 
 **Positioning, in one line:** *Passport connects the wallet; musd-kit operates
-MUSD.* Two non-overlapping libraries that compose — one official (connection), one
+MUSD.* Two non-overlapping libraries that compose, one official (connection), one
 community (interaction).
 
 ---
@@ -16,10 +16,10 @@ community (interaction).
 
 | Document | Role | Read it for |
 |---|---|---|
-| `musd-kit-handbook.md` | The **specification** — the *why* and the *what* | Motivation, the gap analysis, scope (v1/v2/out), positioning, grant framing |
-| `musd-kit-Roadmap.md` | The **build plan** — the *how* — plus the zero-assumption verification ledger | The phased build order, acceptance criteria, the corrections to the handbook |
-| `CLAUDE.md` | The **operating manual** for the build | The Laws, the workflow, the gotchas — read before coding |
-| `docs/01-ground-truth.md` | The **verified contract reference** | Every constant, signature, address, and formula — the anti-assumption source |
+| `musd-kit-handbook.md` | The **specification**, the *why* and the *what* | Motivation, the gap analysis, scope (v1/v2/out), positioning, grant framing |
+| `musd-kit-Roadmap.md` | The **build plan**, the *how*, plus the zero-assumption verification ledger | The phased build order, acceptance criteria, the corrections to the handbook |
+| `CLAUDE.md` | The **operating manual** for the build | The Laws, the workflow, the gotchas, read before coding |
+| `docs/01-ground-truth.md` | The **verified contract reference** | Every constant, signature, address, and formula, the anti-assumption source |
 | `docs/02-architecture.md` | Structure | The package graph, the two-source correctness model, module responsibilities |
 | `docs/03-core-api.md` | `@musd-kit/core` surface | The framework-agnostic API |
 | `docs/04-react-api.md` | `@musd-kit/react` surface | The hook set + the Passport relationship |
@@ -27,7 +27,7 @@ community (interaction).
 | `docs/06-errors.md` | Error taxonomy | The discriminated error set + revert mapping |
 | `docs/07-testing.md` | Correctness gate | The forked-Mezo harness, the test gates, the boundary corpus |
 | `docs/08-conventions.md` | Engineering standards | TS config, naming, units, viem patterns, release hygiene |
-| `docs/09-open-questions.md` | Decision log | Resolved decisions (O1–O7) and still-open items (F1/F3) |
+| `docs/09-open-questions.md` | Decision log | Resolved decisions (O1-O7) and still-open items (F1/F3) |
 | `docs/10-glossary.md` | Terms | MUSD / Liquity-fork vocabulary used precisely |
 
 **Reading order for a fresh start:** Handbook (skim for the *why*) → this overview →

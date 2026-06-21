@@ -1,4 +1,4 @@
-# 03 — Core API (`@musd-kit/core`)
+# Core API (`@musd-kit/core`)
 
 Framework-agnostic, viem-based. Signatures below are **illustrative of intent and
 shape**; exact types are finalized in development against the bundled ABIs
@@ -18,7 +18,7 @@ import { createMusdClient } from '@musd-kit/core';
 import { createPublicClient, createWalletClient, http } from 'viem';
 
 const musd = createMusdClient({
-  chainId: 31611,        // testnet; 31612 mainnet — addresses bundled (01-ground-truth §4)
+  chainId: 31611,        // testnet; 31612 mainnet, addresses bundled (01-ground-truth §4)
   publicClient,          // viem public client
   walletClient,          // viem wallet client (only needed for writes)
   // addresses?: Partial<AddressMap>   // optional override (decision O5)
@@ -27,13 +27,13 @@ const musd = createMusdClient({
 
 `createMusdClient` resolves all contract addresses for the chain, constructs typed
 clients, and **reads the governable constants on first use** (`minNetDebt()`, the
-borrowing rate, the global interest rate) — caching them per session (Law 3). The
+borrowing rate, the global interest rate), caching them per session (Law 3). The
 fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`, `PERCENT_DIVISOR`) are
 bundled.
 
 ---
 
-## 2. Reading a live position (contract-authoritative — Law 2)
+## 2. Reading a live position (contract-authoritative, Law 2)
 
 ```ts
 const trove = await musd.getTrove(address);
@@ -41,9 +41,9 @@ const trove = await musd.getTrove(address);
 //   exists: boolean,
 //   collateral: bigint,        // BTC wei (1e18)
 //   principal: bigint,         // MUSD borrowed
-//   interestOwed: bigint,      // accrued to NOW — from getTroveInterestOwed (never the stored value)
+//   interestOwed: bigint,      // accrued to NOW, from getTroveInterestOwed (never the stored value)
 //   entireDebt: bigint,        // from getEntireDebtAndColl: principal + interest + 200 gas reserve
-//   icr: bigint,               // from getCurrentICR(address, price) — 1e18 fixed point
+//   icr: bigint,               // from getCurrentICR(address, price), 1e18 fixed point
 //   nominalICR: bigint,        // from getNominalICR
 //   liquidationPrice: bigint,  // derived: BTC/USD at which ICR hits MCR
 //   healthFactor: number,      // normalized distance to liquidation (1.0 = at MCR)
@@ -54,7 +54,7 @@ const trove = await musd.getTrove(address);
 ```
 
 Every numeric field except `liquidationPrice` and `healthFactor` comes **straight
-from a contract getter** — this call is correct by construction. `liquidationPrice`
+from a contract getter**, this call is correct by construction. `liquidationPrice`
 and `healthFactor` are thin derivations of those authoritative values (see
 `05-math-and-hints` §4).
 
@@ -65,7 +65,7 @@ const sys = await musd.getSystemState();
 
 ---
 
-## 3. Preview compute helpers (the only client-side math — `math/`)
+## 3. Preview compute helpers (the only client-side math, `math/`)
 
 For calculators and "what-if" UIs where no position exists yet. Each is also
 exposed standalone.
@@ -91,12 +91,12 @@ musd.getHealthFactor({ icr });                             // → number
 
 `previewOpen` powers a "Borrowing Power Calculator": give it intended collateral and
 debt, get the resulting ICR, liquidation price, fee, total debt, and whether it
-satisfies the minimum — before the user signs anything. It implements the verified
+satisfies the minimum, before the user signs anything. It implements the verified
 arithmetic of `01-ground-truth` §6 and is dual-validated (`05` §5).
 
 ---
 
-## 4. The Trove lifecycle (writes — hints absorbed, mapped to the real ABI)
+## 4. The Trove lifecycle (writes, hints absorbed, mapped to the real ABI)
 
 Human-intent names; each maps to the exact ABI function in `01-ground-truth` §5.1.
 Every write that changes the position recomputes the correct insertion hints
@@ -106,7 +106,7 @@ internally (`hints/`).
 const { hash } = await musd.openTrove({
   collateral: parseBtc('0.05'),       // BTC sent as msg.value
   debt: parseMusd('2500'),            // requested draw (user receives this; owes draw + fee)
-  maxFeePercentage: parseBps(100),    // OPTIONAL SDK-side guard — NOT an on-chain arg (C5). Throws MaxFeeExceeded.
+  maxFeePercentage: parseBps(100),    // OPTIONAL SDK-side guard, NOT an on-chain arg (C5). Throws MaxFeeExceeded.
 });
 // → openTrove(debt, upperHint, lowerHint) with value: collateral
 
@@ -129,12 +129,12 @@ combined collateral-and-debt changes.
 ## 5. Redemption and liquidation (permissionless)
 
 ```ts
-// Redeem MUSD for BTC — uses getRedemptionHints, applies the live redemptionRate()
-// (to ALL redeemers — the "0% for loan holders" rule was disproven in Phase 6, see
+// Redeem MUSD for BTC, uses getRedemptionHints, applies the live redemptionRate()
+// (to ALL redeemers, the "0% for loan holders" rule was disproven in Phase 6, see
 //  01-ground-truth §8), handles truncatedAmount.
 await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10n });
 
-// Keeper surface — typed, with a precheck
+// Keeper surface, typed, with a precheck
 if (await musd.isLiquidatable(borrower)) {
   await musd.liquidate(borrower);            // → TroveManager.liquidate(borrower)
 }
@@ -158,7 +158,7 @@ await musd.getOraclePrice();     // BTC/USD from PriceFeed.fetchPrice()
 
 ## 7. Errors
 
-Typed, discriminated — never thrown strings. Protocol reverts map to named errors a
+Typed, discriminated, never thrown strings. Protocol reverts map to named errors a
 developer can branch on (`BelowMinimumDebt`, `ICRBelowMCR`, `InsufficientCollateral`,
 `TroveNotFound`, `RecoveryModeRestriction`, `MaxFeeExceeded`, …). Full taxonomy and
 mapping in `06-errors`.

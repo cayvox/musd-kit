@@ -1,4 +1,4 @@
-# 08 — Conventions
+# Conventions
 
 Engineering standards for `musd-kit`. The goal is a codebase that reads as one
 author's, where the boring decisions are already made so attention goes to
@@ -15,7 +15,7 @@ correctness.
   `exactOptionalPropertyTypes` where practical). No `any` in shipped code; `unknown`
   + narrowing instead.
 - **Build:** `tsup` (or equivalent) → ESM + CJS + `.d.ts`. `sideEffects: false`.
-- **Lint/format:** ESLint + Prettier (or Biome) — one config at the root, enforced in
+- **Lint/format:** ESLint + Prettier (or Biome), one config at the root, enforced in
   CI.
 - **Target:** the core targets a broad runtime (Node + browser, ES2020+); no
   Node-only APIs in `@musd-kit/core`.
@@ -37,7 +37,7 @@ correctness.
   rounding (the dual-validation in `05` §5 catches divergence).
 - **Constants:** the fixed ones (`MCR`, `CCR`, `GAS_COMPENSATION = 200e18`,
   `PERCENT_DIVISOR`, `DECIMAL_PRECISION`) live in one `constants.ts`. Governable ones
-  are **never** constants — they are read (Law 3).
+  are **never** constants, they are read (Law 3).
 
 ---
 
@@ -52,7 +52,7 @@ correctness.
   do not introduce ethers.
 - **ABIs** are `as const` for full type inference. Bundle from the repo
   interfaces/artifacts; do not hand-transcribe signatures (transcription is an
-  assumption — Law 1).
+  assumption, Law 1).
 
 ---
 
@@ -82,7 +82,7 @@ correctness.
 ## 6. Git, commits, PRs
 
 - **Conventional Commits** (`feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`).
-- **Small, focused PRs** — ideally one module/phase per PR, with its tests. A PR for
+- **Small, focused PRs**, ideally one module/phase per PR, with its tests. A PR for
   a correctness module includes its fork-validated tests in the same PR.
 - **CI must be green to merge** (lint + typecheck + unit + the relevant fork gate).
 - **Changesets** (or equivalent) for versioning; every user-facing change has a
@@ -94,7 +94,7 @@ correctness.
 
 - **SemVer.** `0.x` while the surface stabilizes; `1.0` only when v1 scope ships and
   the maturity gate (§8) is met. `MusdErrorCode` and exported types are part of the
-  public contract — renames are breaking.
+  public contract, renames are breaking.
 - **npm publish with provenance.** Tag every release; sign the build provenance.
 - **Reproducible builds:** committed lockfile, pinned toolchain.
 - **Two packages publish together** at v1: `@musd-kit/core`, `@musd-kit/react`. A
@@ -115,7 +115,7 @@ applications trust it (Handbook §4.6).
 
 ## 9. Naming the package
 
-`musd-kit` is **provisional** — a trademark/availability check precedes any public
+`musd-kit` is **provisional**, a trademark/availability check precedes any public
 launch. "MUSD" is Mezo's asset, so the README must frame the package explicitly as
 unofficial community tooling to avoid implying endorsement. Candidate alternates if
 the check fails: `musd-sdk`, `use-musd`, `trovekit`, `mezofi-kit`. The npm scope and

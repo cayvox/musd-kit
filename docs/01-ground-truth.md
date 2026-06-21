@@ -1,11 +1,11 @@
-# 01 — Ground Truth (verified)
+# Ground Truth (verified)
 
 **The single source of truth for every MUSD contract fact `musd-kit` depends on.**
-If a contract fact is not in this file, it is not yet verified — STOP and verify it
+If a contract fact is not in this file, it is not yet verified, STOP and verify it
 before relying on it (Law 1).
 
 **Verification provenance:** all facts below verified on **14 June 2026** against:
-- the MUSD contracts at `github.com/mezo-org/musd` (`main`) — Solidity source + interfaces,
+- the MUSD contracts at `github.com/mezo-org/musd` (`main`), Solidity source + interfaces,
 - the committed deployment artifacts at `solidity/artifacts/deployments/{mainnet,matsnet}` (addresses),
 - `docs/simpleInterest.md` in that repo (the interest model),
 - the live `@mezo-org/passport@0.17.2` package on the npm registry (peer ranges),
@@ -23,22 +23,22 @@ upgrade would change implementation behavior behind the same proxy. The proxy
 | Network | EVM chainId | Cosmos chain-id | Native gas | Notes |
 |---|---|---|---|---|
 | Mezo Mainnet | **31612** | `mezo_31612-1` | BTC (18 decimals) | repo deployment dir `mainnet/` |
-| Mezo Testnet | **31611** | — | BTC (18 decimals) | repo deployment dir `matsnet/` ("matsnet" = Mezo testnet) |
+| Mezo Testnet | **31611** | n/a | BTC (18 decimals) | repo deployment dir `matsnet/` ("matsnet" = Mezo testnet) |
 
 Native gas is **BTC with 18 decimals** (not 8). Collateral sent to `openTrove` /
 `addColl` is `msg.value` in BTC wei (1e18).
 
 ---
 
-## 2. Fixed constants (bundled — no on-chain setter exists)
+## 2. Fixed constants (bundled, no on-chain setter exists)
 
 From `dependencies/LiquityBase.sol` and `dependencies/BaseMath.sol`:
 
 ```
 _100pct                = 1e18      // 100%
-MCR                    = 1.1e18    // 110% — individual liquidation trigger (ICR < MCR)
-CCR                    = 1.5e18    // 150% — Recovery Mode threshold (system TCR < CCR)
-MUSD_GAS_COMPENSATION  = 200e18    // 200 MUSD — reserve added at open, returned on close
+MCR                    = 1.1e18    // 110%, individual liquidation trigger (ICR < MCR)
+CCR                    = 1.5e18    // 150%, Recovery Mode threshold (system TCR < CCR)
+MUSD_GAS_COMPENSATION  = 200e18    // 200 MUSD, reserve added at open, returned on close
 PERCENT_DIVISOR        = 200       // liquidator collateral reward = coll / 200 = 0.5%
 DECIMAL_PRECISION      = 1e18
 MIN_NET_DEBT_MIN       = 50e18     // hard floor: governance cannot set minNetDebt below this
@@ -48,14 +48,14 @@ These may be bundled as constants in the SDK. Everything in §3 may **not**.
 
 ---
 
-## 3. Governable / dynamic values (MUST be read on-chain — Law 3)
+## 3. Governable / dynamic values (MUST be read on-chain, Law 3)
 
 | Value | How to read | Init / current | Governance path |
 |---|---|---|---|
 | Minimum net debt | `borrowerOperations.minNetDebt()` | `1800e18` | `proposeMinNetDebt` → `approveMinNetDebt` (≥ `MIN_NET_DEBT_MIN`) |
-| Borrowing fee | `borrowerOperations.getBorrowingFee(uint256 _debt)` view | **flat 0.1% (10 bps) of the draw, NO floor/cap** (verified Phase 4: `fee(d) = d/1000` exactly at 1.8k–1M MUSD) — still governable, so READ it | `proposeBorrowingRate` → `approveBorrowingRate` |
-| Redemption rate | `borrowerOperations.redemptionRate()` — governable; applied to ALL redeemers (⚠ the "0% if redeemer holds a loan" rule was **disproven on the fork in Phase 6** — see §8) | ~0.75% | `proposeRedemptionRate` → `approveRedemptionRate` |
-| Global interest rate | `interestRateManager.interestRate()` → `uint16` (bips) | 1–5% band | `proposeInterestRate(uint16)` → `approveInterestRate` |
+| Borrowing fee | `borrowerOperations.getBorrowingFee(uint256 _debt)` view | **flat 0.1% (10 bps) of the draw, NO floor/cap** (verified Phase 4: `fee(d) = d/1000` exactly at 1.8k-1M MUSD), still governable, so READ it | `proposeBorrowingRate` → `approveBorrowingRate` |
+| Redemption rate | `borrowerOperations.redemptionRate()`, governable; applied to ALL redeemers (⚠ the "0% if redeemer holds a loan" rule was **disproven on the fork in Phase 6**, see §8) | ~0.75% | `proposeRedemptionRate` → `approveRedemptionRate` |
+| Global interest rate | `interestRateManager.interestRate()` → `uint16` (bips) | 1 to 5% band | `proposeInterestRate(uint16)` → `approveInterestRate` |
 | Oracle price (BTC/USD) | `priceFeed.fetchPrice()` view → uint (1e18-scaled) | live | n/a (oracle) |
 
 Cache these per `createMusdClient` session; refresh on demand.
@@ -69,7 +69,7 @@ Cache these per `createMusdClient` session; refresh on demand.
 > resolves back to the same address). **Consequence for tooling:** a plain anvil
 > EVM fork copies the bytecode but has no native handler, so `fetchPrice()` reverts
 > on a fork even though pure-EVM reads (`MCR`, Trove storage) work. The test harness
-> shims this one external precompile with the **real** live round data — never a
+> shims this one external precompile with the **real** live round data, never a
 > MUSD contract (Law 5). See `07-testing.md` §1 and `packages/core/test/harness/README.md`.
 
 ---
@@ -80,16 +80,16 @@ Sourced from `solidity/artifacts/deployments/{mainnet,matsnet}` at `main`.
 **Cross-check:** the MUSD token addresses here match the Mezo docs exactly, which
 validates the set.
 
-**Official sourcing (verified on npm, 14 Jun 2026) — prefer these over hand-bundling:**
-- **ABIs + addresses:** `@mezo-org/musd-contracts` (v1.1.0) — the official package of
+**Official sourcing (verified on npm, 14 Jun 2026), prefer these over hand-bundling:**
+- **ABIs + addresses:** `@mezo-org/musd-contracts` (v1.1.0), the official package of
   "MUSD smart contract deployment artifacts … addresses and ABIs generated by
   Hardhat." `musd-kit` should source its ABIs and address maps from this package
   (versioned, official) rather than hand-transcribing them, and pin its version. The
   tables below remain the human-readable, verified reference and the fallback override.
-- **Chain config:** `@mezo-org/chains` — the official viem chain config (`mezoMainnet`,
+- **Chain config:** `@mezo-org/chains`, the official viem chain config (`mezoMainnet`,
   `mezoTestnet`, `createMezoChain`). `musd-kit` should depend on this for chain
   definitions instead of hand-rolling them. (Note: this is a correction to the v0.1
-  framing — there *are* official npm artifacts/config packages; what remains absent is
+  framing, there *are* official npm artifacts/config packages; what remains absent is
   a typed *interaction* client, which is exactly `musd-kit`. See `09-open-questions.md`
   O10 / F3.)
 
@@ -152,10 +152,10 @@ explicitly.
 
 ## 5. The ABI surface `musd-kit` wraps
 
-### 5.1 `IBorrowerOperations` (Trove lifecycle — writes + a fee read)
+### 5.1 `IBorrowerOperations` (Trove lifecycle, writes + a fee read)
 
 ```solidity
-// FULL SIGNATURES — verified from the artifacts (Phase 5). NO maxFeePercentage on ANY
+// FULL SIGNATURES, verified from the artifacts (Phase 5). NO maxFeePercentage on ANY
 // of these (C5 extends beyond openTrove). Hints are (_upperHint, _lowerHint).
 openTrove(uint256 _debtAmount, address _upperHint, address _lowerHint) payable
 addColl(address _upperHint, address _lowerHint) payable                          // collateral via msg.value
@@ -177,7 +177,7 @@ route single-axis SDK intents to the dedicated functions, combined ones to
 
 **Write mechanics verified on the fork (Phase 5):**
 - **No ERC-20 approval needed for `repayMUSD`/`closeTrove`.** BorrowerOperations has
-  protocol burn authority and burns MUSD directly from the caller — `repayMUSD`
+  protocol burn authority and burns MUSD directly from the caller, `repayMUSD`
   succeeds with allowance 0. The SDK sends no `approve`.
 - **`closeTrove` payoff:** the caller must hold **`entireDebt − 200`** MUSD (the net
   debt; the 200 gas reserve is burned from the GasPool, not the caller). On close the
@@ -202,7 +202,7 @@ computeCR(uint256 _coll, uint256 _debt, uint256 _price) pure returns (uint)
 ### 5.3 `ITroveManager` (authoritative reads + permissionless writes)
 
 ```solidity
-// READS — use these for LIVE position data (Law 2)
+// READS, use these for LIVE position data (Law 2)
 // VERIFIED SHAPE (fork, Phase 2): 6 fields, computed TO NOW.
 getEntireDebtAndColl(address _borrower) view returns (
     uint256 coll, uint256 principal, uint256 interest,
@@ -210,7 +210,7 @@ getEntireDebtAndColl(address _borrower) view returns (
 // → entireDebt = principal + interest  (== the debt getCurrentICR uses; proven via computeCR).
 getCurrentICR(address _borrower, uint256 _price) view returns (uint)
 getNominalICR(address _borrower) view returns (uint)
-getTroveInterestOwed(address _borrower) view returns (uint)  // ⚠ STORED (STALE) snapshot — see §7
+getTroveInterestOwed(address _borrower) view returns (uint)  // ⚠ STORED (STALE) snapshot, see §7
 getTroveDebt(address _borrower) view returns (uint)          // ⚠ STORED principal (incl gas+fee), no live interest
 getTroveColl(address _borrower) view returns (uint)
 getTroveStatus(address _borrower) view returns (uint8 Status) // enum: 0 nonExistent, 1 active (verified);
@@ -220,7 +220,7 @@ getTroveInterestRate(address _borrower) view returns (uint16) // basis points
 getTCR(uint256 _price) view returns (uint)
 checkRecoveryMode(uint256 _price) view returns (bool)
 
-// WRITES — permissionless (keeper surface)
+// WRITES, permissionless (keeper surface)
 redeemCollateral(...)
 liquidate(address _borrower)
 batchLiquidateTroves(address[] _troveArray)
@@ -243,7 +243,7 @@ fetchPrice() view returns (uint)   // BTC/USD, 1e18-scaled. In MUSD this is view
 ### 5.6 `ISortedTroves` (used by the hint module)
 
 `findInsertPosition(uint256 _NICR, address _prevId, address _nextId) view returns
-(address upperHint, address lowerHint)` — called with the approx hint from
+(address upperHint, address lowerHint)`, called with the approx hint from
 `getApproxHint` as both `_prevId` and `_nextId`. Also exposes `getSize() → uint256`,
 `getFirst()/getLast()`, `getPrev(id)/getNext(id)`, `contains(id) → bool`, and
 `validInsertPosition(_NICR, _prevId, _nextId) → bool`.
@@ -278,7 +278,7 @@ ICR        = computeCR(msg.value, entireDebt, price)// = (collateral * price) / 
 Definitions used throughout the SDK:
 - `_getCompositeDebt(debt) = debt + 200`
 - `_getNetDebt(debt) = debt − 200`
-- On a **debt increase** (`adjustTrove` / `withdrawMUSD`): `netDebtChange += getBorrowingFee(change)` — the fee is added to the debt change too.
+- On a **debt increase** (`adjustTrove` / `withdrawMUSD`): `netDebtChange += getBorrowingFee(change)`, the fee is added to the debt change too.
 - On **close**: payoff = `entireDebt`; the 200 gas reserve is returned.
 
 For `previewOpen` / `getBorrowingPower`:
@@ -295,26 +295,26 @@ For `previewOpen` / `getBorrowingPower`:
 - **Simple (non-compounding), time-based, linear.** Interest accrues by *elapsed
   seconds*, not blocks:
   `new_interest = interest_numerator × (current_timestamp − last_update) / seconds_per_year`.
-- **`SECONDS_PER_YEAR = 31_556_952`** (= 365.2425 days × 86400, the **Gregorian** year —
+- **`SECONDS_PER_YEAR = 31_556_952`** (= 365.2425 days × 86400, the **Gregorian** year, 
   NOT 365 (31_536_000) nor 365.25 (31_557_600)). Verified on the fork (Phase 4): open,
   warp a known elapsed, read `getEntireDebtAndColl.interest`, back out the constant; the
   forward prediction `interest = principal · rateBips · elapsed / (10_000 · 31_556_952)`
   matches to the wei.
 - **Interest base = the full stored principal** (`draw + fee + 200` gas comp), not the
-  net draw — verified (a 5,000-draw Trove accrues on `principal = 5,205`).
+  net draw, verified (a 5,000-draw Trove accrues on `principal = 5,205`).
 - **Rates are in basis points** (`interestRate()` is `uint16`).
 - **Per-Trove interest updates only on interaction** with that Trove → the *stored*
   `interestOwed` is stale between interactions. **For live entire-debt, read
   `getEntireDebtAndColl`, which computes to the current time. Never read the stored
   value and call it current.**
   - **CORRECTION (verified on the fork, Phase 2):** `getTroveInterestOwed` and
-    `getTroveDebt` return the **STORED (stale)** snapshot — they do NOT compute to
+    `getTroveDebt` return the **STORED (stale)** snapshot, they do NOT compute to
     now. After a 30-day clock warp, `getEntireDebtAndColl.interest` grew to ~1.81
     MUSD while `getTroveInterestOwed` stayed `0`. So the to-now interest is
     `getEntireDebtAndColl.interest`, and live `entireDebt = principal + interest`
     from that one getter. `musd-kit`'s `getTrove` sources `interestOwed`/`principal`
     from `getEntireDebtAndColl`, never from the stored getters. (Earlier drafts of
-    this section lumped `getTroveInterestOwed` in with the to-now getter — it is not.)
+    this section lumped `getTroveInterestOwed` in with the to-now getter, it is not.)
 - **A Trove's fixed rate is set at open from its maximum borrowing capacity at 110%
   CR**, not from the initial draw. `refinance` moves a Trove to the current global
   rate.
@@ -340,19 +340,19 @@ For `previewOpen` / `getBorrowingPower`:
   110%. **Signature (verified): `redeemCollateral(uint256 _amount, address
   _firstRedemptionHint, address _upperPartialRedemptionHint, address
   _lowerPartialRedemptionHint, uint256 _partialRedemptionHintNICR, uint256 _maxIterations)`
-  — NO `_maxFeePercentage`** (C5 extends to redemption; any fee guard is SDK-side).
+with no `_maxFeePercentage`** (C5 extends to redemption; any fee guard is SDK-side).
   - **Ritual:** `getRedemptionHints(amount, price, maxIterations) → (firstRedemptionHint,
     partialRedemptionHintNICR, truncatedAmount)`; then `getApproxHint(partialNICR) →
     findInsertPosition(partialNICR, approx, approx)` → pass `(first, upper, lower,
     partialNICR, maxIterations)` to `redeemCollateral`.
-  - **FEE — CORRECTION (verified on the fork, Phase 6):** the **`0%-for-loan-holders` rule
+  - **FEE, CORRECTION (verified on the fork, Phase 6):** the **`0%-for-loan-holders` rule
     does NOT hold in this deployment.** A redeemer who holds an open loan paid the **full
     `borrowerOperations.redemptionRate()` = 0.75%** (measured from the `Redemption` event:
     `_collateralFee / (_collateralSent + _collateralFee) ≈ 0.744%`). The SDK reads
-    `redemptionRate()` and applies it to all redeemers (governable — never hardcode 0.75%).
+    `redemptionRate()` and applies it to all redeemers (governable, never hardcode 0.75%).
   - **`truncatedAmount`** is the redeemable amount given the `minNetDebt` floor on the last
     touched Trove (and `maxIterations`). The `Redemption` event reports
-    `(_attemptedAmount, _actualAmount, _collateralSent, _collateralFee)` — the **actual**
+    `(_attemptedAmount, _actualAmount, _collateralSent, _collateralFee)`, the **actual**
     redeemed amount can be **less than `truncatedAmount`** when the redemption needs a
     *partial* of the last Trove and the partial hint drifts (the partial is skipped, full
     Troves still redeem). Truncation that lands on full-Trove boundaries (e.g. the
@@ -384,9 +384,9 @@ Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
 
 ---
 
-## 10. Still-open items (do not depend on these — see `09-open-questions.md`)
+## 10. Still-open items (do not depend on these, see `09-open-questions.md`)
 
-- **F1 / O6 — the "vault".** `IMUSDSavingsRate` exposes only
+- **F1 / O6, the "vault".** `IMUSDSavingsRate` exposes only
   `receiveProtocolYield(uint256)` (a protocol-side yield receiver), not a user
   deposit/withdraw vault. The v2 "vault helpers" premise is unverified. *New color
   (14 Jun 2026): Mezo does have live "vaults" advertising triple-digit APRs, but these
@@ -394,11 +394,11 @@ Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
   a simple idle-MUSD savings vault; `@metalend/sdk` also offers gasless MUSD deposits
   as its own protocol.* Identify the **exact** MUSD-deposit venue + its contract before
   committing v2 vault scope.
-- **F3 — emptiness re-check. RESOLVED (14 Jun 2026).** An exhaustive npm + GitHub scan
+- **F3, emptiness re-check. RESOLVED (14 Jun 2026).** An exhaustive npm + GitHub scan
   found **no neutral, typed MUSD CDP client SDK.** The closest packages are *not*
   competitors: `payce-musd-sdk` (a micropayment *product's* SDK that wraps MUSD
   borrowing internally), `mezo-compose-sdk` (a portfolio/allocation/**swap** SDK on
-  Tigris DEX — different layer), and `@gitmyabi-stg/musd` (raw auto-generated type
+  Tigris DEX, different layer), and `@gitmyabi-stg/musd` (raw auto-generated type
   bindings). Apps `pikolo` and `Mezo-Defi-IQ` hand-build the Trove layer inside their
   own products. The "wagmi+RainbowKit-of-MUSD / Liquity-lib-react-for-Mezo" niche is
   unoccupied. Full write-up in `COMPETITIVE-LANDSCAPE.md`. (Re-run once more right
@@ -406,7 +406,7 @@ Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
 
 ---
 
-## 11. Revert reasons (the real corpus — triggered on the fork, Phase 7)
+## 11. Revert reasons (the real corpus, triggered on the fork, Phase 7)
 
 **Form (verified):** every MUSD protocol-logic revert reachable from the SDK surface is a
 classic Liquity **require-string** (`Error(string)`), **not** a Solidity custom error. The
@@ -431,16 +431,16 @@ viem's decoded `reason` (via `ContractFunctionRevertedError`):
 | `liquidate` a healthy Trove | `TroveManager: nothing to liquidate` | require | `NothingToLiquidate` |
 | `redeemCollateral` that can redeem nothing (incl. a stale/bad partial hint) | `TroveManager: Unable to redeem any amount` | require | `RedemptionFailed` |
 
-**Not reachable from the SDK surface (Law 1 — marked, not invented):**
-- **`StaleHint`** — there is **no distinct "stale hint" revert**. A stale/incorrect
+**Not reachable from the SDK surface (Law 1, marked, not invented):**
+- **`StaleHint`**, there is **no distinct "stale hint" revert**. A stale/incorrect
   redemption partial hint does not produce its own error; it makes the redemption redeem
   nothing → `TroveManager: Unable to redeem any amount` (→ `RedemptionFailed`). Insertion
   hints never revert (open/adjust re-traverse from a bad hint). `StaleHint` remains a
   defined, exported error (public API since Phase 6) but is documented as not distinctly
   reachable; redemption-hint staleness surfaces as `RedemptionFailed`.
-- **`Unauthorized`** — the SDK surface calls no governance/permission-gated function, so the
+- **`Unauthorized`**, the SDK surface calls no governance/permission-gated function, so the
   `OwnableUnauthorizedAccount` path is unreachable. Defined/exported for completeness only.
-- **`InsufficientCollateral`** — the on-chain `ICR < MCR` revert maps to `ICRBelowMCR`
+- **`InsufficientCollateral`**, the on-chain `ICR < MCR` revert maps to `ICRBelowMCR`
   (contract-authoritative, Law 2). `InsufficientCollateral` is retained as the *preview-time*
   sibling (for the math/React layer); the write path surfaces `ICRBelowMCR`.
 

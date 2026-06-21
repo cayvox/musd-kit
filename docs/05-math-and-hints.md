@@ -1,11 +1,11 @@
-# 05 — Math & Hints (the correctness-critical core)
+# Math & Hints (the correctness-critical core)
 
 This is the heart of the library. The math here is the *only* client-side
 computation in `musd-kit` (Law 2), and it is held to the highest test bar
-(`07-testing`). Everything is verified against `01-ground-truth` §6–§7; this
+(`07-testing`). Everything is verified against `01-ground-truth` §6-§7; this
 document is the implementation-level spec.
 
-**The boundary, restated:** for a **live** position, do not use anything here — read
+**The boundary, restated:** for a **live** position, do not use anything here, read
 the contract getters (`read/`, `03-core-api` §2). The formulas below are for
 **previews** of positions that do not exist yet, and for the thin derivations
 (`liquidationPrice`, `healthFactor`) layered on authoritative live values.
@@ -36,7 +36,7 @@ on the fork; they must be identical.
 
 ## 2. Entire-debt for a PREVIEW (no live position)
 
-A live Trove's entire debt is read from `getEntireDebtAndColl` — never computed.
+A live Trove's entire debt is read from `getEntireDebtAndColl`, never computed.
 For a *preview* (e.g. "what will my debt be in 30 days?"), use the verified interest
 model (`01-ground-truth` §7):
 
@@ -45,9 +45,9 @@ interest_accrued = principal × rate_bips / 10_000 × elapsedSeconds / SECONDS_P
 entireDebt_preview = principal + interest_accrued + fees + 200e18
 ```
 
-- **Linear, non-compounding, time-based (seconds)** — not blocks (C3).
+- **Linear, non-compounding, time-based (seconds)**, not blocks (C3).
 - `SECONDS_PER_YEAR` must match the contract's constant exactly (verify on the fork;
-  do not assume 31_536_000 vs 31_557_600 — read/confirm what the contract uses).
+  do not assume 31_536_000 vs 31_557_600, read/confirm what the contract uses).
 - **Subtlety (C4):** a Trove's fixed rate is set at open from its 110%-CR *maximum
   borrowing capacity*, not the initial draw. `previewOpen` must compute the rate the
   way the contract will, then validate that the predicted rate matches the rate the
@@ -70,13 +70,13 @@ find the largest `draw` such that:
 ```
 
 Because the fee depends on `draw` (and may be a percentage), solve for `draw`
-analytically if the fee is linear, or by monotonic search otherwise — then **verify
+analytically if the fee is linear, or by monotonic search otherwise, then **verify
 the boundary on the fork** by actually opening a Trove at the computed max and
 confirming its ICR is ≥ MCR (and that one wei more would breach it). In Recovery
-Mode (`TCR < CCR`), the effective constraint tightens — surface it (O3) and reflect
+Mode (`TCR < CCR`), the effective constraint tightens, surface it (O3) and reflect
 it in the returned power.
 
-Do **not** use the handbook's "≥ 2,000 net" floor — the floor is `minNetDebt`
+Do **not** use the handbook's "≥ 2,000 net" floor, the floor is `minNetDebt`
 (currently 1,800), read on-chain (C1/C6).
 
 ---
@@ -93,7 +93,7 @@ healthFactor     = f(icr_fromContract / MCR)        // monotonic; 1.0 at MCR
 ```
 
 `liquidationPrice` rises over time as interest accrues (entire debt grows) unless
-the user repays — a subtlety a naive static calculation misses. Because
+the user repays, a subtlety a naive static calculation misses. Because
 `entireDebt` here is read live (accrued to now), the derived `liquidationPrice` is
 correct at read time.
 
@@ -122,12 +122,12 @@ Every formula in `math/` is validated **twice**. This is the mechanism behind
    - SDK NICR vs `HintHelpers.computeNominalCR(coll, entireDebt)`
    - SDK fee usage vs `getBorrowingFee(draw)`
 
-If (1) and (2) ever disagree, the contract is right and the SDK is wrong — fix the
+If (1) and (2) ever disagree, the contract is right and the SDK is wrong, fix the
 SDK, add the failing case to the boundary corpus (`07-testing`).
 
 ---
 
-## 6. The hint module (`hints/`) — the insertion-hint ritual
+## 6. The hint module (`hints/`), the insertion-hint ritual
 
 MUSD is a Liquity-fork CDP: every Trove lives in a list sorted by nominal CR, and
 opening/adjusting one requires supplying correct insertion hints
@@ -136,9 +136,9 @@ opening/adjusting one requires supplying correct insertion hints
 ### 6.1 Insertion hints (open / adjust / withdrawColl / refinance)
 
 ```
-1. Determine entireDebt for the resulting position (draw + fee + 200) — see §1.
+1. Determine entireDebt for the resulting position (draw + fee + 200), see §1.
 2. nicr = computeNominalCR(collateral, entireDebt)          // contract pure, or the §1 formula cross-checked
-3. (approxHint, , ) = HintHelpers.getApproxHint(nicr, numTrials, randomSeed)
+3. (approxHint ) = HintHelpers.getApproxHint(nicr, numTrials, randomSeed)
 4. (upperHint, lowerHint) = SortedTroves.findInsertPosition(nicr, approxHint, approxHint)
 5. → pass upperHint, lowerHint to the write call
 ```
@@ -147,7 +147,7 @@ opening/adjusting one requires supplying correct insertion hints
   values); expose both as overridable options; document the gas/accuracy trade-off.
   Tune `numTrials` empirically against the fork (higher = better placement, more
   gas).
-- **Re-run on every position-changing write** — `adjustTrove`, `withdrawColl`,
+- **Re-run on every position-changing write**, `adjustTrove`, `withdrawColl`,
   `withdrawMUSD` (borrow more), and `refinance` each change the position's place in
   the list, so each recomputes hints.
 - **Validation:** randomized `(collateral, draw)` pairs must produce a successful
@@ -163,13 +163,13 @@ opening/adjusting one requires supplying correct insertion hints
 ```
 
 - **`truncatedAmount`** is the amount actually redeemable given the `minNetDebt`
-  floor on the last touched Trove — surface it to the caller (they may redeem less
+  floor on the last touched Trove, surface it to the caller (they may redeem less
   than requested).
 - **Hints go stale** if someone redeems before the tx lands → compute immediately
   before sending; document the stale-hint revert path and a retry.
 - **Fee:** the current `redemptionRate()` (read on-chain, C2), applied to ALL redeemers
   including loan holders. (The "0% for loan holders" rule was disproven on the fork in
-  Phase 6 — see `01-ground-truth.md` §8.)
+  Phase 6, see `01-ground-truth.md` §8.)
 
 ---
 

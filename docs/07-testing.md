@@ -1,4 +1,4 @@
-# 07 — Testing (the correctness gate)
+# Testing (the correctness gate)
 
 The test strategy *is* the product strategy, because correctness is the product. A
 library whose value is "the numbers are right near the liquidation threshold" earns
@@ -7,7 +7,7 @@ not the prose formula.
 
 ---
 
-## 1. The forked-Mezo harness (Phase 0 — built first)
+## 1. The forked-Mezo harness (Phase 0, built first)
 
 Nothing in `musd-kit` is trusted until CI can run a transaction against a fork of
 the *real* MUSD contracts.
@@ -45,37 +45,37 @@ plumbing in React tests. Anything asserting protocol behavior runs on the fork.
 
 ## 3. The boundary corpus (mandatory)
 
-Every release must pass these scenarios — they are the "everyone gets it wrong"
+Every release must pass these scenarios, they are the "everyone gets it wrong"
 cases:
 
-1. **`minNetDebt` floor** — open with `draw + fee` just under (expect
+1. **`minNetDebt` floor**, open with `draw + fee` just under (expect
    `BelowMinimumDebt`) and just over (expect success). (C1/C6/O7)
-2. **Near-MCR position** — ICR just above MCR (not liquidatable) and just below
+2. **Near-MCR position**, ICR just above MCR (not liquidatable) and just below
    (liquidatable + a successful liquidation).
-3. **Interest-accrued position** — warp the clock, confirm `getTrove.entireDebt`
+3. **Interest-accrued position**, warp the clock, confirm `getTrove.entireDebt`
    grew and matches `getEntireDebtAndColl`, and that `liquidationPrice` rose. (C3)
-4. **Recovery Mode** — drive `TCR < CCR`; confirm `getSystemState.isRecoveryMode`
+4. **Recovery Mode**, drive `TCR < CCR`; confirm `getSystemState.isRecoveryMode`
    and that previews/borrowing-power reflect the tightened rules and the right
    reverts fire. (O3)
-5. **Redemption truncation** — a redemption large enough to hit the `minNetDebt`
+5. **Redemption truncation**, a redemption large enough to hit the `minNetDebt`
    floor on the last Trove; confirm `truncatedAmount` and the actual redeemed amount
    agree.
-6. **Redemption fee** — confirm a loan-holder and a no-loan redeemer BOTH pay the live
+6. **Redemption fee**, confirm a loan-holder and a no-loan redeemer BOTH pay the live
    `redemptionRate()` (the "0% for loan holders" rule was disproven on the fork in Phase 6;
    see `01-ground-truth.md` §8).
-7. **Full lifecycle** — open → addColl → borrow → repay → withdrawColl → refinance →
+7. **Full lifecycle**, open → addColl → borrow → repay → withdrawColl → refinance →
    close; assert state at each step and that the 200 gas reserve returns on close.
 
 ---
 
 ## 4. Coverage gates
 
-- `math/`, `hints/`, `read/`, `errors/` carry the **highest** coverage — target
+- `math/`, `hints/`, `read/`, `errors/` carry the **highest** coverage, target
   near-complete branch coverage. These are the correctness-critical modules.
 - A coverage floor is enforced in CI for the `core` package; PRs that drop below it
   fail.
 - Coverage is necessary but not sufficient: a line covered by a mock proves nothing
-  about protocol truth — the fork tests are what count.
+  about protocol truth, the fork tests are what count.
 
 ---
 

@@ -1,0 +1,104 @@
+/* musd-kit docs theme: the landing's red+white identity inside VitePress, so the docs read as
+   the landing's sibling. Self-hosted Satoshi + Geist Mono, a warm-white canvas, a single Mezo-red
+   accent, the shared warm code theme. Light only (no dark canvas, per BRAND). Relative font url()
+   is rewritten by Vite with the correct /docs/ base. */
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('./fonts/satoshi-variable.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./fonts/geist-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./fonts/geist-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Type: the landing's faces */
+  --vp-font-family-base: 'Satoshi', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --vp-font-family-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Brand: single Mezo-red. brand-1 is AA-safe red text (#B5332A); brand-3 carries fills. */
+  --vp-c-brand-1: #b5332a;
+  --vp-c-brand-2: #c7382e;
+  --vp-c-brand-3: #e5483d;
+  --vp-c-brand-soft: rgba(229, 72, 61, 0.12);
+  --vp-c-brand-softer: rgba(229, 72, 61, 0.06);
+
+  /* Warm-white canvas + warm surfaces, matching the landing tokens */
+  --vp-c-bg: #fbf8f5;
+  --vp-c-bg-alt: #f4efe9;
+  --vp-c-bg-soft: #f4efe9;
+  --vp-c-bg-elv: #ffffff;
+
+  /* Warm hairlines + near-black warm text */
+  --vp-c-divider: #ece5dd;
+  --vp-c-border: #ded5cb;
+  --vp-c-gutter: #ece5dd;
+  --vp-c-text-1: #1a1513;
+  --vp-c-text-2: #6b635c;
+  --vp-c-text-3: #756b61;
+
+  /* Home hero: red name, warm tagline */
+  --vp-home-hero-name-color: #c7382e;
+  --vp-home-hero-image-background-image: none;
+
+  /* Buttons: white text needs the deeper red to clear AA (white on #e5483d is only 3.94). */
+  --vp-button-brand-bg: #c7382e;
+  --vp-button-brand-hover-bg: #b5332a;
+  --vp-button-brand-active-bg: #b5332a;
+  --vp-button-brand-text: #ffffff;
+  --vp-button-brand-hover-text: #ffffff;
+  --vp-button-brand-border: transparent;
+}
+
+/* Inline code is a SUBTLE light pill (red-ink on a warm tint), matching the landing. Block code
+   stays on the shared warm dark theme (set by Shiki), so this only retints inline `code`. */
+.vp-doc :not(pre) > code {
+  background-color: #f4efe9;
+  color: #b5332a;
+  border: 1px solid #ece5dd;
+  font-weight: 500;
+}
+/* Inline code inside headings/links inherits the link/heading color, not the red pill. */
+.vp-doc a > code {
+  color: var(--vp-c-brand-1);
+}
+
+/* Nav: subtle warm hairline under the bar to match the landing nav */
+.VPNav {
+  --vp-nav-bg-color: rgba(251, 248, 245, 0.85);
+}
+
+/* The sidebar group titles read as the landing's mono eyebrows */
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+/* Focus ring consistent with the landing (visible red) */
+:where(a, button, .VPButton, input):focus-visible {
+  outline: 2px solid var(--vp-c-brand-3);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The maturity callout (the home warning blockquote) tightened */
+.vp-doc blockquote {
+  border-left-color: var(--vp-c-brand-3);
+}

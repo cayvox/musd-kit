@@ -1,10 +1,10 @@
-# 02 — Architecture
+# Architecture
 
 ## 1. The layered picture
 
 ```
         @mezo-org/passport                 @musd-kit/react   (v1)
-        (connection — Mezo's official)     wagmi-idiomatic hooks, TanStack Query
+        (connection, Mezo's official)     wagmi-idiomatic hooks, TanStack Query
         wallet, session, wagmi config            │ calls
                 │ provides connected               ▼
                 │ wagmi/viem client      ┌────────────────────────────────────┐
@@ -20,7 +20,7 @@
                                          └───────────────────┬──────────────────┘
                                                              │ viem calls
                                                              ▼
-                                          MUSD CONTRACTS (mezo-org/musd — the protocol)
+                                          MUSD CONTRACTS (mezo-org/musd, the protocol)
                                           BorrowerOperations · TroveManager · SortedTroves ·
                                           HintHelpers · PriceFeed · InterestRateManager · MUSD
 ```
@@ -43,13 +43,13 @@ getters, so the SDK does not re-derive what the chain will tell it.
 | **Preview** (a position that doesn't exist yet) | client-side math | `math/` | There is no on-chain object to read for a hypothetical position; this is the *only* place the SDK computes |
 
 `read/` and `math/` are deliberately **separate modules**. A live `getTrove`
-**never** calls `math/` for its core numbers — it reads the contract. `previewOpen`
+**never** calls `math/` for its core numbers, it reads the contract. `previewOpen`
 and `getBorrowingPower` live in `math/` and are validated twice (against forked-Mezo
 behavior and against the contract's `pure` helpers `computeCR`/`computeNominalCR`/
 `getBorrowingFee`). See `05-math-and-hints` for the method.
 
 This relocates the correctness risk to exactly one bounded place (preview math),
-where the dual-validation gate proves it — instead of spreading re-derivation
+where the dual-validation gate proves it, instead of spreading re-derivation
 across every read.
 
 ---
@@ -77,11 +77,11 @@ constants on first use.
 
 | Package | Version | Depends on | Role |
 |---|---|---|---|
-| `@musd-kit/core` | v1 | `viem` (peer) | typed clients, addresses, reads, preview math, hints, lifecycle, redemption, errors — framework-agnostic |
+| `@musd-kit/core` | v1 | `viem` (peer) | typed clients, addresses, reads, preview math, hints, lifecycle, redemption, errors, framework-agnostic |
 | `@musd-kit/react` | v1 | peer: `wagmi`, `viem`, `@tanstack/react-query`, `react`; dep: `@musd-kit/core` | wagmi-idiomatic hooks over core |
 | `@musd-kit/ui` | v2 | `react`, `@musd-kit/core` | optional headless/styled components |
 | `@musd-kit/testing` | v2 | `@musd-kit/core` | MUSD mock + forked-Mezo test helpers (as a public package) |
-| `musd-kit-py` | v2 | — | Python SDK for bots/keepers |
+| `musd-kit-py` | v2 | n/a | Python SDK for bots/keepers |
 
 ### Peer-dependency alignment (verified, not guessed)
 
@@ -95,7 +95,7 @@ viem                  ^2.22.8
 react                 ^18.2.0      // target React 18; add ^19 only after testing with Passport
 ```
 
-`@musd-kit/react` provides **no provider of its own** — it consumes the wagmi
+`@musd-kit/react` provides **no provider of its own**, it consumes the wagmi
 context Passport (or any wagmi setup) already established. It peer-depends on
 **wagmi, not Passport** (decision O4), keeping it usable with any connection layer.
 
@@ -117,4 +117,4 @@ a trademark/availability check (see `09-open-questions` / Handbook §11.4).
 The core has **no React import**. The two examples prove it: `open-and-manage` (React
 app) and `keeper` (headless Node, core only). The keeper compiling without React is
 the structural proof that the intelligence lives in the core and the framework
-layers are adapters — so a future Vue/Svelte layer is additive, never a rewrite.
+layers are adapters, so a future Vue/Svelte layer is additive, never a rewrite.

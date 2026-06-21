@@ -1,7 +1,7 @@
-# 04 — React API (`@musd-kit/react`)
+# React API (`@musd-kit/react`)
 
 Thin hooks over the core, in wagmi's exact idiom. They assume a wagmi context (from
-Passport's `getConfig` or any wagmi setup) is already present — `musd-kit` consumes
+Passport's `getConfig` or any wagmi setup) is already present, `musd-kit` consumes
 the provider, it does not supply one (decision O4). Read hooks return
 `{ data, isLoading, error }` and refetch on new blocks via TanStack Query; write
 hooks return a `writeContract`-style function plus status.
@@ -30,10 +30,10 @@ function Position({ address }: { address: `0x${string}` }) {
 ```
 
 `useTrove` returns the same contract-authoritative object as `core.getTrove`
-(`03-core-api` §2) — refetched on new blocks.
+(`03-core-api` §2), refetched on new blocks.
 
 ```tsx
-// A borrowing-power calculator — no live position needed (preview math)
+// A borrowing-power calculator, no live position needed (preview math)
 const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05') });
 // `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
 ```
@@ -69,10 +69,10 @@ core; the React layer adds only the reactive wrapper.
 `useMusdBalance`, `useOraclePrice`.
 
 `useHealthFactor` and `useLiquidationPrice` are selectors over the **same** `useTrove`
-query (shared key + `select`) — three hooks for one address dedupe to a single fetch. All
+query (shared key + `select`), three hooks for one address dedupe to a single fetch. All
 read hooks refetch on new blocks (`useBlockNumber({ watch })` → invalidate).
 
-> **`useMusdPeg` is deferred.** The core `getPeg` is unimplemented — Mezo exposes no
+> **`useMusdPeg` is deferred.** The core `getPeg` is unimplemented, Mezo exposes no
 > MUSD/USD oracle (Phase 2 / `09-open-questions`). Shipping a hook that returns a guessed
 > peg would violate the prime directive, so it is **omitted from v1** and will land if/when
 > a peg oracle exists.
@@ -82,7 +82,7 @@ read hooks refetch on new blocks (`useBlockNumber({ watch })` → invalidate).
 `useClaimCollateral`, `useRefinance`, `useRedeem`.
 
 We ship the **dedicated single-axis hooks** (`useAddCollateral` → `addColl`, `useBorrow` →
-`withdrawMUSD`, `useRepay`, `useWithdrawCollateral`) alongside `useAdjustTrove` — they read
+`withdrawMUSD`, `useRepay`, `useWithdrawCollateral`) alongside `useAdjustTrove`, they read
 better in a form-per-action UI and each maps to exactly one core method. Each write hook is
 a `useMutation` returning the wagmi-style shape `{ <action>, isPending, isSuccess, error,
 hash, data }` where `error` is the core's typed `MusdError`; `useRedeem`'s `data` carries
@@ -102,7 +102,7 @@ A typical app wires Passport for connection and `musd-kit` for MUSD, side by sid
 <WagmiProvider config={getConfig({ appName: 'My MUSD dApp' })}>
   <QueryClientProvider client={queryClient}>
     <RainbowKitProvider initialChain={mezoTestnet}>
-      {/* musd-kit hooks work inside this context — no extra provider needed */}
+      {/* musd-kit hooks work inside this context, no extra provider needed */}
       <YourApp />
     </RainbowKitProvider>
   </QueryClientProvider>
@@ -115,7 +115,7 @@ already established. The developer uses Passport for what it is good at and
 
 ---
 
-## 5. Peer dependencies (verified — `02-architecture` §4)
+## 5. Peer dependencies (verified, `02-architecture` §4)
 
 Match Passport's own ranges so both resolve to single singletons in a consumer app:
 
@@ -126,7 +126,7 @@ viem                  ^2.22.8
 react                 ^18.2.0      // target React 18; widen to ^19 only after testing with Passport
 ```
 
-`@musd-kit/react` peer-depends on **wagmi, not Passport** — keeping it usable with
+`@musd-kit/react` peer-depends on **wagmi, not Passport**, keeping it usable with
 any wagmi connection layer.
 
 ---
@@ -135,7 +135,7 @@ any wagmi connection layer.
 
 The React hooks carry a "medium" collision risk: Passport is React/wagmi and could,
 in principle, gain MUSD-specific hooks that overlap this layer. They stay in v1 (a
-client SDK without hooks feels half-done), but the hedge is structural — the durable
+client SDK without hooks feels half-done), but the hedge is structural, the durable
 value is the framework-agnostic core (`math/`, `hints/`, the typed reads), which is
 exactly what *any* hooks (Passport's or ours) would have to call. If Passport ever
 ships MUSD hooks, the core remains the correct, tested implementation of the hard
