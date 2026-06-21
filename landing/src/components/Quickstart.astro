@@ -1,81 +1,325 @@
 ---
 import TabbedCode from './TabbedCode.astro'
+import CodeBlock from './CodeBlock.astro'
 import Button from './Button.astro'
 
-// CONTENT §7, tabbed quickstart: Install / Core / React / Keeper. Real 0.1.0 API.
-const install = `npm i @musd-kit/core            # core only (Node/keeper)
-npm i @musd-kit/core @musd-kit/react   # + React hooks`
+// CONTENT §7, a numbered "zero to your first call" flow. Real 0.1.0 API (no MusdProvider;
+// the React layer consumes your existing wagmi context). Audience toggle swaps steps 2 to 3.
+const installTabs = [
+  { label: 'npm', code: 'npm i @musd-kit/core\n# add @musd-kit/react for the hooks', lang: 'bash' as const },
+  { label: 'pnpm', code: 'pnpm add @musd-kit/core\n# add @musd-kit/react for the hooks', lang: 'bash' as const },
+  { label: 'yarn', code: 'yarn add @musd-kit/core\n# add @musd-kit/react for the hooks', lang: 'bash' as const },
+  { label: 'bun', code: 'bun add @musd-kit/core\n# add @musd-kit/react for the hooks', lang: 'bash' as const },
+]
 
-const core = `import { createMusdClient } from '@musd-kit/core'
+const coreCreate = `import { createMusdClient } from '@musd-kit/core'
 
-const musd = createMusdClient({ chainId, publicClient })
-const price = await musd.getOraclePrice()
+const musd = createMusdClient({ chainId: 31611, publicClient })`
+
+const reactCreate = `import { useTrove } from '@musd-kit/react'
+
+// inside your wagmi + Passport app, no provider of its own
+const { data: trove } = useTrove({ address })`
+
+const coreCall = `const price = await musd.getOraclePrice()
 const trove = await musd.getTrove(address)`
 
-const react = `import { useTrove, useOpenTrove } from '@musd-kit/react'
-
-const { data: trove } = useTrove({ address })
-const { openTrove, isPending, error } = useOpenTrove()`
-
-const keeper = `import { createMusdClient } from '@musd-kit/core'
-
-// Core-only, no React. Run a permissionless liquidation keeper.
-const musd = createMusdClient({ chainId: 31611, publicClient, walletClient })
-if (await musd.isLiquidatable(borrower)) await musd.liquidate(borrower)`
+const reactCall = `const { openTrove, isPending, error } = useOpenTrove()`
 ---
 
-<section class="section quickstart" id="quickstart" aria-labelledby="qs-h">
-  <div class="container quickstart__inner">
+<section class="section quickstart" id="quickstart" aria-labelledby="qs-h" data-quickstart data-audience="core">
+  <div class="container">
     <div class="quickstart__head">
-      <p class="eyebrow eyebrow--red" data-reveal>QUICKSTART</p>
-      <h2 id="qs-h" data-reveal>Start in minutes.</h2>
-      <p class="prose" data-reveal>
-        Install the core, create a client, read live state: the same calls the widget above runs against testnet.
-      </p>
-      <div class="quickstart__cta" data-reveal>
-        <Button href="/docs/" variant="primary">Full Documentation</Button>
-        <Button href="/docs/api/" variant="link">API reference&nbsp;→</Button>
+      <div class="quickstart__intro">
+        <p class="eyebrow eyebrow--red" data-reveal>QUICKSTART</p>
+        <h2 id="qs-h" data-reveal>Start in minutes.</h2>
+        <p class="prose quickstart__lead" data-reveal>
+          From an empty file to a live read against Mezo testnet, in three steps.
+        </p>
+      </div>
+      <div class="quickstart__aud" role="radiogroup" aria-label="Choose your stack" data-reveal>
+        <button class="quickstart__aud-btn" role="radio" type="button" data-aud-btn="core" aria-checked="true" tabindex="0">Core</button>
+        <button class="quickstart__aud-btn" role="radio" type="button" data-aud-btn="react" aria-checked="false" tabindex="-1">React</button>
       </div>
     </div>
-    <div class="quickstart__code" data-reveal>
-      <TabbedCode
-        tabs={[
-          { label: 'Install', code: install, lang: 'bash' },
-          { label: 'Core', code: core, lang: 'ts' },
-          { label: 'React', code: react, lang: 'tsx' },
-          { label: 'Keeper', code: keeper, lang: 'ts' },
-        ]}
-      />
+
+    <ol class="quickstart__steps">
+      <li class="qs-step" data-reveal>
+        <span class="qs-step__badge" aria-hidden="true">1</span>
+        <div class="qs-step__content">
+          <h3 class="qs-step__title">Install</h3>
+          <p class="qs-step__line">Add the core. The React hooks are a separate, optional package.</p>
+          <div class="qs-step__code">
+            <TabbedCode tabs={installTabs} />
+          </div>
+        </div>
+      </li>
+
+      <li class="qs-step" data-reveal>
+        <span class="qs-step__badge" aria-hidden="true">2</span>
+        <div class="qs-step__content">
+          <div data-aud="core">
+            <h3 class="qs-step__title">Create a client</h3>
+            <p class="qs-step__line">Pass a viem public client. That is all the core needs to read.</p>
+            <div class="qs-step__code"><CodeBlock code={coreCreate} lang="ts" label="client.ts" /></div>
+          </div>
+          <div data-aud="react">
+            <h3 class="qs-step__title">Drop in the hooks</h3>
+            <p class="qs-step__line">No provider of its own. The hooks consume the wagmi context Passport already gives you.</p>
+            <div class="qs-step__code"><CodeBlock code={reactCreate} lang="tsx" label="Position.tsx" /></div>
+          </div>
+        </div>
+      </li>
+
+      <li class="qs-step" data-reveal>
+        <span class="qs-step__badge" aria-hidden="true">3</span>
+        <div class="qs-step__content">
+          <div data-aud="core">
+            <h3 class="qs-step__title">Your first call</h3>
+            <p class="qs-step__line">Read live state. This is the same read the calculator in the hero runs.</p>
+            <div class="qs-step__code"><CodeBlock code={coreCall} lang="ts" /></div>
+            <div class="qs-result">
+              <span class="qs-result__label">RETURNS</span>
+              <dl class="qs-result__list">
+                <div><dt>price</dt><dd>the live BTC/USD from Mezo's native oracle</dd></div>
+                <div><dt>trove</dt><dd>{'{ collateral, entireDebt, icr, liquidationPrice, healthFactor }'}</dd></div>
+              </dl>
+            </div>
+          </div>
+          <div data-aud="react">
+            <h3 class="qs-step__title">Your first call</h3>
+            <p class="qs-step__line">Read and write from a component, with typed errors.</p>
+            <div class="qs-step__code"><CodeBlock code={reactCall} lang="tsx" /></div>
+            <div class="qs-result">
+              <span class="qs-result__label">RETURNS</span>
+              <dl class="qs-result__list">
+                <div><dt>trove</dt><dd>the live position, refetched on each block</dd></div>
+                <div><dt>error</dt><dd>a typed MusdError you can branch on, like BelowMinimumDebt</dd></div>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </li>
+    </ol>
+
+    <p class="quickstart__keeper" data-reveal>
+      Building a liquidation keeper?
+      <a href="https://github.com/cayvox/musd-kit/tree/main/examples/keeper" rel="noopener">See the keeper example&nbsp;&rarr;</a>
+    </p>
+
+    <div class="quickstart__cta" data-reveal>
+      <Button href="/docs/" variant="primary">Full documentation&nbsp;→</Button>
+      <Button href="/docs/api/" variant="link">API reference&nbsp;→</Button>
     </div>
   </div>
 </section>
 
-<style>
-  .quickstart__inner {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: clamp(2rem, 5vw, 3.5rem);
-    align-items: center;
-  }
-  @media (min-width: 880px) {
-    .quickstart__inner {
-      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>('[data-quickstart]')) {
+    const btns = [...root.querySelectorAll<HTMLButtonElement>('[data-aud-btn]')]
+    const set = (aud: string) => {
+      root.dataset.audience = aud
+      btns.forEach((b) => {
+        const on = b.dataset.audBtn === aud
+        b.setAttribute('aria-checked', on ? 'true' : 'false')
+        b.tabIndex = on ? 0 : -1
+      })
     }
+    btns.forEach((b, i) => {
+      b.addEventListener('click', () => set(b.dataset.audBtn || 'core'))
+      b.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+        e.preventDefault()
+        const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1
+        const next = btns[(i + dir + btns.length) % btns.length]
+        set(next.dataset.audBtn || 'core')
+        next.focus()
+      })
+    })
+  }
+</script>
+
+<style>
+  .quickstart__head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
   }
   .quickstart__head h2 {
     margin-top: 0.9rem;
   }
-  .quickstart__head p {
+  .quickstart__lead {
     margin-top: 1rem;
   }
+
+  /* audience toggle */
+  .quickstart__aud {
+    display: inline-flex;
+    gap: 0.2rem;
+    padding: 0.25rem;
+    background: var(--surface);
+    border: 1px solid var(--hairline-2);
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+  }
+  .quickstart__aud-btn {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-muted);
+    background: transparent;
+    border: 0;
+    padding: 0.4rem 0.95rem;
+    border-radius: 999px;
+    min-height: 36px;
+    transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .quickstart__aud-btn:hover {
+    color: var(--text);
+  }
+  .quickstart__aud-btn[aria-checked='true'] {
+    color: #fff;
+    background: var(--red-deep);
+  }
+
+  /* audience visibility */
+  [data-audience='core'] [data-aud='react'],
+  [data-audience='react'] [data-aud='core'] {
+    display: none;
+  }
+
+  /* numbered steps with a connecting rail */
+  .quickstart__steps {
+    list-style: none;
+    margin: clamp(2rem, 4vw, 2.75rem) 0 0;
+    padding: 0;
+    position: relative;
+    max-width: 760px;
+  }
+  .quickstart__steps::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 16px;
+    bottom: 16px;
+    width: 2px;
+    background: var(--hairline-2);
+  }
+  .qs-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 1.1rem;
+    padding-bottom: clamp(1.75rem, 3.5vw, 2.5rem);
+  }
+  .qs-step:last-child {
+    padding-bottom: 0;
+  }
+  .qs-step__badge {
+    position: relative;
+    z-index: 1;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--red-deep);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 4px var(--canvas);
+  }
+  .qs-step__content {
+    min-width: 0;
+    padding-top: 0.1rem;
+  }
+  .qs-step__title {
+    font-size: var(--fs-h3);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .qs-step__line {
+    margin-top: 0.4rem;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    max-width: 56ch;
+  }
+  .qs-step__code {
+    margin-top: 1rem;
+    min-width: 0;
+  }
+
+  /* code-then-result readout */
+  .qs-result {
+    margin-top: 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 0.85rem 1rem;
+  }
+  .qs-result__label {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+  .qs-result__list {
+    margin: 0.5rem 0 0;
+  }
+  .qs-result__list > div {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.25rem 0;
+    align-items: baseline;
+  }
+  .qs-result__list dt {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--red-ink);
+  }
+  .qs-result__list dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .quickstart__keeper {
+    margin-top: clamp(1.75rem, 3.5vw, 2.5rem);
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .quickstart__keeper a {
+    color: var(--red-ink);
+    font-weight: 500;
+  }
   .quickstart__cta {
-    margin-top: 1.75rem;
+    margin-top: 1.5rem;
     display: flex;
     align-items: center;
     gap: 1.25rem;
     flex-wrap: wrap;
   }
-  .quickstart__code {
-    min-width: 0;
+
+  @media (max-width: 560px) {
+    .qs-step {
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 0.85rem;
+    }
+    .quickstart__steps::before {
+      left: 13px;
+    }
+    .qs-step__badge {
+      width: 28px;
+      height: 28px;
+      font-size: 0.8rem;
+    }
   }
 </style>
