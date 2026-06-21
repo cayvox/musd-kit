@@ -1,7 +1,7 @@
 ---
 // CONTENT §10 + STRUCTURE §1. Premium footer: brand block with the nav logomark, populated
 // link columns (real links only), the maturity lockup integrated as a full-width band, a clean
-// bottom bar with a truthful testnet signal, and a faint closing wordmark sign-off.
+// bottom bar (credit + copyright), and a faint closing wordmark sign-off.
 const repo = 'https://github.com/cayvox/musd-kit'
 
 const columns = [
@@ -103,14 +103,10 @@ const columns = [
 
     <div class="footer__bar">
       <p class="footer__credit">
-        Built by Cayvox Labs, from the team behind Cark, winner of the Mezo hackathon MUSD track.
+        Built by <a class="footer__cayvox" href="https://cayvox.com" target="_blank" rel="noopener noreferrer">Cayvox Labs</a>, from the team behind Cark, winner of the Mezo hackathon MUSD track.
       </p>
       <div class="footer__bar-end">
-        <span class="footer__signal">
-          <span class="footer__signal-dot" aria-hidden="true"></span>
-          verified on Mezo testnet
-        </span>
-        <span class="footer__copy">&#169; 2026 Cayvox Labs &middot; MIT</span>
+        <span class="footer__copy">&#169; 2026 <a class="footer__cayvox" href="https://cayvox.com" target="_blank" rel="noopener noreferrer">Cayvox Labs</a></span>
       </div>
     </div>
   </div>
@@ -337,27 +333,32 @@ const columns = [
       gap: 0.6rem;
     }
   }
-  .footer__signal {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    font-family: var(--font-mono);
-    font-size: var(--fs-mono-lbl);
-    color: var(--text-dim);
-    white-space: nowrap;
-  }
-  .footer__signal-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--verified);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--verified) 20%, transparent);
-  }
   .footer__copy {
     font-family: var(--font-mono);
     font-size: var(--fs-mono-lbl);
     color: var(--text-dim);
     white-space: nowrap;
+  }
+  /* Cayvox links: a refined inline external link, one arrow, AA-safe. */
+  .footer__cayvox {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: var(--hairline-2);
+    transition: color var(--dur) var(--ease), text-decoration-color var(--dur) var(--ease);
+  }
+  .footer__cayvox::after {
+    content: '\2197';
+    margin-left: 0.12em;
+    font-size: 0.82em;
+    color: var(--text-dim);
+  }
+  .footer__cayvox:hover {
+    color: var(--red-ink);
+    text-decoration-color: currentColor;
+  }
+  .footer__cayvox:hover::after {
+    color: var(--red-ink);
   }
 
   /* ---- Closing brand sign-off (a faint whisper, decorative only) ---- */

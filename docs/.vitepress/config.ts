@@ -91,7 +91,8 @@ export default defineConfig({
     footer: {
       message:
         'Community tooling for Mezo testnet and evaluation. Not affiliated with or endorsed by Mezo or Thesis. MIT licensed.',
-      copyright: 'Built by Cayvox Labs',
+      copyright:
+        'Built by <a href="https://cayvox.com" target="_blank" rel="noopener noreferrer">Cayvox Labs</a>',
     },
   },
 })

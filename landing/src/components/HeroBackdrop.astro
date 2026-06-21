@@ -1,31 +1,18 @@
 ---
-// Engineered blueprint backdrop (BRAND §6 v2): a very faint warm precision grid + a small,
-// deliberately ASCENDING sequence of red position-markers (a real sorted structure, evoking
-// SortedTroves + the "correctness" thesis, not a random constellation). CSS/SVG only, static,
-// edge-faded so it never competes with content. Reduced-motion-safe by construction (static).
-const xs = [120, 232, 344, 456, 568, 680]
-const ys = [452, 408, 372, 300, 248, 196] // strictly ascending (sorted)
-const pts = xs.map((x, i) => [x, ys[i]] as [number, number])
-const emphasized = 4 // one marker reads as the "active" position
+// Premium hero backdrop (BRAND §6 v3). Three stacked, GPU-cheap layers, no library, no raster:
+//   1. warm tonal depth  - a soft off-white tonal layering (close-in warm hues, no color spot),
+//   2. engineered dot-grid - a faint precision dot lattice (the correctness/precision thesis),
+//   3. analog grain      - a tiny tiled SVG fractal-noise overlay that adds tactility and kills
+//                          banding.
+// The brand red is ABSENT here (it lives in the foreground: the MUSD accent, the buttons), which
+// retires the old red radial glow + red sorted-list motif. Static, edge-faded to a whisper, so the
+// headline / widget / code stay crisp and AA is untouched. Reduced-motion-safe by construction.
 ---
 
 <div class="backdrop" aria-hidden="true">
-  <div class="backdrop__grid"></div>
-  <svg class="backdrop__plot" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid slice" focusable="false">
-    <polyline
-      class="backdrop__line"
-      fill="none"
-      points={pts.map(([x, y]) => `${x},${y}`).join(' ')}
-    />
-    {
-      pts.map(([x, y], i) => (
-        <>
-          <line class="backdrop__stem" x1={x} y1={y} x2={x} y2="488" />
-          <circle class={i === emphasized ? 'backdrop__node backdrop__node--on' : 'backdrop__node'} cx={x} cy={y} r={i === emphasized ? 5 : 3.4} />
-        </>
-      ))
-    }
-  </svg>
+  <div class="backdrop__tone"></div>
+  <div class="backdrop__dots"></div>
+  <div class="backdrop__grain"></div>
 </div>
 
 <style>
@@ -35,41 +22,45 @@ const emphasized = 4 // one marker reads as the "active" position
     z-index: 0;
     pointer-events: none;
     overflow: hidden;
-    /* fade toward the edges so the grid/plot is a whisper, never a focal point */
-    -webkit-mask-image: radial-gradient(135% 115% at 68% 26%, #000 32%, transparent 80%);
-    mask-image: radial-gradient(135% 115% at 68% 26%, #000 32%, transparent 80%);
+    /* fade the whole field toward the edges so it is a whisper, never a focal point */
+    -webkit-mask-image: radial-gradient(132% 122% at 70% 20%, #000 36%, transparent 84%);
+    mask-image: radial-gradient(132% 122% at 70% 20%, #000 36%, transparent 84%);
   }
-  /* the precision grid, warm, very low contrast */
-  .backdrop__grid {
-    position: absolute;
-    inset: -2px;
-    background-image: linear-gradient(to right, rgba(110, 98, 86, 0.055) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(110, 98, 86, 0.055) 1px, transparent 1px);
-    background-size: 56px 56px;
-  }
-  .backdrop__plot {
+
+  /* 1. warm tonal depth: a brighter warm pool up-right (behind the widget), settling into the
+        canvas. Close-in warm off-whites only, no saturated spot. */
+  .backdrop__tone {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
+    background:
+      radial-gradient(58% 48% at 74% 6%, rgba(255, 255, 255, 0.7), transparent 72%),
+      radial-gradient(70% 64% at 22% 108%, rgba(244, 239, 233, 0.55), transparent 70%),
+      linear-gradient(180deg, rgba(244, 239, 233, 0.35), transparent 38%);
   }
-  .backdrop__line {
-    stroke: var(--red);
-    stroke-width: 1.5;
-    stroke-opacity: 0.22;
-    stroke-linejoin: round;
-    stroke-linecap: round;
+
+  /* 2. engineered dot-grid: a precise warm lattice, very low contrast, its own softer fade so it
+        is densest behind the upper-right and dissolves elsewhere. */
+  .backdrop__dots {
+    position: absolute;
+    inset: -2px;
+    background-image: radial-gradient(rgba(110, 98, 86, 0.1) 1px, transparent 1.4px);
+    background-size: 24px 24px;
+    -webkit-mask-image: radial-gradient(118% 108% at 72% 16%, #000 26%, transparent 76%);
+    mask-image: radial-gradient(118% 108% at 72% 16%, #000 26%, transparent 76%);
   }
-  .backdrop__stem {
-    stroke: var(--red);
-    stroke-width: 1;
-    stroke-opacity: 0.06;
+
+  /* 3. analog grain: a tiny tiled fractal-noise tile at very low opacity. Soft-light keeps it
+        neutral on the warm canvas (texture, not color). */
+  .backdrop__grain {
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 160px 160px;
+    opacity: 0.045;
+    mix-blend-mode: soft-light;
   }
-  .backdrop__node {
-    fill: var(--red);
-    fill-opacity: 0.28;
-  }
-  .backdrop__node--on {
-    fill-opacity: 0.55;
+
+  @media (prefers-reduced-motion: reduce) {
+    /* already static; nothing to disable */
   }
 </style>

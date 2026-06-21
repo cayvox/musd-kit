@@ -1,7 +1,6 @@
 ---
 import HeroBackdrop from './HeroBackdrop.astro'
 import CopyCommand from './CopyCommand.astro'
-import Badge from './Badge.astro'
 import Button from './Button.astro'
 import PreviewWidget from './PreviewWidget.astro'
 ---
@@ -10,9 +9,15 @@ import PreviewWidget from './PreviewWidget.astro'
   <HeroBackdrop />
   <div class="container hero__inner">
     <div class="hero__copy">
-      <div class="hero__pill">
-        <Badge href="https://www.npmjs.com/package/@musd-kit/core">Open source · MIT</Badge>
-      </div>
+      <a class="hero__oss" href="https://github.com/cayvox/musd-kit" rel="noopener">
+        <svg class="hero__oss-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="3.6" r="1.5"></circle>
+          <circle cx="4" cy="12.4" r="1.5"></circle>
+          <circle cx="12" cy="5.2" r="1.5"></circle>
+          <path d="M4 5.1v5.8M4 8h4.2A1.8 1.8 0 0 0 10 6.2v-.3"></path>
+        </svg>
+        <span class="hero__oss-text">Open source</span>
+      </a>
       <h1 class="hero__title">Build on <span class="hero__accent">MUSD</span> <br class="hero__br" />without rebuilding <br class="hero__br" />the hard parts.</h1>
       <p class="hero__subhead">
         The typed, fork-verified TypeScript SDK for <strong>MUSD</strong>, Mezo's Bitcoin-backed stablecoin. The Trove
@@ -25,10 +30,6 @@ import PreviewWidget from './PreviewWidget.astro'
         </div>
         <CopyCommand command="npm i @musd-kit/core @musd-kit/react" />
       </div>
-      <p class="hero__trust">
-        <span>v0.1.0</span><span class="hero__trust-sep">·</span><span>MIT</span><span class="hero__trust-sep">·</span>
-        <span class="hero__trust-verified"><span class="hero__trust-dot" aria-hidden="true"></span>verified on Mezo testnet</span>
-      </p>
     </div>
 
     <div class="hero__mockup">
@@ -59,6 +60,26 @@ import PreviewWidget from './PreviewWidget.astro'
   }
   .hero__copy {
     min-width: 0;
+  }
+  /* refined "open source" lockup: the brand node-fork mark in red + mono label, a crafted signal
+     distinct from the GitHub button (not a license pill). */
+  .hero__oss {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--dur) var(--ease);
+  }
+  .hero__oss-mark {
+    color: var(--red);
+    flex-shrink: 0;
+  }
+  .hero__oss:hover {
+    color: var(--red-ink);
   }
   .hero__title {
     font-size: clamp(2.3rem, 1.55rem + 2.6vw, 3.25rem);
@@ -106,31 +127,6 @@ import PreviewWidget from './PreviewWidget.astro'
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
-  }
-  .hero__trust {
-    margin-top: 1.65rem;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    font-family: var(--font-mono);
-    font-size: var(--fs-mono-lbl);
-    color: var(--text-dim);
-    letter-spacing: 0.01em;
-  }
-  .hero__trust-sep {
-    color: var(--hairline-2);
-  }
-  .hero__trust-verified {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .hero__trust-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--verified);
   }
   .hero__mockup {
     min-width: 0;
