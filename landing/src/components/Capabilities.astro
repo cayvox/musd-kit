@@ -3,59 +3,72 @@ import { Code } from 'astro:components'
 import { codeTheme } from '../lib/code-theme.mjs'
 import Button from './Button.astro'
 
-// CONTENT §4, 6 capability cards. Every snippet mirrors the shipped 0.1.0 API.
+// CONTENT §4, the 6 capabilities as a bento (dominant flagship + supporting cards). Every
+// snippet mirrors the shipped 0.1.0 API. DOM order = importance order = mobile order.
 const caps = [
   {
-    label: 'READS',
-    title: 'Contract-authoritative reads',
-    desc: '`getTrove` returns the full live position from the protocol’s own getters. Correct by construction, interest to the second.',
-    code: `const t = await musd.getTrove(address)
-// t.icr, t.liquidationPrice, t.healthFactor`,
-    lang: 'ts',
-  },
-  {
-    label: 'PREVIEW',
-    title: 'Preview & borrowing power',
-    desc: 'Show users exactly what they’ll get before they sign, dual-validated against the chain to the wei.',
-    code: `const p = await musd.previewOpen({ collateral, debt })
-const max = await musd.getBorrowingPower({ collateral })`,
-    lang: 'ts',
-  },
-  {
+    key: 'lifecycle',
     label: 'LIFECYCLE',
-    title: 'Full Trove lifecycle',
-    desc: 'Open, add/withdraw collateral, borrow, repay, adjust, refinance, close. Hints computed for you; every write simulates first.',
+    title: 'The full Trove lifecycle, hints absorbed',
+    desc: 'Open, add or withdraw collateral, borrow, repay, adjust, refinance, close. Every write computes the insertion hints, the borrowing fee and the gas reserve, then simulates before it sends.',
+    chips: ['insertion hints', 'borrowing fee', 'gas reserve', 'simulate'],
     code: `await musd.openTrove({ collateral, debt })
+await musd.addCollateral({ amount })
 await musd.repay({ amount })
 await musd.close()`,
     lang: 'ts',
+    href: '/docs/03-core-api',
+    dominant: true,
   },
   {
-    label: 'KEEPER',
-    title: 'Redemption & keeper',
-    desc: 'Redeem MUSD for BTC (fee + truncation surfaced, never silent) and run a permissionless liquidation keeper with mode-aware checks.',
-    code: `await musd.redeem({ amount })
-if (await musd.isLiquidatable(borrower))
-  await musd.liquidate(borrower)`,
+    key: 'reads',
+    label: 'READS',
+    title: 'Contract-authoritative reads',
+    desc: 'The full live position from the protocol’s own getters. Correct by construction, interest to the second.',
+    code: `const t = await musd.getTrove(address)`,
     lang: 'ts',
+    href: '/docs/03-core-api',
   },
   {
+    key: 'preview',
+    label: 'PREVIEW',
+    title: 'Preview and borrowing power',
+    desc: 'Show users exactly what they’ll get before they sign, validated against the chain to the wei.',
+    code: `await musd.previewOpen({ collateral, debt })`,
+    lang: 'ts',
+    href: '/docs/03-core-api',
+  },
+  {
+    key: 'keeper',
+    label: 'KEEPER',
+    title: 'Redemption and a liquidation keeper',
+    desc: 'Redeem MUSD for BTC, with fee and truncation surfaced, never silent. Run a permissionless keeper with mode-aware checks.',
+    code: `await musd.redeem({ amount })
+if (await musd.isLiquidatable(b)) await musd.liquidate(b)`,
+    lang: 'ts',
+    href: '/docs/03-core-api',
+  },
+  {
+    key: 'react',
     label: 'REACT',
-    title: 'React hooks',
-    desc: 'Wagmi-idiomatic, block-watching refetch, typed errors. No provider of its own; it consumes the wagmi context Passport already gives you.',
+    title: 'Wagmi-idiomatic React hooks',
+    desc: 'Block-watching refetch and typed errors. No provider of its own; it consumes the wagmi context Passport already gives you.',
     code: `const { data: trove } = useTrove({ address })
 const { openTrove, error } = useOpenTrove()`,
     lang: 'tsx',
+    href: '/docs/04-react-api',
   },
   {
+    key: 'safety',
     label: 'SAFETY',
-    title: 'Typed errors & zero hardcoding',
-    desc: 'A discriminated `MusdError` taxonomy mapped from real reverts; every governable value (min debt, fees, rates) read on-chain, never hardcoded.',
+    title: 'Typed errors, zero hardcoding',
+    desc: 'A discriminated `MusdError` taxonomy mapped from real reverts. Every governable value is read on-chain, never hardcoded.',
     code: `catch (e) {
   if (e instanceof BelowMinimumDebt)
     showMin(e.context.minNetDebt)
 }`,
     lang: 'ts',
+    href: '/docs/06-errors',
   },
 ]
 const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
@@ -70,14 +83,30 @@ const mark = (s: string) => s.replace(/`([^`]+)`/g, '<code>$1</code>')
     <div class="caps__grid">
       {
         caps.map((c) => (
-          <article class="caps__card card" data-reveal>
-            <p class="caps__label">{c.label}</p>
-            <h3 class="caps__title">{c.title}</h3>
-            <p class="caps__desc" set:html={mark(c.desc)} />
+          <a
+            class={`caps__card card caps__card--${c.key}${c.dominant ? ' caps__card--dominant' : ''}`}
+            href={c.href}
+            data-reveal
+          >
+            <div class="caps__top">
+              <span class="caps__label">{c.label}</span>
+              <h3 class="caps__title">{c.title}</h3>
+              <p class="caps__desc" set:html={mark(c.desc)} />
+            </div>
+            {
+              c.chips && (
+                <ul class="caps__chips" aria-label="handled for you">
+                  {c.chips.map((chip) => (
+                    <li class="caps__chip">{chip}</li>
+                  ))}
+                </ul>
+              )
+            }
             <div class="caps__code codeblock">
               <Code code={trim(c.code)} lang={c.lang as 'ts' | 'tsx'} theme={codeTheme} />
             </div>
-          </article>
+            <span class="caps__more" aria-hidden="true">Read the docs &nbsp;&rarr;</span>
+          </a>
         ))
       }
     </div>
@@ -96,19 +125,51 @@ const mark = (s: string) => s.replace(/`([^`]+)`/g, '<code>$1</code>')
   .caps__grid {
     margin-top: clamp(2rem, 5vw, 3rem);
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
     gap: 1.25rem;
+    grid-template-columns: 1fr;
   }
+
+  /* Card */
   .caps__card {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.7rem;
+    overflow: hidden;
+    color: inherit;
+    text-decoration: none;
     transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
   }
-  .caps__card:hover {
+  /* a thin red accent line that grows in on hover/focus */
+  .caps__card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--red);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .caps__card:hover,
+  .caps__card:focus-visible {
     border-color: var(--hairline-2);
     box-shadow: var(--shadow-lg);
     transform: translateY(-2px);
+  }
+  .caps__card:hover::after,
+  .caps__card:focus-visible::after {
+    transform: scaleX(1);
+  }
+  .caps__card:active {
+    transform: translateY(-2px) scale(0.992);
+  }
+  .caps__top {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
   }
   .caps__label {
     font-family: var(--font-mono);
@@ -120,17 +181,35 @@ const mark = (s: string) => s.replace(/`([^`]+)`/g, '<code>$1</code>')
     font-size: 1.0625rem;
     font-weight: 600;
     letter-spacing: -0.01em;
+    line-height: 1.25;
   }
   .caps__desc {
     font-size: var(--fs-small);
     color: var(--text-muted);
     line-height: 1.55;
   }
+  .caps__chips {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .caps__chip {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.02em;
+    color: var(--red-ink);
+    background: var(--red-tint);
+    border: 1px solid color-mix(in srgb, var(--red) 18%, transparent);
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+  }
   .caps__code {
     margin-top: auto;
     background: var(--code-bg);
   }
-  /* fade the right edge so any long line "continues" gracefully instead of hard-clipping */
   .caps__code :global(pre) {
     font-size: 0.72rem;
     line-height: 1.65;
@@ -140,11 +219,94 @@ const mark = (s: string) => s.replace(/`([^`]+)`/g, '<code>$1</code>')
     -webkit-mask-image: linear-gradient(to right, #000 90%, transparent);
     mask-image: linear-gradient(to right, #000 90%, transparent);
   }
+  .caps__more {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  }
+  .caps__card:hover .caps__more,
+  .caps__card:focus-visible .caps__more {
+    opacity: 1;
+    color: var(--red-ink);
+    transform: none;
+  }
+
+  /* Dominant flagship card */
+  .caps__card--dominant {
+    gap: 1rem;
+  }
+  .caps__card--dominant .caps__title {
+    font-size: clamp(1.25rem, 1.1rem + 0.8vw, 1.6rem);
+    line-height: 1.2;
+    max-width: 22ch;
+  }
+  .caps__card--dominant .caps__desc {
+    font-size: var(--fs-body);
+    max-width: 52ch;
+  }
+  .caps__card--dominant .caps__code :global(pre) {
+    font-size: 0.8rem;
+  }
+
+  /* Tablet: 2 columns, the dominant + keeper span full width */
+  @media (min-width: 640px) {
+    .caps__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .caps__card--dominant,
+    .caps__card--keeper {
+      grid-column: 1 / -1;
+    }
+  }
+
+  /* Desktop: the real 4-column bento */
+  @media (min-width: 1000px) {
+    .caps__grid {
+      grid-template-columns: repeat(4, 1fr);
+      grid-auto-rows: minmax(178px, auto);
+    }
+    .caps__card--dominant {
+      grid-column: 1 / 3;
+      grid-row: 1 / 3;
+    }
+    .caps__card--reads {
+      grid-column: 3 / 4;
+      grid-row: 1 / 2;
+    }
+    .caps__card--preview {
+      grid-column: 4 / 5;
+      grid-row: 1 / 2;
+    }
+    .caps__card--keeper {
+      grid-column: 3 / 5;
+      grid-row: 2 / 3;
+    }
+    .caps__card--react {
+      grid-column: 1 / 3;
+      grid-row: 3 / 4;
+    }
+    .caps__card--safety {
+      grid-column: 3 / 5;
+      grid-row: 3 / 4;
+    }
+  }
+
   .caps__cta {
     margin-top: 2rem;
     display: flex;
     align-items: center;
     gap: 1.25rem;
     flex-wrap: wrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caps__card,
+    .caps__card::after,
+    .caps__more {
+      transition: none;
+    }
   }
 </style>
