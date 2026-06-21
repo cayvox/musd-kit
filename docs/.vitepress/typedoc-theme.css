@@ -1,0 +1,55 @@
+/* Brand the generated TypeDoc API reference so /docs/api reads as a sibling of the docs +
+   landing: warm-white canvas, a single Mezo-red accent, light only. TypeDoc keeps its own layout;
+   this only retints it on-brand. */
+:root {
+  --light-color-background: #fbf8f5;
+  --light-color-background-secondary: #f4efe9;
+  --light-color-accent: #ded5cb;
+  --light-color-text: #1a1513;
+  --light-color-text-aside: #6b635c;
+  --light-color-link: #b5332a;
+  --light-color-ts-keyword: #b5332a;
+  --light-color-ts-function: #1a1513;
+  --light-icon-background: #ffffff;
+  --light-color-background-warning: #f6ecd8;
+  /* the selected sidebar item defaults to a dark box; retint it warm-light */
+  --light-color-active-menu-item: #f4efe9;
+  --color-active-menu-item: #f4efe9;
+}
+
+/* Force the light brand palette even if the visitor's OS prefers dark. */
+:root {
+  --color-background: var(--light-color-background);
+  --color-background-secondary: var(--light-color-background-secondary);
+  --color-accent: var(--light-color-accent);
+  --color-text: var(--light-color-text);
+  --color-text-aside: var(--light-color-text-aside);
+  --color-link: var(--light-color-link);
+  --color-ts-keyword: var(--light-color-ts-keyword);
+}
+
+body,
+body.dark {
+  background: var(--light-color-background);
+  color: var(--light-color-text);
+}
+
+.tsd-page-toolbar {
+  background: rgba(251, 248, 245, 0.92);
+  border-bottom: 1px solid #ece5dd;
+}
+
+a {
+  color: #b5332a;
+}
+
+.tsd-navigation a.current,
+.tsd-navigation a:hover {
+  color: #b5332a;
+}
+
+/* Accent the kind icons + active states with the brand red rather than the default blue. */
+.tsd-kind-icon ~ span,
+.tsd-index-link.current {
+  color: inherit;
+}

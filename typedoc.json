@@ -6,6 +6,8 @@
   "name": "musd-kit API reference",
   "readme": "none",
   "githubPages": false,
+  "customCss": "docs/.vitepress/typedoc-theme.css",
+  "hideGenerator": true,
   "excludeInternal": true,
   "excludeExternals": true,
   "externalPattern": ["**/node_modules/**"],
