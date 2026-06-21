@@ -10,8 +10,10 @@ hero:
       text: Get started
       link: /00-overview
     - theme: alt
-      text: API Reference
+      text: API Reference ↗
       link: /api/
+      target: _blank
+      rel: noreferrer
     - theme: alt
       text: GitHub
       link: https://github.com/cayvox/musd-kit

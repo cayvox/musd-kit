@@ -63,16 +63,62 @@ for (const file of htmlFiles(DIST)) {
 }
 
 const pages = htmlFiles(DIST).length
-if (broken.size === 0) {
-  console.log(`✓ link check: ${linkCount} internal links across ${pages} pages, 0 broken.`)
+
+// The GET-only check above cannot catch the API-reference SPA hijack: /docs/api/ is a static TypeDoc
+// subsite under the VitePress base, so a 200 file can still be unreachable by an in-app CLICK if the
+// VitePress link is client-side-routed (VitePress renders its own 404). Assert two things:
+//   1. /docs/api/index.html is the real TypeDoc index (not a VitePress 404 page), and
+//   2. every link to /docs/api from inside a VitePress docs page is a real navigation (has target),
+//      so clicking it does a full load instead of being SPA-routed into the VitePress 404.
+const apiProblems = []
+const apiIndexPath = join(DIST, 'docs/api/index.html')
+if (!existsSync(apiIndexPath)) {
+  apiProblems.push('docs/api/index.html is missing (the TypeDoc API reference was not assembled).')
+} else {
+  const apiHtml = readFileSync(apiIndexPath, 'utf8')
+  const isTypedoc = /tsd-page-toolbar|tsd-navigation|API reference/i.test(apiHtml)
+  const isVitepress404 = /VPContent|vp-doc|PAGE NOT FOUND/i.test(apiHtml)
+  if (!isTypedoc || isVitepress404) {
+    apiProblems.push(
+      'docs/api/index.html is not the TypeDoc index (looks like a VitePress page/404).',
+    )
+  }
+}
+// A VitePress page is any docs/*.html that is NOT under docs/api/ (the TypeDoc subsite) and NOT an asset.
+const API_ANCHOR_RE = /<a\b[^>]*\bhref="\/docs\/api\/?(?:[#?][^"]*)?"[^>]*>/gi
+for (const file of htmlFiles(DIST)) {
+  const relPath = posix.relative(DIST.split(/[/\\]/).join('/'), file.split(/[/\\]/).join('/'))
+  if (!relPath.startsWith('docs/') || relPath.startsWith('docs/api/')) continue
+  const html = readFileSync(file, 'utf8')
+  for (const m of html.matchAll(API_ANCHOR_RE)) {
+    if (!/\btarget=/.test(m[0])) {
+      apiProblems.push(
+        `/${relPath}: an API-reference link is client-side-routed (no target), so clicking it hits the VitePress 404. Add target: '_blank' to the /api/ link in the VitePress config.`,
+      )
+      break
+    }
+  }
+}
+
+const ok = broken.size === 0 && apiProblems.length === 0
+if (ok) {
+  console.log(
+    `✓ link check: ${linkCount} internal links across ${pages} pages, 0 broken; API reference reachable (TypeDoc index + real-navigation links).`,
+  )
   process.exit(0)
 }
 
-console.error(`✗ link check: ${broken.size} broken internal link(s) across ${pages} pages:\n`)
-for (const [link, onPages] of broken) {
-  const list = [...onPages].slice(0, 4).join(', ')
-  console.error(
-    `  ${link}\n      on: ${list}${onPages.size > 4 ? ` (+${onPages.size - 4} more)` : ''}`,
-  )
+if (broken.size > 0) {
+  console.error(`✗ link check: ${broken.size} broken internal link(s) across ${pages} pages:\n`)
+  for (const [link, onPages] of broken) {
+    const list = [...onPages].slice(0, 4).join(', ')
+    console.error(
+      `  ${link}\n      on: ${list}${onPages.size > 4 ? ` (+${onPages.size - 4} more)` : ''}`,
+    )
+  }
+}
+if (apiProblems.length > 0) {
+  console.error(`✗ API reference reachability: ${apiProblems.length} problem(s):\n`)
+  for (const p of [...new Set(apiProblems)]) console.error(`  ${p}`)
 }
 process.exit(1)

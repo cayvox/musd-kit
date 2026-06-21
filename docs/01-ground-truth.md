@@ -1,3 +1,11 @@
+---
+# The next sidebar entry is the static TypeDoc API subsite (opened in a new tab), which is not a
+# VitePress route, so skip it in the pager to avoid a client-side-routed 404. Point at the next doc.
+next:
+  text: Testing
+  link: /07-testing
+---
+
 # Ground Truth (verified)
 
 **The single source of truth for every MUSD contract fact `musd-kit` depends on.**

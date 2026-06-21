@@ -1,3 +1,11 @@
+---
+# The previous sidebar entry is the static TypeDoc API subsite (opened in a new tab), not a
+# VitePress route, so skip it in the pager to avoid a client-side-routed 404. Point at the prior doc.
+prev:
+  text: Ground truth (verified facts)
+  link: /01-ground-truth
+---
+
 # Testing (the correctness gate)
 
 The test strategy *is* the product strategy, because correctness is the product. A

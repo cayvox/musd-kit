@@ -42,9 +42,13 @@ export default defineConfig({
     siteTitle: 'musd-kit',
     nav: [
       { text: 'Guides', link: '/00-overview', activeMatch: '/(0[0-8]|10)-' },
-      { text: 'API', link: '/api/' },
+      // The API reference is a static TypeDoc subsite under the VitePress base, so it must be a
+      // real browser navigation (target), not a client-side route, or VitePress renders its 404.
+      // target links get VitePress's external-link arrow automatically, so the text carries none.
+      { text: 'API', link: '/api/', target: '_blank', rel: 'noreferrer' },
       { text: 'npm', link: 'https://www.npmjs.com/package/@musd-kit/core' },
-      { text: 'musdkit.xyz ↗', link: 'https://musdkit.xyz/' },
+      // External link: VitePress adds its own external arrow, so the text carries none.
+      { text: 'musdkit.xyz', link: 'https://musdkit.xyz/' },
     ],
     sidebar: [
       {
@@ -67,7 +71,7 @@ export default defineConfig({
         text: 'Reference',
         items: [
           { text: 'Ground truth (verified facts)', link: '/01-ground-truth' },
-          { text: 'API reference ↗', link: '/api/' },
+          { text: 'API reference', link: '/api/', target: '_blank', rel: 'noreferrer' },
           { text: 'Testing', link: '/07-testing' },
           { text: 'Conventions', link: '/08-conventions' },
           { text: 'Glossary', link: '/10-glossary' },
