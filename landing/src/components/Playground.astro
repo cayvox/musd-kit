@@ -1,0 +1,715 @@
+---
+// The FULL "Try it live" playground (richer than the hero teaser). A lazy, read-only Astro
+// island: on first view it imports the shipped @musd-kit/core + viem, reads the REAL Mezo
+// testnet oracle, and previews live. Adds keyboard sliders, risk presets, a color-coded safety
+// bar, the "BTC can fall X% before liquidation" line, and a live, copyable SDK call. Never a
+// wallet, never a write, never mainnet. Degrades to a labelled fallback price if the RPC is down.
+---
+
+<div class="pg" data-playground>
+  <div class="pg__head">
+    <span class="pg__live" data-status="loading">
+      <span class="pg__dot" aria-hidden="true"></span>
+      <span class="pg__status-text">connecting to testnet</span>
+    </span>
+    <span class="pg__price">BTC/USD <b data-price-val>·</b></span>
+  </div>
+
+  <div class="pg__body">
+    <div class="pg__controls">
+      <div class="pg__presets" role="group" aria-label="Risk presets">
+        <span class="pg__presets-label" aria-hidden="true">PRESETS</span>
+        <button type="button" class="pg__preset" data-preset="0.1,2500">Conservative</button>
+        <button type="button" class="pg__preset" data-preset="0.08,3500">Balanced</button>
+        <button type="button" class="pg__preset" data-preset="0.05,2500">Aggressive</button>
+      </div>
+
+      <div class="pg__field">
+        <div class="pg__field-top">
+          <label class="pg__label" for="pg-col">Collateral</label>
+          <span class="pg__inputwrap">
+            <input id="pg-col" data-in="collateral" type="text" inputmode="decimal" value="0.05" aria-label="Collateral in BTC" />
+            <span class="pg__unit">BTC</span>
+          </span>
+        </div>
+        <input class="pg__slider" type="range" data-slider="collateral" min="0.01" max="0.5" step="0.005" value="0.05" aria-label="Collateral in BTC" />
+      </div>
+
+      <div class="pg__field">
+        <div class="pg__field-top">
+          <label class="pg__label" for="pg-debt">Borrow</label>
+          <span class="pg__inputwrap">
+            <input id="pg-debt" data-in="debt" type="text" inputmode="decimal" value="2500" aria-label="Debt in MUSD" />
+            <span class="pg__unit">MUSD</span>
+          </span>
+        </div>
+        <input class="pg__slider" type="range" data-slider="debt" min="1800" max="20000" step="100" value="2500" aria-label="Debt in MUSD" />
+      </div>
+    </div>
+
+    <div class="pg__readout">
+      <div class="pg__risk" data-tier="">
+        <div class="pg__risk-top">
+          <span class="pg__risk-name">
+            <span class="pg__risk-tag" data-risk-label>·</span>
+            <span class="pg__risk-sub">collateral ratio</span>
+          </span>
+          <span class="pg__icr" data-out="icr">·</span>
+        </div>
+        <div class="pg__bar" role="img" data-bar-label="Safety buffer above the 110% liquidation threshold">
+          <div class="pg__bar-track">
+            <div class="pg__bar-fill" data-bar style="width:0%"></div>
+          </div>
+          <div class="pg__bar-scale" aria-hidden="true">
+            <span>110% MCR</span>
+            <span>safer</span>
+          </div>
+        </div>
+        <p class="pg__drop">BTC can fall <b data-drop>·</b> before liquidation</p>
+      </div>
+
+      <dl class="pg__outputs">
+        <div class="pg__row"><dt>Borrowing fee</dt><dd data-out="fee">·</dd></div>
+        <div class="pg__row"><dt>Total debt</dt><dd data-out="entireDebt">·</dd></div>
+        <div class="pg__row"><dt>Liquidation price</dt><dd data-out="liq">·</dd></div>
+        <div class="pg__row pg__row--min"><dt>Meets minimum</dt><dd data-out="min">·</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="pg__call">
+    <div class="pg__call-bar">
+      <span class="pg__call-label">SDK call</span>
+      <button type="button" class="pg__copy" data-copy-call aria-label="Copy the SDK call">
+        <span class="pg__copy-text">Copy</span>
+      </button>
+    </div>
+    <code data-call>{"await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })"}</code>
+  </div>
+
+  <p class="pg__foot" data-note>Read-only via the shipped <code>@musd-kit/core</code>, on Mezo testnet. No wallet, no transaction.</p>
+</div>
+
+<script>
+  const RPC = import.meta.env.PUBLIC_MEZO_TESTNET_RPC_URL || 'https://rpc.test.mezo.org'
+  const FALLBACK_PRICE = 66_395_814_700_000_000_000_000n // last known-good testnet read
+  const GAS_RESERVE = 200n * 10n ** 18n
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-playground]')) initWhenVisible(root)
+
+  function initWhenVisible(el: HTMLElement) {
+    if (!('IntersectionObserver' in window)) {
+      void boot(el)
+      return
+    }
+    const io = new IntersectionObserver(
+      (entries, obs) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            obs.disconnect()
+            // Defer the heavy SDK import to idle time so it never competes with first paint.
+            const start = () => void boot(el)
+            if ('requestIdleCallback' in window) (window as Window & typeof globalThis).requestIdleCallback(start, { timeout: 2200 })
+            else window.setTimeout(start, 200)
+          }
+        }
+      },
+      { rootMargin: '300px' },
+    )
+    io.observe(el)
+  }
+
+  async function boot(el: HTMLElement) {
+    const [core, chainsMod, viem] = await Promise.all([
+      import('@musd-kit/core'),
+      import('@mezo-org/chains'),
+      import('viem'),
+    ])
+    const { createMusdClient, parseBtc, parseMusd, computeICR, computeLiquidationPrice } = core
+    const { mezoTestnet } = chainsMod
+    const { createPublicClient, http, formatEther } = viem
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const fmt = (wei: bigint, dp: number) =>
+      Number(formatEther(wei)).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+
+    const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(RPC) })
+    const musd = createMusdClient({ chainId: 31611, publicClient })
+
+    const statusEl = el.querySelector<HTMLElement>('[data-status]')
+    const statusText = el.querySelector<HTMLElement>('.pg__status-text')
+    const priceValEl = el.querySelector<HTMLElement>('[data-price-val]')
+    const noteEl = el.querySelector<HTMLElement>('[data-note]')
+    const riskEl = el.querySelector<HTMLElement>('.pg__risk')!
+    const riskLabel = el.querySelector<HTMLElement>('[data-risk-label]')!
+    const barEl = el.querySelector<HTMLElement>('[data-bar]')!
+    const dropEl = el.querySelector<HTMLElement>('[data-drop]')!
+    const callEl = el.querySelector<HTMLElement>('[data-call]')!
+    const copyBtn = el.querySelector<HTMLButtonElement>('[data-copy-call]')
+    const copyText = el.querySelector<HTMLElement>('.pg__copy-text')
+
+    const inputs = {
+      collateral: el.querySelector<HTMLInputElement>('[data-in="collateral"]')!,
+      debt: el.querySelector<HTMLInputElement>('[data-in="debt"]')!,
+    }
+    const sliders = {
+      collateral: el.querySelector<HTMLInputElement>('[data-slider="collateral"]')!,
+      debt: el.querySelector<HTMLInputElement>('[data-slider="debt"]')!,
+    }
+    const out = (k: string) => el.querySelector<HTMLElement>(`[data-out="${k}"]`)!
+
+    if (barEl && reduceMotion) barEl.style.transition = 'none'
+
+    let price = FALLBACK_PRICE
+    let live = false
+    try {
+      price = await musd.getOraclePrice()
+      live = true
+    } catch {
+      live = false
+    }
+    setStatus(live)
+    if (priceValEl) priceValEl.textContent = `$${fmt(price, 2)}`
+
+    function setStatus(isLive: boolean) {
+      if (statusEl) statusEl.dataset.status = isLive ? 'live' : 'fallback'
+      if (statusText) statusText.textContent = isLive ? 'live · Mezo testnet' : 'fallback price'
+      if (noteEl) {
+        noteEl.innerHTML = isLive
+          ? 'Read-only via the shipped <code>@musd-kit/core</code>, on Mezo testnet. No wallet, no transaction.'
+          : 'Live price unavailable. Showing a recent testnet value, computed via the shipped pure helpers. No wallet, no transaction.'
+        noteEl.classList.toggle('pg__foot--warn', !isLive)
+      }
+    }
+
+    // ---- risk model: tier + safety-bar fill from ICR vs the 110% MCR ----
+    function applyRisk(icrPct: number, dropPct: number) {
+      let tier: 'good' | 'mod' | 'risk'
+      if (icrPct >= 160) tier = 'good'
+      else if (icrPct >= 125) tier = 'mod'
+      else tier = 'risk'
+      riskEl.dataset.tier = tier
+      riskLabel.textContent = tier === 'good' ? 'Healthy' : tier === 'mod' ? 'Moderate' : 'At risk'
+      // fill = buffer above MCR, mapped 110%..250% -> 0..100 (clamped so a thread always shows)
+      const fill = Math.max(5, Math.min(100, ((icrPct - 110) / (250 - 110)) * 100))
+      barEl.style.width = `${fill}%`
+      if (dropPct <= 0) {
+        dropEl.textContent = '0% (below the threshold now)'
+      } else {
+        dropEl.textContent = `${dropPct.toFixed(1)}%`
+      }
+    }
+
+    let timer = 0
+    async function update() {
+      const cStr = inputs.collateral.value.trim()
+      const dStr = inputs.debt.value.trim()
+      callEl.textContent = `await musd.previewOpen({ collateral: parseBtc('${cStr || '0'}'), debt: parseMusd('${dStr || '0'}') })`
+
+      let collateral: bigint
+      let debt: bigint
+      try {
+        collateral = parseBtc(cStr || '0')
+        debt = parseMusd(dStr || '0')
+      } catch {
+        return
+      }
+      if (collateral <= 0n || debt <= 0n) {
+        for (const k of ['fee', 'entireDebt', 'icr', 'liq', 'min']) out(k).textContent = '·'
+        riskEl.dataset.tier = ''
+        riskLabel.textContent = '·'
+        barEl.style.width = '0%'
+        dropEl.textContent = '·'
+        return
+      }
+
+      try {
+        const p = await musd.previewOpen({ collateral, debt })
+        render(p.fee, p.entireDebt, p.icr, p.liquidationPrice, p.meetsMinimum)
+        if (!live) { live = true; setStatus(true) }
+      } catch {
+        const entireDebt = debt + GAS_RESERVE
+        render(null, entireDebt, computeICR({ collateral, entireDebt, price }), computeLiquidationPrice({ collateral, entireDebt }), null)
+        if (live) { live = false; setStatus(false) }
+      }
+    }
+
+    function render(fee: bigint | null, entireDebt: bigint, icr: bigint, liq: bigint, meetsMin: boolean | null) {
+      out('fee').textContent = fee === null ? '·' : `${fmt(fee, 2)} MUSD`
+      out('entireDebt').textContent = `${fmt(entireDebt, 2)} MUSD`
+      const icrPct = Number(formatEther(icr)) * 100
+      out('icr').textContent = `${icrPct.toFixed(1)}%`
+      out('liq').textContent = `$${fmt(liq, 0)}`
+
+      const priceUsd = Number(formatEther(price))
+      const liqUsd = Number(formatEther(liq))
+      const dropPct = priceUsd > 0 ? ((priceUsd - liqUsd) / priceUsd) * 100 : 0
+      applyRisk(icrPct, dropPct)
+
+      const minEl = out('min')
+      if (meetsMin === null) {
+        minEl.textContent = '·'
+        minEl.dataset.ok = ''
+      } else {
+        minEl.textContent = meetsMin ? '✓ yes' : '✗ below minimum'
+        minEl.dataset.ok = meetsMin ? 'true' : 'false'
+      }
+    }
+
+    // ---- input <-> slider sync ----
+    function syncFromInput(key: 'collateral' | 'debt') {
+      const v = parseFloat(inputs[key].value.replace(/,/g, ''))
+      if (Number.isFinite(v)) sliders[key].value = String(v)
+    }
+    function schedule() {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(update, reduceMotion ? 0 : 180)
+    }
+    for (const key of ['collateral', 'debt'] as const) {
+      inputs[key].addEventListener('input', () => { syncFromInput(key); schedule() })
+      sliders[key].addEventListener('input', () => { inputs[key].value = sliders[key].value; schedule() })
+    }
+
+    // ---- presets ----
+    for (const btn of el.querySelectorAll<HTMLButtonElement>('[data-preset]')) {
+      btn.addEventListener('click', () => {
+        const [c, d] = (btn.dataset.preset || '').split(',')
+        inputs.collateral.value = c
+        inputs.debt.value = d
+        sliders.collateral.value = c
+        sliders.debt.value = d
+        for (const b of el.querySelectorAll<HTMLButtonElement>('[data-preset]')) b.setAttribute('aria-pressed', b === btn ? 'true' : 'false')
+        void update()
+      })
+    }
+
+    // ---- copy the live SDK call ----
+    if (copyBtn && copyText) {
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(callEl.textContent || '')
+          copyBtn.dataset.copied = 'true'
+          copyText.textContent = 'Copied'
+          window.setTimeout(() => { copyBtn.dataset.copied = 'false'; copyText.textContent = 'Copy' }, 1600)
+        } catch {
+          /* clipboard blocked; ignore */
+        }
+      })
+    }
+
+    await update()
+  }
+</script>
+
+<style>
+  .pg {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: clamp(1.2rem, 2.5vw, 1.75rem);
+    width: 100%;
+  }
+
+  /* ---- header / live ticker ---- */
+  .pg__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid var(--hairline);
+    flex-wrap: wrap;
+  }
+  .pg__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .pg__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .pg__live[data-status='live'] {
+    color: #1e7a4c;
+  }
+  .pg__live[data-status='live'] .pg__dot {
+    background: var(--verified);
+    animation: pg-pulse 2.2s var(--ease) infinite;
+  }
+  .pg__live[data-status='fallback'] {
+    color: var(--warn);
+  }
+  .pg__live[data-status='fallback'] .pg__dot {
+    background: var(--warn);
+  }
+  @keyframes pg-pulse {
+    0% { box-shadow: 0 0 0 0 var(--red-glow); }
+    70% { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  .pg__price {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-dim);
+  }
+  .pg__price b {
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  /* ---- body: controls | readout ---- */
+  .pg__body {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(1.25rem, 3vw, 2rem);
+    padding-top: 1.2rem;
+  }
+  @media (min-width: 760px) {
+    .pg__body {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+      align-items: start;
+    }
+  }
+
+  /* ---- presets ---- */
+  .pg__presets {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-bottom: 1.3rem;
+  }
+  .pg__presets-label {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-right: 0.15rem;
+  }
+  .pg__preset {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-lbl);
+    color: var(--text-muted);
+    background: var(--canvas);
+    border: 1px solid var(--hairline-2);
+    border-radius: 999px;
+    padding: 0.4rem 0.8rem;
+    min-height: 40px;
+    cursor: pointer;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .pg__preset:hover {
+    color: var(--red-ink);
+    border-color: color-mix(in srgb, var(--red) 35%, transparent);
+  }
+  .pg__preset[aria-pressed='true'] {
+    color: #fff;
+    background: var(--red-deep);
+    border-color: var(--red-deep);
+  }
+
+  /* ---- fields + sliders ---- */
+  .pg__field + .pg__field {
+    margin-top: 1.1rem;
+  }
+  .pg__field-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .pg__label {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .pg__inputwrap {
+    display: inline-flex;
+    align-items: center;
+    background: var(--canvas);
+    border: 1px solid var(--hairline-2);
+    border-radius: var(--radius-sm);
+    padding: 0 0.7rem;
+    max-width: 9.5rem;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  .pg__inputwrap:focus-within {
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px var(--red-glow);
+  }
+  .pg__inputwrap input {
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 1rem;
+    text-align: right;
+    padding: 0.5rem 0;
+    min-height: 44px;
+  }
+  .pg__inputwrap input:focus {
+    outline: none;
+  }
+  .pg__unit {
+    font-family: var(--font-mono);
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+    padding-left: 0.5rem;
+  }
+
+  .pg__slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 22px;
+    margin-top: 0.7rem;
+    background: transparent;
+    cursor: pointer;
+  }
+  .pg__slider::-webkit-slider-runnable-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--hairline-2);
+  }
+  .pg__slider::-moz-range-track {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--hairline-2);
+  }
+  .pg__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -6.5px;
+    border-radius: 50%;
+    background: var(--red);
+    border: 2px solid var(--surface);
+    box-shadow: var(--shadow-sm);
+    transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  .pg__slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--red);
+    border: 2px solid var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .pg__slider:hover::-webkit-slider-thumb {
+    transform: scale(1.1);
+  }
+  .pg__slider:focus-visible {
+    outline: none;
+  }
+  .pg__slider:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 4px var(--red-glow);
+  }
+  .pg__slider:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 4px var(--red-glow);
+  }
+
+  /* ---- readout: risk visualization ---- */
+  .pg__readout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+  }
+  .pg__risk {
+    background: var(--canvas);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 0.95rem 1rem 1.05rem;
+  }
+  .pg__risk-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .pg__risk-name {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .pg__risk-tag {
+    font-weight: 600;
+    font-size: 1.0625rem;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .pg__risk-sub {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .pg__icr {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .pg__bar {
+    margin-top: 0.85rem;
+  }
+  .pg__bar-track {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--hairline-2);
+    overflow: hidden;
+  }
+  .pg__bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--text-dim);
+    transition: width 0.45s var(--ease-out), background 0.3s var(--ease);
+  }
+  .pg__bar-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+  }
+  .pg__drop {
+    margin-top: 0.95rem;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .pg__drop b {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  /* tier colors (color + the text label, never color alone) */
+  .pg__risk[data-tier='good'] .pg__risk-tag,
+  .pg__risk[data-tier='good'] .pg__icr,
+  .pg__risk[data-tier='good'] .pg__drop b { color: #1e7a4c; }
+  .pg__risk[data-tier='good'] .pg__bar-fill { background: var(--verified); }
+  .pg__risk[data-tier='mod'] .pg__risk-tag,
+  .pg__risk[data-tier='mod'] .pg__icr,
+  .pg__risk[data-tier='mod'] .pg__drop b { color: var(--warn); }
+  .pg__risk[data-tier='mod'] .pg__bar-fill { background: #c9821f; }
+  .pg__risk[data-tier='risk'] .pg__risk-tag,
+  .pg__risk[data-tier='risk'] .pg__icr,
+  .pg__risk[data-tier='risk'] .pg__drop b { color: var(--red-ink); }
+  .pg__risk[data-tier='risk'] .pg__bar-fill { background: var(--red); }
+
+  /* ---- outputs ---- */
+  .pg__outputs {
+    margin: 0;
+  }
+  .pg__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .pg__row:first-child {
+    border-top: 1px solid var(--hairline);
+  }
+  .pg__row dt {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .pg__row dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--text);
+    text-align: right;
+  }
+  .pg__row--min dd[data-ok='true'] { color: #1e7a4c; }
+  .pg__row--min dd[data-ok='false'] { color: var(--red-ink); }
+
+  /* ---- SDK call ---- */
+  .pg__call {
+    margin-top: 1.25rem;
+    padding: 0.7rem 0.85rem 0.8rem;
+    background: var(--code-bg);
+    border: 1px solid var(--code-hairline);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .pg__call-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.4rem;
+  }
+  .pg__call-label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--code-dim);
+  }
+  .pg__copy {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--code-dim);
+    background: transparent;
+    border: 1px solid var(--code-hairline);
+    border-radius: 6px;
+    padding: 0.25rem 0.6rem;
+    min-height: 30px;
+    cursor: pointer;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .pg__copy:hover {
+    color: var(--text-on-code);
+    border-color: var(--code-dim);
+  }
+  .pg__copy[data-copied='true'] {
+    color: var(--verified);
+    border-color: color-mix(in srgb, var(--verified) 45%, transparent);
+  }
+  .pg__call code {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--text-on-code);
+    white-space: nowrap;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to right, #000 90%, transparent);
+    mask-image: linear-gradient(to right, #000 90%, transparent);
+  }
+
+  .pg__foot {
+    margin-top: 0.9rem;
+    font-size: var(--fs-small);
+    color: var(--text-dim);
+  }
+  .pg__foot code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    color: var(--text-muted);
+  }
+  .pg__foot--warn {
+    color: var(--warn);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pg__dot { animation: none !important; }
+    .pg__bar-fill,
+    .pg__preset,
+    .pg__slider::-webkit-slider-thumb { transition: none !important; }
+  }
+</style>
