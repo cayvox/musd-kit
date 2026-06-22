@@ -76,7 +76,7 @@ confirming its ICR is ≥ MCR (and that one wei more would breach it). In Recove
 Mode (`TCR < CCR`), the effective constraint tightens, surface it (O3) and reflect
 it in the returned power.
 
-Do **not** use the handbook's "≥ 2,000 net" floor, the floor is `minNetDebt`
+Do **not** use a "≥ 2,000 net" floor, the floor is `minNetDebt`
 (currently 1,800), read on-chain (C1/C6).
 
 ---

@@ -73,7 +73,7 @@ query (shared key + `select`), three hooks for one address dedupe to a single fe
 read hooks refetch on new blocks (`useBlockNumber({ watch })` → invalidate).
 
 > **`useMusdPeg` is deferred.** The core `getPeg` is unimplemented, Mezo exposes no
-> MUSD/USD oracle (Phase 2 / `09-open-questions`). Shipping a hook that returns a guessed
+> MUSD/USD oracle. Shipping a hook that returns a guessed
 > peg would violate the prime directive, so it is **omitted from v1** and will land if/when
 > a peg oracle exists.
 
@@ -139,5 +139,4 @@ client SDK without hooks feels half-done), but the hedge is structural, the dura
 value is the framework-agnostic core (`math/`, `hints/`, the typed reads), which is
 exactly what *any* hooks (Passport's or ours) would have to call. If Passport ever
 ships MUSD hooks, the core remains the correct, tested implementation of the hard
-parts. This is stated in the docs and the grant, per `09-open-questions` and
-Handbook §11.3.
+parts. This is stated in the docs.

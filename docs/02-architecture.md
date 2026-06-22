@@ -108,7 +108,7 @@ TypeScript developer tooling (viem, wagmi) and removes friction for integrators.
 thin client wrapper over an existing protocol has no novel-mechanism surface to
 protect (unlike a contract-side primitive, which might choose Apache-2.0 for its
 patent grant). Final choice confirmed at repo creation; name is provisional pending
-a trademark/availability check (see `09-open-questions` / Handbook §11.4).
+a trademark/availability check.
 
 ---
 

@@ -109,7 +109,7 @@ third-party trial exists, the README and npm description state plainly: **commun
 (not official) tooling, for testnet and evaluation.** Every write path documents
 what it does on-chain and what it does not guarantee. Only then does the language
 soften and 1.0 ship. An SDK that oversells its maturity is dangerous because
-applications trust it (Handbook §4.6).
+applications trust it.
 
 ---
 
@@ -119,4 +119,4 @@ applications trust it (Handbook §4.6).
 launch. "MUSD" is Mezo's asset, so the README must frame the package explicitly as
 unofficial community tooling to avoid implying endorsement. Candidate alternates if
 the check fails: `musd-sdk`, `use-musd`, `trovekit`, `mezofi-kit`. The npm scope and
-identifiers track whatever survives the check. (Handbook §11.4 / `09-open-questions`.)
+identifiers track whatever survives the check.

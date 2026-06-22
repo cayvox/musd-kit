@@ -95,7 +95,7 @@ cases:
   the **verified peer floors** (`wagmi 2.5.12` / `viem 2.22.8` /
   `@tanstack/react-query 5.28.4` / `react 18.2.0`) to catch resolution drift before
   users hit it.
-- **Gates wired to phases:** each Roadmap phase (`musd-kit-Roadmap.md` §4) has a
+- **Gates wired to phases:** each build phase has a
   named test gate; CI does not let a phase's PR merge unless its gate is green.
 
 ---

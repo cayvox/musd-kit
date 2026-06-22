@@ -42,6 +42,10 @@
   --vp-c-bg-alt: #f4efe9;
   --vp-c-bg-soft: #f4efe9;
   --vp-c-bg-elv: #ffffff;
+  /* Block code uses the shared warm-DARK theme (its tokens are light-on-dark). VitePress would
+     otherwise paint the block with the light --vp-c-bg-alt, washing the tokens out, so pin the
+     block background to the code theme's dark bg. */
+  --vp-code-block-bg: #181311;
 
   /* Warm hairlines + near-black warm text */
   --vp-c-divider: #ece5dd;

@@ -14,25 +14,21 @@ community (interaction).
 
 ## How the documentation fits together
 
-| Document | Role | Read it for |
-|---|---|---|
-| `musd-kit-handbook.md` | The **specification**, the *why* and the *what* | Motivation, the gap analysis, scope (v1/v2/out), positioning, grant framing |
-| `musd-kit-Roadmap.md` | The **build plan**, the *how*, plus the zero-assumption verification ledger | The phased build order, acceptance criteria, the corrections to the handbook |
-| `CLAUDE.md` | The **operating manual** for the build | The Laws, the workflow, the gotchas, read before coding |
-| `docs/01-ground-truth.md` | The **verified contract reference** | Every constant, signature, address, and formula, the anti-assumption source |
-| `docs/02-architecture.md` | Structure | The package graph, the two-source correctness model, module responsibilities |
-| `docs/03-core-api.md` | `@musd-kit/core` surface | The framework-agnostic API |
-| `docs/04-react-api.md` | `@musd-kit/react` surface | The hook set + the Passport relationship |
-| `docs/05-math-and-hints.md` | Correctness-critical deep spec | The exact formulas, the hint ritual, the dual-validation method |
-| `docs/06-errors.md` | Error taxonomy | The discriminated error set + revert mapping |
-| `docs/07-testing.md` | Correctness gate | The forked-Mezo harness, the test gates, the boundary corpus |
-| `docs/08-conventions.md` | Engineering standards | TS config, naming, units, viem patterns, release hygiene |
-| `docs/09-open-questions.md` | Decision log | Resolved decisions (O1-O7) and still-open items (F1/F3) |
-| `docs/10-glossary.md` | Terms | MUSD / Liquity-fork vocabulary used precisely |
+| Guide | Read it for |
+|---|---|
+| [Architecture](/02-architecture) | The package graph, the two-source correctness model, module responsibilities |
+| [Reads, previews, and the Trove lifecycle](/03-core-api) | The framework-agnostic `@musd-kit/core` surface |
+| [React hooks](/04-react-api) | The hook set and the Passport relationship |
+| [Math and insertion hints](/05-math-and-hints) | The exact formulas, the hint ritual, the dual-validation method |
+| [Typed errors](/06-errors) | The discriminated error set and the revert mapping |
+| [Ground truth](/01-ground-truth) | Every verified constant, signature, address, and formula, the anti-assumption source |
+| [Testing](/07-testing) | The forked-Mezo harness, the test gates, the boundary corpus |
+| [Conventions](/08-conventions) | TS config, naming, units, viem patterns, release hygiene |
+| [Glossary](/10-glossary) | MUSD and Liquity-fork vocabulary, used precisely |
 
-**Reading order for a fresh start:** Handbook (skim for the *why*) → this overview →
-`01-ground-truth` (carefully) → `02-architecture` → `CLAUDE.md` → then the spec for
-whatever you're building, with `07-testing` and `08-conventions` open alongside.
+**Reading order for a fresh start:** this overview, then [Ground truth](/01-ground-truth)
+carefully, then [Architecture](/02-architecture), then the guide for whatever you are building,
+with [Testing](/07-testing) and [Conventions](/08-conventions) open alongside.
 
 ---
 
@@ -44,10 +40,10 @@ whatever you're building, with `07-testing` and `08-conventions` open alongside.
    against forked Mezo, not just the documented formula) and the architecture.
 
 2. **Zero assumptions.** Every contract fact was verified against the live source on
-   14 Jun 2026 (`01-ground-truth`). Where the verification contradicted the
-   handbook, the build follows the verified truth, and the delta is recorded (the
-   C-corrections in `01-ground-truth` §9 and the Roadmap §1.2). When the build needs
-   a fact that is not yet verified, the rule is to verify it, not guess.
+   14 Jun 2026 (see [Ground truth](/01-ground-truth)). Where the verification
+   contradicted an earlier assumption, the build follows the verified truth, and the
+   delta is recorded (the C-corrections in [Ground truth](/01-ground-truth) §9). When the
+   build needs a fact that is not yet verified, the rule is to verify it, not guess.
 
 ---
 

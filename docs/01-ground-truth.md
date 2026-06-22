@@ -98,8 +98,7 @@ validates the set.
   `mezoTestnet`, `createMezoChain`). `musd-kit` should depend on this for chain
   definitions instead of hand-rolling them. (Note: this is a correction to the v0.1
   framing, there *are* official npm artifacts/config packages; what remains absent is
-  a typed *interaction* client, which is exactly `musd-kit`. See `09-open-questions.md`
-  O10 / F3.)
+  a typed *interaction* client, which is exactly `musd-kit`.)
 
 ### 4.1 Mezo Mainnet (chainId 31612)
 
@@ -154,7 +153,7 @@ explicitly.
 
 **No MUSD/USD peg oracle:** `PriceFeed` exposes only `fetchPrice()` (BTC/USD) +
 `oracle()`; there is no MUSD/USD price source on-chain. `getPeg()` is therefore
-**not implemented** (it would require guessing a peg). See `09-open-questions.md`.
+**not implemented** (it would require guessing a peg).
 
 ---
 
@@ -376,8 +375,7 @@ with no `_maxFeePercentage`** (C5 extends to redemption; any fee guard is SDK-si
 
 ## 9. The corrections (what looks one way but is another)
 
-These are the verified deltas from stock-Liquity expectations and from the
-Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
+These are the verified deltas from stock-Liquity expectations. Internalize them; they are the "everyone gets it wrong" cases.
 
 | # | The trap | The truth |
 |---|---|---|
@@ -392,7 +390,7 @@ Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
 
 ---
 
-## 10. Still-open items (do not depend on these, see `09-open-questions.md`)
+## 10. Still-open items (do not depend on these)
 
 - **F1 / O6, the "vault".** `IMUSDSavingsRate` exposes only
   `receiveProtocolYield(uint256)` (a protocol-side yield receiver), not a user
@@ -409,8 +407,7 @@ Handbook v0.1. Internalize them; they are the "everyone gets it wrong" cases.
   Tigris DEX, different layer), and `@gitmyabi-stg/musd` (raw auto-generated type
   bindings). Apps `pikolo` and `Mezo-Defi-IQ` hand-build the Trove layer inside their
   own products. The "wagmi+RainbowKit-of-MUSD / Liquity-lib-react-for-Mezo" niche is
-  unoccupied. Full write-up in `COMPETITIVE-LANDSCAPE.md`. (Re-run once more right
-  before grant submission for freshness.)
+  unoccupied.
 
 ---
 
