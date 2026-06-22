@@ -51,10 +51,39 @@
   const RPC = import.meta.env.PUBLIC_MEZO_TESTNET_RPC_URL || 'https://rpc.test.mezo.org'
   const FALLBACK_PRICE = 66_395_814_700_000_000_000_000n // last known-good testnet read
   const GAS_RESERVE = 200n * 10n ** 18n
+  const READ_TIMEOUT = 3500 // a single live read cannot block the UI longer than this
+  const BOOT_TIMEOUT = 6000 // the lazy SDK chunk must load within this or we degrade
+  const SAFETY_TIMEOUT = 8000 // last resort: never leave the widget on "connecting"
+  const FALLBACK_PRICE_STR = `$${(Number(FALLBACK_PRICE) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  // Reject after `ms` so a hanging RPC / chunk never freezes the widget on "connecting".
+  function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([p, new Promise<T>((_, rej) => window.setTimeout(() => rej(new Error('timeout')), ms))])
+  }
+
+  // Belt-and-suspenders: if boot never reaches setStatus, flip out of the loading state to a clearly
+  // labelled fallback (no SDK needed for this minimal display).
+  function degradeStatic(el: HTMLElement) {
+    const s = el.querySelector<HTMLElement>('[data-status]')
+    if (!s || s.dataset.status !== 'loading') return
+    s.dataset.status = 'fallback'
+    const st = el.querySelector<HTMLElement>('.pw__status-text')
+    if (st) st.textContent = 'fallback price'
+    const pv = el.querySelector<HTMLElement>('[data-price-val]')
+    if (pv) pv.textContent = FALLBACK_PRICE_STR
+    const note = el.querySelector<HTMLElement>('[data-note]')
+    if (note) {
+      note.innerHTML = 'Live price unavailable. Showing a recent testnet value. Calculations are illustrative.'
+      note.classList.add('pw__foot--warn')
+    }
+  }
 
   for (const root of document.querySelectorAll<HTMLElement>('[data-widget]')) initWhenVisible(root)
 
   function initWhenVisible(el: HTMLElement) {
+    // Last-resort safety net: regardless of observers, imports, or the network, the widget leaves
+    // the "connecting" state within a finite window.
+    window.setTimeout(() => degradeStatic(el), SAFETY_TIMEOUT)
     if (!('IntersectionObserver' in window)) {
       void boot(el)
       return
@@ -78,12 +107,18 @@
   }
 
   async function boot(el: HTMLElement) {
-    // Heavy SDK + viem loaded ONLY now (its own chunk) → initial page stays near-zero-JS.
-    const [core, chains, viem] = await Promise.all([
-      import('@musd-kit/core'),
-      import('@mezo-org/chains'),
-      import('viem'),
-    ])
+    // Heavy SDK + viem loaded ONLY now (its own chunk) → initial page stays near-zero-JS. If the
+    // chunk fails or is slow, degrade rather than hang.
+    let core, chains, viem
+    try {
+      ;[core, chains, viem] = await withTimeout(
+        Promise.all([import('@musd-kit/core'), import('@mezo-org/chains'), import('viem')]),
+        BOOT_TIMEOUT,
+      )
+    } catch {
+      degradeStatic(el)
+      return
+    }
     const { createMusdClient, parseBtc, parseMusd, computeICR, computeLiquidationPrice } = core
     const { mezoTestnet } = chains
     const { createPublicClient, http, formatEther } = viem
@@ -105,10 +140,11 @@
     const out = (k: string) => el.querySelector<HTMLElement>(`[data-out="${k}"]`)!
     const callEl = el.querySelector<HTMLElement>('[data-call]')!
 
+    // The price read is time-boxed: live within READ_TIMEOUT, else the fallback price.
     let price = FALLBACK_PRICE
     let live = false
     try {
-      price = await musd.getOraclePrice()
+      price = await withTimeout(musd.getOraclePrice(), READ_TIMEOUT)
       live = true
     } catch {
       live = false
@@ -125,6 +161,12 @@
           : 'Live price unavailable. Showing a recent testnet value. Calculations are illustrative.'
         noteEl.classList.toggle('pw__foot--warn', !isLive)
       }
+    }
+
+    // Compute via the package's pure helpers (no on-chain call) for the fallback path.
+    function renderLocal(collateral: bigint, debt: bigint) {
+      const entireDebt = debt + GAS_RESERVE
+      render(null, entireDebt, computeICR({ collateral, entireDebt, price }), computeLiquidationPrice({ collateral, entireDebt }), null)
     }
 
     let timer = 0
@@ -146,15 +188,18 @@
         return
       }
 
-      try {
-        const p = await musd.previewOpen({ collateral, debt })
-        render(p.fee, p.entireDebt, p.icr, p.liquidationPrice, p.meetsMinimum)
-        if (!live) { live = true; setStatus(true) }
-      } catch {
-        const entireDebt = debt + GAS_RESERVE
-        render(null, entireDebt, computeICR({ collateral, entireDebt, price }), computeLiquidationPrice({ collateral, entireDebt }), null)
-        if (live) { live = false; setStatus(false) }
+      // Only touch the chain when live; in fallback mode compute locally so nothing can hang.
+      if (live) {
+        try {
+          const p = await withTimeout(musd.previewOpen({ collateral, debt }), READ_TIMEOUT)
+          render(p.fee, p.entireDebt, p.icr, p.liquidationPrice, p.meetsMinimum)
+          return
+        } catch {
+          live = false
+          setStatus(false)
+        }
       }
+      renderLocal(collateral, debt)
     }
 
     function render(fee: bigint | null, entireDebt: bigint, icr: bigint, liq: bigint, meetsMin: boolean | null) {
