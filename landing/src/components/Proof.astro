@@ -1,7 +1,7 @@
 ---
 // CONTENT §5, "Correctness is the product" (our second differentiator over PartyLayer).
-// Real, verified facts as evidence: headline metric tiles + the three caught bugs + a
-// verified checklist. Every number is truthful (no inflation). No em/en dashes.
+// Real, verified facts as evidence: headline metric tiles + a "what you don't have to build"
+// panel + a verified checklist. Every number is truthful (no inflation). No em/en dashes.
 const tiles = [
   { n: '0', label: 'hardcoded governable values. Min debt, fees, interest and redemption rate are read on-chain.' },
   { n: 'wei', label: 'preview to on-chain parity. previewOpen equals what the contract does, exactly.' },
@@ -9,10 +9,15 @@ const tiles = [
   { n: '80', suffix: '+', count: 80, label: 'tests across a forked-Mezo suite. Ships ESM and CJS, MIT.' },
 ]
 
-const bugs = [
-  'A wrong minimum-debt assumption.',
-  'A stale-interest getter that returned the stored value, not the live one.',
-  'A redemption-fee rule that did not match the docs.',
+// The fiddly hard parts the SDK handles, each verified in the shipped source: computeHints on
+// every write, draw + fee + 200 gas reserve in the debt math, simulateContract before send, the
+// discriminated MusdError taxonomy, and governable values read on-chain (Law 3).
+const handled = [
+  'Insertion hints for the sorted Trove list, recomputed on every write',
+  'The borrowing fee plus the 200 MUSD gas reserve, in the debt math',
+  'Simulate-before-send on every transaction',
+  'Discriminated typed errors, mapped from the real contract reverts',
+  'Governable values (minNetDebt, fees, rates, price) read live, never hardcoded',
 ]
 
 const checks = [
@@ -58,22 +63,24 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     </div>
 
     <div class="proof__grid">
-      <div class="proof__bugs" data-reveal>
-        <p class="proof__bugs-eyebrow">WHAT THE HARNESS CAUGHT</p>
-        <p class="proof__bugs-head">
-          <span class="proof__bugs-n" data-count="3">3</span> load-bearing bugs the docs would have hidden
-        </p>
-        <ol class="proof__bugs-list">
+      <div class="proof__build" data-reveal>
+        <p class="proof__build-eyebrow">WHAT YOU DON'T HAVE TO BUILD</p>
+        <p class="proof__build-head">The fiddly hard parts, handled for you.</p>
+        <ul class="proof__build-list" role="list">
           {
-            bugs.map((b, i) => (
-              <li class="proof__bug">
-                <span class="proof__bug-i">{String(i + 1).padStart(2, '0')}</span>
-                <span>{b}</span>
+            handled.map((h) => (
+              <li class="proof__handled">
+                <span class="proof__handled-mark" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" width="12" height="12">
+                    <path d="M3 8.5l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </span>
+                <span>{h}</span>
               </li>
             ))
           }
-        </ol>
-        <p class="proof__bugs-foot">Hardcoding any of these would have shipped silently wrong numbers.</p>
+        </ul>
+        <p class="proof__build-foot">Get these wrong near the liquidation threshold and it costs a user collateral.</p>
       </div>
 
       <ul class="proof__checks" role="list">
@@ -207,7 +214,7 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     }
   }
 
-  .proof__bugs {
+  .proof__build {
     background: var(--surface);
     border: 1px solid var(--hairline);
     border-left: 3px solid var(--red);
@@ -215,32 +222,27 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     box-shadow: var(--shadow);
     padding: clamp(1.25rem, 3vw, 1.6rem);
   }
-  .proof__bugs-eyebrow {
+  .proof__build-eyebrow {
     font-family: var(--font-mono);
     font-size: 0.6875rem;
     letter-spacing: 0.08em;
     color: var(--red-ink);
   }
-  .proof__bugs-head {
+  .proof__build-head {
     margin-top: 0.55rem;
     font-weight: 600;
     font-size: 1.0625rem;
     line-height: 1.35;
     color: var(--text);
   }
-  .proof__bugs-n {
-    font-family: var(--font-mono);
-    color: var(--red-ink);
-    font-variant-numeric: tabular-nums;
-  }
-  .proof__bugs-list {
+  .proof__build-list {
     margin: 1.1rem 0 0;
     padding: 0;
     list-style: none;
     display: flex;
     flex-direction: column;
   }
-  .proof__bug {
+  .proof__handled {
     display: flex;
     gap: 0.7rem;
     align-items: baseline;
@@ -250,13 +252,19 @@ const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">
     color: var(--text-muted);
     line-height: 1.45;
   }
-  .proof__bug-i {
+  .proof__handled-mark {
     flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--red-tint);
     color: var(--red-ink);
+    transform: translateY(0.18rem);
   }
-  .proof__bugs-foot {
+  .proof__build-foot {
     margin-top: 0.9rem;
     font-size: var(--fs-small);
     color: var(--text-dim);
