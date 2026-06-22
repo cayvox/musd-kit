@@ -374,7 +374,7 @@
   }
   .pw__call {
     margin-top: 1rem;
-    padding: 0.7rem 0.85rem;
+    padding: 0.7rem 0.7rem;
     background: var(--code-bg);
     border: 1px solid var(--code-hairline);
     border-radius: var(--radius-sm);
@@ -393,12 +393,15 @@
   .pw__call code {
     display: block;
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    /* sized so the full previewOpen(...) line reads at common desktop widths; the fade is a
+       safety for narrower viewports only. */
+    font-size: 0.68rem;
+    letter-spacing: -0.01em;
     color: var(--text-on-code);
     white-space: nowrap;
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
-    mask-image: linear-gradient(to right, #000 88%, transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 95%, transparent);
+    mask-image: linear-gradient(to right, #000 95%, transparent);
   }
   .pw__foot {
     margin-top: 0.9rem;

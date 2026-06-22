@@ -497,6 +497,12 @@ const trim = (s: string) => s.replace(/^\n+|\n+$/g, '')
       width: var(--cw);
       margin: 0;
     }
+    /* the diagram cards are a fixed width; a long line (e.g. createMusdClient(...publicClient))
+       fades gracefully at the right edge instead of hard-clipping at "pub". */
+    .arch__layer .arch__code {
+      -webkit-mask-image: linear-gradient(to right, #000 86%, transparent);
+      mask-image: linear-gradient(to right, #000 86%, transparent);
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
