@@ -51,9 +51,13 @@
   const RPC = import.meta.env.PUBLIC_MEZO_TESTNET_RPC_URL || 'https://rpc.test.mezo.org'
   const FALLBACK_PRICE = 66_395_814_700_000_000_000_000n // last known-good testnet read
   const GAS_RESERVE = 200n * 10n ** 18n
-  const READ_TIMEOUT = 3500 // a single live read cannot block the UI longer than this
-  const BOOT_TIMEOUT = 6000 // the lazy SDK chunk must load within this or we degrade
-  const SAFETY_TIMEOUT = 8000 // last resort: never leave the widget on "connecting"
+  // Budgets tuned from the real cold testnet round-trip (DNS + TLS + CORS preflight + viem's chain
+  // check + the oracle read). Generous enough that a healthy-but-slow RPC reads LIVE instead of
+  // being falsely demoted, still finite so a genuine failure degrades. SAFETY sits above
+  // BOOT + READ so it never cuts off a slow-but-working read; it only guards "boot never ran".
+  const READ_TIMEOUT = 6000 // a single live read cannot block the UI longer than this
+  const BOOT_TIMEOUT = 8000 // the lazy SDK chunk must load within this or we degrade
+  const SAFETY_TIMEOUT = 16000 // last resort: never leave the widget on "connecting"
   const FALLBACK_PRICE_STR = `$${(Number(FALLBACK_PRICE) / 1e18).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   // Reject after `ms` so a hanging RPC / chunk never freezes the widget on "connecting".

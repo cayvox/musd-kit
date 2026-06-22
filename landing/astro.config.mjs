@@ -21,6 +21,15 @@ export default defineConfig({
     docsDev(),
   ],
   build: { inlineStylesheets: 'auto' },
+  // The live widget lazy-imports the SDK (@musd-kit/core), viem and @mezo-org/chains. In dev,
+  // Vite re-optimizes these heavy deps on the first dynamic import and the in-flight dep chunks
+  // 504, so the import rejects and the widget falls back instead of reading live. Pre-bundling
+  // them at server start makes the dynamic import resolve, so `pnpm dev` reads real testnet too.
+  vite: {
+    optimizeDeps: {
+      include: ['@musd-kit/core', '@mezo-org/chains', 'viem'],
+    },
+  },
   // Code highlighting: the custom warm theme shared with the VitePress docs (BRAND §7).
   markdown: {
     shikiConfig: { theme: codeTheme },
