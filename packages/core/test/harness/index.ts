@@ -28,7 +28,7 @@ export interface ForkConnection {
   warpTime(seconds: number | bigint): Promise<void>
   fundAccount(address: Address, btcWei: bigint): Promise<void>
   setPrice(usdPerBtc1e18: bigint): Promise<void>
-  /** Keep the oracle shim fresh (bump updatedAt to the current block) — price unchanged. */
+  /** Keep the oracle shim fresh (bump updatedAt to the current block), price unchanged. */
   refreshOracle(): Promise<void>
 }
 
@@ -40,7 +40,7 @@ export function connectFork(): ForkConnection {
   const rpcUrl = process.env.MUSD_FORK_RPC_URL
   if (!rpcUrl) {
     throw new Error(
-      'MUSD_FORK_RPC_URL is unset — is the harness globalSetup configured in vitest.config.ts?',
+      'MUSD_FORK_RPC_URL is unset, is the harness globalSetup configured in vitest.config.ts?',
     )
   }
 

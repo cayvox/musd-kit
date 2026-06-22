@@ -45,7 +45,7 @@ async function directRead(addr: Address) {
     entireDebt: edc[1] + edc[2],
     icr,
     nicr,
-    storedInterest, // getTroveInterestOwed — the STALE stored value (C3)
+    storedInterest, // getTroveInterestOwed, the STALE stored value (C3)
     rate,
     status,
   }
@@ -63,7 +63,7 @@ function computeCR(coll: bigint, debt: bigint, price: bigint) {
 let freshAddr: Address
 let nearAddr: Address
 
-describe('Phase 2 — read/ live position via contract getters', () => {
+describe('Phase 2, read/ live position via contract getters', () => {
   // Keep the oracle fresh before every test (anvil advances block time by wall-clock).
   beforeEach(() => connectFork().refreshOracle())
 
@@ -71,7 +71,7 @@ describe('Phase 2 — read/ live position via contract getters', () => {
     const fork = connectFork()
     // Fresh, comfortable position (~290% ICR).
     const fresh = testAccount(11)
-    // numTrials:15 keeps these opens fast — Phase 2 only needs troves to read; hint
+    // numTrials:15 keeps these opens fast, Phase 2 only needs troves to read; hint
     // quality/heuristic is Phase 3's concern.
     await openTroveRaw(fork, {
       collateralBtc: 10n ** 17n, // 0.1 BTC
@@ -182,7 +182,7 @@ describe('Phase 2 — read/ live position via contract getters', () => {
       abi: sortedTrovesAbi,
       functionName: 'getFirst',
     })
-    if (first === zeroAddress) return // empty list — nothing to read
+    if (first === zeroAddress) return // empty list, nothing to read
     const trove = await client().getTrove(first)
     console.log(`[phase2] SortedTroves.first=${first} exists=${trove.exists} icr=${trove.icr}`)
     expect(trove.collateral).toBeGreaterThanOrEqual(0n)

@@ -1,13 +1,13 @@
-// @musd-kit/core — public surface.
+// @musd-kit/core, public surface.
 //
 // Phase 1: address maps, typed viem clients, and `createMusdClient` (resolves
 // addresses + reads/caches the governable constants). Reads (`getTrove`), preview
 // math, hints, writes, redemption, and errors arrive in later phases.
 
-// Fixed constants (bundled — Law 3 keeps governable values off this list).
+// Fixed constants (bundled keeps governable values off this list).
 export * from './constants'
 
-// Unit helpers (docs/08 §5) — readable 18-decimal parse/format for BTC + MUSD, and bps.
+// Unit helpers (docs/08 §5), readable 18-decimal parse/format for BTC + MUSD, and bps.
 export { parseBtc, formatBtc, parseMusd, formatMusd, parseBps } from './units'
 
 // Address resolution.
@@ -46,7 +46,7 @@ export {
   type GovernableConstants,
 } from './client/createMusdClient'
 
-// Live-read types (Law 2 — contract-authoritative).
+// Live-read types (contract-authoritative).
 export { TroveStatus, type Trove, type SystemState } from './read'
 
 // Insertion-hint module.
@@ -61,7 +61,7 @@ export {
   type Hints,
 } from './hints'
 
-// Preview math (the only client-side compute — Law 2 preview side; non-throwing).
+// Preview math (the only client-side compute, preview side; non-throwing).
 export {
   computeICR,
   computeLiquidationPrice,
@@ -93,7 +93,7 @@ export {
   type RedeemResult,
 } from './redemption'
 
-// Errors — the full discriminated taxonomy (docs/06). `UnsupportedChain` and
+// Errors, the full discriminated taxonomy (docs/06). `UnsupportedChain` and
 // `MismatchedDeployment` are also `MusdError`s but re-exported from their original modules
 // above to avoid duplicate exports.
 export {
@@ -124,6 +124,6 @@ export {
   ContractCallFailed,
 } from './errors'
 
-// Chain config (decision O10) — re-exported from `@mezo-org/chains` so consumers
+// Chain config (decision O10), re-exported from `@mezo-org/chains` so consumers
 // and examples get the canonical viem `Chain` objects from one place.
 export { mezoMainnet, mezoTestnet } from '@mezo-org/chains'

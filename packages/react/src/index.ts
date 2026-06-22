@@ -1,7 +1,7 @@
-// @musd-kit/react — wagmi-idiomatic hooks over @musd-kit/core.
+// @musd-kit/react, wagmi-idiomatic hooks over @musd-kit/core.
 //
 // This package ships NO provider of its own: it consumes the wagmi context (WagmiProvider +
-// QueryClientProvider) that Passport's `getConfig` — or any wagmi setup — already
+// QueryClientProvider) that Passport's `getConfig`, or any wagmi setup, already
 // established (decision O4). It peer-depends on wagmi, not Passport. Each hook is a thin
 // reactive wrapper that delegates to the core; no protocol logic lives here.
 
@@ -40,7 +40,7 @@ export {
   type UseRedeemResult,
 } from './hooks/writes'
 
-// The internal client builder — exported for advanced consumers who want the core client
+// The internal client builder, exported for advanced consumers who want the core client
 // bound to the ambient wagmi context.
 export { useMusdClient } from './internal/useMusdClient'
 export { musdQueryKeys } from './internal/keys'

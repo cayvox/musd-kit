@@ -48,11 +48,11 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react": "The keeper is core-only — importing React breaks the framework-agnostic proof.",
-                  "react-dom": "The keeper is core-only — no React.",
+                  "react": "The keeper is core-only, importing React breaks the framework-agnostic proof.",
+                  "react-dom": "The keeper is core-only, no React.",
                   "@musd-kit/react": "The keeper depends on @musd-kit/core only, never the React layer.",
-                  "wagmi": "The keeper is core-only — no wagmi.",
-                  "@tanstack/react-query": "The keeper is core-only — no react-query."
+                  "wagmi": "The keeper is core-only, no wagmi.",
+                  "@tanstack/react-query": "The keeper is core-only, no react-query."
                 }
               }
             }

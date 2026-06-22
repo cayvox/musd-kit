@@ -7,6 +7,6 @@ export default defineConfig({
   treeshake: true,
   sourcemap: true,
   clean: true,
-  // viem is a peer dependency — never bundle it.
+  // viem is a peer dependency, never bundle it.
   external: ['viem'],
 })

@@ -10,7 +10,7 @@ next:
 
 **The single source of truth for every MUSD contract fact `musd-kit` depends on.**
 If a contract fact is not in this file, it is not yet verified, STOP and verify it
-before relying on it (Law 1).
+before relying on it.
 
 **Verification provenance:** all facts below verified on **14 June 2026** against:
 - the MUSD contracts at `github.com/mezo-org/musd` (`main`), Solidity source + interfaces,
@@ -56,7 +56,7 @@ These may be bundled as constants in the SDK. Everything in §3 may **not**.
 
 ---
 
-## 3. Governable / dynamic values (MUST be read on-chain, Law 3)
+## 3. Governable / dynamic values (MUST be read on-chain)
 
 | Value | How to read | Init / current | Governance path |
 |---|---|---|---|
@@ -78,7 +78,7 @@ Cache these per `createMusdClient` session; refresh on demand.
 > EVM fork copies the bytecode but has no native handler, so `fetchPrice()` reverts
 > on a fork even though pure-EVM reads (`MCR`, Trove storage) work. The test harness
 > shims this one external precompile with the **real** live round data, never a
-> MUSD contract (Law 5). See `07-testing.md` §1 and `packages/core/test/harness/README.md`.
+> MUSD contract. See `07-testing.md` §1 and `packages/core/test/harness/README.md`.
 
 ---
 
@@ -209,7 +209,7 @@ computeCR(uint256 _coll, uint256 _debt, uint256 _price) pure returns (uint)
 ### 5.3 `ITroveManager` (authoritative reads + permissionless writes)
 
 ```solidity
-// READS, use these for LIVE position data (Law 2)
+// READS, use these for LIVE position data
 // VERIFIED SHAPE (fork, Phase 2): 6 fields, computed TO NOW.
 getEntireDebtAndColl(address _borrower) view returns (
     uint256 coll, uint256 principal, uint256 interest,
@@ -302,7 +302,7 @@ For `previewOpen` / `getBorrowingPower`:
 - **Simple (non-compounding), time-based, linear.** Interest accrues by *elapsed
   seconds*, not blocks:
   `new_interest = interest_numerator × (current_timestamp − last_update) / seconds_per_year`.
-- **`SECONDS_PER_YEAR = 31_556_952`** (= 365.2425 days × 86400, the **Gregorian** year, 
+- **`SECONDS_PER_YEAR = 31_556_952`** (= 365.2425 days × 86400, the **Gregorian** year,
   NOT 365 (31_536_000) nor 365.25 (31_557_600)). Verified on the fork (Phase 4): open,
   warp a known elapsed, read `getEntireDebtAndColl.interest`, back out the constant; the
   forward prediction `interest = principal · rateBips · elapsed / (10_000 · 31_556_952)`
@@ -436,7 +436,7 @@ viem's decoded `reason` (via `ContractFunctionRevertedError`):
 | `liquidate` a healthy Trove | `TroveManager: nothing to liquidate` | require | `NothingToLiquidate` |
 | `redeemCollateral` that can redeem nothing (incl. a stale/bad partial hint) | `TroveManager: Unable to redeem any amount` | require | `RedemptionFailed` |
 
-**Not reachable from the SDK surface (Law 1, marked, not invented):**
+**Not reachable from the SDK surface (marked, not invented):**
 - **`StaleHint`**, there is **no distinct "stale hint" revert**. A stale/incorrect
   redemption partial hint does not produce its own error; it makes the redemption redeem
   nothing → `TroveManager: Unable to redeem any amount` (→ `RedemptionFailed`). Insertion
@@ -446,7 +446,7 @@ viem's decoded `reason` (via `ContractFunctionRevertedError`):
 - **`Unauthorized`**, the SDK surface calls no governance/permission-gated function, so the
   `OwnableUnauthorizedAccount` path is unreachable. Defined/exported for completeness only.
 - **`InsufficientCollateral`**, the on-chain `ICR < MCR` revert maps to `ICRBelowMCR`
-  (contract-authoritative, Law 2). `InsufficientCollateral` is retained as the *preview-time*
+  (contract-authoritative). `InsufficientCollateral` is retained as the *preview-time*
   sibling (for the math/React layer); the write path surfaces `ICRBelowMCR`.
 
 **Decoder discipline:** `mapRevert` matches on the distinctive substring of each reason

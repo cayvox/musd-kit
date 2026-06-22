@@ -28,7 +28,7 @@ import {
 } from '../src'
 import { makeConfig, makeWrapper, newQueryClient } from './wagmi'
 
-// anvil's first default account — UNLOCKED on the fork, so the mock connector's
+// anvil's first default account, UNLOCKED on the fork, so the mock connector's
 // eth_sendTransaction (which omits `from` → anvil uses account[0]) signs as exactly this
 // address. Using it as the connected account keeps the wagmi account and the on-chain
 // signer identical (no impersonation needed).
@@ -55,7 +55,7 @@ function coreClientFor(account: PrivateKeyAccount) {
 
 const waitTx = (hash: Address) => connectFork().publicClient.waitForTransactionReceipt({ hash })
 
-/** A fresh wagmi config with the mock connector CONNECTED + an RTL wrapper (per test — a
+/** A fresh wagmi config with the mock connector CONNECTED + an RTL wrapper (per test, a
  *  shared config across tests left a stale block-watch subscription that broke refetch). */
 async function connectedWrapper() {
   const config = makeConfig(rpcUrl, [holder.address])
@@ -73,8 +73,8 @@ interface MutationSlice {
 /**
  * Fire a write-hook action and confirm its tx actually MINED (receipt status `success`),
  * retrying on a silent revert. The core returns `{ hash }` without awaiting the receipt
- * (caller waits), so a revert that happens AFTER a passing simulate — possible on a loaded,
- * wall-clock-stamped shared fork — slips through as `isSuccess`. We check the receipt and,
+ * (caller waits), so a revert that happens AFTER a passing simulate, possible on a loaded,
+ * wall-clock-stamped shared fork, slips through as `isSuccess`. We check the receipt and,
  * on a revert, refresh the oracle and re-fire. Genuine failures still throw after the retries.
  */
 async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Promise<void> {
@@ -106,7 +106,7 @@ beforeAll(async () => {
   reader = readerAccount.address
   await openTroveRaw(fork, { collateralBtc: BTC, debtMusd: 6_000n * MUSD, account: readerAccount })
 
-  // holder: anvil's default account[0] — the address the mock connector actually signs as.
+  // holder: anvil's default account[0], the address the mock connector actually signs as.
   holder = ANVIL_0
   await fork.fundAccount(holder.address, 50n * BTC)
 
@@ -117,7 +117,7 @@ afterEach(() => cleanup())
 
 // ── Read hooks ──────────────────────────────────────────────────────────────
 
-describe('@musd-kit/react — read hooks (fork)', () => {
+describe('@musd-kit/react, read hooks (fork)', () => {
   it('useTrove resolves to the same object as core.getTrove; HF/liqPrice share ONE fetch', async () => {
     const qc = newQueryClient()
     const wrapper = makeWrapper(makeConfig(rpcUrl, [holder.address]), qc)
@@ -164,7 +164,7 @@ describe('@musd-kit/react — read hooks (fork)', () => {
     // Change reader's position OUT OF BAND (its own signer), then expect block-watch refetch.
     // Warm the hint traversal + refresh the oracle so the addColl mines cleanly: a cold
     // computeHints on a loaded CI runner would let the oracle go stale and the addColl would
-    // mine-revert (a silent reverted receipt) — leaving the position unchanged and making
+    // mine-revert (a silent reverted receipt), leaving the position unchanged and making
     // this look like a block-watch miss when it isn't. We assert the receipt succeeded.
     const fork = connectFork()
     const rdebt = (await coreClient.getTrove(reader)).entireDebt
@@ -183,7 +183,7 @@ describe('@musd-kit/react — read hooks (fork)', () => {
 
 // ── Write hooks ─────────────────────────────────────────────────────────────
 
-describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
+describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
   it('useOpenTrove sends via the mock wallet, reports status + hash, and invalidates useTrove', async () => {
     const wrapper = await connectedWrapper()
     const { result } = renderHook(
@@ -240,7 +240,7 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
     // Same razor-edge handling as the Phase-6 redemption gate: redeem at a +50% price (so the
     // lowest redeemable Trove has comfortable margin), warm the slow getRedemptionHints
     // traversal at that price, and refresh the oracle immediately before the redeem so it
-    // mines fresh. Redeem 3,000 — enough to close whole Troves. Price restored after.
+    // mines fresh. Redeem 3,000, enough to close whole Troves. Price restored after.
     const wrapper = await connectedWrapper()
     const fork = connectFork()
     const orig = await coreClient.getOraclePrice()
@@ -292,7 +292,7 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
     })
     await waitTx(await fwallet.writeContract(request))
 
-    // closeTrove reads the price and is blocked in Recovery Mode — lift +20% so the system is
+    // closeTrove reads the price and is blocked in Recovery Mode, lift +20% so the system is
     // clearly normal-mode (price restored after; the "Trove is gone" assertion is price-free).
     const origPrice = await coreClient.getOraclePrice()
     try {
@@ -324,7 +324,7 @@ describe('@musd-kit/react — write hooks (fork, mock connector)', () => {
 
 // ── Typed errors + no-provider ────────────────────────────────────────────────
 
-describe('@musd-kit/react — typed errors + provider guard', () => {
+describe('@musd-kit/react, typed errors + provider guard', () => {
   it('useOpenTrove surfaces BelowMinimumDebt (a MusdError) for a sub-minimum draw', async () => {
     const config = makeConfig(rpcUrl, [holder.address])
     const wrapper = makeWrapper(config, newQueryClient())

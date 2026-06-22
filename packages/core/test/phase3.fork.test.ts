@@ -61,7 +61,7 @@ const getNext = (addr: Address) =>
     args: [addr],
   })
 
-describe('Phase 3 — hints/ insertion-hint module', () => {
+describe('Phase 3, hints/ insertion-hint module', () => {
   // Warm the fork's lazy state once: getApproxHint(seed 42, default trials) samples a
   // fixed node set (chosen by the seed, not the NICR), so this single call caches them
   // and every later default computeHints reuses anvil's cache instead of re-fetching.
@@ -124,8 +124,8 @@ describe('Phase 3 — hints/ insertion-hint module', () => {
       // clock-warped fork is in Recovery Mode (which gates opens at ICR ≥ CCR). Coll is
       // large enough that the min-debt clamp can't pull ICR near the MCR/CCR boundary.
       // NICR diversity (what the placement test exercises) is unaffected.
-      const collBtc = BigInt(Math.floor((0.15 + rnd() * 0.25) * 1e18)) // 0.15–0.40 BTC
-      const targetIcr = BigInt(Math.floor((1.6 + rnd() * 2.1) * 1e18)) // 1.6–3.7
+      const collBtc = BigInt(Math.floor((0.15 + rnd() * 0.25) * 1e18)) // 0.15-0.40 BTC
+      const targetIcr = BigInt(Math.floor((1.6 + rnd() * 2.1) * 1e18)) // 1.6-3.7
       const entireDebtTarget = (collBtc * price) / targetIcr
       const fee = await c.getBorrowingFee(entireDebtTarget)
       let draw = entireDebtTarget - GAS - fee
@@ -180,7 +180,7 @@ describe('Phase 3 — hints/ insertion-hint module', () => {
     console.log(
       `[phase3] gas: sdk=${sdk.gasUsed} exact=${exact.gasUsed} (Δ=${sdk.gasUsed - exact.gasUsed})`,
     )
-    // Tolerance: within 10% — good hints make the insert traversal near-optimal.
+    // Tolerance: within 10%, good hints make the insert traversal near-optimal.
     expect(sdk.gasUsed).toBeLessThanOrEqual((exact.gasUsed * 110n) / 100n)
   }, 120_000)
 

@@ -20,9 +20,9 @@ const zeroTrove = (status: TroveStatus): Trove => ({
 })
 
 /**
- * Read a live Trove, contract-authoritative (Law 2). Fetches the price ONCE and
+ * Read a live Trove, contract-authoritative. Fetches the price ONCE and
  * passes that same snapshot to every price-dependent getter; batches the rest into
- * a single same-block `multicall` (Multicall3 is present on Mezo — see
+ * a single same-block `multicall` (Multicall3 is present on Mezo, see
  * {@link MULTICALL3_ADDRESS}). Never recomputes live debt/interest client-side.
  */
 export async function getTrove(
@@ -49,8 +49,8 @@ export async function getTrove(
   })
 
   // getEntireDebtAndColl → (coll, principal, interest, pendingColl, pendingPrincipal, pendingInterest).
-  // Everything here is computed TO NOW (Law 2 / C3): we deliberately do NOT use
-  // getTroveInterestOwed/getTroveDebt — those return the STORED (stale) snapshot, which
+  // Everything here is computed TO NOW (C3): we deliberately do NOT use
+  // getTroveInterestOwed/getTroveDebt, those return the STORED (stale) snapshot, which
   // does not advance until the Trove is touched (verified on the fork: after a 30-day
   // warp, getTroveInterestOwed stayed 0 while getEntireDebtAndColl.interest grew).
   // entireDebt = principal + interest == the debt getCurrentICR uses (proven via computeCR).

@@ -40,7 +40,7 @@ async function readTrove(addr: Address, p: bigint) {
   }
 }
 
-describe('Phase 4 — math/ preview compute (M1 dual-validation gate)', () => {
+describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
   beforeEach(() => connectFork().refreshOracle())
 
   it('previewOpen ↔ actual parity to the wei (grid)', async () => {
@@ -93,7 +93,7 @@ describe('Phase 4 — math/ preview compute (M1 dual-validation gate)', () => {
   it('minNetDebt boundary: meetsMinimum ⟺ open succeeds (O7)', async () => {
     const c = client()
     const p = await price()
-    const coll = 10n ** 17n // 0.1 BTC — ICR comfortably > MCR for both draws
+    const coll = 10n ** 17n // 0.1 BTC, ICR comfortably > MCR for both draws
 
     const under = 1_797n * 10n ** 18n // netDebt = 1797·1.001 ≈ 1798.8 < 1800
     const over = 1_800n * 10n ** 18n // netDebt ≈ 1801.8 ≥ 1800

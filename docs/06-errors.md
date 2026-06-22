@@ -1,7 +1,7 @@
 # Errors
 
 `musd-kit` never throws raw strings. Every protocol revert and every SDK-side guard
-maps to a **named, discriminated error** a developer can branch on (Law 6). This is
+maps to a **named, discriminated error** a developer can branch on. This is
 a direct quality-of-life win over raw contract reverts, which surface as opaque
 messages.
 
@@ -64,7 +64,7 @@ branch by `instanceof` or by `code` in a switch.
 - **Never swallow.** An unmapped revert becomes `ContractCallFailed` with the
   original error preserved in `cause`, it is never turned into a generic message
   that hides what happened.
-- **Test each with a real revert (Law 5).** `06`'s test gate: every mapped protocol
+- **Test each with a real revert.** `06`'s test gate: every mapped protocol
   error is triggered on the fork (e.g. open below `minNetDebt` → assert
   `BelowMinimumDebt`; redeem against a stale hint → assert `StaleHint`) and the
   mapping asserted. Validation errors are unit-tested against their guards.

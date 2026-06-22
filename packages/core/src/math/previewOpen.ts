@@ -14,9 +14,9 @@ export interface PreviewOpenParams {
 
 /** Result of {@link MusdClient.previewOpen}: fee, debt, ICR, liquidation price, and the floor/RM flags. */
 export interface OpenPreview {
-  /** `getBorrowingFee(debt)` — read on-chain (governable). */
+  /** `getBorrowingFee(debt)`, read on-chain (governable). */
   fee: bigint
-  /** `debt + fee` — the value the `minNetDebt` floor is checked against (C6). */
+  /** `debt + fee`, the value the `minNetDebt` floor is checked against (C6). */
   netDebt: bigint
   /** `netDebt + 200` gas reserve. */
   entireDebt: bigint
@@ -24,16 +24,16 @@ export interface OpenPreview {
   icr: bigint
   /** Price at which the opened position would hit MCR. */
   liquidationPrice: bigint
-  /** `netDebt >= minNetDebt()` — the debt floor (C6). */
+  /** `netDebt >= minNetDebt()`, the debt floor (C6). */
   meetsMinimum: boolean
-  /** `checkRecoveryMode(price)` — always surfaced. */
+  /** `checkRecoveryMode(price)`, always surfaced. */
   isRecoveryMode: boolean
   /** In Recovery Mode an open must keep `ICR >= CCR` (150%); `true` in normal mode. */
   meetsRecoveryRequirement: boolean
 }
 
 /**
- * Preview opening a Trove — the "Borrowing Power Calculator" core (non-throwing; Law 2
+ * Preview opening a Trove, the "Borrowing Power Calculator" core (non-throwing,
  * preview side). Implements the verified open math (`docs/01-ground-truth.md` §6):
  * `entireDebt = debt + getBorrowingFee(debt) + 200`; the `minNetDebt` floor is on
  * `debt + fee`. Reads the governable values live (fee, minNetDebt, price, recovery mode).

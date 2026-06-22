@@ -12,7 +12,7 @@ import { useMusdClient } from './useMusdClient'
 
 /**
  * Shared read-hook engine: a TanStack `useQuery` keyed by (chainId + method + args) that
- * refetches on every new block — the standard wagmi pattern (`useBlockNumber({ watch })` →
+ * refetches on every new block, the standard wagmi pattern (`useBlockNumber({ watch })` →
  * invalidate the query). Hooks passing the SAME `queryKey` dedupe to one fetch; per-hook
  * `select` projects the shared result. `UnsupportedChain` (from {@link useMusdClient}) is
  * surfaced via `error` without an extra fetch.
@@ -35,7 +35,7 @@ export function useMusdQuery<TData, TSelected = TData>(opts: {
     ...(opts.select ? { select: opts.select } : {}),
   }) as UseQueryResult<TSelected, Error>
 
-  // Refetch on each new block (invalidate the shared key — dedup keeps it to one fetch). The
+  // Refetch on each new block (invalidate the shared key, dedup keeps it to one fetch). The
   // key array is rebuilt each render, so we read it via a ref and depend only on blockNumber
   // (a changed address spawns a new query that fetches on mount on its own).
   const invalidateRef = useRef<() => void>(() => {})

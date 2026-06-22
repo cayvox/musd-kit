@@ -1,7 +1,7 @@
 # Math & Hints (the correctness-critical core)
 
 This is the heart of the library. The math here is the *only* client-side
-computation in `musd-kit` (Law 2), and it is held to the highest test bar
+computation in `musd-kit`, and it is held to the highest test bar
 (`07-testing`). Everything is verified against `01-ground-truth` §6-§7; this
 document is the implementation-level spec.
 

@@ -16,7 +16,7 @@ const MAX_TRIALS = 2500
  * heuristic `ceil(15·√size)`, clamped to `[15, 2500]`). A flat 15 oversamples a
  * tiny list and undersamples a large one; more trials → a closer approximate hint
  * → fewer on-chain traversal steps at insert (cheaper gas), at the cost of more
- * view work. The contract always places correctly regardless — trials only buy gas.
+ * view work. The contract always places correctly regardless, trials only buy gas.
  */
 export function trialsForSize(size: bigint): number {
   const trials = Math.ceil(TRIALS_K * Math.sqrt(Number(size)))
@@ -63,7 +63,7 @@ export async function computeHints(deps: HintsDeps, params: ComputeHintsParams):
 }
 
 /**
- * Insertion hints `{ upperHint, lowerHint }` for a position with a known NICR — the
+ * Insertion hints `{ upperHint, lowerHint }` for a position with a known NICR, the
  * same ritual as {@link computeHints} but starting from a NICR directly (used for the
  * partial-redemption hint, whose NICR comes from `getRedemptionHints`).
  */

@@ -40,7 +40,7 @@ export interface MusdWriteResult<TParams, TData> {
 
 /**
  * Shared write engine: a TanStack `useMutation` wrapping a core write method. The core
- * already simulates-before-send, computes hints, and throws typed `MusdError`s — the hook
+ * already simulates-before-send, computes hints, and throws typed `MusdError`s, the hook
  * adds only reactive status and (on success) invalidation of the caller's `useTrove` query
  * so the UI refreshes. A missing wallet surfaces `MissingWalletClient` via `error`, never a
  * render-time throw.
@@ -79,7 +79,7 @@ function useMusdWrite<TParams, TData extends { hash?: Hex | null }>(
   }
 }
 
-/** Result of {@link useOpenTrove} — the write shape with a named `openTrove` action. */
+/** Result of {@link useOpenTrove}, the write shape with a named `openTrove` action. */
 export interface UseOpenTroveResult extends MusdWriteResult<OpenTroveParams, WriteResult> {
   /** Open a Trove (alias of `mutate`). */
   openTrove: MusdWriteResult<OpenTroveParams, WriteResult>['mutate']
@@ -158,20 +158,20 @@ export function useAdjustTrove(): UseAdjustTroveResult {
   return { ...w, adjustTrove: w.mutate, adjustTroveAsync: w.mutateAsync }
 }
 
-/** Result of {@link useCloseTrove} — no params. */
+/** Result of {@link useCloseTrove}, no params. */
 export interface UseCloseTroveResult extends MusdWriteResult<void, WriteResult> {
   /** Close the Trove (full payoff). */
   closeTrove: () => void
   /** Promise-returning `closeTrove`. */
   closeTroveAsync: () => Promise<WriteResult>
 }
-/** Close the Trove — full payoff (core `close`). No params. */
+/** Close the Trove, full payoff (core `close`). No params. */
 export function useCloseTrove(): UseCloseTroveResult {
   const w = useMusdWrite<void, WriteResult>((c) => c.close())
   return { ...w, closeTrove: () => w.mutate(), closeTroveAsync: () => w.mutateAsync() }
 }
 
-/** Result of {@link useClaimCollateral} — no params. */
+/** Result of {@link useClaimCollateral}, no params. */
 export interface UseClaimCollateralResult extends MusdWriteResult<void, ClaimResult> {
   /** Claim collateral surplus. */
   claim: () => void
@@ -184,7 +184,7 @@ export function useClaimCollateral(): UseClaimCollateralResult {
   return { ...w, claim: () => w.mutate(), claimAsync: () => w.mutateAsync() }
 }
 
-/** Result of {@link useRefinance} — no params. */
+/** Result of {@link useRefinance}, no params. */
 export interface UseRefinanceResult extends MusdWriteResult<void, WriteResult> {
   /** Refinance to the current global rate. */
   refinance: () => void

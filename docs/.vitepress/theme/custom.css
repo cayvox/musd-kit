@@ -1,6 +1,6 @@
 /* musd-kit docs theme: the landing's red+white identity inside VitePress, so the docs read as
    the landing's sibling. Self-hosted Satoshi + Geist Mono, a warm-white canvas, a single Mezo-red
-   accent, the shared warm code theme. Light only (no dark canvas, per BRAND). Relative font url()
+   accent, the shared warm code theme. Light only (no dark canvas). Relative font url()
    is rewritten by Vite with the correct /docs/ base. */
 
 @font-face {

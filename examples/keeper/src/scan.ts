@@ -22,13 +22,13 @@ export interface ScanResult {
 }
 
 /**
- * Walk `SortedTroves` from the tail (LOWEST ICR — the most likely liquidatable) toward the
+ * Walk `SortedTroves` from the tail (LOWEST ICR, the most likely liquidatable) toward the
  * head via `getPrev`, and liquidate any Trove the contract considers liquidatable. The
  * mode-aware check (`isLiquidatable`) and simulate-before-send both come from
  * `@musd-kit/core`; a Trove that is not actually liquidatable surfaces `NothingToLiquidate`,
  * which we catch and skip (state can drift between the read and the send). Single pass.
  *
- * This module imports `@musd-kit/core` and `viem` ONLY — no React, no wagmi. That it
+ * This module imports `@musd-kit/core` and `viem` ONLY, no React, no wagmi. That it
  * compiles and runs is the structural proof the core is framework-agnostic.
  */
 export async function scanAndLiquidate(
@@ -47,7 +47,7 @@ export async function scanAndLiquidate(
 
   while (cursor !== ZERO && scanned < maxScan && liquidated.length < maxLiquidations) {
     scanned++
-    // Read the next node BEFORE liquidating — liquidating removes `cursor` from the list.
+    // Read the next node BEFORE liquidating, liquidating removes `cursor` from the list.
     const next = (await client.contracts.sortedTroves.read.getPrev([cursor])) as Address
 
     if (await client.isLiquidatable(cursor)) {
@@ -59,7 +59,7 @@ export async function scanAndLiquidate(
           liquidated.push({ borrower: cursor, hash })
           log(`liquidated ${cursor} → ${hash}`)
         } catch (err) {
-          // NothingToLiquidate (Recovery-Mode single-Trove rules / state drift) — skip.
+          // NothingToLiquidate (Recovery-Mode single-Trove rules / state drift), skip.
           log(`skip ${cursor}: ${(err as Error).message}`)
         }
       }

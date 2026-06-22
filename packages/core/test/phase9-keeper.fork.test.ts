@@ -9,7 +9,7 @@ import { testAccount } from './harness/openTroveRaw'
 
 const BTC = 10n ** 18n
 
-describe('Phase 9 — examples/keeper (core-only)', () => {
+describe('Phase 9, examples/keeper (core-only)', () => {
   it('the keeper imports no React/wagmi and depends only on the framework-agnostic core', () => {
     // 1. No forbidden import statements in the keeper source (the boundary the lint enforces).
     const forbidden =
@@ -37,7 +37,7 @@ describe('Phase 9 — examples/keeper (core-only)', () => {
     const fork = connectFork()
     await fork.refreshOracle()
 
-    // A funded keeper account — it holds NO MUSD until it earns liquidation rewards.
+    // A funded keeper account, it holds NO MUSD until it earns liquidation rewards.
     const keeper: PrivateKeyAccount = testAccount(900)
     await fork.fundAccount(keeper.address, 10n * BTC) // BTC for gas only
     const walletClient = createWalletClient({

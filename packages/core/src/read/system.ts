@@ -4,7 +4,7 @@ import { CCR, MCR, MULTICALL3_ADDRESS } from '../constants'
 import type { ReadDeps } from './deps'
 import type { SystemState } from './types'
 
-/** Protocol-wide live state from one price snapshot (Law 2). */
+/** Protocol-wide live state from one price snapshot. */
 export async function getSystemState({ publicClient, addresses }: ReadDeps): Promise<SystemState> {
   const price = await publicClient.readContract({
     address: addresses.priceFeed,
@@ -27,7 +27,7 @@ export async function getSystemState({ publicClient, addresses }: ReadDeps): Pro
  * Mode-aware liquidatability (refines the Phase-2 normal-mode-only version, verified
  * Phase 6): in **normal mode** (TCR ≥ CCR) a Trove is liquidatable iff `ICR < MCR`; in
  * **Recovery Mode** (TCR < CCR) iff `ICR < CCR`. (`liquidate` may still revert if the
- * Stability Pool can't absorb a Recovery-Mode liquidation — simulate-before-send catches
+ * Stability Pool can't absorb a Recovery-Mode liquidation, simulate-before-send catches
  * that; the keeper precheck.)
  */
 export async function isLiquidatable(
@@ -84,7 +84,7 @@ const collSurplusPoolAbi = [
 ] as const
 
 /**
- * BTC surplus claimable by `address` via `claim()` — left in the CollSurplusPool after a
+ * BTC surplus claimable by `address` via `claim()`, left in the CollSurplusPool after a
  * redemption (fully-redeemed Trove) or a Recovery-Mode liquidation of an above-MCR Trove.
  * The pool address is read from `TroveManager.collSurplusPool()` (works on both networks).
  */
@@ -106,4 +106,4 @@ export async function getClaimableCollateral(
 }
 
 // getPeg (MUSD/USD) is intentionally NOT implemented: the PriceFeed is BTC/USD and
-// MUSD exposes no MUSD/USD oracle path. See docs/09-open-questions.md (peg watch item).
+// MUSD exposes no MUSD/USD oracle path.

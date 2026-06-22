@@ -16,7 +16,7 @@ export interface GetBorrowingPowerParams {
  * ICR-feasible maximum is below the debt floor (no valid open).
  *
  * Solved by **monotonic binary search** on the draw, calling the real
- * `getBorrowingFee` each step — assumption-free about the fee shape (ICR is strictly
+ * `getBorrowingFee` each step, assumption-free about the fee shape (ICR is strictly
  * decreasing in draw). The fee read only touches the cached borrowing-rate slot, so
  * the search is cheap.
  */

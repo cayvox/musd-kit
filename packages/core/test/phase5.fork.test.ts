@@ -36,7 +36,7 @@ const fundBtc = (a: Address, v: bigint) => connectFork().fundAccount(a, v)
  * Refresh the oracle, then run an SDK write and wait for its receipt. These lifecycle tests
  * issue many sequential writes; the shared anvil fork stamps blocks with wall-clock time, so
  * across several slow steps a later write's price-dependent simulate can pass while the tx
- * mines against a now-stale oracle and reverts (a silent reverted receipt — the debt simply
+ * mines against a now-stale oracle and reverts (a silent reverted receipt, the debt simply
  * doesn't change). Refreshing immediately before each write keeps the price fresh.
  */
 const sent = async (call: () => Promise<{ hash: Address }>) => {
@@ -98,7 +98,7 @@ async function fundMusd(to: Address, amount: bigint) {
   await wait(await wallet.writeContract(request))
 }
 
-describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
+describe('Phase 5, trove/ lifecycle writes (the SDK sends txs)', () => {
   beforeEach(() => connectFork().refreshOracle())
 
   beforeAll(async () => {
@@ -157,7 +157,7 @@ describe('Phase 5 — trove/ lifecycle writes (the SDK sends txs)', () => {
     expect(t.exists).toBe(true)
     await assertPlaced(L.address)
 
-    // close: lift the price +20% so the system is clearly NOT in Recovery Mode — closeTrove
+    // close: lift the price +20% so the system is clearly NOT in Recovery Mode, closeTrove
     // reads the price, and when the live fork price tips the system into RM the close
     // mine-reverts (a silent reverted receipt). The burned-MUSD and returned-collateral
     // assertions are price-INDEPENDENT, so the lift doesn't affect them. Price restored after.

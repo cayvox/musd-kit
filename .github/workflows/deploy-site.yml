@@ -1,13 +1,13 @@
 # Deploy the combined musdkit.xyz site (Astro landing at / + VitePress docs at /docs).
 #
-# MANUAL ONLY (workflow_dispatch) — this never runs on push. Go-live is Anıl's step,
+# MANUAL ONLY (workflow_dispatch), this never runs on push. Go-live is Anıl's step,
 # AFTER the npm 0.1.0 publish, so the hero `npm install` is real and the live widget
-# reads through the published package (CLAUDE.md "Deploy timing").
+# reads through the published package.
 #
 # Prerequisites (repo secrets) before the first manual run:
-#   CLOUDFLARE_API_TOKEN      — Pages:Edit token
-#   CLOUDFLARE_ACCOUNT_ID     — the Cloudflare account id
-#   PUBLIC_MEZO_TESTNET_RPC_URL (optional) — overrides the default public testnet RPC
+#   CLOUDFLARE_API_TOKEN, Pages:Edit token
+#   CLOUDFLARE_ACCOUNT_ID, the Cloudflare account id
+#   PUBLIC_MEZO_TESTNET_RPC_URL (optional), overrides the default public testnet RPC
 # And: a Cloudflare Pages project named `musdkit` mapped to musdkit.xyz (DNS = Anıl's step).
 name: Deploy site
 

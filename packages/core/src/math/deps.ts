@@ -5,6 +5,6 @@ import type { MusdAddresses } from '../addresses'
 export interface MathDeps {
   publicClient: PublicClient
   addresses: MusdAddresses
-  /** Live, session-cached `minNetDebt()` (Law 3) — from `createMusdClient.getConstants`. */
+  /** Live, session-cached `minNetDebt()`, from `createMusdClient.getConstants`. */
   getMinNetDebt: () => Promise<bigint>
 }

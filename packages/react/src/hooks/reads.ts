@@ -21,7 +21,7 @@ export function useTrove({
   })
 }
 
-/** `icr / MCR` (1.0 at MCR) for `address` — a selector over the shared `useTrove` query. */
+/** `icr / MCR` (1.0 at MCR) for `address`, a selector over the shared `useTrove` query. */
 export function useHealthFactor({
   address,
 }: { address: Address | undefined }): UseQueryResult<number, Error> {
@@ -34,7 +34,7 @@ export function useHealthFactor({
   })
 }
 
-/** BTC/USD price at which `address` hits MCR — a selector over the shared `useTrove` query. */
+/** BTC/USD price at which `address` hits MCR, a selector over the shared `useTrove` query. */
 export function useLiquidationPrice({
   address,
 }: { address: Address | undefined }): UseQueryResult<bigint, Error> {
@@ -48,7 +48,7 @@ export function useLiquidationPrice({
 }
 
 /**
- * Largest valid draw for a given collateral (core `getBorrowingPower`) — a preview; no live
+ * Largest valid draw for a given collateral (core `getBorrowingPower`), a preview; no live
  * position needed. Refetches on new blocks (the binding ratio / price can move).
  */
 export function useBorrowingPower({
@@ -84,5 +84,5 @@ export function useMusdBalance({
 }
 
 // NOTE: `useMusdPeg` is intentionally NOT shipped in v1. The core `getPeg` is unimplemented
-// because Mezo exposes no MUSD/USD oracle (Phase 2 / docs/09) — a hook returning a guessed
+// because Mezo exposes no MUSD/USD oracle (Phase 2 / docs/09), a hook returning a guessed
 // peg would violate the prime directive. It will land if/when a peg oracle exists.

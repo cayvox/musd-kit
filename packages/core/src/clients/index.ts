@@ -30,7 +30,7 @@ export {
  * The typed contract bundle. Reads (`.read.*`) are fully inferred from the official
  * `as const` ABIs. Write methods (`.write.*`) are layered in from Phase 5 once a
  * `walletClient` is threaded through; for now the bundle is typed read-side
- * (`PublicClient`) to keep the declaration output bounded — the full on-chain ABIs
+ * (`PublicClient`) to keep the declaration output bounded, the full on-chain ABIs
  * are large.
  */
 export interface MusdContracts {

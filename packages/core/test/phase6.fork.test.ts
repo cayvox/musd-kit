@@ -99,7 +99,7 @@ async function redeemFresh(
   throw last
 }
 
-describe('Phase 6 — redemption + liquidation keeper surface', () => {
+describe('Phase 6, redemption + liquidation keeper surface', () => {
   let originalPrice: bigint
   beforeAll(async () => {
     const fork = connectFork()
@@ -138,8 +138,8 @@ describe('Phase 6 — redemption + liquidation keeper surface', () => {
       return ev.args
     }
 
-    // The fork's lowest ~12 Troves are underwater (ICR 0.89–1.03 < MCR) and the first
-    // redeemable Trove sits at ICR ≈ 1.1005 — a razor-thin 0.05% margin above MCR. A cold
+    // The fork's lowest ~12 Troves are underwater (ICR 0.89-1.03 < MCR) and the first
+    // redeemable Trove sits at ICR ≈ 1.1005, a razor-thin 0.05% margin above MCR. A cold
     // getRedemptionHints traversal is slow enough that the oracle goes stale before the
     // redeem mines, so redeemCollateral re-reads a lower price and that marginal Trove is
     // under MCR → "Unable to redeem any amount". Fix: redeem at a +50% price so the lowest
@@ -309,7 +309,7 @@ describe('Phase 6 — redemption + liquidation keeper surface', () => {
       expect(icrB).toBeGreaterThanOrEqual(MCR)
       expect(icrB).toBeLessThan(CCR)
       // Mode-aware isLiquidatable: under-MCR and MCR≤ICR<CCR are flagged in RM; ICR≥CCR is not.
-      // (The single-Trove liquidate of a MCR≤ICR<CCR Trove also needs ICR<TCR + SP cover —
+      // (The single-Trove liquidate of a MCR≤ICR<CCR Trove also needs ICR<TCR + SP cover,
       // simulate-before-send is the real gate; isLiquidatable is the optimistic precheck.)
       expect(await musdLQ.isLiquidatable(U.address)).toBe(true)
       expect(await musdLQ.isLiquidatable(B.address)).toBe(true)

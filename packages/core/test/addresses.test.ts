@@ -5,7 +5,7 @@ import { DEPLOYMENTS, UnsupportedChain, getAddresses } from '../src'
  * Ground truth from `docs/01-ground-truth.md` §4, transcribed by hand HERE (and only
  * here) so the cross-check has an independent reference: the SDK's `DEPLOYMENTS` come
  * from `@mezo-org/musd-contracts`; this map comes from the verified doc. They must
- * agree exactly, or one of them is stale — STOP and reconcile (Law 1). No fork needed:
+ * agree exactly, or one of them is stale, STOP and reconcile. No fork needed:
  * this is a pure equality gate.
  */
 const GROUND_TRUTH = {
@@ -29,7 +29,7 @@ const GROUND_TRUTH = {
   },
 } as const
 
-describe('addresses — cross-check vs ground-truth §4 (zero-assumption gate)', () => {
+describe('addresses, cross-check vs ground-truth §4 (zero-assumption gate)', () => {
   it('every @mezo-org/musd-contracts address equals ground-truth §4 (both networks)', () => {
     for (const chainId of [31611, 31612] as const) {
       const pkg = DEPLOYMENTS[chainId]

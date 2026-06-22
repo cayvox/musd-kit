@@ -1,4 +1,4 @@
-/* musd-kit, BRAND v2 design tokens (landing/BRAND.md §1, §5). LIGHT warm-white canvas +
+/* musd-kit, v2 design tokens. LIGHT warm-white canvas +
    single Mezo-red accent + DARK code blocks. Values verbatim from BRAND v2, with three
    AA-required adjustments (BRAND mandates "verify WCAG AA for every text/bg pair"):
      • --text-dim darkened (#8A8077 → #756B61) to clear 4.5:1 on --canvas AND --surface-2,
@@ -51,7 +51,7 @@
   --fs-small: 0.9375rem;
   --fs-mono-lbl: 0.8125rem;
 
-  /* Spacing, radius, layout (BRAND §5) */
+  /* Spacing, radius, layout */
   --maxw: 1140px;
   --maxw-prose: 68ch;
   --gutter: clamp(1.25rem, 5vw, 4rem);
@@ -59,12 +59,12 @@
   --radius-sm: 9px;
   --space-section: clamp(5rem, 10vw, 9rem);
 
-  /* Elevation, soft warm shadows (BRAND §4 cards) */
+  /* Elevation, soft warm shadows (cards) */
   --shadow-sm: 0 1px 2px rgba(26, 21, 19, 0.04);
   --shadow: 0 1px 2px rgba(26, 21, 19, 0.04), 0 8px 24px rgba(26, 21, 19, 0.05);
   --shadow-lg: 0 2px 4px rgba(26, 21, 19, 0.05), 0 18px 40px rgba(26, 21, 19, 0.08);
 
-  /* Motion (BRAND §8) */
+  /* Motion */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 120ms;

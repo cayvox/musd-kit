@@ -4,7 +4,7 @@ import { connectFork } from './harness'
 
 // The pure address cross-check vs ground-truth §4 lives in `addresses.test.ts`.
 
-describe('Phase 1 — createMusdClient on the fork (31611)', () => {
+describe('Phase 1, createMusdClient on the fork (31611)', () => {
   beforeEach(() => connectFork().refreshOracle())
 
   it('resolves every dev-facing address', () => {
@@ -22,7 +22,7 @@ describe('Phase 1 — createMusdClient on the fork (31611)', () => {
 
     console.log(`[phase1] minNetDebt() live = ${minNetDebt} (${minNetDebt / 10n ** 18n} MUSD)`)
     expect(minNetDebt).toBe(direct)
-    // Governable (Law 3) — assert a sane band around the current 1,800, not a hardcode.
+    // Governable, assert a sane band around the current 1,800, not a hardcode.
     expect(minNetDebt).toBeGreaterThanOrEqual(MIN_NET_DEBT_MIN)
     expect(minNetDebt).toBeGreaterThanOrEqual(1_000n * 10n ** 18n)
     expect(minNetDebt).toBeLessThanOrEqual(10_000n * 10n ** 18n)
@@ -47,7 +47,7 @@ describe('Phase 1 — createMusdClient on the fork (31611)', () => {
     expect(minNetDebt).toBeGreaterThan(0n)
     expect(Number.isInteger(rate)).toBe(true)
     expect(rate).toBeGreaterThanOrEqual(0)
-    expect(rate).toBeLessThanOrEqual(10_000) // ≤ 100% in bps — sane band
+    expect(rate).toBeLessThanOrEqual(10_000) // ≤ 100% in bps, sane band
     expect(decimals).toBe(18)
   })
 
@@ -61,7 +61,7 @@ describe('Phase 1 — createMusdClient on the fork (31611)', () => {
     expect(fee).toBeLessThan(draw) // fee is a small fraction of the draw
   })
 
-  it('verifyDeployment passes — bundled MCR/CCR match the chain (defense-in-depth)', async () => {
+  it('verifyDeployment passes, bundled MCR/CCR match the chain (defense-in-depth)', async () => {
     const { publicClient } = connectFork()
     const musd = createMusdClient({ chainId: 31611, publicClient })
     await expect(musd.verifyDeployment()).resolves.toBeUndefined()

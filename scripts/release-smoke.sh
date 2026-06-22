@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Release dry-run + clean-install smoke (THE Phase-10 gate). Proves, with zero assumptions,
 # that a real consumer can install the published-shaped tarballs and import @musd-kit/core
-# and @musd-kit/react in BOTH module systems — and that the tarballs ship only the intended
+# and @musd-kit/react in BOTH module systems, and that the tarballs ship only the intended
 # files. Does NOT publish. CI runs this; run it locally with `bash scripts/release-smoke.sh`.
 set -euo pipefail
 

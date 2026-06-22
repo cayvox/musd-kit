@@ -10,7 +10,7 @@ export interface WriteDeps {
   addresses: MusdAddresses
 }
 
-/** Result of a write — wagmi-idiomatic; the caller waits for the receipt. */
+/** Result of a write, wagmi-idiomatic; the caller waits for the receipt. */
 export interface WriteResult {
   hash: Hex
 }
@@ -37,10 +37,10 @@ export interface SimulateSendOptions {
 }
 
 /**
- * Simulate first (surfaces reverts — never a silent reverted receipt), then send.
+ * Simulate first (surfaces reverts, never a silent reverted receipt), then send.
  * Returns the tx hash without waiting (the caller waits for the receipt). Any simulation
  * revert is decoded by {@link mapRevert} into a typed `MusdError` (unmapped →
- * `ContractCallFailed`, original error preserved — never swallowed).
+ * `ContractCallFailed`, original error preserved, never swallowed).
  */
 export async function simulateAndSend(
   deps: WriteDeps,

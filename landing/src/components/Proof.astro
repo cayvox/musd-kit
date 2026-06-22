@@ -1,5 +1,5 @@
 ---
-// CONTENT §5, "Correctness is the product" (our second differentiator over PartyLayer).
+// "Correctness is the product", the second differentiator.
 // Real, verified facts as evidence: headline metric tiles + a "what you don't have to build"
 // panel + a verified checklist. Every number is truthful (no inflation). No em/en dashes.
 const tiles = [
@@ -11,7 +11,7 @@ const tiles = [
 
 // The fiddly hard parts the SDK handles, each verified in the shipped source: computeHints on
 // every write, draw + fee + 200 gas reserve in the debt math, simulateContract before send, the
-// discriminated MusdError taxonomy, and governable values read on-chain (Law 3).
+// discriminated MusdError taxonomy, and governable values read on-chain.
 const handled = [
   'Insertion hints for the sorted Trove list, recomputed on every write',
   'The borrowing fee plus the 200 MUSD gas reserve, in the debt math',

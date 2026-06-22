@@ -1,6 +1,6 @@
 // App-level convenience hooks built on the core client exposed by @musd-kit/react's
 // `useMusdClient`. They wrap two core READ methods that don't ship as dedicated hooks
-// (`previewOpen`, `getSystemState`) — demonstrating that the framework-agnostic core is
+// (`previewOpen`, `getSystemState`), demonstrating that the framework-agnostic core is
 // directly reachable from the React app, not just the prebuilt hooks. No library code.
 import type { OpenPreview, SystemState } from '@musd-kit/core'
 import { useMusdClient } from '@musd-kit/react'

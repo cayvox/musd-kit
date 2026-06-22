@@ -1,6 +1,6 @@
 @import './tokens.css';
 
-/* ---- Self-hosted fonts (BRAND §2). Satoshi variable + Geist Mono, font-display: swap ---- */
+/* ---- Self-hosted fonts. Satoshi variable + Geist Mono, font-display: swap ---- */
 @font-face {
   font-family: 'Satoshi';
   src: url('/fonts/satoshi-variable.woff2') format('woff2-variations');
@@ -144,7 +144,7 @@ p {
 }
 
 /* ============================================================
-   COMPONENT KIT (BRAND §4)
+   COMPONENT KIT
    ============================================================ */
 
 /* ---- Buttons ---- */
@@ -228,7 +228,7 @@ p {
   padding: clamp(1.25rem, 3vw, 1.75rem);
 }
 
-/* ---- Copy-command pill (DARK --code-bg, BRAND §4) ---- */
+/* ---- Copy-command pill (DARK --code-bg) ---- */
 .cmd {
   display: inline-flex;
   align-items: center;
@@ -278,7 +278,7 @@ p {
   color: var(--verified);
 }
 
-/* ---- The dark code-block object (BRAND §7), a dark island on the light page ---- */
+/* ---- The dark code-block object, a dark island on the light page ---- */
 .codeblock {
   background: var(--code-bg);
   border: 1px solid var(--code-hairline);

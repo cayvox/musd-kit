@@ -2,7 +2,7 @@
 // account[0] so writes actually sign + send on the shared fork. The mock connector forwards
 // JSON-RPC (incl. eth_sendTransaction, which omits `from`) to `chain.rpcUrls.default.http[0]`,
 // so we point that at anvil; anvil signs with its unlocked account[0]. The contracts are
-// real (Law 5); only the wallet plumbing is mocked (docs/07 permits this).
+// real; only the wallet plumbing is mocked (docs/07 permits this).
 import { MULTICALL3_ADDRESS } from '@musd-kit/core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type ReactNode, createElement } from 'react'
@@ -41,7 +41,7 @@ export function newQueryClient() {
   })
 }
 
-/** RTL wrapper providing WagmiProvider + QueryClientProvider (no JSX — keep tooling minimal). */
+/** RTL wrapper providing WagmiProvider + QueryClientProvider (no JSX, keep tooling minimal). */
 export function makeWrapper(config: ReturnType<typeof makeConfig>, queryClient: QueryClient) {
   return ({ children }: { children: ReactNode }) =>
     createElement(

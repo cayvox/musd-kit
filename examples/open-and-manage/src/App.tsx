@@ -109,7 +109,7 @@ function OpenCard() {
       <Row label="Total debt (incl. 200 reserve)">{fmt(preview?.entireDebt)} MUSD</Row>
       <Row label="Resulting ICR">{pct(preview?.icr)}</Row>
       <Row label="Liquidation price">${fmt(preview?.liquidationPrice, 0)}</Row>
-      <Row label="Meets minimum debt">{preview ? (preview.meetsMinimum ? 'yes' : 'no') : '—'}</Row>
+      <Row label="Meets minimum debt">{preview ? (preview.meetsMinimum ? 'yes' : 'no') : ', '}</Row>
 
       <button
         type="button"
@@ -145,7 +145,7 @@ function PositionCard({ address }: { address: Address }) {
       <Row label="ICR">{pct(trove.icr)}</Row>
       <Row label="Health factor">
         <strong style={{ color: (health ?? 0) < 1.1 ? '#b00020' : '#0a0' }}>
-          {health?.toFixed(3) ?? '—'}
+          {health?.toFixed(3) ?? ', '}
         </strong>
       </Row>
       <Row label="Liquidation price">${fmt(liqPrice, 0)}</Row>
@@ -173,7 +173,7 @@ export function App() {
       <header style={{ marginBottom: 12 }}>
         <h1 style={{ fontSize: 20, margin: 0 }}>musd-kit · open & manage</h1>
         <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0' }}>
-          Passport connects the wallet; musd-kit operates MUSD. (No musd-kit provider — the hooks
+          Passport connects the wallet; musd-kit operates MUSD. (No musd-kit provider, the hooks
           consume Passport's wagmi context.)
         </p>
       </header>
@@ -189,7 +189,7 @@ export function App() {
       )}
 
       <footer style={{ fontSize: 11, color: '#aaa', marginTop: 24, textAlign: 'center' }}>
-        Community tooling for Mezo testnet / evaluation — not audited, not financial advice.
+        Community tooling for Mezo testnet / evaluation, not audited, not financial advice.
       </footer>
     </main>
   )

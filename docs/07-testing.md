@@ -46,7 +46,7 @@ Addresses come from `01-ground-truth` §4; ABIs are the bundled ones.
 | **Example E2E** | both examples run end-to-end | against the fork/testnet |
 | **Post-publish** | `npm install` of the published packages works in a fresh project | CI, after publish |
 
-**No mocks for protocol truth (Law 5).** Mocks are permitted only for wallet-client
+**No mocks for protocol truth.** Mocks are permitted only for wallet-client
 plumbing in React tests. Anything asserting protocol behavior runs on the fork.
 
 ---

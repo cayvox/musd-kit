@@ -1,8 +1,8 @@
 import { BPS_DIVISOR, MCR, MUSD_GAS_COMPENSATION, SECONDS_PER_YEAR } from '../constants'
 
-// Preview-only client-side math (Law 2): for positions that do NOT exist yet. For a
+// Preview-only client-side math: for positions that do NOT exist yet. For a
 // live position, read the contract getters via `read/getTrove`. These are pure and
-// NON-throwing — they return values/flags, never protocol errors. Every formula is
+// NON-throwing, they return values/flags, never protocol errors. Every formula is
 // dual-validated against forked-Mezo behavior and the contract's pure helpers.
 
 /** Inputs to {@link computeICR}: collateral, entire debt, and a BTC/USD price. */
@@ -53,7 +53,7 @@ export function getHealthFactor({ icr }: { icr: bigint }): number {
 export interface ComputeEntireDebtParams {
   /** Requested draw (MUSD the borrower receives). */
   draw: bigint
-  /** Borrowing fee for the draw (caller reads `getBorrowingFee`; governable — Law 3). */
+  /** Borrowing fee for the draw (caller reads `getBorrowingFee`; governable). */
   fee: bigint
   /** The Trove's interest rate, in basis points. */
   rate: number
@@ -63,7 +63,7 @@ export interface ComputeEntireDebtParams {
 
 /**
  * Project a position's entire debt with simple (non-compounding), time-based interest
- * (C3). The interest base is the full stored principal `draw + fee + 200` gas reserve —
+ * (C3). The interest base is the full stored principal `draw + fee + 200` gas reserve,
  * verified on the fork that interest accrues on the composite, not the net draw.
  *
  * `interest = principal · rateBips · elapsed / (10_000 · SECONDS_PER_YEAR)`;
@@ -71,7 +71,7 @@ export interface ComputeEntireDebtParams {
  *
  * The rate is caller-supplied (the global rate for a new position, or
  * `getTroveInterestRate` for an existing one). The at-open rate-prediction rule
- * (110%-CR max capacity, C4) is out of scope for v1 — see `docs/09-open-questions.md`.
+ * (110%-CR max capacity, C4) is out of scope for v1.
  */
 export function computeEntireDebt({
   draw,

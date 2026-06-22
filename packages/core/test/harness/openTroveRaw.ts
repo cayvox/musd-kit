@@ -1,4 +1,4 @@
-// RAW TEST HELPER — NOT the SDK API. Exists only to create real Trove positions on
+// RAW TEST HELPER, NOT the SDK API. Exists only to create real Trove positions on
 // the fork so the Phase-2 read tests have something to read. The SDK's `openTrove`
 // (with the hint ritual absorbed) is Phase 5; this also de-risks Phases 3/5 by
 // exercising the raw hint dance against the real contracts.
@@ -39,7 +39,7 @@ export interface OpenTroveRawResult {
 /**
  * Fund `account`, run the raw insertion-hint ritual (getApproxHint →
  * findInsertPosition), and call `BorrowerOperations.openTrove`. Real contracts on
- * the fork (Law 5) — no mocks.
+ * the fork, no mocks.
  */
 export async function openTroveRaw(
   fork: ForkConnection,
@@ -73,7 +73,7 @@ export async function openTroveRaw(
       },
     ))
 
-  // Refresh the oracle RIGHT BEFORE the tx — the hint ritual above can take many
+  // Refresh the oracle RIGHT BEFORE the tx, the hint ritual above can take many
   // seconds on a fork (lazy state loading), and openTrove reverts on a stale price.
   await fork.refreshOracle()
 
@@ -97,7 +97,7 @@ export async function openTroveRaw(
   // is taken one block before the tx mines; one block of accrued interest shifts the
   // SortedTroves insert traversal, so on a loaded CI runner the real insert can need more
   // gas than estimated and the tx reverts out-of-gas (re-simulating with a high cap then
-  // "passes" — the tell-tale of OOG, not a logic revert). A fixed 6M cap removes the
+  // "passes", the tell-tale of OOG, not a logic revert). A fixed 6M cap removes the
   // estimate-vs-execute mismatch; openTrove inserts cost well under this. (Flake fix: phase3.)
   const txHash = await wallet.writeContract({
     account,

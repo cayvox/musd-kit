@@ -19,7 +19,7 @@ export type SupportedChainId = keyof typeof DEPLOYMENTS
 /** The chain IDs MUSD is deployed on (Mezo Testnet `31611`, Mezo Mainnet `31612`). */
 export const SUPPORTED_CHAIN_IDS = [31611, 31612] as const satisfies readonly SupportedChainId[]
 
-/** Type guard — is `chainId` one of MUSD's supported chains (31611/31612)? */
+/** Type guard, is `chainId` one of MUSD's supported chains (31611/31612)? */
 export function isSupportedChainId(chainId: number): chainId is SupportedChainId {
   return chainId === 31611 || chainId === 31612
 }
@@ -30,7 +30,7 @@ export function isSupportedChainId(chainId: number): chainId is SupportedChainId
  * `docs/01-ground-truth.md` §4 in tests.
  *
  * @param override per-contract overrides; also the escape hatch for a chainId with
- *   no bundled deployment — supplying every contract avoids `UnsupportedChain`.
+ *   no bundled deployment, supplying every contract avoids `UnsupportedChain`.
  * @throws {UnsupportedChain} for an unsupported chainId when overrides do not cover it.
  */
 export function getAddresses(chainId: number, override?: Partial<MusdAddresses>): MusdAddresses {

@@ -1,6 +1,6 @@
 // Real connection layer: Passport supplies the wagmi config + RainbowKit connect UI; the
 // @musd-kit/react hooks work inside this context with NO provider of their own (the whole
-// point — decision O4). chain = Mezo testnet (31611).
+// point, decision O4). chain = Mezo testnet (31611).
 import { mezoTestnet } from '@mezo-org/chains'
 import { getConfig } from '@mezo-org/passport'
 import { ConnectButton, RainbowKitProvider } from '@rainbow-me/rainbowkit'

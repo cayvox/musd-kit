@@ -1,8 +1,8 @@
-// errors/ — the full discriminated taxonomy (docs/06-errors.md), consolidating the
+// errors/, the full discriminated taxonomy (docs/06-errors.md), consolidating the
 // minimal subsets shipped in Phases 1/5/6. `musd-kit` never throws raw strings: every
 // protocol revert and every SDK-side guard is a named `MusdError` with a stable `code`,
 // the original viem/contract error preserved in `cause`, and structured `context`
-// (Law 6). Branch by `instanceof` or by `code`.
+//. Branch by `instanceof` or by `code`.
 //
 // The revert→error mapping (the ONE decoder) lives in `./mapRevert`; the corpus of real
 // revert strings it matches is `docs/01-ground-truth.md` §11.
@@ -14,7 +14,7 @@ export { mapRevert } from './mapRevert'
 
 /**
  * Base for every SDK error: a discriminated `code`, the original cause preserved, and
- * optional structured context. Branch by `instanceof` or by `code` (Law 6).
+ * optional structured context. Branch by `instanceof` or by `code`.
  */
 export class MusdError extends Error {
   readonly code: MusdErrorCode
@@ -33,7 +33,7 @@ export class MusdError extends Error {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Validation / preview-time (thrown before sending — fail fast)
+// 1. Validation / preview-time (thrown before sending, fail fast)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** `draw + borrowingFee` is below the (governable) `minNetDebt` floor. */
@@ -48,7 +48,7 @@ export class BelowMinimumDebt extends MusdError {
   }
 }
 
-/** The SDK-side fee guard (C5 — there is no on-chain `maxFeePercentage`). */
+/** The SDK-side fee guard (C5, there is no on-chain `maxFeePercentage`). */
 export class MaxFeeExceeded extends MusdError {
   constructor(maxFeePercentage: bigint, actualFee: bigint, actualFeePercentage: bigint) {
     super(
@@ -62,14 +62,14 @@ export class MaxFeeExceeded extends MusdError {
 
 /**
  * The resulting ICR would fall below MCR. Preview-time sibling of {@link ICRBelowMCR}:
- * the on-chain write path surfaces `ICRBelowMCR` (contract-authoritative, Law 2); this is
+ * the on-chain write path surfaces `ICRBelowMCR` (contract-authoritative); this is
  * for the math/React preview layer, which knows the ICR before sending.
  */
 export class InsufficientCollateral extends MusdError {
   constructor(icr: bigint, mcr: bigint) {
     super(
       Codes.INSUFFICIENT_COLLATERAL,
-      `Resulting ICR (${icr}) would be below MCR (${mcr}) — add collateral or reduce debt.`,
+      `Resulting ICR (${icr}) would be below MCR (${mcr}), add collateral or reduce debt.`,
       { context: { icr, mcr } },
     )
     this.name = 'InsufficientCollateral'
@@ -117,7 +117,7 @@ export class InvalidAdjustment extends MusdError {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Protocol reverts (mapped from on-chain revert data — ground-truth §11)
+// 2. Protocol reverts (mapped from on-chain revert data, ground-truth §11)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The dangerous one: an operation would leave ICR below MCR (110%). */
@@ -156,8 +156,8 @@ export class RepayExceedsDebt extends MusdError {
 }
 
 /**
- * A redemption (or insertion) hint went stale — recompute and retry. NOTE (ground-truth
- * §11): not distinctly reachable from the SDK surface — a stale redemption partial hint
+ * A redemption (or insertion) hint went stale, recompute and retry. NOTE (ground-truth
+ * §11): not distinctly reachable from the SDK surface, a stale redemption partial hint
  * surfaces as {@link RedemptionFailed} ("Unable to redeem any amount"); insertion hints
  * never revert. Retained as stable public API (shipped Phase 6).
  */
@@ -255,7 +255,7 @@ export class MismatchedDeployment extends MusdError {
   constructor(constantName: string, bundled: bigint, onchain: bigint) {
     super(
       Codes.MISMATCHED_DEPLOYMENT,
-      `On-chain ${constantName} (${onchain}) does not match the bundled ${constantName} (${bundled}). The MUSD deployment may have changed — do not trust the bundled fixed constants for this chain.`,
+      `On-chain ${constantName} (${onchain}) does not match the bundled ${constantName} (${bundled}). The MUSD deployment may have changed, do not trust the bundled fixed constants for this chain.`,
       { context: { constantName, bundled, onchain } },
     )
     this.name = 'MismatchedDeployment'
@@ -265,7 +265,7 @@ export class MismatchedDeployment extends MusdError {
   }
 }
 
-/** An unexpected / unmapped revert — wraps the raw cause, never swallowed. */
+/** An unexpected / unmapped revert, wraps the raw cause, never swallowed. */
 export class ContractCallFailed extends MusdError {
   constructor(message: string, cause: unknown) {
     super(Codes.CONTRACT_CALL_FAILED, message, { cause })
@@ -291,6 +291,6 @@ export function assertPositiveAmount(field: string, value: bigint): void {
   if (value <= 0n) throw new InvalidAmount(field, value)
 }
 
-// NOTE: `RedemptionTruncated` is intentionally NOT a thrown error — `redeem` surfaces
+// NOTE: `RedemptionTruncated` is intentionally NOT a thrown error, `redeem` surfaces
 // `truncatedAmount` as DATA on its result (Phase 6 decision). `ApprovalRequired` is not
-// shipped — Phase 5 verified repay/close need no approval, so it would be unreachable.
+// shipped, Phase 5 verified repay/close need no approval, so it would be unreachable.

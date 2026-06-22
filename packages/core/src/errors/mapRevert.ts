@@ -2,7 +2,7 @@
 // they never decode inline. It parses the viem error, extracts the require-string reason
 // (or a Panic), matches it against the verified corpus (ground-truth §11), and returns the
 // precise typed error. Anything unrecognized becomes `ContractCallFailed` with the original
-// viem error preserved in `cause` — a revert is NEVER swallowed.
+// viem error preserved in `cause`, a revert is NEVER swallowed.
 //
 // Numeric-context errors (BelowMinimumDebt, InsufficientMusdBalance, MaxFeeExceeded) are
 // owned by the pre-send GUARDS, which run before simulate and carry the real numbers; the
@@ -26,7 +26,7 @@ import {
 
 /** Context the caller supplies so the decoder can build a richer typed error. */
 export interface RevertContext {
-  /** Logical operation (e.g. 'repay', 'liquidate', 'redeem') — disambiguates the Panic case. */
+  /** Logical operation (e.g. 'repay', 'liquidate', 'redeem'), disambiguates the Panic case. */
   operation?: string
   /** The address the operation targeted (for Trove-existence reverts). */
   address?: string
@@ -63,7 +63,7 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
   const has = (re: RegExp) => re.test(text)
   const at = context?.address ?? 'unknown'
 
-  // — Recovery Mode before the plain ICR check (its string also concerns ICR/CCR) —
+  //, Recovery Mode before the plain ICR check (its string also concerns ICR/CCR),
   if (has(/ICR >= CCR/i) || has(/recovery mode/i)) return new RecoveryModeRestriction(error)
   if (has(/ICR < MCR is not permitted/i)) return new ICRBelowMCR(error)
 
@@ -81,14 +81,14 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
     )
   }
 
-  // — Panic(0x11) underflow: on the SDK surface this is only repay-more-than-owed —
+  //, Panic(0x11) underflow: on the SDK surface this is only repay-more-than-owed,
   if (errorName === 'Panic' || has(/underflow or overflow/i)) {
     if (context?.operation === 'repay' || context?.operation === 'adjustTrove') {
       return new RepayExceedsDebt(error)
     }
   }
 
-  // — Unrecognized: never swallow —
+  //, Unrecognized: never swallow,
   const fn = context?.operation ?? 'contract call'
   return new ContractCallFailed(`${fn} reverted: ${reason ?? revertReason(error)}`, error)
 }

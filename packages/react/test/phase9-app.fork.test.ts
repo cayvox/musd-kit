@@ -7,14 +7,14 @@ import { App } from '../../../examples/open-and-manage/src/App'
 import { connectFork } from '../../core/test/harness'
 import { makeConfig, makeWrapper, newQueryClient } from './wagmi'
 
-// anvil's unlocked default account[0] — the address the mock connector signs as (Phase 8).
+// anvil's unlocked default account[0], the address the mock connector signs as (Phase 8).
 const ANVIL_0 = privateKeyToAccount(
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
 )
 
 afterEach(() => cleanup())
 
-describe('Phase 9 — examples/open-and-manage (smoke render)', () => {
+describe('Phase 9, examples/open-and-manage (smoke render)', () => {
   it('mounts inside the (fork-backed) wagmi provider stack and a useTrove-driven render resolves', async () => {
     const rpcUrl = connectFork().rpcUrl
     const config = makeConfig(rpcUrl, [ANVIL_0.address])
@@ -23,7 +23,7 @@ describe('Phase 9 — examples/open-and-manage (smoke render)', () => {
 
     render(createElement(App), { wrapper })
 
-    // Mounted without crashing — the header renders.
+    // Mounted without crashing, the header renders.
     expect(screen.getByText(/open & manage/i)).toBeTruthy()
 
     // Connected → the dashboard cards render; the position card is driven by `useTrove`,

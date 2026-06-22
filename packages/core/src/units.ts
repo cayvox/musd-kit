@@ -1,7 +1,7 @@
 import { formatUnits, parseUnits } from 'viem'
 
 // Unit helpers (docs/08 §5). BTC and MUSD are both 18-decimal on Mezo, so these are thin,
-// well-named aliases over viem's parseUnits/formatUnits — they exist for readable call sites
+// well-named aliases over viem's parseUnits/formatUnits, they exist for readable call sites
 // (`parseBtc('0.05')` reads better than `parseEther('0.05')` next to an MUSD amount).
 
 /** Parse a BTC amount string into wei (×1e18). e.g. `parseBtc('0.05')`. */

@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitepress'
-// The same warm Shiki theme the landing uses (BRAND §7), so code reads as one brand.
+// The same warm Shiki theme the landing uses, so code reads as one brand.
 import { codeTheme } from '../../landing/src/lib/code-theme.mjs'
 
 // VitePress wrapper over the existing docs/*.md + the generated TypeDoc API ref (served from
@@ -18,14 +18,6 @@ export default defineConfig({
   lastUpdated: true,
   // Cross-references to repo-relative paths are intentional; the build link-check covers routes.
   ignoreDeadLinks: true,
-  // Internal-only artifacts are not published as docs pages.
-  srcExclude: [
-    'BUILD-LOG.md',
-    'COMPETITIVE-LANDSCAPE.md',
-    'musd-kit-Roadmap.md',
-    'musd-kit-handbook-v0.2.md',
-    '09-open-questions.md',
-  ],
   head: [
     // head hrefs are not base-rewritten by VitePress, so prefix the base explicitly.
     [

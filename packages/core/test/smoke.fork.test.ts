@@ -3,7 +3,7 @@ import { TESTNET, connectFork } from './harness'
 
 // Phase 1 will move these addresses + full ABIs into addresses/ and clients/.
 
-/** Minimal inline ABIs — only the two functions the Phase-0 gate reads. */
+/** Minimal inline ABIs, only the two functions the Phase-0 gate reads. */
 const troveManagerAbi = [
   {
     type: 'function',
@@ -27,8 +27,8 @@ const priceFeedAbi = [
 /**
  * THE PHASE-0 GATE.
  *
- * Reads live MUSD contract state from a fork of the REAL contracts (no mocks,
- * Law 5): `MCR` is a pure EVM constant; `fetchPrice` is served by the harness's
+ * Reads live MUSD contract state from a fork of the REAL contracts (no mocks):
+ * `MCR` is a pure EVM constant; `fetchPrice` is served by the harness's
  * oracle shim, which is seeded with Mezo's real live BTC/USD round data (the MUSD
  * contracts themselves are never mocked). If this passes twice identically, the
  * harness is real.

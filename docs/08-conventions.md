@@ -37,7 +37,7 @@ correctness.
   rounding (the dual-validation in `05` §5 catches divergence).
 - **Constants:** the fixed ones (`MCR`, `CCR`, `GAS_COMPENSATION = 200e18`,
   `PERCENT_DIVISOR`, `DECIMAL_PRECISION`) live in one `constants.ts`. Governable ones
-  are **never** constants, they are read (Law 3).
+  are **never** constants, they are read.
 
 ---
 
@@ -52,7 +52,7 @@ correctness.
   do not introduce ethers.
 - **ABIs** are `as const` for full type inference. Bundle from the repo
   interfaces/artifacts; do not hand-transcribe signatures (transcription is an
-  assumption, Law 1).
+  assumption).
 
 ---
 

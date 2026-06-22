@@ -4,7 +4,7 @@
  * Consumers branch on `error.code` in a switch, or on `error instanceof <Subclass>`.
  */
 export const MusdErrorCode = {
-  // — Validation / preview-time (thrown before sending — fail fast) —
+  //, Validation / preview-time (thrown before sending, fail fast),
   BELOW_MINIMUM_DEBT: 'BELOW_MINIMUM_DEBT',
   MAX_FEE_EXCEEDED: 'MAX_FEE_EXCEEDED',
   INSUFFICIENT_COLLATERAL: 'INSUFFICIENT_COLLATERAL',
@@ -13,7 +13,7 @@ export const MusdErrorCode = {
   INVALID_AMOUNT: 'INVALID_AMOUNT',
   INVALID_ADJUSTMENT: 'INVALID_ADJUSTMENT',
 
-  // — Protocol reverts (mapped from on-chain revert data — see ground-truth §11) —
+  //, Protocol reverts (mapped from on-chain revert data, see ground-truth §11),
   ICR_BELOW_MCR: 'ICR_BELOW_MCR',
   RECOVERY_MODE_RESTRICTION: 'RECOVERY_MODE_RESTRICTION',
   REPAY_EXCEEDS_DEBT: 'REPAY_EXCEEDS_DEBT',
@@ -23,7 +23,7 @@ export const MusdErrorCode = {
   REDEMPTION_FAILED: 'REDEMPTION_FAILED',
   UNAUTHORIZED: 'UNAUTHORIZED',
 
-  // — Infrastructure —
+  //, Infrastructure,
   UNSUPPORTED_CHAIN: 'UNSUPPORTED_CHAIN',
   MISMATCHED_DEPLOYMENT: 'MISMATCHED_DEPLOYMENT',
   MISSING_WALLET_CLIENT: 'MISSING_WALLET_CLIENT',

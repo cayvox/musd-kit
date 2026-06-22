@@ -1,4 +1,4 @@
-// Mezo Testnet ("matsnet"), chainId 31611, BTC (18 decimals) gas — the canonical
+// Mezo Testnet ("matsnet"), chainId 31611, BTC (18 decimals) gas, the canonical
 // viem `Chain` from `@mezo-org/chains` (decision O10). The harness always points
 // its clients at the local anvil fork via an explicit transport, so the chain's
 // own rpcUrls are unused here.
@@ -23,8 +23,8 @@ export const TESTNET = {
  * module; the stored EVM bytecode is only a fallback that self-recurses. An anvil
  * EVM fork copies that bytecode but has no native handler, so `fetchPrice()`
  * reverts. The harness replaces this address with {@link ORACLE_SHIM_RUNTIME} and
- * seeds it with the REAL live round data — shimming only the missing external
- * oracle, never any MUSD contract (Law 5). See `docs/01-ground-truth.md` §3 and
+ * seeds it with the REAL live round data, shimming only the missing external
+ * oracle, never any MUSD contract. See `docs/01-ground-truth.md` §3 and
  * `test/harness/README.md`.
  */
 export const ORACLE_PRECOMPILE = '0x7b7c000000000000000000000000000000000015' as const
@@ -32,7 +32,7 @@ export const ORACLE_PRECOMPILE = '0x7b7c000000000000000000000000000000000015' as
 /**
  * Runtime bytecode of `OracleShim.sol` (committed alongside this file), compiled
  * with `solc 0.8.35 --optimize --optimize-runs 200 --bin-runtime`. It exposes the
- * exact interface PriceFeed reads — `decimals()` and `latestRoundData()` — reading
+ * exact interface PriceFeed reads, `decimals()` and `latestRoundData()`, reading
  * each field from a fixed storage-slot layout so the harness can seed and drive it
  * deterministically via `setStorageAt`. To regenerate, see `test/harness/README.md`.
  */

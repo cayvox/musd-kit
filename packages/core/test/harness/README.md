@@ -1,7 +1,7 @@
 # Forked-Mezo test harness
 
 The correctness gate for `musd-kit`. Nothing is trusted until CI can read and
-transact against a fork of the **real** MUSD contracts (Law 5: no mocks for
+transact against a fork of the **real** MUSD contracts (no mocks for
 protocol truth). This directory boots that fork and exposes typed viem clients.
 
 ## RPC URL (never hardcoded)
@@ -24,17 +24,17 @@ pnpm test
 
 | File | Role |
 |---|---|
-| `anvil.ts` | `startFork()` — spawn anvil on a free port, wait until ready, install the oracle shim, return `publicClient` + `testClient` + helpers (`mineBlocks`, `warpTime`, `fundAccount`, `setPrice`, `stopFork`). |
+| `anvil.ts` | `startFork()`, spawn anvil on a free port, wait until ready, install the oracle shim, return `publicClient` + `testClient` + helpers (`mineBlocks`, `warpTime`, `fundAccount`, `setPrice`, `stopFork`). |
 | `oracle.ts` | Install + seed the BTC/USD oracle shim from real live data; `setPrice()` to drive it. |
 | `constants.ts` | Mezo testnet chain, the smoke-gate addresses, and the oracle shim bytecode + slot layout. |
 | `OracleShim.sol` | Source for the shim bytecode (see "the oracle finding"). |
 | `globalSetup.ts` | Vitest globalSetup: boot ONE shared fork for the suite, expose its RPC via `MUSD_FORK_RPC_URL`, tear it down after. |
-| `index.ts` | `connectFork()` — clients + helpers bound to the shared fork (used by tests). |
+| `index.ts` | `connectFork()`, clients + helpers bound to the shared fork (used by tests). |
 
 ## The oracle finding (why there is a shim)
 
-**Anvil can fork Mezo for everything pure-EVM** — `TroveManager.MCR()`, addresses,
-Trove storage, the CR helpers — **but cannot serve `PriceFeed.fetchPrice()` out of
+**Anvil can fork Mezo for everything pure-EVM**, `TroveManager.MCR()`, addresses,
+Trove storage, the CR helpers, **but cannot serve `PriceFeed.fetchPrice()` out of
 the box.** Traced on 14 Jun 2026:
 
 ```
@@ -45,13 +45,13 @@ PriceFeed.fetchPrice()
 ```
 
 `0x7b7c…0015` is a **Mezo-native precompile** (the `0x7b7c…` system range). Its
-deeper target `0x15 + (0x1edf << 0x92)` resolves to **the same address** — on the
+deeper target `0x15 + (0x1edf << 0x92)` resolves to **the same address**, on the
 real Mezo node, calls there are intercepted and served by a Cosmos oracle module;
 the stored EVM bytecode is only a fallback that self-recurses. An anvil EVM fork
 copies that bytecode but has **no native handler**, so the call recurses and
 reverts.
 
-### The fix (decided with the maintainer — option 1)
+### The fix (decided with the maintainer, option 1)
 
 At fork boot the harness:
 
@@ -67,9 +67,8 @@ After this, `fetchPrice()` works on the fork and returns the **real, seeded** pr
 liquidation / Recovery-Mode tests in later phases.
 
 **Boundary (important):** only the **external oracle precompile** is shimmed, and it
-is shimmed with **real data**. **No MUSD contract is mocked** — `TroveManager`,
-`BorrowerOperations`, `PriceFeed`, etc. run exactly as deployed. This respects Law 5:
-the protocol truth is never faked; we only supply the oracle input the L1 node
+is shimmed with **real data**. **No MUSD contract is mocked**, `TroveManager`,
+`BorrowerOperations`, `PriceFeed`, etc. run exactly as deployed. The protocol truth is never faked; we only supply the oracle input the L1 node
 normally provides natively.
 
 ### Regenerating the shim bytecode
@@ -81,5 +80,5 @@ solc 0.8.35 --optimize --optimize-runs 200 --bin-runtime OracleShim.sol
 ```
 
 The slot layout (`decimals=0, roundId=1, answer=2, startedAt=3, updatedAt=4,
-answeredInRound=5`) is part of the contract's ABI contract with the harness — keep
+answeredInRound=5`) is part of the contract's ABI contract with the harness, keep
 them in sync.

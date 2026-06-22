@@ -1,9 +1,9 @@
 /**
- * Task E — LIVE LIFECYCLE on REAL Mezo testnet (chainId 31611), through the shipped SDK.
+ * Task E, LIVE LIFECYCLE on REAL Mezo testnet (chainId 31611), through the shipped SDK.
  *
  * This is the go-live verification that the *internal fork suite cannot* prove: a real
  * signed open → on-chain getter parity (to the wei) → repay → close, against the real
- * deployment, the real native-precompile oracle, and real gas — no anvil, no shim, no mock.
+ * deployment, the real native-precompile oracle, and real gas, no anvil, no shim, no mock.
  *
  * It is intentionally NOT wired into CI: it spends real testnet BTC and requires a funded
  * key, so it is a MANUAL gate Anıl runs once before publishing. It is written to be safe to
@@ -25,7 +25,7 @@
  *   ---
  *     pnpm tsx scripts/testnet-e2e.ts
  *
- *   A clean run prints "GO — live lifecycle verified on Mezo testnet." and exits 0.
+ *   A clean run prints "GO, live lifecycle verified on Mezo testnet." and exits 0.
  *   Any parity mismatch or unexpected revert exits non-zero with the detail.
  */
 
@@ -85,13 +85,13 @@ async function main(): Promise<void> {
   const existing = await musd.getTrove(account.address)
   if (existing.exists) {
     console.log(
-      `\nexisting Trove found (debt ${formatMusd(existing.entireDebt)} MUSD) — closing first…`,
+      `\nexisting Trove found (debt ${formatMusd(existing.entireDebt)} MUSD), closing first…`,
     )
     const { hash } = await musd.close()
     await waitOk(hash, 'close (pre-existing)')
   }
 
-  // 1) Preview (client math) — capture what we PROMISE the position will be.
+  // 1) Preview (client math), capture what we PROMISE the position will be.
   const preview = await musd.previewOpen({ collateral: COLLATERAL, debt: DEBT })
   console.log('\n--- previewOpen ---')
   console.log(`  entireDebt   ${formatMusd(preview.entireDebt)} MUSD`)
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   console.log(`  meetsMinimum ${preview.meetsMinimum}`)
   if (!preview.meetsMinimum) {
     die(
-      `preview.meetsMinimum is false for a ${formatMusd(DEBT)} MUSD draw — raise E2E_DEBT_MUSD above the minNetDebt floor.`,
+      `preview.meetsMinimum is false for a ${formatMusd(DEBT)} MUSD draw, raise E2E_DEBT_MUSD above the minNetDebt floor.`,
     )
   }
 
@@ -117,7 +117,7 @@ async function main(): Promise<void> {
   }
   await waitOk(openHash, 'openTrove')
 
-  // 3) Parity — the live getter must match the preview to the wei. This is the whole point.
+  // 3) Parity, the live getter must match the preview to the wei. This is the whole point.
   const live = await musd.getTrove(account.address)
   console.log('\n--- getTrove (live getter) ---')
   console.log(`  exists       ${live.exists}`)
@@ -138,11 +138,11 @@ async function main(): Promise<void> {
   const band = preview.entireDebt / 10_000n // 1 bps
   if (drift > band) {
     die(
-      `entireDebt drift ${formatMusd(drift)} MUSD exceeds 1 bps band — preview math is off, not interest accrual`,
+      `entireDebt drift ${formatMusd(drift)} MUSD exceeds 1 bps band, preview math is off, not interest accrual`,
     )
   }
   console.log(
-    `\n  parity OK — live entireDebt within ${formatMusd(drift)} MUSD of preview (interest accrual).`,
+    `\n  parity OK, live entireDebt within ${formatMusd(drift)} MUSD of preview (interest accrual).`,
   )
 
   // 4) Repay a slice, then 5) close (which repays the remainder + returns collateral to claim).
@@ -156,9 +156,9 @@ async function main(): Promise<void> {
 
   const after = await musd.getTrove(account.address)
   if (after.exists) die('Trove still exists after close()')
-  console.log('\n  closed — getTrove.exists is false.')
+  console.log('\n  closed, getTrove.exists is false.')
 
-  console.log('\n✓ GO — live lifecycle verified on Mezo testnet.')
+  console.log('\n✓ GO, live lifecycle verified on Mezo testnet.')
 }
 
 main().catch((e) => {

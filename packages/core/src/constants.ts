@@ -1,13 +1,13 @@
-// Fixed MUSD constants — bundled because no on-chain setter exists for them
+// Fixed MUSD constants, bundled because no on-chain setter exists for them
 // (`docs/01-ground-truth.md` §2). Everything governable/dynamic (minNetDebt, the
 // borrowing/redemption/interest rates, the oracle price) is read on-chain, never
-// bundled (Law 3) — see `client/createMusdClient.ts`.
+// bundled, see `client/createMusdClient.ts`.
 
 /** 100%, 1e18-scaled. */
 export const ONE_HUNDRED_PCT = 1_000_000_000_000_000_000n
-/** Minimum Collateral Ratio — individual liquidation trigger (ICR < MCR). 110%. */
+/** Minimum Collateral Ratio, individual liquidation trigger (ICR < MCR). 110%. */
 export const MCR = 1_100_000_000_000_000_000n
-/** Critical Collateral Ratio — Recovery Mode threshold (TCR < CCR). 150%. */
+/** Critical Collateral Ratio, Recovery Mode threshold (TCR < CCR). 150%. */
 export const CCR = 1_500_000_000_000_000_000n
 /** Gas compensation reserve added at open, returned on close. 200 MUSD. */
 export const MUSD_GAS_COMPENSATION = 200_000_000_000_000_000_000n
@@ -20,7 +20,7 @@ export const MIN_NET_DEBT_MIN = 50_000_000_000_000_000_000n
 
 /**
  * Seconds per year used by the interest model = 365.2425 days × 86400 (the Gregorian
- * year). Verified on the fork (Phase 4) — NOT 365 (31_536_000) nor 365.25 (31_557_600).
+ * year). Verified on the fork (Phase 4), NOT 365 (31_536_000) nor 365.25 (31_557_600).
  * Fixed in the contract (no setter), so it is bundled. See `docs/01-ground-truth.md` §7.
  */
 export const SECONDS_PER_YEAR = 31_556_952n

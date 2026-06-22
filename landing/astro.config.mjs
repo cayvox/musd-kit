@@ -30,7 +30,7 @@ export default defineConfig({
       include: ['@musd-kit/core', '@mezo-org/chains', 'viem'],
     },
   },
-  // Code highlighting: the custom warm theme shared with the VitePress docs (BRAND §7).
+  // Code highlighting: the custom warm theme shared with the VitePress docs.
   markdown: {
     shikiConfig: { theme: codeTheme },
   },

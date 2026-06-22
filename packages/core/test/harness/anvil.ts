@@ -65,9 +65,9 @@ const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * Boot an anvil fork of Mezo, install the oracle shim (seeded with the real live
  * price), and return typed viem clients plus harness helpers.
  *
- * Throws — loudly, with anvil's own stderr — if the fork cannot start or is not
+ * Throws, loudly, with anvil's own stderr, if the fork cannot start or is not
  * chainId 31611. Per Phase 0 we surface fork incompatibilities, never paper over
- * them with a mock (Law 5).
+ * them with a mock.
  */
 export async function startFork(opts: StartForkOptions = {}): Promise<ForkHandle> {
   const upstream = opts.rpcUrl ?? process.env.MEZO_TESTNET_RPC_URL

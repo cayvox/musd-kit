@@ -11,27 +11,27 @@ export const TroveStatus = {
   closedByLiquidation: 3,
   closedByRedemption: 4,
 } as const
-/** A `TroveManager` status ordinal (0–4); see {@link TroveStatus}. */
+/** A `TroveManager` status ordinal (0-4); see {@link TroveStatus}. */
 export type TroveStatus = (typeof TroveStatus)[keyof typeof TroveStatus]
 
 /**
  * A live Trove position. Every numeric field except `liquidationPrice` and
- * `healthFactor` comes straight from a contract getter (Law 2) — correct by
+ * `healthFactor` comes straight from a contract getter, correct by
  * construction. The two derived fields are thin transforms of those authoritative
  * values (see `docs/05-math-and-hints.md` §4), proven against `computeCR`.
  */
 export interface Trove {
   /** True only for an active position with debt. */
   exists: boolean
-  /** Entire collateral incl. pending redistribution — `getEntireDebtAndColl.coll` (BTC wei). */
+  /** Entire collateral incl. pending redistribution, `getEntireDebtAndColl.coll` (BTC wei). */
   collateral: bigint
-  /** Principal component of the debt (draw + fee + 200 gas reserve, + any pending), excl. interest — `getEntireDebtAndColl.principal`. */
+  /** Principal component of the debt (draw + fee + 200 gas reserve, + any pending), excl. interest, `getEntireDebtAndColl.principal`. */
   principal: bigint
-  /** Interest accrued to NOW — `getEntireDebtAndColl.interest` (NOT `getTroveInterestOwed`, which is the stale stored value; C3). */
+  /** Interest accrued to NOW, `getEntireDebtAndColl.interest` (NOT `getTroveInterestOwed`, which is the stale stored value; C3). */
   interestOwed: bigint
   /** Live entire debt = principal + interest from `getEntireDebtAndColl` (the value ICR uses). */
   entireDebt: bigint
-  /** `getCurrentICR(address, price)` — 1e18 fixed point. */
+  /** `getCurrentICR(address, price)`, 1e18 fixed point. */
   icr: bigint
   /** `getNominalICR(address)`. */
   nominalICR: bigint
@@ -39,20 +39,20 @@ export interface Trove {
   liquidationPrice: bigint
   /** Derived: icr / MCR as a number (1.0 at MCR). */
   healthFactor: number
-  /** Normal-mode condition `icr < MCR`. Recovery-Mode nuances are Phase 6 — see `getSystemState().isRecoveryMode`. */
+  /** Normal-mode condition `icr < MCR`. Recovery-Mode nuances are Phase 6, see `getSystemState().isRecoveryMode`. */
   isLiquidatable: boolean
-  /** The fixed rate locked at open, in basis points — `getTroveInterestRate`. */
+  /** The fixed rate locked at open, in basis points, `getTroveInterestRate`. */
   interestRate: number
   /** `getTroveStatus`. */
   status: TroveStatus
 }
 
-/** Protocol-wide live state — one consistent price snapshot. */
+/** Protocol-wide live state, one consistent price snapshot. */
 export interface SystemState {
-  /** `getTCR(price)` — total collateral ratio, 1e18 fixed point. */
+  /** `getTCR(price)`, total collateral ratio, 1e18 fixed point. */
   tcr: bigint
-  /** `checkRecoveryMode(price)` — system TCR < CCR. */
+  /** `checkRecoveryMode(price)`, system TCR < CCR. */
   isRecoveryMode: boolean
-  /** `fetchPrice()` — BTC/USD, 1e18-scaled. */
+  /** `fetchPrice()`, BTC/USD, 1e18-scaled. */
   price: bigint
 }

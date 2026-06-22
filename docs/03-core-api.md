@@ -18,38 +18,38 @@ import { createMusdClient } from '@musd-kit/core';
 import { createPublicClient, createWalletClient, http } from 'viem';
 
 const musd = createMusdClient({
-  chainId: 31611,        // testnet; 31612 mainnet, addresses bundled (01-ground-truth §4)
-  publicClient,          // viem public client
-  walletClient,          // viem wallet client (only needed for writes)
+  chainId: 31611, // testnet; 31612 mainnet, addresses bundled (01-ground-truth §4)
+  publicClient, // viem public client
+  walletClient, // viem wallet client (only needed for writes)
   // addresses?: Partial<AddressMap>   // optional override (decision O5)
 });
 ```
 
 `createMusdClient` resolves all contract addresses for the chain, constructs typed
 clients, and **reads the governable constants on first use** (`minNetDebt()`, the
-borrowing rate, the global interest rate), caching them per session (Law 3). The
+borrowing rate, the global interest rate), caching them per session. The
 fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`, `PERCENT_DIVISOR`) are
 bundled.
 
 ---
 
-## 2. Reading a live position (contract-authoritative, Law 2)
+## 2. Reading a live position (contract-authoritative)
 
 ```ts
 const trove = await musd.getTrove(address);
 // {
 //   exists: boolean,
-//   collateral: bigint,        // BTC wei (1e18)
-//   principal: bigint,         // MUSD borrowed
-//   interestOwed: bigint,      // accrued to NOW, from getTroveInterestOwed (never the stored value)
-//   entireDebt: bigint,        // from getEntireDebtAndColl: principal + interest + 200 gas reserve
-//   icr: bigint,               // from getCurrentICR(address, price), 1e18 fixed point
-//   nominalICR: bigint,        // from getNominalICR
-//   liquidationPrice: bigint,  // derived: BTC/USD at which ICR hits MCR
-//   healthFactor: number,      // normalized distance to liquidation (1.0 = at MCR)
-//   isLiquidatable: boolean,   // icr < MCR
-//   interestRate: bigint,      // the rate locked at open (getTroveInterestRate)
-//   status: TroveStatus,       // from getTroveStatus (enum)
+//   collateral: bigint, // BTC wei (1e18)
+//   principal: bigint, // MUSD borrowed
+//   interestOwed: bigint, // accrued to NOW, from getTroveInterestOwed (never the stored value)
+//   entireDebt: bigint, // from getEntireDebtAndColl: principal + interest + 200 gas reserve
+//   icr: bigint, // from getCurrentICR(address, price), 1e18 fixed point
+//   nominalICR: bigint, // from getNominalICR
+//   liquidationPrice: bigint, // derived: BTC/USD at which ICR hits MCR
+//   healthFactor: number, // normalized distance to liquidation (1.0 = at MCR)
+//   isLiquidatable: boolean, // icr < MCR
+//   interestRate: bigint, // the rate locked at open (getTroveInterestRate)
+//   status: TroveStatus, // from getTroveStatus (enum)
 // }
 ```
 
@@ -73,13 +73,13 @@ exposed standalone.
 ```ts
 musd.previewOpen({ collateral, debt });
 // → {
-//     fee: bigint,              // getBorrowingFee(debt), read on-chain
-//     netDebt: bigint,          // debt + fee
-//     entireDebt: bigint,       // debt + fee + 200
-//     icr: bigint,              // computeCR(collateral, entireDebt, price)
+//     fee: bigint, // getBorrowingFee(debt), read on-chain
+//     netDebt: bigint, // debt + fee
+//     entireDebt: bigint, // debt + fee + 200
+//     icr: bigint, // computeCR(collateral, entireDebt, price)
 //     liquidationPrice: bigint,
-//     meetsMinimum: boolean,    // (debt + fee) >= minNetDebt
-//     isRecoveryMode: boolean,  // and rules reflected if so
+//     meetsMinimum: boolean, // (debt + fee) >= minNetDebt
+//     isRecoveryMode: boolean, // and rules reflected if so
 //   }
 
 musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw s.t. opening leaves ICR ≥ MCR, ≥ minNetDebt floor
@@ -104,9 +104,9 @@ internally (`hints/`).
 
 ```ts
 const { hash } = await musd.openTrove({
-  collateral: parseBtc('0.05'),       // BTC sent as msg.value
-  debt: parseMusd('2500'),            // requested draw (user receives this; owes draw + fee)
-  maxFeePercentage: parseBps(100),    // OPTIONAL SDK-side guard, NOT an on-chain arg (C5). Throws MaxFeeExceeded.
+  collateral: parseBtc('0.05'), // BTC sent as msg.value
+  debt: parseMusd('2500'), // requested draw (user receives this; owes draw + fee)
+  maxFeePercentage: parseBps(100), // OPTIONAL SDK-side guard, NOT an on-chain arg (C5). Throws MaxFeeExceeded.
 });
 // → openTrove(debt, upperHint, lowerHint) with value: collateral
 

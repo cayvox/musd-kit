@@ -74,10 +74,10 @@ async function drainMusd(account: PrivateKeyAccount, to: Address) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Unit: decoder + codes + fail-fast guards (no fork — fast, full branch coverage)
+// Unit: decoder + codes + fail-fast guards (no fork, fast, full branch coverage)
 // ───────────────────────────────────────────────────────────────────────────
 
-describe('Phase 7 — errors/ taxonomy + decoder (unit)', () => {
+describe('Phase 7, errors/ taxonomy + decoder (unit)', () => {
   it('every MusdErrorCode value is present and unique (stable public API)', () => {
     const expected = [
       'BELOW_MINIMUM_DEBT',
@@ -223,12 +223,12 @@ describe('Phase 7 — errors/ taxonomy + decoder (unit)', () => {
 })
 
 // ───────────────────────────────────────────────────────────────────────────
-// Fork: one REAL revert per mapped error (Law 5)
+// Fork: one REAL revert per mapped error
 // ───────────────────────────────────────────────────────────────────────────
 
 let funder: PrivateKeyAccount
 
-describe('Phase 7 — every mapped error proven by a real fork revert', () => {
+describe('Phase 7, every mapped error proven by a real fork revert', () => {
   beforeAll(async () => {
     funder = testAccount(720)
     const fork = connectFork()
@@ -240,7 +240,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     })
   }, 480_000)
 
-  it('BelowMinimumDebt — guard, with real minNetDebt context', async () => {
+  it('BelowMinimumDebt, guard, with real minNetDebt context', async () => {
     const a = testAccount(721)
     await connectFork().fundAccount(a.address, 5n * BTC)
     await connectFork().refreshOracle()
@@ -256,7 +256,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     }
   }, 120_000)
 
-  it('TroveAlreadyExists — guard, opening when one is already open', async () => {
+  it('TroveAlreadyExists, guard, opening when one is already open', async () => {
     await connectFork().refreshOracle()
     try {
       await clientFor(funder).openTrove({ collateral: BTC, debt: 5_000n * MUSD })
@@ -267,7 +267,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     }
   }, 120_000)
 
-  it('ICRBelowMCR — decoder, open below the 110% ratio (passes guards, reverts on simulate)', async () => {
+  it('ICRBelowMCR, decoder, open below the 110% ratio (passes guards, reverts on simulate)', async () => {
     const a = testAccount(722)
     await connectFork().fundAccount(a.address, 5n * BTC)
     await connectFork().refreshOracle()
@@ -278,7 +278,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     ).rejects.toBeInstanceOf(ICRBelowMCR)
   }, 120_000)
 
-  it('TroveNotFound — guard, operating on an address with no Trove', async () => {
+  it('TroveNotFound, guard, operating on an address with no Trove', async () => {
     const a = testAccount(723)
     await connectFork().fundAccount(a.address, 5n * BTC)
     await expect(clientFor(a).withdrawCollateral({ amount: MUSD })).rejects.toBeInstanceOf(
@@ -289,7 +289,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     )
   }, 120_000)
 
-  it('RepayExceedsDebt — guard, repaying more than owed', async () => {
+  it('RepayExceedsDebt, guard, repaying more than owed', async () => {
     await connectFork().refreshOracle()
     try {
       await clientFor(funder).repay({ amount: 10_000_000n * MUSD })
@@ -300,7 +300,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     }
   }, 120_000)
 
-  it('InsufficientMusdBalance — guard, repay with no MUSD held', async () => {
+  it('InsufficientMusdBalance, guard, repay with no MUSD held', async () => {
     const a = testAccount(724)
     await connectFork().fundAccount(a.address, 10n * BTC)
     await connectFork().refreshOracle()
@@ -320,7 +320,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     }
   }, 180_000)
 
-  it('NothingToLiquidate — decoder, liquidating a healthy Trove', async () => {
+  it('NothingToLiquidate, decoder, liquidating a healthy Trove', async () => {
     await connectFork().refreshOracle()
     const a = testAccount(725)
     await connectFork().fundAccount(a.address, 1n * BTC)
@@ -333,12 +333,12 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     }
   }, 120_000)
 
-  // NOTE: StaleHint is NOT distinctly reachable (ground-truth §11) — a stale/incorrect
+  // NOTE: StaleHint is NOT distinctly reachable (ground-truth §11), a stale/incorrect
   // redemption partial hint surfaces as "TroveManager: Unable to redeem any amount", which
   // the decoder maps to RedemptionFailed. That mapping is proven in the unit decoder test
   // above; there is no distinct fork revert to assert here.
 
-  it('RecoveryModeRestriction — decoder, open ICR<CCR while the system is in Recovery Mode', async () => {
+  it('RecoveryModeRestriction, decoder, open ICR<CCR while the system is in Recovery Mode', async () => {
     const fork = connectFork()
     const original = await readOnly().getOraclePrice()
     try {
@@ -358,7 +358,7 @@ describe('Phase 7 — every mapped error proven by a real fork revert', () => {
     }
   }, 180_000)
 
-  it('decoder works on a REAL viem error (custom error) — ERC20InsufficientBalance → InsufficientMusdBalance', async () => {
+  it('decoder works on a REAL viem error (custom error), ERC20InsufficientBalance → InsufficientMusdBalance', async () => {
     // The unit tests feed plain Errors; this proves mapRevert's BaseError.walk path against
     // a genuine on-chain revert that viem decodes as a custom error (errorName), not a
     // require-string. A wallet with no MUSD transferring MUSD trips ERC20InsufficientBalance.

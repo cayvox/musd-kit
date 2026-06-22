@@ -113,7 +113,7 @@ export async function refreshOracle(
 ): Promise<void> {
   // Mine first so "latest" reflects the current wall-clock: anvil stamps new blocks
   // with real time, and view-only stretches (e.g. a slow getApproxHint) leave the
-  // last block — and thus a naive updatedAt — far in the past, tripping staleness.
+  // last block, and thus a naive updatedAt, far in the past, tripping staleness.
   await testClient.mine({ blocks: 1 })
   const block = await forkClient.getBlock({ blockTag: 'latest' })
   await writeSlot(testClient, ORACLE_SLOT.startedAt, block.timestamp)

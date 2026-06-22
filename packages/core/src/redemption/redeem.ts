@@ -21,7 +21,7 @@ export interface RedeemParams {
   amount: bigint
   /** Cap the number of Troves scanned/redeemed (default {@link DEFAULT_REDEMPTION_MAX_ITERATIONS}). */
   maxIterations?: bigint
-  /** SDK-side fee cap, 1e18-scaled fraction — `redeemCollateral` has NO on-chain maxFee (C5). */
+  /** SDK-side fee cap, 1e18-scaled fraction, `redeemCollateral` has NO on-chain maxFee (C5). */
   maxFeePercentage?: bigint
 }
 
@@ -31,16 +31,16 @@ export interface RedeemResult {
   /**
    * Redeemable amount estimated by `getRedemptionHints` given the `minNetDebt` floor +
    * `maxIterations`. The ACTUAL redeemed amount (in the `Redemption` event) can be less
-   * when a partial of the last Trove is skipped — surfaced so callers know.
+   * when a partial of the last Trove is skipped, surfaced so callers know.
    */
   truncatedAmount: bigint
-  /** Effective redemption rate (1e18-scaled) read live from `redemptionRate()` — governable (C2). */
+  /** Effective redemption rate (1e18-scaled) read live from `redemptionRate()`, governable (C2). */
   fee: bigint
 }
 
 /**
  * Redeem MUSD for BTC against the lowest-ICR Troves. Reads the live redemption rate
- * (verified Phase 6: it applies to ALL redeemers, including loan holders — the
+ * (verified Phase 6: it applies to ALL redeemers, including loan holders, the
  * "0% for loan holders" rule does not hold in this deployment). The redemption-hint
  * ritual runs immediately before sending and does NOT mine a block in between (interest
  * drift invalidates the partial hint). Simulate-before-send routes any revert through the

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatBtc, formatMusd, parseBps, parseBtc, parseMusd } from '../src'
 
-describe('units — 18-decimal helpers (docs/08 §5)', () => {
+describe('units, 18-decimal helpers (docs/08 §5)', () => {
   it('parseBtc / parseMusd parse to 1e18-scaled wei', () => {
     expect(parseBtc('0.05')).toBe(5n * 10n ** 16n)
     expect(parseMusd('2500')).toBe(2500n * 10n ** 18n)

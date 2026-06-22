@@ -1,11 +1,11 @@
 // Codegen: derive the MUSD address maps + `as const` ABIs for the dev-facing
 // contract set DIRECTLY from the official `@mezo-org/musd-contracts` hardhat-deploy
-// artifacts (decision O10). Nothing here is hand-transcribed (Law 1) — re-run
+// artifacts (decision O10). Nothing here is hand-transcribed, re-run
 // `pnpm --filter @musd-kit/core generate` after bumping the package.
 //
 // Output (committed):
-//   src/_generated/addresses.ts  — DEPLOYMENTS[chainId][contract] = Address
-//   src/_generated/abis.ts       — <contract>Abi = [...] as const
+//   src/_generated/addresses.ts, DEPLOYMENTS[chainId][contract] = Address
+//   src/_generated/abis.ts, <contract>Abi = [...] as const
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'

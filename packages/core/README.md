@@ -1,12 +1,12 @@
 # @musd-kit/core
 
-**The typed SDK for MUSD on Mezo** — the framework-agnostic core. The layer between
+**The typed SDK for MUSD on Mezo**, the framework-agnostic core. The layer between
 *connected* (handled by [`@mezo-org/passport`](https://www.npmjs.com/package/@mezo-org/passport))
 and *working*: the Trove lifecycle, the insertion-hint dance, and the MUSD math, made
 correct, typed, and reusable.
 
 > ⚠️ **Community tooling, not official.** Independent, open-source, **not affiliated with or
-> endorsed by Mezo**. An unofficial community **Mezo MUSD SDK**. **Status: pre-1.0 (`0.x`) —
+> endorsed by Mezo**. An unofficial community **Mezo MUSD SDK**. **Status: pre-1.0 (`0.x`),
 > for testnet and evaluation.** Every write path documents what it does on-chain and what it
 > does not guarantee. License: MIT.
 
@@ -35,17 +35,17 @@ const walletClient = createWalletClient({
 
 const musd = createMusdClient({ chainId: mezoTestnet.id, publicClient, walletClient })
 
-// Read — contract-authoritative (Law 2): never recomputed client-side.
+// Read, contract-authoritative: never recomputed client-side.
 const trove = await musd.getTrove(account.address)
 // trove.entireDebt, trove.icr, trove.healthFactor, trove.liquidationPrice, …
 
-// Preview — the only client-side math (dual-validated against the fork + pure helpers).
+// Preview, the only client-side math (dual-validated against the fork + pure helpers).
 const preview = await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })
 if (preview.meetsMinimum) {
   await musd.openTrove({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })
 }
 
-// Manage — hints + simulate-before-send + typed errors are absorbed.
+// Manage, hints + simulate-before-send + typed errors are absorbed.
 await musd.borrow({ amount: parseMusd('500') })
 await musd.repay({ amount: parseMusd('500') })
 
@@ -59,7 +59,7 @@ Every protocol revert maps to a discriminated `MusdError` you can branch on
 ## Design (two rules)
 
 - **Live position data → the contract's own getters** (`getEntireDebtAndColl`,
-  `getCurrentICR`, `getTCR`, …). Never recomputed client-side — no interest-drift by
+  `getCurrentICR`, `getTCR`, …). Never recomputed client-side, no interest-drift by
   construction.
 - **Previews of positions that don't exist yet → client math, dual-validated** against
   forked-Mezo behavior *and* the contract's `pure` helpers.

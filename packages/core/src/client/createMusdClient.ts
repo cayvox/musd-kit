@@ -70,11 +70,11 @@ import {
 // re-exported here so existing `from './client/createMusdClient'` imports keep working.
 export { MismatchedDeployment } from '../errors'
 
-/** Governable values read live (never bundled — Law 3). */
+/** Governable values read live (never bundled). */
 export interface GovernableConstants {
-  /** `borrowerOperations.minNetDebt()` — floor on `draw + fee`, 1e18-scaled. */
+  /** `borrowerOperations.minNetDebt()`, floor on `draw + fee`, 1e18-scaled. */
   minNetDebt: bigint
-  /** `interestRateManager.interestRate()` — current global rate, in basis points. */
+  /** `interestRateManager.interestRate()`, current global rate, in basis points. */
   interestRate: number
 }
 
@@ -99,11 +99,11 @@ export interface MusdClient {
   /** The bundled fixed constants (synchronous, no network). */
   readonly fixed: FixedConstants
   /**
-   * Read + cache the governable constants on first use (Law 3), returned together
+   * Read + cache the governable constants on first use, returned together
    * with the fixed ones. Also runs {@link verifyDeployment} once.
    */
   getConstants(): Promise<MusdConstants>
-  /** Passthrough to `borrowerOperations.getBorrowingFee(debt)` (parameterized — not cached). */
+  /** Passthrough to `borrowerOperations.getBorrowingFee(debt)` (parameterized, not cached). */
   getBorrowingFee(debt: bigint): Promise<bigint>
   /**
    * Defense-in-depth: read `MCR`/`CCR` from the chain and assert they equal the
@@ -112,7 +112,7 @@ export interface MusdClient {
    */
   verifyDeployment(): Promise<void>
 
-  // --- live reads (Law 2 — contract-authoritative; see `read/`) ---
+  // --- live reads (contract-authoritative; see `read/`) ---
   /** A fully-typed live position, correct by construction. */
   getTrove(address: Address): Promise<Trove>
   /** Protocol-wide live state ({ tcr, isRecoveryMode, price }). */
@@ -130,7 +130,7 @@ export interface MusdClient {
   /** The insertion-hint ritual → `{ upperHint, lowerHint, nicr }` for a position of the given shape. */
   computeHints(params: ComputeHintsParams): Promise<Hints>
 
-  // --- preview math (see `math/`; preview side of Law 2 — non-throwing) ---
+  // --- preview math (see `math/`; preview side, non-throwing) ---
   /** `(collateral × price) / entireDebt` (== contract `computeCR`). Pure. */
   computeICR(params: ComputeICRParams): bigint
   /** Price at which a position hits MCR = `(MCR × entireDebt) / collateral`. Pure. */
@@ -145,23 +145,23 @@ export interface MusdClient {
   getBorrowingPower(params: GetBorrowingPowerParams): Promise<bigint>
 
   // --- lifecycle writes (see `trove/`; require a walletClient; simulate-before-send) ---
-  /** `openTrove(debt, hints)` payable — opens a Trove with hints absorbed. */
+  /** `openTrove(debt, hints)` payable, opens a Trove with hints absorbed. */
   openTrove(params: OpenTroveParams): Promise<WriteResult>
-  /** `addColl(hints)` payable — top up collateral. */
+  /** `addColl(hints)` payable, top up collateral. */
   addCollateral(params: { amount: bigint }): Promise<WriteResult>
-  /** `withdrawMUSD(amount, hints)` — borrow more (mint). */
+  /** `withdrawMUSD(amount, hints)`, borrow more (mint). */
   borrow(params: BorrowParams): Promise<WriteResult>
-  /** `repayMUSD(amount, hints)` — reduce debt (no approval needed). */
+  /** `repayMUSD(amount, hints)`, reduce debt (no approval needed). */
   repay(params: { amount: bigint }): Promise<WriteResult>
-  /** `withdrawColl(amount, hints)` — take collateral out. */
+  /** `withdrawColl(amount, hints)`, take collateral out. */
   withdrawCollateral(params: { amount: bigint }): Promise<WriteResult>
-  /** `adjustTrove(...)` — combined collateral ± and/or debt ± (validated). */
+  /** `adjustTrove(...)`, combined collateral ± and/or debt ± (validated). */
   adjustTrove(params: AdjustTroveParams): Promise<WriteResult>
-  /** `closeTrove()` — full payoff (needs `entireDebt − 200` MUSD; returns 200 + collateral). */
+  /** `closeTrove()`, full payoff (needs `entireDebt − 200` MUSD; returns 200 + collateral). */
   close(): Promise<WriteResult>
-  /** `refinance(hints)` — move to the current global rate (adds a refinancing fee). */
+  /** `refinance(hints)`, move to the current global rate (adds a refinancing fee). */
   refinance(): Promise<WriteResult>
-  /** `claimCollateral()` — claim surplus; a safe no-op when there is none. */
+  /** `claimCollateral()`, claim surplus; a safe no-op when there is none. */
   claim(): Promise<ClaimResult>
 
   // --- redemption + permissionless keeper surface (see `redemption/`) ---
@@ -171,7 +171,7 @@ export interface MusdClient {
   liquidate(borrower: Address): Promise<WriteResult>
   /** Liquidate several Troves in one call. */
   batchLiquidate(borrowers: readonly Address[]): Promise<WriteResult>
-  /** BTC surplus claimable by `address` (CollSurplusPool) — pair with `claim()`. */
+  /** BTC surplus claimable by `address` (CollSurplusPool), pair with `claim()`. */
   getClaimableCollateral(address: Address): Promise<bigint>
 }
 

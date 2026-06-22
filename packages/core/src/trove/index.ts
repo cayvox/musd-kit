@@ -26,7 +26,7 @@ export interface ClaimResult {
 const ONE = 10n ** 18n
 const BO_ABI = borrowerOperationsAbi as unknown as Abi
 
-/** Current (collateral, entireDebt) of `owner`, to-now, from the contract (Law 2). */
+/** Current (collateral, entireDebt) of `owner`, to-now, from the contract. */
 async function currentPosition(
   deps: WriteDeps,
   owner: Address,
@@ -275,7 +275,7 @@ export async function refinance(deps: WriteDeps): Promise<WriteResult> {
   const wallet = requireWallet(deps)
   const owner = wallet.account.address
   // Refinance adds a small fee and moves to the global rate; hints from the current
-  // position are good enough (placement is contract-guaranteed — hints only affect gas).
+  // position are good enough (placement is contract-guaranteed, hints only affect gas).
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.entireDebt)

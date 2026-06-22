@@ -1,4 +1,4 @@
-// Headless MUSD liquidation keeper — depends on @musd-kit/core + viem + @mezo-org/chains
+// Headless MUSD liquidation keeper, depends on @musd-kit/core + viem + @mezo-org/chains
 // ONLY. No React, no wagmi, no @musd-kit/react (lint-enforced; see biome override). That
 // this file compiles and runs is the structural proof the core is framework-agnostic.
 import { mezoTestnet } from '@mezo-org/chains'
@@ -43,7 +43,7 @@ const watch = process.argv.includes('--watch')
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 if (watch) {
-  console.log('[keeper] watch mode — polling every 15s (Ctrl-C to stop)')
+  console.log('[keeper] watch mode, polling every 15s (Ctrl-C to stop)')
   for (;;) {
     await pass().catch((e) => console.error('[keeper] pass failed:', (e as Error).message))
     await sleep(15_000)
