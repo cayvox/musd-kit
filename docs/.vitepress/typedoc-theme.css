@@ -36,11 +36,15 @@
   --light-color-ts-function: #1a1513;
   --light-color-ts-interface: #1a1513;
   --light-color-ts-class: #1a1513;
-  --light-icon-background: #ffffff;
+  /* the kind-icon chips default to a dark square; make them a light warm chip on the warm page */
+  --light-color-icon-background: #f4efe9;
   --light-color-background-warning: #f6ecd8;
   --light-color-warning-text: #8a5b10;
   --light-color-active-menu-item: #f4efe9;
   --color-active-menu-item: #f4efe9;
+  /* set the icon vars directly too (the sidebar inline icons read these) */
+  --color-icon-background: #ffffff;
+  --color-icon-text: #1a1513;
   --color-background: var(--light-color-background);
   --color-background-secondary: var(--light-color-background-secondary);
   --color-accent: var(--light-color-accent);
@@ -156,6 +160,21 @@ a {
 .tsd-index-panel a {
   font-family: "Geist Mono", monospace;
   font-size: 0.85rem;
+}
+
+/* ---- modifier tags (Readonly, Optional, ...): a readable warm chip, not a black pill. These
+        sit in member headings (outside .tsd-typography), so they need explicit colors. ---- */
+code.tsd-tag,
+.tsd-tag {
+  background: var(--light-color-background-secondary);
+  color: var(--light-color-text-aside);
+  border: 1px solid #ded5cb;
+  border-radius: 999px;
+  padding: 0.15em 0.55em;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 /* ---- prose (TSDoc comments) ---- */

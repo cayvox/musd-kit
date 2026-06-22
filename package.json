@@ -15,7 +15,7 @@
     "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck && tsc --noEmit -p scripts/tsconfig.json",
     "build": "pnpm -r --filter \"./packages/*\" run build",
     "test": "vitest run",
-    "docs:api": "typedoc",
+    "docs:api": "typedoc && node scripts/brand-api-icons.mjs",
     "docs:build": "pnpm docs:api && pnpm --filter @musd-kit/docs build",
     "build:site": "bash scripts/build-site.sh",
     "serve:site": "node scripts/serve-site.mjs",
