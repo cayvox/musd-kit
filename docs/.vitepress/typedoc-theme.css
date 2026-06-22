@@ -1,24 +1,46 @@
-/* Brand the generated TypeDoc API reference so /docs/api reads as a sibling of the docs +
-   landing: warm-white canvas, a single Mezo-red accent, light only. TypeDoc keeps its own layout;
-   this only retints it on-brand. */
+/* Brand the generated TypeDoc API reference so /docs/api reads as a sibling of the VitePress docs
+   and the landing: warm-white canvas, a single Mezo-red accent, self-hosted Satoshi + Geist Mono,
+   light only. TypeDoc keeps its own layout; this restyles it to match the docs' identity, spacing,
+   and typography. Fonts are served from /docs/fonts in the combined deploy. */
+
+@font-face {
+  font-family: "Satoshi";
+  src: url("/docs/fonts/satoshi-variable.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/docs/fonts/geist-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/docs/fonts/geist-mono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
+/* ---- palette: force the light brand even if the OS prefers dark ---- */
 :root {
   --light-color-background: #fbf8f5;
   --light-color-background-secondary: #f4efe9;
+  --light-color-background-active: #f4efe9;
   --light-color-accent: #ded5cb;
   --light-color-text: #1a1513;
   --light-color-text-aside: #6b635c;
   --light-color-link: #b5332a;
   --light-color-ts-keyword: #b5332a;
   --light-color-ts-function: #1a1513;
+  --light-color-ts-interface: #1a1513;
+  --light-color-ts-class: #1a1513;
   --light-icon-background: #ffffff;
   --light-color-background-warning: #f6ecd8;
-  /* the selected sidebar item defaults to a dark box; retint it warm-light */
+  --light-color-warning-text: #8a5b10;
   --light-color-active-menu-item: #f4efe9;
   --color-active-menu-item: #f4efe9;
-}
-
-/* Force the light brand palette even if the visitor's OS prefers dark. */
-:root {
   --color-background: var(--light-color-background);
   --color-background-secondary: var(--light-color-background-secondary);
   --color-accent: var(--light-color-accent);
@@ -32,24 +54,138 @@ body,
 body.dark {
   background: var(--light-color-background);
   color: var(--light-color-text);
+  font-family: "Satoshi", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
 }
 
-.tsd-page-toolbar {
-  background: rgba(251, 248, 245, 0.92);
-  border-bottom: 1px solid #ece5dd;
+h1,
+h2,
+h3,
+h4,
+.tsd-page-title h1 {
+  font-family: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+  color: var(--light-color-text);
+}
+
+code,
+pre,
+.tsd-signature,
+.tsd-signatures,
+.tsd-kind-icon ~ .tsd-signature,
+.tsd-navigation,
+.tsd-full-hierarchy code {
+  font-family: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
 }
 
 a {
-  color: #b5332a;
+  color: var(--light-color-link);
+  text-underline-offset: 2px;
 }
 
-.tsd-navigation a.current,
+/* ---- top toolbar: a warm, translucent bar like the docs nav ---- */
+.tsd-page-toolbar {
+  background: rgba(251, 248, 245, 0.85);
+  backdrop-filter: saturate(140%) blur(8px);
+  border-bottom: 1px solid #ece5dd;
+}
+.tsd-page-toolbar .title {
+  font-family: "Satoshi", sans-serif;
+  font-weight: 600;
+  color: var(--light-color-text);
+}
+
+/* ---- left navigation: readable, grouped, red active ---- */
+.site-menu,
+.tsd-navigation {
+  font-size: 0.875rem;
+}
+.tsd-navigation a {
+  color: var(--light-color-text-aside);
+  border-radius: 6px;
+  padding: 0.18rem 0.4rem;
+  transition: color 0.15s, background 0.15s;
+}
 .tsd-navigation a:hover {
-  color: #b5332a;
+  color: var(--light-color-link);
+  background: var(--light-color-background-secondary);
+}
+.tsd-navigation a.current {
+  color: var(--light-color-link);
+  background: var(--light-color-active-menu-item);
+}
+.tsd-accordion-summary {
+  color: var(--light-color-text);
+  font-weight: 600;
 }
 
-/* Accent the kind icons + active states with the brand red rather than the default blue. */
-.tsd-kind-icon ~ span,
-.tsd-index-link.current {
-  color: inherit;
+/* ---- page title + members: comfortable docs-like spacing ---- */
+.tsd-page-title {
+  padding-block: 1.4rem;
+  border-bottom: 1px solid #ece5dd;
+  margin-bottom: 1.4rem;
+}
+.tsd-member {
+  margin-bottom: 1.6rem;
+}
+.tsd-member .tsd-anchor-link {
+  color: var(--light-color-text);
+}
+.tsd-panel {
+  margin-bottom: 1.4rem;
+}
+
+/* ---- type signatures: a light, warm code box (matching the docs' light aesthetic), red keywords
+        for the type-level displays. Fenced ```ts examples use the dark Shiki theme below. ---- */
+.tsd-signature,
+.tsd-signatures .tsd-signature {
+  background: var(--light-color-background-secondary);
+  border: 1px solid #ece5dd;
+  border-radius: 9px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+/* ---- index panels (the member lists): clean cards, not a flat dump ---- */
+.tsd-index-panel .tsd-index-list {
+  gap: 0.4rem 1.5rem;
+}
+.tsd-index-panel a {
+  font-family: "Geist Mono", monospace;
+  font-size: 0.85rem;
+}
+
+/* ---- prose (TSDoc comments) ---- */
+.tsd-typography {
+  line-height: 1.65;
+}
+.tsd-typography :not(pre) > code {
+  background: var(--light-color-background-secondary);
+  border: 1px solid #ece5dd;
+  border-radius: 5px;
+  color: var(--light-color-link);
+  padding: 0.1em 0.35em;
+  font-size: 0.85em;
+}
+.tsd-typography pre {
+  border-radius: 9px;
+  border: 1px solid #181311;
+}
+
+/* ---- search + settings ---- */
+#tsd-search .field input:focus-visible,
+.tsd-navigation a:focus-visible,
+a:focus-visible {
+  outline: 2px solid #e5483d;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* hide the appearance (light/dark) toggle: this build is light only */
+.tsd-navigation.settings .tsd-accordion:has(#tsd-theme),
+#tsd-theme {
+  display: none;
 }
