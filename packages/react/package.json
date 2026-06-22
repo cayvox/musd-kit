@@ -4,7 +4,7 @@
   "description": "wagmi-idiomatic React hooks for MUSD on Mezo (Mezo MUSD SDK), over @musd-kit/core. Consumes any wagmi context (e.g. @mezo-org/passport).",
   "license": "MIT",
   "author": "Cayvox Labs <info@cayvox.com>",
-  "homepage": "https://github.com/cayvox/musd-kit#readme",
+  "homepage": "https://musdkit.xyz",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cayvox/musd-kit.git",
