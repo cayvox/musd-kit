@@ -50,6 +50,18 @@ helpers.
 
 ---
 
+## Before you depend on this
+
+Read [`FINDINGS.md`](FINDINGS.md) first: it is the per finding register of every known
+correctness gap, each with a stable ID, the ground truth it was checked against, and the decision
+taken. [`docs/09-review-and-validated-surface.md`](docs/09-review-and-validated-surface.md) states
+which parts of the surface are actually validated and how, and where the SDK diverges from the
+protocol or from Mezo's own dApp. [`SECURITY.md`](SECURITY.md) covers maturity, what the SDK does
+and does not touch, and how to report a problem. Known gaps are public and tracked rather than
+quietly carried, and a correctness report is treated with the same seriousness as a security report.
+
+---
+
 ## Packages
 
 | Package | Status | Description |
@@ -119,6 +131,7 @@ Passport (or any wagmi setup) already established.
 - [`docs/05-math-and-hints.md`](docs/05-math-and-hints.md), the correctness-critical core
 - [`docs/06-errors.md`](docs/06-errors.md) · [`docs/10-glossary.md`](docs/10-glossary.md), the error taxonomy + terms
 - [`docs/07-testing.md`](docs/07-testing.md) · [`docs/08-conventions.md`](docs/08-conventions.md), the test gate + engineering standards
+- [`docs/09-review-and-validated-surface.md`](docs/09-review-and-validated-surface.md), what is reviewed, what is validated, and where the SDK diverges
 
 The docs site (VitePress) and the generated **API reference** (TypeDoc) build from these:
 `pnpm docs:build` produces `docs/.vitepress/dist` (with the API ref at `/api/`). Per-package

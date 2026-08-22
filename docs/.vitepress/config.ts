@@ -33,7 +33,7 @@ export default defineConfig({
     logo: '/logo.svg',
     siteTitle: 'musd-kit',
     nav: [
-      { text: 'Guides', link: '/00-overview', activeMatch: '/(0[0-8]|10)-' },
+      { text: 'Guides', link: '/00-overview', activeMatch: '/(0[0-9]|10)-' },
       // The API reference is a static TypeDoc subsite under the VitePress base, so it must be a
       // real browser navigation (target), not a client-side route, or VitePress renders its 404.
       // target links get VitePress's external-link arrow automatically, so the text carries none.
@@ -66,6 +66,7 @@ export default defineConfig({
           { text: 'API reference', link: '/api/', target: '_blank', rel: 'noreferrer' },
           { text: 'Testing', link: '/07-testing' },
           { text: 'Conventions', link: '/08-conventions' },
+          { text: 'Review and validated surface', link: '/09-review-and-validated-surface' },
           { text: 'Glossary', link: '/10-glossary' },
         ],
       },
