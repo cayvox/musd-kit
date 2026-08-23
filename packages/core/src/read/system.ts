@@ -1,6 +1,6 @@
 import type { Address } from 'viem'
 import { musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { CCR, MCR, MULTICALL3_ADDRESS } from '../constants'
+import { MCR, MULTICALL3_ADDRESS } from '../constants'
 import type { ReadDeps } from './deps'
 import type { SystemState } from './types'
 
@@ -24,11 +24,24 @@ export async function getSystemState({ publicClient, addresses }: ReadDeps): Pro
 }
 
 /**
- * Mode-aware liquidatability (refines the Phase-2 normal-mode-only version, verified
- * Phase 6): in **normal mode** (TCR ≥ CCR) a Trove is liquidatable iff `ICR < MCR`; in
- * **Recovery Mode** (TCR < CCR) iff `ICR < CCR`. (`liquidate` may still revert if the
- * Stability Pool can't absorb a Recovery-Mode liquidation, simulate-before-send catches
- * that; the keeper precheck.)
+ * Liquidatability: `ICR < MCR`. There is no mode branch, because the protocol has none.
+ *
+ * MK-001. This used to widen the predicate to `ICR < CCR` in Recovery Mode and its
+ * docstring claimed that behavior had been verified. It had not. `TroveManager.sol`
+ * contains **no reference to `CCR` at all**, in the liquidation path or anywhere else, and
+ * the only gate is `if (vars.ICR < MCR)` inside the `batchLiquidateTroves` loop
+ * (`TroveManager.sol:1148`). `liquidate(address)` builds a one element array and funnels
+ * into that same loop (`TroveManager.sol:265-271`), which reverts with
+ * `TroveManager: nothing to liquidate` when the loop liquidates nothing. This fork removed
+ * stock Liquity's Recovery Mode liquidation branch; we modeled a rule that does not exist.
+ *
+ * The consequence of the old behavior was that in Recovery Mode every Trove between MCR
+ * and CCR was reported liquidatable, and every liquidation attempt against one of them
+ * reverted: wasted gas for keepers, false alarms for position holders.
+ *
+ * This is the same predicate `getTrove().isLiquidatable` applies, deliberately. Two APIs
+ * answering one question differently was the underlying defect; a fork test pins that they
+ * agree so they cannot drift apart again.
  */
 export async function isLiquidatable(
   { publicClient, addresses }: ReadDeps,
@@ -39,16 +52,13 @@ export async function isLiquidatable(
     abi: priceFeedAbi,
     functionName: 'fetchPrice',
   })
-  const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
-  const [icr, isRecoveryMode] = await publicClient.multicall({
-    allowFailure: false,
-    multicallAddress: MULTICALL3_ADDRESS,
-    contracts: [
-      { ...tm, functionName: 'getCurrentICR', args: [address, price] },
-      { ...tm, functionName: 'checkRecoveryMode', args: [price] },
-    ],
+  const icr = await publicClient.readContract({
+    address: addresses.troveManager,
+    abi: troveManagerAbi,
+    functionName: 'getCurrentICR',
+    args: [address, price],
   })
-  return icr < (isRecoveryMode ? CCR : MCR)
+  return icr < MCR
 }
 
 /** BTC/USD from `PriceFeed.fetchPrice()` (1e18-scaled). */

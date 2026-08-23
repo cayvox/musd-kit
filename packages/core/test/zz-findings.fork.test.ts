@@ -171,47 +171,89 @@ async function openAtIcr(
 
 describe('Open findings, pinned by failing tests (P2)', () => {
   // ---------------------------------------------------------------- MK-001 ----
-  pins(
-    'MK-001: isLiquidatable reports true for a trove the protocol refuses to liquidate',
-    async () => {
-      const fork = connectFork()
-      const victim = testAccount(2001)
-      const keeper = testAccount(2002)
-      const original = await livePrice()
-      await fork.fundAccount(keeper.address, 5n * BTC)
-      try {
-        // Open comfortably, then crash the price so the system enters Recovery Mode and
-        // this Trove lands in the band MCR <= ICR < CCR.
-        await openAtIcr(victim, 2_600_000_000_000_000_000n)
-        await fork.setPrice((original * 50n) / 100n)
-        await fork.refreshOracle()
+  // FIXED in the P3a wave: this is now an ordinary passing assertion, not a pin.
+  it('MK-001 (fixed): isLiquidatable follows ICR < MCR with no Recovery Mode widening', async () => {
+    const fork = connectFork()
+    const victim = testAccount(2001)
+    const keeper = testAccount(2002)
+    const original = await livePrice()
+    await fork.fundAccount(keeper.address, 5n * BTC)
+    try {
+      // Open comfortably, then crash the price so the system enters Recovery Mode and
+      // this Trove lands in the band MCR <= ICR < CCR.
+      await openAtIcr(victim, 2_600_000_000_000_000_000n)
+      await fork.setPrice((original * 50n) / 100n)
+      await fork.refreshOracle()
 
-        const state = await reader().getSystemState()
-        expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
-        const trove = await reader().getTrove(victim.address)
-        expect(trove.icr, 'fixture: ICR must be at or above MCR').toBeGreaterThanOrEqual(MCR)
-        expect(trove.icr, 'fixture: ICR must be below CCR').toBeLessThan(CCR)
+      const state = await reader().getSystemState()
+      expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
+      const trove = await reader().getTrove(victim.address)
+      expect(trove.icr, 'fixture: ICR must be at or above MCR').toBeGreaterThanOrEqual(MCR)
+      expect(trove.icr, 'fixture: ICR must be below CCR').toBeLessThan(CCR)
 
-        // The protocol's answer, from TroveManager.sol:1148: the only gate is ICR < MCR,
-        // and this Trove is at or above MCR, so liquidation must be refused.
-        await expect(
-          clientFor(keeper).liquidate(victim.address),
-          'fixture: the protocol must refuse this liquidation',
-        ).rejects.toThrow()
+      // The protocol's answer, from TroveManager.sol:1148: the only gate is ICR < MCR,
+      // and this Trove is at or above MCR, so liquidation must be refused.
+      await expect(
+        clientFor(keeper).liquidate(victim.address),
+        'fixture: the protocol must refuse this liquidation',
+      ).rejects.toThrow()
 
-        // THE FINDING. `read/system.ts` widens the predicate to CCR in Recovery Mode, a
-        // rule TroveManager does not contain. The contract-correct answer is false.
-        expect(
-          await reader().isLiquidatable(victim.address),
-          'MK-001: isLiquidatable must follow the protocol rule ICR < MCR, with no CCR widening',
-        ).toBe(false)
-      } finally {
-        await fork.setPrice(original)
-        await fork.refreshOracle()
+      // FIXED. `read/system.ts` no longer widens the predicate in Recovery Mode: there is
+      // no mode branch at all, because `TroveManager.sol` contains no reference to CCR.
+      expect(
+        await reader().isLiquidatable(victim.address),
+        'MK-001: isLiquidatable must follow the protocol rule ICR < MCR, with no CCR widening',
+      ).toBe(false)
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 240_000)
+
+  /**
+   * MK-001's underlying defect was not the mode branch, it was that TWO APIs answered one
+   * question differently: `isLiquidatable(address)` and `getTrove(address).isLiquidatable`.
+   * This pins that they agree, across the whole band that matters, so they cannot drift
+   * apart again. If a future change reintroduces a branch in one of them, this fails.
+   */
+  it('MK-001 (regression): both liquidatability read paths agree, in normal mode and in Recovery Mode', async () => {
+    const fork = connectFork()
+    const below = testAccount(2013)
+    const between = testAccount(2014)
+    const above = testAccount(2015)
+    const original = await livePrice()
+    try {
+      // Three Troves that, after a 50% price crash, straddle the band: under MCR,
+      // between MCR and CCR, and above CCR.
+      await openAtIcr(below, 2_100_000_000_000_000_000n)
+      await openAtIcr(between, 2_600_000_000_000_000_000n)
+      await openAtIcr(above, 3_400_000_000_000_000_000n)
+
+      const client = reader()
+      for (const mode of ['normal', 'recovery'] as const) {
+        if (mode === 'recovery') {
+          await fork.setPrice((original * 50n) / 100n)
+          await fork.refreshOracle()
+        }
+        const inRecovery = (await client.getSystemState()).isRecoveryMode
+        expect(inRecovery, `fixture: expected ${mode} mode`).toBe(mode === 'recovery')
+
+        for (const account of [below, between, above]) {
+          const trove = await client.getTrove(account.address)
+          const direct = await client.isLiquidatable(account.address)
+          expect(
+            direct,
+            `MK-001: the two read paths disagree for ${account.address} in ${mode} mode`,
+          ).toBe(trove.isLiquidatable)
+          // And both equal the protocol's own rule at the same price.
+          expect(direct, `MK-001: ${mode} mode verdict must be icr < MCR`).toBe(trove.icr < MCR)
+        }
       }
-    },
-    240_000,
-  )
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 300_000)
 
   // ---------------------------------------------------------------- MK-002 ----
   pins(
