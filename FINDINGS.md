@@ -447,14 +447,26 @@ and type the write path properly.
 refinance. The SDK does not model it. Neither does Mezo's production dApp.
 
 **The exempt set is NOT empty on mainnet.** That is what decides this, and it is now measured
-rather than guessed. At mainnet block 11330182, two accounts are fee exempt:
+rather than guessed. At mainnet block 11330182, two accounts are fee exempt. Four accounts have
+been granted exemption over the chain's history and two of those have since had it removed, so the
+mechanism is not merely deployed, it is actively administered. On testnet, at block 15043414, the
+set is empty.
 
-- `0x56105c17beF06455e1066f7C455fF28f15C7283E`
-- `0xd19b598712413E69b48f70c5Ea16286cf8DFD632`
+**Blast radius: these are ordinary accounts, not protocol plumbing.** Both accounts exempt at
+mainnet block 11330182 have **no code**, and neither matches any address the protocol is known to
+own: they were checked against 37 addresses drawn from every deployment record in the pinned
+contracts package, proxy and implementation addresses alike, plus every address the SDK bundles.
+The same holds for all four accounts ever granted. That distinction matters more than the severity
+letter. Had the exempt set been protocol owned contracts, the wrong number would surface inside
+Mezo's own tooling; instead it surfaces for external accounts, which is exactly the population that
+reaches for an SDK. Unmatched and code free is all that is claimed here: it is not evidence of who
+owns those accounts, and nothing in this register infers ownership.
 
-Four accounts have been granted exemption over the chain's history and two of those have since had
-it removed, so the mechanism is not merely deployed, it is actively administered. On testnet, at
-block 15043414, the set is empty.
+The individual addresses are deliberately not listed, here or in the generated block. They are
+public chain data and `pnpm facts` reproduces them against the same pinned block, so withholding
+them costs a reader nothing they cannot recompute; printing them would attach a durable "fee
+exempt" label to specific accounts in a public register without adding anything the count and the
+characterization above do not already carry.
 
 **How that was established.** A genesis to pinned block scan of `FeeExemptAccountAdded` and
 `FeeExemptAccountRemoved` on `GovernableVariables`, event and getter names read from the deployed
@@ -637,6 +649,6 @@ overshoots the 180000 ms budget by 1.3 seconds. The same call on the next run to
 | # | Question | Answer |
 |---|---|---|
 | Q1 | Does the contracts package version we pin differ from the one Mezo's dApp resolves? | Closed. Across both testnet and mainnet deployment sets, no contract address changed between the two versions, including the hint helpers, sorted troves, and interest rate manager. What changed: proxy implementation targets behind three contracts, one removed function and one changed event signature on the trove manager, and a set of new functions on the PCV. The SDK touches none of those surfaces. |
-| Q2 | Is the fee exempt set non empty on chain? | Closed. **Yes on mainnet, no on testnet.** At mainnet block 11330182 two accounts are fee exempt, `0x56105c17beF06455e1066f7C455fF28f15C7283E` and `0xd19b598712413E69b48f70c5Ea16286cf8DFD632`, out of four granted over the chain's history with two since removed. At testnet block 15043414 the set is empty. Established by a genesis to pin scan of `FeeExemptAccountAdded` and `FeeExemptAccountRemoved`, every granted address then re-checked against `isAccountFeeExempt` at the pinned block. This assigns MK-018 its class, S1. Recorded in `docs/09-review-and-validated-surface.md` §6. |
+| Q2 | Is the fee exempt set non empty on chain? | Closed. **Yes on mainnet, no on testnet.** At mainnet block 11330182 two accounts are fee exempt, out of four granted over the chain's history with two since removed; both are code free and neither matches any address the protocol is known to own. At testnet block 15043414 the set is empty. Established by a genesis to pin scan of `FeeExemptAccountAdded` and `FeeExemptAccountRemoved`, every granted address then re-checked against `isAccountFeeExempt` at the pinned block. This assigns MK-018 its class, S1. Recorded in `docs/09-review-and-validated-surface.md` §6. |
 | Q3 | Which contract revision is ground truth? | Closed. The right question is which implementation sits behind each proxy on chain, and it now has an answer: at testnet block 15043414 and mainnet block 11330182, the EIP-1967 implementation behind every bundled proxy matches the deployment record in `@mezo-org/musd-contracts@1.1.0`, the version `packages/core/package.json` actually pins, on both chains. Six of the seven bundled addresses are proxies of that shape; `musd` has an empty implementation slot, so it is not a transparent proxy of that shape and there is nothing to compare. So the pinned package IS ground truth for the deployed code at those blocks. Recorded in `docs/09-review-and-validated-surface.md` §6. |
 | Q4 | Does the SDK bundle a mainnet interest rate manager? | Yes. It is present in the source and in the published package, and matches both the contracts package deployment record and Mezo's own literal. No gap here. |

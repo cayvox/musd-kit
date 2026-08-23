@@ -27,7 +27,7 @@
  *   Bumping a pinned block is a deliberate act, see PINNED_BLOCKS below.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -270,6 +270,31 @@ async function assertImplementationSlot(): Promise<void> {
   }
 }
 
+/**
+ * Every address the pinned contracts package knows about on a chain, plus every address the
+ * SDK bundles: proxy addresses and implementation addresses alike. Used to answer whether an
+ * exempt account is protocol plumbing or something else. "Something else" is a legitimate
+ * answer to publish; it is NOT evidence of who owns it, and nothing here speculates on that.
+ */
+function knownProtocolAddresses(deploymentsDir: string): Set<string> {
+  const known = new Set<string>()
+  const dir = join(
+    ROOT,
+    'packages/core/node_modules/@mezo-org/musd-contracts/deployments',
+    deploymentsDir,
+  )
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue
+    const record = JSON.parse(readFileSync(join(dir, file), 'utf8')) as DeploymentRecord
+    if (record.address) known.add(record.address.toLowerCase())
+    if (record.implementation) known.add(record.implementation.toLowerCase())
+  }
+  for (const map of Object.values(DEPLOYMENTS)) {
+    for (const address of Object.values(map)) known.add(String(address).toLowerCase())
+  }
+  return known
+}
+
 /** The address encoded in the low 20 bytes of a storage word, or null when the word is zero. */
 function addressFromSlot(word: Hex): Address | null {
   const value = BigInt(word)
@@ -305,7 +330,28 @@ interface FeeExemptResult {
   addedEventName: string
   removedEventName: string
   getterName: string
+  /** What kind of accounts these are. Populated only when the scan concluded. */
+  characterization?: ExemptCharacterization | undefined
   inconclusive?: string
+}
+
+/**
+ * What KIND of account is exempt, which a reader weighs more heavily than the severity letter.
+ * Protocol owned contracts and ordinary external accounts are very different populations.
+ */
+interface ExemptCharacterization {
+  /** Exempt accounts with non empty code at the pinned block. */
+  exemptWithCode: number
+  /** Exempt accounts with no code, i.e. externally owned, at the pinned block. */
+  exemptWithoutCode: number
+  /** Exempt accounts matching an address in the pinned package's records or the bundled map. */
+  exemptMatchingKnownContract: number
+  /** Same three counts across every address ever granted, exempt at the pin or not. */
+  grantedWithCode: number
+  grantedWithoutCode: number
+  grantedMatchingKnownContract: number
+  /** How many addresses the known set was built from, so the negative result is checkable. */
+  knownAddressCount: number
 }
 
 async function collectFeeExempt(
@@ -438,6 +484,32 @@ async function collectFeeExempt(
     else seenButNotExempt.push(account)
   }
 
+  // Characterize the cohort. A reader weighs "ordinary external accounts" very differently
+  // from "protocol owned contracts", and more heavily than the severity letter.
+  const known = knownProtocolAddresses(spec.deploymentsDir)
+  const characterization: ExemptCharacterization = {
+    exemptWithCode: 0,
+    exemptWithoutCode: 0,
+    exemptMatchingKnownContract: 0,
+    grantedWithCode: 0,
+    grantedWithoutCode: 0,
+    grantedMatchingKnownContract: 0,
+    knownAddressCount: known.size,
+  }
+  for (const account of candidates) {
+    const bytecode = await client.getCode({ address: account, blockNumber })
+    const hasCode = Boolean(bytecode && bytecode !== '0x')
+    const isKnown = known.has(account.toLowerCase())
+    if (hasCode) characterization.grantedWithCode++
+    else characterization.grantedWithoutCode++
+    if (isKnown) characterization.grantedMatchingKnownContract++
+    if (exempt.includes(account)) {
+      if (hasCode) characterization.exemptWithCode++
+      else characterization.exemptWithoutCode++
+      if (isKnown) characterization.exemptMatchingKnownContract++
+    }
+  }
+
   return {
     ...base,
     chunkCount: ranges.length,
@@ -445,6 +517,7 @@ async function collectFeeExempt(
     removed: removed.length,
     exempt,
     seenButNotExempt,
+    characterization,
   }
 }
 
@@ -933,14 +1006,32 @@ function renderChain(facts: ChainFacts): string {
         `**The fee exempt set is empty at this block.** No address is fee exempt on this chain as of block ${feeExempt.toBlock}.`,
       )
     } else {
-      out.push(`**The fee exempt set is NOT empty: ${feeExempt.exempt.length} address(es).**`)
-      out.push('')
-      for (const account of feeExempt.exempt) out.push(`- \`${account}\``)
-    }
-    if (feeExempt.seenButNotExempt.length > 0) {
+      out.push(`**The fee exempt set is NOT empty: ${feeExempt.exempt.length} account(s).**`)
       out.push('')
       out.push(
-        `Addresses granted at some point and not exempt at the pin: ${feeExempt.seenButNotExempt.map((a) => `\`${a}\``).join(', ')}`,
+        `${feeExempt.seenButNotExempt.length} further account(s) were granted exemption at some point and are not exempt at the pin, so the mechanism is actively administered rather than merely deployed.`,
+      )
+    }
+    const traits = feeExempt.characterization
+    if (traits && feeExempt.exempt.length > 0) {
+      out.push('')
+      out.push(
+        `**What kind of accounts these are.** Of the ${feeExempt.exempt.length} exempt at this block, ${traits.exemptWithCode} have non empty code and ${traits.exemptWithoutCode} have none, and ${traits.exemptMatchingKnownContract} match an address known to the protocol, checked against ${traits.knownAddressCount} addresses drawn from every deployment record in the pinned contracts package, proxies and implementations alike, plus every address the SDK bundles. Across all ${traits.grantedWithCode + traits.grantedWithoutCode} accounts ever granted: ${traits.grantedWithCode} with code, ${traits.grantedWithoutCode} without, ${traits.grantedMatchingKnownContract} matching a known protocol address. Unmatched means only that: it is not evidence of who owns an account, and nothing here infers ownership.`,
+      )
+    }
+    // Editorial: the count, the range and the characterization are published; the individual
+    // addresses are not. They are public chain data and `pnpm facts` reproduces them on demand,
+    // so withholding them costs a reader nothing they cannot recompute. Printing them would
+    // attach a durable, indexed "fee exempt" label to specific accounts in a public register,
+    // which adds no evidentiary weight to the severity argument that the count already carries.
+    // Only meaningful when there is a set to redact. On a chain with no exempt accounts this
+    // paragraph would be answering a question nobody asked.
+    if (feeExempt.exempt.length > 0 || feeExempt.seenButNotExempt.length > 0) {
+      out.push('')
+      out.push(
+        'The individual addresses are deliberately not listed here. The count, the scanned range ' +
+          'and the characterization above are what the severity rests on, and anyone can reproduce ' +
+          'the addresses themselves by running `pnpm facts` against the same pinned block.',
       )
     }
   }
