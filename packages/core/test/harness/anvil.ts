@@ -42,6 +42,8 @@ export interface ForkHandle {
 
 const READY_TIMEOUT_MS = 60_000
 const POLL_INTERVAL_MS = 250
+/** How long anvil gets to flush its fork cache on SIGTERM before we SIGKILL it (MK-021). */
+const GRACEFUL_EXIT_TIMEOUT_MS = 15_000
 
 function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -103,11 +105,32 @@ export async function startFork(opts: StartForkOptions = {}): Promise<ForkHandle
     exitInfo = `anvil exited (code=${code}, signal=${signal})`
   })
 
+  /**
+   * Stop anvil, giving it the chance to FLUSH ITS FORK STATE CACHE first (MK-021).
+   *
+   * anvil lazily fetches upstream state on first access and, when the fork block is
+   * pinned, persists it to `~/.foundry/cache/rpc/<chainId>/<block>/storage.json`. It only
+   * writes that file on a graceful shutdown. This used to send SIGKILL, so the cache was
+   * never written and every run re-fetched everything: measured at 913 upstream JSON-RPC
+   * calls, 849 of them `eth_getStorageAt`, for a single `computeHints` warm-up, against 3
+   * calls once the cache exists.
+   *
+   * SIGTERM first, then SIGKILL only if anvil does not exit within the grace period, so a
+   * wedged process can still never outlive the suite.
+   */
   const kill = (): Promise<void> =>
     new Promise((resolve) => {
       if (exited || child.killed) return resolve()
-      child.once('exit', () => resolve())
-      child.kill('SIGKILL')
+      child.kill('SIGTERM')
+      // Scheduled before the listener is attached, so `force` can be a const. Node emits
+      // 'exit' asynchronously, so the listener is always in place before it can fire.
+      const force = setTimeout(() => {
+        if (!exited) child.kill('SIGKILL')
+      }, GRACEFUL_EXIT_TIMEOUT_MS)
+      child.once('exit', () => {
+        clearTimeout(force)
+        resolve()
+      })
     })
 
   // Ensure no orphan anvil if the test process dies unexpectedly.
@@ -154,7 +177,11 @@ export async function startFork(opts: StartForkOptions = {}): Promise<ForkHandle
   }
 
   const forkBlockNumber = await publicClient.getBlockNumber({ cacheTime: 0 })
-  const seededPrice = await installOracleShim(testClient, publicClient, upstream)
+  // Seed the oracle at the SAME block the fork is anchored at, so the fork block is the
+  // one input that determines the price (MK-020). When `MEZO_FORK_BLOCK` is set this is
+  // that block; when it is not, it is whatever `latest` was at boot, which at least keeps
+  // the price and the chain state consistent with each other within a run.
+  const seededPrice = await installOracleShim(testClient, publicClient, upstream, forkBlockNumber)
 
   let stopped = false
   const stopFork = async (): Promise<void> => {

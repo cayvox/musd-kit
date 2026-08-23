@@ -25,10 +25,17 @@ the *real* MUSD contracts.
   The harness reads `MEZO_FORK_BLOCK` and passes it to anvil as `--fork-block-number`;
   CI sets it (`.github/workflows/ci.yml`), so the fixture no longer drifts with live
   testnet state. Locally, leaving it unset forks at `latest`.
+- **Seed the price at that same block.** Mezo's BTC/USD oracle lives at a native
+  precompile served by the node's Cosmos oracle module, not by EVM bytecode, so a fork of
+  it reverts and the harness seeds a shim from an upstream read instead. That read is
+  anchored to the fork's own block, so the fork block determines the price as well as the
+  chain state (MK-020). If the endpoint has pruned that block, the harness falls back to a
+  recorded seed for exactly that block and says so loudly, and refuses outright for any
+  other block rather than seed a price that does not belong to the forked state.
 
-::: warning What pinning does not buy you
-Pinning fixes the *starting chain state*. Two things it does **not** fix, and we should
-not claim it does.
+::: warning What pinning does and does not buy you
+Pinning fixes the *starting chain state*, and since MK-020 it fixes the starting price
+too. One thing it still does **not** fix, and we should not claim it does.
 
 **It is not order independence.** The whole `fork` project shares ONE anvil instance, and
 several files warp the EVM clock forward (phase2 30d, phase4 45d, phase6 1y). Those warps
@@ -37,15 +44,15 @@ together by an alphabetical sequencer (`vitest.config.mts`), not a set of indepe
 tests. When a file's setup fails, later files fail as a consequence rather than on their
 own merits, which makes a red run harder to read than it should be.
 
-**It does not pin the price.** The oracle shim is seeded from a live
-`latestRoundData()` read against the upstream RPC at `latest`, not at the pinned block
-(`packages/core/test/harness/oracle.ts:52-62`). Two runs at the same
-`MEZO_FORK_BLOCK` therefore see different BTC/USD prices, which is observable: the
-harness logs the seeded answer at startup. Tests that assert against thresholds near MCR
-are exposed to this.
+**It did not used to pin the price, and now it does.** The oracle shim was seeded from a
+`latestRoundData()` read at the upstream chain's `latest` rather than at the forked block,
+so four runs at the same `MEZO_FORK_BLOCK` saw four different BTC/USD prices. That was
+MK-020, and it is fixed: the seed is now read at the fork's own anchor block. The harness
+prints the seeded answer **and the block it came from** at startup, so any future
+divergence is visible in the log rather than inferred from a failure.
 
-Both are known structural limits, tracked under MK-016. Pinning the block was one fix,
-not the fix.
+The ordering coupling is a known structural limit, tracked under MK-016. Pinning the
+block was one fix, not the fix.
 :::
 - **Smoke test (the Phase-0 gate):** read `PriceFeed.fetchPrice()` and `MCR` **from
   the fork** (not a mock) and assert a real price and `1.1e18`. If this passes
@@ -124,6 +131,14 @@ cases:
 - **The floor is a ratchet: it only ever moves upward.** It was set to the honestly
   measured number rounded down, not to an aspiration. Raise it when real coverage rises.
   Never lower it to turn a red build green, that converts the gate into decoration.
+- **Scope, stated so the number cannot mislead.** `pnpm test:coverage` runs **both**
+  vitest projects, so the fork suite counts toward the measurement, not just the unit
+  layer. What is measured is `packages/core/src/**` minus `_generated/`.
+  **`@musd-kit/react` is not measured at all**, even though it is a published package: no
+  file under `packages/react/src` appears in the coverage report, so the floor says
+  nothing about the hook layer. Its fork tests do run and must pass; they simply do not
+  contribute to, or get graded by, the gate. Bringing it under the gate needs its own
+  measured floor and is not done yet.
 - Coverage is necessary but not sufficient: a line covered by a mock proves nothing
   about protocol truth, the fork tests are what count. A high floor over
   `previewOpen` would not have caught MK-005 or MK-006, both of which are fully covered
@@ -134,15 +149,29 @@ cases:
 ## 5. Determinism & CI matrix
 
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in
-  `.github/workflows/ci.yml`); randomized tests (hint trials, math grids) use a **fixed
-  seed**. Read the warning in §1: pinned is not order independent.
+  `.github/workflows/ci.yml`) and the oracle seed is read at that same block, so the price
+  is pinned with it; randomized tests (hint trials, math grids) use a **fixed seed**. Read
+  the warning in §1: pinned is not order independent.
+- **Fork state caching.** anvil lazily fetches upstream state on first access and persists
+  it per pinned block under `~/.foundry/cache/rpc/<chainId>/<block>/`. The harness stops
+  anvil with `SIGTERM` so that cache is actually written; it used to `SIGKILL`, so every
+  run refetched everything and the first hint computation cost 849 sequential
+  `eth_getStorageAt` round trips (MK-021). CI restores that directory keyed on the block.
+  The key and the path both carry the block number and there is no prefix fallback, on
+  purpose: replaying one block's state at another block would undo MK-020.
 - **CI matrix:** the chain-free half (lint, path guard, build, typecheck, examples, and
-  the `unit` project) runs on **Node 20, 22, and 24**, covering the range the packages
-  advertise in `engines` (`>=20.11.0`). The fork gate and the coverage floor run once, on
-  the pinned toolchain in `.nvmrc`, because that gate is chain-bound rather than
-  runtime-bound. For `@musd-kit/react`, the pack smoke installs against the **verified
-  peer floors** (`wagmi 2.5.12` / `viem 2.22.8` / `@tanstack/react-query 5.28.4` /
-  `react 18.2.0`) to catch resolution drift before users hit it.
+  the `unit` project) runs on **Node 20, 22, and 24**. Against the official
+  `nodejs/Release` schedule, checked rather than assumed: **24 is Active LTS**, **22 is
+  Maintenance LTS**, and **20 reached end of life on 30 Apr 2026**. So the matrix covers
+  current and previous LTS, and keeps Node 20 because users are still on it. `engines.node`
+  is set to the lowest version the matrix actually runs (`>=20.20.2`, the final Node 20
+  release, which that leg resolves to), and `.nvmrc` tracks the Active LTS: **`engines`
+  states what we test, `.nvmrc` states what we develop on** (`08-conventions` §1). The fork
+  gate and the coverage floor run once, on the `.nvmrc` toolchain, because that gate is
+  chain-bound rather than runtime-bound. For
+  `@musd-kit/react`, the pack smoke installs against the **verified peer floors**
+  (`wagmi 2.5.12` / `viem 2.22.8` / `@tanstack/react-query 5.28.4` / `react 18.2.0`) to
+  catch resolution drift before users hit it.
 - **Gates wired to phases:** each build phase has a
   named test gate; CI does not let a phase's PR merge unless its gate is green.
 

@@ -11,6 +11,7 @@ import {
   ORACLE_PRECOMPILE,
   ORACLE_SHIM_RUNTIME,
   ORACLE_SLOT,
+  RECORDED_ORACLE_SEED,
   aggregatorAbi,
   mezoTestnet,
 } from './constants'
@@ -24,6 +25,10 @@ export interface SeededRoundData {
   startedAt: bigint
   updatedAt: bigint
   answeredInRound: bigint
+  /** Upstream block the round was read at. The price is a function of THIS, not of wall clock. */
+  sourceBlock: bigint
+  /** `chain` = read from the upstream node at {@link sourceBlock}; `recorded` = the loud fallback. */
+  source: 'chain' | 'recorded'
 }
 
 async function writeSlot(client: TestClient, slot: bigint, value: bigint): Promise<void> {
@@ -35,34 +40,93 @@ async function writeSlot(client: TestClient, slot: bigint, value: bigint): Promi
 }
 
 /**
- * Read the REAL `decimals()` + `latestRoundData()` from Mezo's live oracle, then
- * install {@link ORACLE_SHIM_RUNTIME} at the precompile address on the fork and
- * seed it with that real data. After this, `PriceFeed.fetchPrice()` works on the
- * fork and returns the real, seeded BTC/USD price.
+ * Read the REAL `decimals()` + `latestRoundData()` from Mezo's oracle **at the block the
+ * fork is anchored at**, then install {@link ORACLE_SHIM_RUNTIME} at the precompile
+ * address on the fork and seed it with that data. After this, `PriceFeed.fetchPrice()`
+ * works on the fork and returns the real BTC/USD price as of the forked block.
  *
- * Timestamps (`startedAt`/`updatedAt`) are seeded to the fork's current block time
- * so the price is never "stale" to the PriceFeed's freshness check; the price
- * itself (`answer`) and `roundId` are the real live values.
+ * MK-020. This read used to omit the block number, which meant it resolved at the
+ * upstream chain's `latest`. Pinning `MEZO_FORK_BLOCK` therefore pinned the chain state
+ * and left the price floating: three runs at block 15043414 seeded three different
+ * answers, and the keeper test flipped between pass and fail as a result. Anchoring the
+ * read to `seedBlock` makes the fork block the single input that determines the price.
+ *
+ * The oracle at `ORACLE_PRECOMPILE` is served by the node's Cosmos oracle module rather
+ * than by EVM bytecode (see `constants.ts`), so it cannot be read from the fork itself,
+ * and whether it honours a historical block tag is a property of the endpoint, not
+ * something to assume. It was verified to honour it: reads at the pinned block returned
+ * one identical round twelve times running, and a read one million blocks earlier
+ * returned a genuinely older round. If the endpoint has pruned that state, we fall back
+ * to {@link RECORDED_ORACLE_SEED}, but only for its exact block and never quietly.
+ *
+ * Timestamps (`startedAt`/`updatedAt`) are still seeded to the fork's current block time
+ * rather than the round's own, so the price is never "stale" to the PriceFeed's freshness
+ * check. Only the price and round id come from the pinned read.
+ *
+ * @param seedBlock the upstream block to read the round at, normally the fork's anchor.
  */
 export async function installOracleShim(
   testClient: TestClient,
   forkClient: PublicClient,
   liveRpcUrl: string,
+  seedBlock: bigint,
 ): Promise<SeededRoundData> {
   const live = createPublicClient({ chain: mezoTestnet, transport: http(liveRpcUrl) })
 
-  const [decimals, round, block] = await Promise.all([
-    live.readContract({ address: ORACLE_PRECOMPILE, abi: aggregatorAbi, functionName: 'decimals' }),
-    live.readContract({
-      address: ORACLE_PRECOMPILE,
-      abi: aggregatorAbi,
-      functionName: 'latestRoundData',
-    }),
-    forkClient.getBlock({ blockTag: 'latest' }),
-  ])
-
-  const [roundId, answer] = round
+  const block = await forkClient.getBlock({ blockTag: 'latest' })
   const now = block.timestamp
+
+  let decimals: number
+  let roundId: bigint
+  let answer: bigint
+  let source: SeededRoundData['source']
+
+  try {
+    const [liveDecimals, round] = await Promise.all([
+      live.readContract({
+        address: ORACLE_PRECOMPILE,
+        abi: aggregatorAbi,
+        functionName: 'decimals',
+        blockNumber: seedBlock,
+      }),
+      live.readContract({
+        address: ORACLE_PRECOMPILE,
+        abi: aggregatorAbi,
+        functionName: 'latestRoundData',
+        blockNumber: seedBlock,
+      }),
+    ])
+    decimals = liveDecimals
+    roundId = round[0]
+    answer = round[1]
+    source = 'chain'
+  } catch (cause) {
+    // Only the recorded block may be substituted, and only out loud. Substituting a
+    // recorded price for a DIFFERENT block would be a fabricated number, so that throws.
+    if (seedBlock !== RECORDED_ORACLE_SEED.block) {
+      throw new Error(
+        [
+          `Could not read the oracle round at block ${seedBlock} from the upstream RPC,`,
+          `and no recorded seed exists for that block (only ${RECORDED_ORACLE_SEED.block}).`,
+          'Point MEZO_FORK_BLOCK at a block the endpoint still serves, or use an archive',
+          'endpoint. Refusing to seed a price that does not belong to the forked block.',
+        ].join(' '),
+        { cause },
+      )
+    }
+    decimals = RECORDED_ORACLE_SEED.decimals
+    roundId = RECORDED_ORACLE_SEED.roundId
+    answer = RECORDED_ORACLE_SEED.answer
+    source = 'recorded'
+    console.warn(
+      [
+        `[harness] WARNING: the upstream RPC could not serve the oracle round at block ${seedBlock};`,
+        'falling back to the RECORDED seed for that block. The suite is still deterministic, but the',
+        'price is a snapshot rather than a fresh chain read. Bump MEZO_FORK_BLOCK and re-record.',
+        `Cause: ${String(cause)}`,
+      ].join(' '),
+    )
+  }
 
   await testClient.setCode({ address: ORACLE_PRECOMPILE, bytecode: ORACLE_SHIM_RUNTIME })
 
@@ -81,6 +145,8 @@ export async function installOracleShim(
     startedAt: now,
     updatedAt: now,
     answeredInRound: roundId,
+    sourceBlock: seedBlock,
+    source,
   }
 }
 
