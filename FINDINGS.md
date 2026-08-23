@@ -36,12 +36,12 @@ claim about it was not).
 
 | ID | Title | Class | Status |
 |---|---|---|---|
-| MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | open |
-| MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | open |
-| MK-003 | Refinancing fee is not modeled | S1 | open |
-| MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | open |
-| MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | open |
-| MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | open |
+| MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | test-written |
+| MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | test-written |
+| MK-003 | Refinancing fee is not modeled | S1 | test-written |
+| MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | test-written |
+| MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | test-written |
+| MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | test-written |
 | MK-007 | `claim()` swallows every error | S2 | open |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
 | MK-009 | Address overrides accept any string | S2 | open |
@@ -49,11 +49,11 @@ claim about it was not).
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | open |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
-| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | open |
+| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | test-written |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
-| MK-018 | Fee exemption is not modeled | S1 | open |
+| MK-018 | Fee exemption is not modeled | S1 | test-written |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
