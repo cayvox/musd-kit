@@ -36,11 +36,11 @@ claim about it was not).
 
 | ID | Title | Class | Status |
 |---|---|---|---|
-| MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | test-written |
-| MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | test-written |
+| MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | fixed |
+| MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | fixed |
 | MK-003 | Refinancing fee is not modeled | S1 | test-written |
-| MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | test-written |
-| MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | test-written |
+| MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | fixed |
+| MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
 | MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | test-written |
 | MK-007 | `claim()` swallows every error | S2 | open |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
@@ -53,7 +53,7 @@ claim about it was not).
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
-| MK-018 | Fee exemption is not modeled | S1 | test-written |
+| MK-018 | Fee exemption is not modeled | S1 | fixed |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
@@ -63,7 +63,7 @@ claim about it was not).
 
 ## MK-001 · `isLiquidatable` applies a Recovery Mode rule the protocol does not have
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** `TroveManager.sol` contains no reference to `CCR` in any liquidation path. The
 only gate is `ICR < MCR`, inside the batch liquidation loop (`TroveManager.sol`, the
@@ -97,11 +97,20 @@ that `liquidate()` on it reverts while `isLiquidatable()` returns `true`.
 assertion into a regression test that pins the revert. Breaking behavior change, shipped in 0.2.0
 with a migration note.
 
+
+**Fixed in the P3a wave.** `read/system.ts` now applies a single `icr < MCR` with no mode
+branch, and the docstring that claimed the Recovery Mode behavior was verified is corrected to
+state the rule and cite `TroveManager.sol:1148`. The phase 6 assertion that enshrined the wrong
+rule is inverted and the comment inventing an "ICR versus TCR plus Stability Pool cover" rule is
+deleted rather than reworded. A regression test pins that the two read paths,
+`isLiquidatable(address)` and `getTrove().isLiquidatable`, agree across the whole band in both
+modes, because two APIs disagreeing about one question was the underlying defect. Breaking
+behavior change for anyone who consumed the old verdict.
 ---
 
 ## MK-002 · `maxBorrowingCapacity` is not modeled anywhere in the SDK
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** Every trove carries a `maxBorrowingCapacity`, set at open from the opening price
 as `coll * price / (110 * 1e16)` (`BorrowerOperations.sol`, `_calculateMaxBorrowingCapacity`, called
@@ -133,6 +142,19 @@ a borrowing figure the contract rejects.
 **Decision.** Fix now. Add capacity reads and a preview for existing troves, add a precheck to
 `borrow()`, and state in the docs that capacity is fixed at the opening price and never rises.
 
+
+**Fixed in the P3a wave.** Capacity is now a first class concept: `getBorrowingCapacity(owner)`
+returns the on-chain capacity, the live entire debt and the remaining headroom;
+`previewBorrow({ owner, amount })` returns a verdict, a machine readable reason list and the
+binding constraint, covering the capacity gate, the resulting ICR against the mode correct
+threshold and the resulting system TCR; `borrow()` and the debt increase path of `adjustTrove()`
+precheck the gate and throw the typed `ExceedsBorrowingCapacity` with the real numbers before
+simulate. React gains `useBorrowPreview` and `useBorrowingCapacity`. `getBorrowingPower` stays
+the open time calculator and now says so, including that capacity is fixed at the opening price
+and never rises; it also now enforces the resulting system TCR, which the contract requires on
+every normal mode open and which it previously ignored. The precheck compares against the LIVE
+entire debt, not the stored `getTroveDebt`, because `_adjustTrove` updates interest first
+(`BorrowerOperations.sol:769`) and the gate therefore sees accrued interest.
 ---
 
 ## MK-003 · Refinancing fee is not modeled
@@ -162,7 +184,7 @@ rather than ship wrong numbers.
 
 ## MK-004 · Recovery Mode borrowing fee skip is not modeled
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** On open, the borrowing fee is charged only when the system is not in Recovery
 Mode and the account is not fee exempt. In Recovery Mode `netDebt` equals the requested draw with
@@ -185,11 +207,17 @@ most.
 
 **Decision.** Fix now, and record in the divergence matrix that the gap is shared.
 
+
+**Fixed in the P3a wave.** `previewOpen` charges the fee only when the contract does, that is
+when not in Recovery Mode and the account is not fee exempt. The second order effect is closed
+with it: because the floor is checked against `netDebt`, removing the phantom fee removes the
+band `draw < minNetDebt <= draw + fee` where the preview reported the floor met for an open that
+reverts. The findings test that pins that band is kept and now passes.
 ---
 
 ## MK-005 · `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** `openTrove` requires, in Recovery Mode, `ICR >= CCR`; and in normal mode, both
 `ICR >= MCR` and a resulting system TCR at or above CCR.
@@ -205,6 +233,13 @@ against an actual attempt.
 **Decision.** Fix now. Replace the flag with an explicit verdict plus reasons, covering the debt
 floor, the mode correct ICR threshold, and the projected TCR.
 
+
+**Fixed in the P3a wave.** `meetsRecoveryRequirement` is REMOVED, a breaking change, and
+replaced by `viable` plus a machine readable `reasons` list and `bindingConstraint`. The verdict
+covers the debt floor, the mode correct ICR threshold (`CCR` in Recovery Mode, `MCR` in normal
+mode) and, in normal mode only, the projected system TCR, which the contract enforces on every
+normal mode open and which the SDK never projected. The migration note is in
+`docs/03-core-api.md`.
 ---
 
 ## MK-006 · Hint NICR is fed entire debt, and repay ignores interest first ordering
@@ -466,7 +501,7 @@ and type the write path properly.
 
 ## MK-018 · Fee exemption is not modeled
 
-**Class** S1 · **Status** open · **Severity assigned from evidence, not assumption**
+**Class** S1 · **Status** fixed · **Severity assigned from evidence, not assumption**
 
 `GovernableVariables.isAccountFeeExempt` zeroes the borrowing fee on open, on debt increase, and on
 refinance. The SDK does not model it. Neither does Mezo's production dApp.
@@ -515,6 +550,14 @@ testnet result in particular must not be read as "fee exemption is unused"; it w
 the contract will not charge it. Read `isAccountFeeExempt` for the account being previewed and
 skip the fee when it returns true.
 
+
+**Fixed in the P3a wave.** `previewOpen` takes an optional `account` and consults
+`GovernableVariables.isAccountFeeExempt` through the new `MathDeps.isAccountFeeExempt`, so it
+charges what the contract charges for that caller. The GovernableVariables address is read from
+`borrowerOperations.governableVariables()` rather than added to the bundled map, so it cannot
+disagree with the BorrowerOperations already in use. With no account supplied the preview assumes
+not exempt and reports that via `feeExempt: false`, making the assumption visible rather than
+silent. The same rule is applied on the debt increase path, where the fee is likewise skipped.
 ---
 
 ## MK-019 · `refinance()` reverts in Recovery Mode, unchecked and undocumented

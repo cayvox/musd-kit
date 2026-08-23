@@ -38,6 +38,24 @@ const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05')
 // `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
 ```
 
+> ⚠️ **`useBorrowingPower` sizes an OPEN, not a top-up.** Its name invites use against a
+> Trove that already exists; it does not do that. Every Trove carries a
+> `maxBorrowingCapacity` fixed at the opening price which never rises afterwards, and a
+> debt increase is gated on it (`BorrowerOperations.sol:1358-1365`). For an existing
+> position use `useBorrowPreview` or `useBorrowingCapacity` (MK-002).
+
+```tsx
+import { useBorrowPreview, useBorrowingCapacity } from '@musd-kit/react';
+
+const { data: capacity } = useBorrowingCapacity({ owner: address });
+// { capacity, entireDebt, remaining }. `remaining` is headroom for draw + fee.
+
+const { data: preview } = useBorrowPreview({ owner: address, amount: parseMusd('5000') });
+if (preview && !preview.viable) {
+  // preview.bindingConstraint: 'EXCEEDS_BORROWING_CAPACITY' | 'ICR_BELOW_THRESHOLD' | ...
+}
+```
+
 ---
 
 ## 2. Writing
@@ -65,8 +83,8 @@ core; the React layer adds only the reactive wrapper.
 
 ## 3. The v1 hook set (as shipped, Phase 8)
 
-**Read:** `useTrove`, `useBorrowingPower`, `useLiquidationPrice`, `useHealthFactor`,
-`useMusdBalance`, `useOraclePrice`.
+**Read:** `useTrove`, `useBorrowingPower`, `useBorrowPreview`, `useBorrowingCapacity`,
+`useLiquidationPrice`, `useHealthFactor`, `useMusdBalance`, `useOraclePrice`.
 
 `useHealthFactor` and `useLiquidationPrice` are selectors over the **same** `useTrove`
 query (shared key + `select`), three hooks for one address dedupe to a single fetch. All
