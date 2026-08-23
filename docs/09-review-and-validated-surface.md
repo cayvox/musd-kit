@@ -52,6 +52,8 @@ evidence for what it actually exercises.
 | `computeEntireDebt` | Cross checked against the contract's interest form | Full |
 | `previewOpen`, `getBorrowingPower` | Dual validated: against a fork of the real contracts, and against the contracts' pure helpers | **Open path only** |
 | `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `refinance` | Fork exercised, not dual validated | **No preview validation** |
+| `previewBorrow`, `previewRefinance` | Fork exercised end to end against the contract's own gates, plus exhaustive chain-free tests of the verdict as a pure function | **Verdict and fee validated; not yet compared against a reverting write for every reason** |
+| Insertion hints on every existing-trove write path | Pinned on a fork against `getNominalICR` after the write, including a repay at, below and above interest owed | Full for the paths exercised |
 | Preview verdict against actual transaction outcome | The differential harness, see below | Being built |
 | Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | Reasoned from `BorrowerOperations.sol:879-897`, **not observed executing** | **Owed to the differential harness** (MK-002) |
 | Fee exemption on the DEBT INCREASE path, not just on open | Reasoned from `BorrowerOperations.sol:810-818`, **not observed executing** | **Owed to the differential harness** (MK-018) |

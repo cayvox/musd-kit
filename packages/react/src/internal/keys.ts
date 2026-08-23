@@ -19,6 +19,9 @@ export const musdQueryKeys = {
   /** Key for `useBorrowPreview`: one entry per owner and draw (MK-002). */
   borrowPreview: (chainId: number, owner: string, amount: bigint) =>
     ['musd', chainId, 'borrowPreview', owner, amount.toString()] as const,
+  /** Key for `useRefinancePreview`: one entry per owner (MK-003). */
+  refinancePreview: (chainId: number, owner: string) =>
+    ['musd', chainId, 'refinancePreview', owner] as const,
   /** Key for `useBorrowingCapacity`: one entry per owner (MK-002). */
   borrowingCapacity: (chainId: number, owner: string) =>
     ['musd', chainId, 'borrowingCapacity', owner] as const,

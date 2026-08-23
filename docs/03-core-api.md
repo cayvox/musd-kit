@@ -91,6 +91,7 @@ musd.previewOpen({ collateral, debt });
 // Existing Trove? These, not getBorrowingPower (MK-002).
 musd.getBorrowingCapacity(owner);                 // → { capacity, entireDebt, remaining }
 musd.previewBorrow({ owner, amount });            // → verdict + binding constraint + numbers
+musd.previewRefinance(owner);                     // → fee, resulting principal/ICR, verdict
 
 musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw for an OPEN only
 musd.computeICR({ collateral, entireDebt, price });        // → bigint
@@ -143,6 +144,50 @@ const { capacity, entireDebt, remaining } = await musd.getBorrowingCapacity(owne
 const p = await musd.previewBorrow({ owner, amount: parseMusd('5000') });
 if (!p.viable) console.log(p.bindingConstraint); // EXCEEDS_BORROWING_CAPACITY | ...
 ```
+
+### Refinancing costs money and is not always available
+
+`refinance()` moves a Trove to the current global interest rate. Two things the SDK used to
+model neither of (MK-003, MK-019):
+
+- **The contract charges a fee and capitalizes it into principal.** It is
+  `getBorrowingFee((refinancingFeePercentage * netDebt) / 100)`, added with
+  `increaseTroveDebt` (`BorrowerOperations.sol:1033-1038`), so the debt grows and the fee
+  starts accruing interest immediately. The percentage is **governable** and is read live.
+- **It always reverts in Recovery Mode.** `_requireNotInRecoveryMode(price)` is the first
+  requirement `_refinance` applies (`:1024`), ahead of the trove-is-active check.
+
+```ts
+const p = await musd.previewRefinance(owner);
+if (!p.viable) console.log(p.bindingConstraint); // RECOVERY_MODE | ICR_BELOW_MCR | ...
+p.fee;                 // what will be charged, 0 for a fee exempt account
+p.resultingPrincipal;  // principal + fee, because the fee is capitalized
+```
+
+Skipping the preview is safe but wasteful: simulate before send still surfaces the Recovery
+Mode revert as a typed `RecoveryModeRestriction`. The preview lets you know without sending.
+
+### Redemption returns a rate AND an amount
+
+`RedeemResult.fee` is **gone** (MK-014). It held the rate while its name said amount.
+
+```ts
+// before
+result.fee                       // actually the RATE, a 1e18 fraction
+// after
+result.redemptionRate            // the rate, named as a rate
+result.estimatedFeeCollateral    // the fee AMOUNT, in BTC wei
+result.estimatedCollateralDrawn  // what that estimate was computed against
+```
+
+The protocol's own naming is the trap: `redemptionRate()` is a rate
+(`BorrowerOperations.sol:129`), while `getRedemptionRate(collateralDrawn)` returns a fee
+**amount** (`:499-508`). At exactly one BTC drawn the two print the same digits.
+
+`maxFeePercentage` still caps the **rate** against the rate, which is unit consistent. It is
+**advisory only**: `redeemCollateral` takes no fee cap parameter at all
+(`TroveManager.sol:294-301`), so nothing on chain enforces it and governance can move the
+rate between the read and the mine (MK-011).
 
 `borrow()` and the debt increase path of `adjustTrove()` precheck the same gate and
 throw `ExceedsBorrowingCapacity` **before** simulate, with capacity, entire debt,

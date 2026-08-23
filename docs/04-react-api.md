@@ -54,6 +54,9 @@ const { data: preview } = useBorrowPreview({ owner: address, amount: parseMusd('
 if (preview && !preview.viable) {
   // preview.bindingConstraint: 'EXCEEDS_BORROWING_CAPACITY' | 'ICR_BELOW_THRESHOLD' | ...
 }
+
+const { data: refi } = useRefinancePreview({ owner: address });
+// refi.fee is charged and capitalized into principal; refi.viable is false in Recovery Mode.
 ```
 
 ---
@@ -84,7 +87,8 @@ core; the React layer adds only the reactive wrapper.
 ## 3. The v1 hook set (as shipped, Phase 8)
 
 **Read:** `useTrove`, `useBorrowingPower`, `useBorrowPreview`, `useBorrowingCapacity`,
-`useLiquidationPrice`, `useHealthFactor`, `useMusdBalance`, `useOraclePrice`.
+`useRefinancePreview`, `useLiquidationPrice`, `useHealthFactor`, `useMusdBalance`,
+`useOraclePrice`.
 
 `useHealthFactor` and `useLiquidationPrice` are selectors over the **same** `useTrove`
 query (shared key + `select`), three hooks for one address dedupe to a single fetch. All

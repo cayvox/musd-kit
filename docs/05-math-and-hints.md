@@ -124,6 +124,34 @@ SDK compares against the live entire debt rather than the stored `getTroveDebt`.
 `getBorrowingPower` also enforces the resulting system TCR in normal mode, which the
 contract requires on every normal mode open and which it previously ignored.
 
+## 4c. Insertion hints are computed from PRINCIPAL
+
+`SortedTroves` is ordered by a quantity that excludes interest, everywhere:
+
+- `TroveManager.getNominalICR` is `_computeNominalCR(coll + pending, principal + pending)`
+  (`TroveManager.sol:566-577`), with no interest term.
+- Every on-chain re-insert passes `_computeNominalCR(coll, PRINCIPAL)`:
+  `BorrowerOperations.sol:902-906` (adjust), `:1087-1088` (refinance), and
+  `TroveManager.sol:1287-1290` (partial redemption).
+
+Feeding a hint the ENTIRE debt therefore names a position that is not in the list. The
+contract re-validates and traverses from a bad hint, so the cost is gas and latency rather
+than a wrong number, and in the worst case an out-of-gas insert (MK-006).
+
+**A repayment is applied to interest first.** `InterestRateMath.calculateDebtAdjustment`
+branches on `payment >= interestOwed` (`InterestRateMath.sol:41-47`): at or above, principal
+falls by `payment - interestOwed`, which is **zero at exact equality**; below, principal
+falls by exactly zero. So a repay at or under the interest owed does not move the sort key at
+all, and modeling debt as falling by the full payment produced a hint for a position that
+never exists.
+
+**Why the open path was accidentally correct, and why the gate could not catch this.** At
+open there is no accrued interest, so the composite debt IS the principal and the two
+quantities coincide. The dual-validation gate in §5 covered the open path only, so it
+compared a quantity that happens to be right there and never exercised a path where interest
+exists. A gate that only covers the case where two quantities coincide cannot tell you which
+one you meant.
+
 ---
 
 ## 5. The dual-validation method (how preview math earns trust)
@@ -208,6 +236,9 @@ opening/adjusting one requires supplying correct insertion hints
 - `previewOpen(x).meetsMinimum == false` ⟺ `openTrove(x)` reverts `BelowMinimumDebt`.
 - `previewOpen(x).viable == false` ⟹ `openTrove(x)` reverts, with the reason named in
   `reasons` (MK-005).
+- The NICR every write path computes its hint from `==` `getNominalICR(addr)` after the
+  write (MK-006).
+- `previewRefinance(a).fee` `==` the debt increase `refinance()` actually causes (MK-003).
 - `liquidationPrice` such that `computeCR(coll, entireDebt, liquidationPrice) == MCR`.
 - NICR from the SDK `== computeNominalCR(coll, entireDebt)` exactly.
 - A position with ICR just below MCR is `isLiquidatable`; just above is not, and a

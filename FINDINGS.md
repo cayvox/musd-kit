@@ -38,10 +38,10 @@ claim about it was not).
 |---|---|---|---|
 | MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | fixed |
 | MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | fixed |
-| MK-003 | Refinancing fee is not modeled | S1 | test-written |
+| MK-003 | Refinancing fee is not modeled | S1 | fixed |
 | MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | fixed |
 | MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
-| MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | test-written |
+| MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | fixed |
 | MK-007 | `claim()` swallows every error | S2 | open |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
 | MK-009 | Address overrides accept any string | S2 | open |
@@ -49,12 +49,12 @@ claim about it was not).
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | open |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
-| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | test-written |
+| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
 | MK-018 | Fee exemption is not modeled | S1 | fixed |
-| MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
+| MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | fixed |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
 | MK-022 | `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated | S3 | open |
@@ -171,7 +171,7 @@ pointed at it afterwards.
 
 ## MK-003 · Refinancing fee is not modeled
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** On refinance the contract charges
 `fee = borrowingRate applied to (refinancingFeePercentage / 100) * (getTroveDebt - 200e18)`, adds it
@@ -192,6 +192,15 @@ the fee, and the hint is computed for a position that will not exist.
 into the hint. If it cannot be shipped correctly, remove `refinance()` from the public surface
 rather than ship wrong numbers.
 
+
+**Fixed in the P3b wave.** `previewRefinance(owner)` returns the fee, the fee base, the live
+governable percentage, the resulting principal, entire debt, ICR and TCR, and a verdict with
+machine readable reasons. `refinancingFeePercentage` is READ on every call rather than hardcoded,
+because it is governable. `refinance()` folds the fee into the hint, so the hint describes the
+position that will exist: combined with MK-006 the hint is principal based and fee inclusive,
+matching what `BorrowerOperations.sol:1087-1088` re-inserts with. The function was NOT removed from
+the public surface: the numbers can be produced correctly, so the fallback of shipping less surface
+did not apply.
 ---
 
 ## MK-004 · Recovery Mode borrowing fee skip is not modeled
@@ -256,7 +265,7 @@ normal mode open and which the SDK never projected. The migration note is in
 
 ## MK-006 · Hint NICR is fed entire debt, and repay ignores interest first ordering
 
-**Class** S2 · **Status** open
+**Class** S2 · **Status** fixed
 
 **Ground truth.** `TroveManager.getNominalICR` uses collateral plus pending collateral against
 principal plus pending principal, with no interest. Every on chain re insert passes a principal
@@ -279,6 +288,22 @@ a wrong number shown to the user, which is why this finding sits at the top of S
 **Decision.** Fix now: principal based hints on every existing trove write, and an interest first
 repay projection mirroring the contract helper.
 
+
+**Fixed in the P3b wave.** Every hint is computed from PRINCIPAL. All seven hint call sites in
+`packages/core/src/trove/index.ts` were enumerated from source and corrected: `addCollateral`,
+`borrow`, `repay`, `withdrawCollateral`, `adjustTrove` and `refinance`; `openTrove` was already
+correct and `close` computes no hint because it removes the node. `hintsFor`'s parameter is renamed
+`principal` so the wrong quantity cannot be passed by habit. The repay projection mirrors
+`InterestRateMath.calculateDebtAdjustment` exactly through the exported
+`principalReductionForRepay`, and is pinned on a fork at three payment sizes against the contract's
+own branch boundary: below, exactly equal to, and above interest owed.
+
+**Why the open path was accidentally correct.** At open there is no accrued interest, so the
+composite debt IS the principal. The dual validation gate covered the open path only, so it compared
+a quantity that happens to be right there and never exercised a path where interest exists. A gate
+that only covers the case where two quantities coincide cannot tell you which one you meant. That is
+the reason this survived into a published release, and it is why the differential harness must cover
+existing trove paths, not only opens.
 ---
 
 ## MK-007 · `claim()` swallows every error
@@ -386,7 +411,7 @@ straddle blocks, which contradicts the one consistent price snapshot wording in 
 
 ## MK-014 · `redeem` returns a rate in a field named `fee`
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth, corrected.** An earlier version of this entry described the two redemption getters
 wrongly, and its fix instruction would have introduced a unit error. Both getters live on
@@ -422,6 +447,15 @@ explicit, and additionally return the estimated fee amount, computed with
 `getRedemptionRate(collateralDrawn)` for the collateral actually drawn, as a separate field.
 Leave the cap comparing rate against rate.
 
+
+**Fixed in the P3b wave.** `RedeemResult.fee` is removed, a breaking change. The result now carries
+`redemptionRate`, the rate named as a rate, `estimatedFeeCollateral`, the fee AMOUNT in BTC wei from
+`getRedemptionRate(collateralDrawn)`, and `estimatedCollateralDrawn`, so a caller can see what the
+estimate assumed. The amount is labelled an estimate because the collateral actually drawn is only
+known once the redemption mines; the docstring points at the `Redemption` event's `collateralFee`
+as authoritative. The cap is deliberately unchanged and still compares rate against rate, which was
+already consistent; MK-011's note that no on chain fee cap exists is kept and strengthened with the
+citation `TroveManager.sol:294-301` and the read-then-send race spelled out.
 ---
 
 ## MK-015 · Documentation claims that overstate reality
@@ -580,7 +614,7 @@ differential harness coverage list in `docs/09-review-and-validated-surface.md` 
 
 ## MK-019 · `refinance()` reverts in Recovery Mode, unchecked and undocumented
 
-**Class** S2 · **Status** open · **Found by us during remediation**
+**Class** S2 · **Status** fixed
 
 **Ground truth.** The refinance path calls `_requireNotInRecoveryMode(price)` before anything else,
 so a refinance attempted in Recovery Mode always reverts.
@@ -592,6 +626,14 @@ mapped revert rather than a bad transaction, which is why this is S2 and not S1.
 **Decision.** Fix now, alongside MK-003: surface the restriction in the preview and in the
 docstring.
 
+
+**Fixed in the P3b wave, and the record corrected.** This was never a safety gap. Simulate before
+send already surfaced the revert as a typed `RECOVERY_MODE_RESTRICTION`, which a test written in the
+P2 wave asserted and which still passes: the SDK behavior a caller could observe was already
+correct. What was missing is that the restriction could not be learned WITHOUT sending, and was
+documented nowhere. `previewRefinance` reports it, and reports it as the FIRST binding reason
+because `_requireNotInRecoveryMode` is the first requirement `_refinance` applies
+(`BorrowerOperations.sol:1024`), and the `refinance()` docstring now states it.
 ---
 
 ## MK-020 · Oracle shim seed is not pinned, so a pinned fork block is not a pinned price
