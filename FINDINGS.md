@@ -53,7 +53,7 @@ claim about it was not).
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
-| MK-018 | Fee exemption is not modeled | TBD | open |
+| MK-018 | Fee exemption is not modeled | S1 | open |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
@@ -441,14 +441,42 @@ and type the write path properly.
 
 ## MK-018 · Fee exemption is not modeled
 
-**Class** to be decided by the live read · **Status** open
+**Class** S1 · **Status** open · **Severity assigned from evidence, not assumption**
 
 `GovernableVariables.isAccountFeeExempt` zeroes the borrowing fee on open, on debt increase, and on
 refinance. The SDK does not model it. Neither does Mezo's production dApp.
 
-Severity depends on whether the exempt set is non empty on chain, which is answered by the event
-scan recorded in `docs/09-review-and-validated-surface.md`. Empty set means a documented limit.
-Non empty means a wrong number for that cohort.
+**The exempt set is NOT empty on mainnet.** That is what decides this, and it is now measured
+rather than guessed. At mainnet block 11330182, two accounts are fee exempt:
+
+- `0x56105c17beF06455e1066f7C455fF28f15C7283E`
+- `0xd19b598712413E69b48f70c5Ea16286cf8DFD632`
+
+Four accounts have been granted exemption over the chain's history and two of those have since had
+it removed, so the mechanism is not merely deployed, it is actively administered. On testnet, at
+block 15043414, the set is empty.
+
+**How that was established.** A genesis to pinned block scan of `FeeExemptAccountAdded` and
+`FeeExemptAccountRemoved` on `GovernableVariables`, event and getter names read from the deployed
+ABI rather than assumed, in 1134 chunks of 10000 blocks on mainnet and 1505 on testnet, with every
+address ever granted then re-checked against `isAccountFeeExempt` at the pinned block so a removal
+is confirmed by the contract rather than inferred from event pairing. No address was guessed or
+probed. Recorded in full in `docs/09-review-and-validated-surface.md` §6.
+
+**Why S1.** For an exempt account the contract charges no borrowing fee, while
+`packages/core/src/math/previewOpen.ts` applies `getBorrowingFee(debt)` unconditionally. The
+caller is shown a debt, an ICR and a liquidation price computed from a fee that will not be
+charged. It is a silently wrong number with no error raised, which is the S1 definition, and the
+cohort it is wrong for exists on mainnet today.
+
+**Scope of the claim.** Both statements above are facts about specific blocks, not permanent
+properties: the set is governable and can change without notice in either direction. The empty
+testnet result in particular must not be read as "fee exemption is unused"; it was empty at block
+15043414 and nothing more.
+
+**Decision.** Fix, in the same wave as MK-004, since both are the borrowing fee being applied when
+the contract will not charge it. Read `isAccountFeeExempt` for the account being previewed and
+skip the fee when it returns true.
 
 ---
 
@@ -609,6 +637,6 @@ overshoots the 180000 ms budget by 1.3 seconds. The same call on the next run to
 | # | Question | Answer |
 |---|---|---|
 | Q1 | Does the contracts package version we pin differ from the one Mezo's dApp resolves? | Closed. Across both testnet and mainnet deployment sets, no contract address changed between the two versions, including the hint helpers, sorted troves, and interest rate manager. What changed: proxy implementation targets behind three contracts, one removed function and one changed event signature on the trove manager, and a set of new functions on the PCV. The SDK touches none of those surfaces. |
-| Q2 | Is the fee exempt set non empty on chain? | Pending the event scan. Decides MK-018. |
-| Q3 | Which contract revision is ground truth? | Reframed. The right question is which implementation sits behind each proxy on chain. Answered by reading the proxy implementation slot at a pinned block and comparing it to the pinned package. Recorded in `docs/09`. |
+| Q2 | Is the fee exempt set non empty on chain? | Closed. **Yes on mainnet, no on testnet.** At mainnet block 11330182 two accounts are fee exempt, `0x56105c17beF06455e1066f7C455fF28f15C7283E` and `0xd19b598712413E69b48f70c5Ea16286cf8DFD632`, out of four granted over the chain's history with two since removed. At testnet block 15043414 the set is empty. Established by a genesis to pin scan of `FeeExemptAccountAdded` and `FeeExemptAccountRemoved`, every granted address then re-checked against `isAccountFeeExempt` at the pinned block. This assigns MK-018 its class, S1. Recorded in `docs/09-review-and-validated-surface.md` §6. |
+| Q3 | Which contract revision is ground truth? | Closed. The right question is which implementation sits behind each proxy on chain, and it now has an answer: at testnet block 15043414 and mainnet block 11330182, the EIP-1967 implementation behind every bundled proxy matches the deployment record in `@mezo-org/musd-contracts@1.1.0`, the version `packages/core/package.json` actually pins, on both chains. Six of the seven bundled addresses are proxies of that shape; `musd` has an empty implementation slot, so it is not a transparent proxy of that shape and there is nothing to compare. So the pinned package IS ground truth for the deployed code at those blocks. Recorded in `docs/09-review-and-validated-surface.md` §6. |
 | Q4 | Does the SDK bundle a mainnet interest rate manager? | Yes. It is present in the source and in the published package, and matches both the contracts package deployment record and Mezo's own literal. No gap here. |
