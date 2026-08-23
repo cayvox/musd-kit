@@ -57,6 +57,7 @@ claim about it was not).
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
+| MK-022 | `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated | S3 | open |
 
 ---
 
@@ -665,6 +666,45 @@ enlarged. vitest imposes no timeout on `globalSetup`, so a cold run is now slow 
 the phase 3 tests run under the ordinary `testTimeout`. That the old number was the flake is not a
 guess: measured end to end through the real harness, the cold warm up took 181335 ms, which
 overshoots the 180000 ms budget by 1.3 seconds. The same call on the next run took 42 ms.
+
+---
+
+## MK-022 · `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated
+
+**Class** S3, harness · **Status** open · **Found by us while verifying the MK-020 and MK-021
+merge into `main`**
+
+**What happens.** `packages/core/test/phase6.fork.test.ts:270` opens two Troves at a target ICR of
+about 1.12, drops the price to `originalPrice * 100 / 113` so both sit well under MCR, calls
+`batchLiquidate` on the pair, and asserts both reach status 3, closed by liquidation. On one run in
+six it failed with `expected 1 to be 3`: one of the two was still status 1, active, after the batch
+call returned and the receipt was awaited.
+
+**Reproduction and rate.** Six full runs of `pnpm test:coverage` at pinned block 15043414, one red.
+Three additional `pnpm test:fork` runs on the same tree were green. The seeded oracle answer was
+byte identical, `77051107320000000000000`, in every one of those runs, so this is not MK-020
+resurfacing.
+
+**Not caused by the merge that surfaced it.** `git diff` between `chore/p0.2-cold-fork-warmup` and
+`main` after the restore merge is empty, so the tree that produced the failure is byte identical to
+the tree that ran five consecutive green earlier. The merge introduced nothing. It follows that the
+same flake was latent in those five green runs and simply did not fire.
+
+**What we do NOT claim.** No root cause. The obvious candidates were not confirmed and some are
+already contradicted: interest accrual between open and liquidation lowers ICR further, so it makes
+liquidation more likely rather than less, and both Troves are constructed identically from the same
+captured `originalPrice`. Whether the Stability Pool balance at that moment, the ordering coupling
+in MK-016, or something in the batch path is responsible is unestablished, and this entry
+deliberately stops short of guessing.
+
+**Why it matters more than a flaky test usually would.** The assertion is about liquidation
+completing, which is the same surface MK-001 concerns. A test that passes five times in six is not
+evidence about the sixth, and this one sits next to a finding we already know is wrong about
+liquidation rules. It should be diagnosed before anyone reads the phase 6 file as confirmation of
+liquidation behavior.
+
+**Decision.** Diagnose in the mitigation removal wave, alongside MK-016. Do not raise a timeout or
+add a retry: nothing here timed out, and a retry would hide exactly the signal worth keeping.
 
 ---
 
