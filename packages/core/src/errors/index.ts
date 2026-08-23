@@ -48,6 +48,36 @@ export class BelowMinimumDebt extends MusdError {
   }
 }
 
+/**
+ * A debt increase the contract's borrowing capacity gate would reject (MK-002).
+ *
+ * Every Trove carries a `maxBorrowingCapacity`, fixed at open from the OPENING price as
+ * `coll * price / (110 * 1e16)` (`BorrowerOperations.sol:1323-1328`), ratcheted only
+ * DOWNWARD on a collateral decrease (`:879-897`), and never raised when the price rises.
+ * A debt increase requires `maxBorrowingCapacity >= netDebtChange + debt`
+ * (`:1358-1365`), where `netDebtChange` is the draw plus its borrowing fee and `debt` is
+ * the Trove's debt AFTER `updateSystemAndTroveInterest`, so accrued interest counts.
+ */
+export class ExceedsBorrowingCapacity extends MusdError {
+  constructor(
+    capacity: bigint,
+    entireDebt: bigint,
+    netDebtChange: bigint,
+    remaining: bigint,
+    cause?: unknown,
+  ) {
+    super(
+      Codes.EXCEEDS_BORROWING_CAPACITY,
+      `Borrowing ${netDebtChange} (draw plus fee) against a debt of ${entireDebt} would need ${entireDebt + netDebtChange} of capacity, but the Trove's maxBorrowingCapacity is ${capacity}, leaving ${remaining}. Capacity is fixed at the opening price and never rises, so a higher collateral price does not raise it.`,
+      {
+        context: { capacity, entireDebt, netDebtChange, remaining },
+        ...(cause !== undefined ? { cause } : {}),
+      },
+    )
+    this.name = 'ExceedsBorrowingCapacity'
+  }
+}
+
 /** The SDK-side fee guard (C5, there is no on-chain `maxFeePercentage`). */
 export class MaxFeeExceeded extends MusdError {
   constructor(maxFeePercentage: bigint, actualFee: bigint, actualFeePercentage: bigint) {

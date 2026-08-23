@@ -27,6 +27,26 @@ export {
 }
 
 /**
+ * The only `GovernableVariables` surface the SDK reads (MK-018): whether an account is
+ * exempt from the borrowing fee. Hand-written rather than generated because the contract is
+ * not part of the bundled deployment map; its address is read at runtime from
+ * `borrowerOperations.governableVariables()` so it always matches the deployment in use.
+ *
+ * Signature confirmed against the deployed ABI in
+ * `@mezo-org/musd-contracts/deployments/*\/GovernableVariables.json`:
+ * `isAccountFeeExempt(address _account) view returns (bool)`.
+ */
+export const governableVariablesAbi = [
+  {
+    type: 'function',
+    name: 'isAccountFeeExempt',
+    stateMutability: 'view',
+    inputs: [{ name: '_account', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+] as const
+
+/**
  * The typed contract bundle. Reads (`.read.*`) are fully inferred from the official
  * `as const` ABIs. Write methods (`.write.*`) are layered in from Phase 5 once a
  * `walletClient` is threaded through; for now the bundle is typed read-side

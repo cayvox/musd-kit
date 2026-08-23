@@ -16,4 +16,8 @@ export const musdQueryKeys = {
   /** Query key for a borrowing-power preview (collateral stringified, keys are JSON-hashed). */
   borrowingPower: (chainId: number, collateral: bigint) =>
     ['musd', chainId, 'borrowingPower', collateral.toString()] as const,
+  borrowPreview: (chainId: number, owner: string, amount: bigint) =>
+    ['musd', chainId, 'borrowPreview', owner, amount.toString()] as const,
+  borrowingCapacity: (chainId: number, owner: string) =>
+    ['musd', chainId, 'borrowingCapacity', owner] as const,
 } as const

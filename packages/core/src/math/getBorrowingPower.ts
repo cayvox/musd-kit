@@ -11,14 +11,34 @@ export interface GetBorrowingPowerParams {
 }
 
 /**
- * The largest draw that opens a valid Trove: ICR ≥ the binding ratio (MCR normally,
- * CCR in Recovery Mode) AND `netDebt ≥ minNetDebt`. Returns `0n` if even the
- * ICR-feasible maximum is below the debt floor (no valid open).
+ * The largest draw that OPENS a valid Trove. This is an **open time calculator and nothing
+ * else**: it sizes a draw for a position that does not exist yet.
  *
- * Solved by **monotonic binary search** on the draw, calling the real
- * `getBorrowingFee` each step, assumption-free about the fee shape (ICR is strictly
- * decreasing in draw). The fee read only touches the cached borrowing-rate slot, so
- * the search is cheap.
+ * It is NOT the right function for a Trove that already exists. Every Trove carries a
+ * `maxBorrowingCapacity`, fixed at the OPENING price as `coll * price / (110 * 1e16)`
+ * (`BorrowerOperations.sol:1323-1328`), ratcheted only downward on a collateral decrease
+ * (`:879-897`), and **never raised**, not by a price rise and not by adding collateral. A
+ * debt increase is gated on `maxBorrowingCapacity >= netDebtChange + debt`
+ * (`:1358-1365`), which this function does not and should not model. For an existing
+ * Trove use `previewBorrow`, which returns a verdict plus the binding constraint (MK-002).
+ *
+ * What it enforces, matching `_openTrove` (`BorrowerOperations.sol:645-665`):
+ *
+ *   - the mode correct individual ratio: `ICR >= MCR` normally, `ICR >= CCR` in Recovery
+ *     Mode;
+ *   - in NORMAL mode only, the resulting system ratio `TCR >= CCR`. The contract checks
+ *     this on every normal mode open (`_requireNewTCRisAboveCCR`, `:663-665`) and it can
+ *     bind before the individual ratio does on a large draw. In Recovery Mode the contract
+ *     checks `ICR >= CCR` instead and imposes no resulting TCR condition, so neither does
+ *     this;
+ *   - the debt floor, `netDebt >= minNetDebt`, where `netDebt` is the draw plus the fee
+ *     the contract will actually charge.
+ *
+ * Returns `0n` when even the largest feasible draw is below the debt floor, meaning no
+ * valid open exists for this collateral.
+ *
+ * Solved by **monotonic binary search** on the draw, calling the real `getBorrowingFee`
+ * each step, assumption-free about the fee shape (ICR is strictly decreasing in draw).
  */
 export async function getBorrowingPower(
   deps: MathDeps,
@@ -59,9 +79,35 @@ export async function getBorrowingPower(
       args: [draw],
     })
 
+  // In normal mode the contract ALSO requires the resulting system TCR to stay at or above
+  // CCR (`BorrowerOperations.sol:663-665`), so the open time calculator must respect it too;
+  // otherwise it reports a draw the contract rejects. Recovery Mode opens are gated on
+  // `ICR >= CCR` instead, with no resulting TCR condition, so this is normal mode only.
+  const [systemColl, systemDebt] = isRecoveryMode
+    ? [0n, 0n]
+    : await Promise.all([
+        publicClient.readContract({
+          address: addresses.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'getEntireSystemColl',
+        }),
+        publicClient.readContract({
+          address: addresses.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'getEntireSystemDebt',
+        }),
+      ])
+
   const feasible = async (draw: bigint): Promise<boolean> => {
     const entireDebt = draw + (await feeOf(draw)) + MUSD_GAS_COMPENSATION
-    return computeICR({ collateral, entireDebt, price }) >= targetRatio
+    if (computeICR({ collateral, entireDebt, price }) < targetRatio) return false
+    if (isRecoveryMode) return true
+    const newTcr = computeICR({
+      collateral: systemColl + collateral,
+      entireDebt: systemDebt + entireDebt,
+      price,
+    })
+    return newTcr >= CCR
   }
 
   // Binary search the largest feasible draw in [0, entireDebtCap - 200].
