@@ -911,15 +911,16 @@ whatever then fails becomes a finding. Capture the revert reason first.
 
 **Class** S3, harness · **Status** open · **Found by us in the P3a wave, and PROVEN pre existing**
 
-**What happens.** `packages/core/test/phase5.fork.test.ts` fails intermittently under
-`pnpm test:coverage` and, so far, never under `pnpm test:fork`. Three different symptoms have been
-seen in the same file, all of them a write that did not take effect:
+**What happens.** `packages/core/test/phase5.fork.test.ts` fails intermittently, far more often
+under `pnpm test:coverage` than under `pnpm test:fork`. Four symptoms have been seen in the same
+file, all of them a write that did not take effect:
 
 | Where | Symptom |
 |---|---|
 | `phase5.fork.test.ts:191` `adjustTrove combined` | `expected 600000000000000000n to be 550000000000000000n`, the collateral withdrawal did not apply |
 | `phase5.fork.test.ts:191` `adjustTrove combined` | `No open Trove for 0xEB41...`, the `openTrove` that starts the test did not take effect at all |
 | `phase5.fork.test.ts:114` `full lifecycle via the SDK` | `expected 500000000000000000n to be 600000000000000000n`, likewise a collateral step |
+| `phase5.fork.test.ts` `simulate-before-send surfaces reverts` | `expected false to be true`, the Trove the test opened does not exist at the end |
 
 **It is NOT ours, and that was proven rather than argued.** This first appeared while landing the
 P3a changes, in `adjustTrove`, code that wave modified, so it had every appearance of a regression.
@@ -937,6 +938,17 @@ Two checks settled it:
 red in two on `main`. Against that, ZERO red in twenty `pnpm test:fork` runs on the same branch at
 the same block, where the four failures that did occur were MK-022, MK-023, MK-024 and MK-025, none
 of them in phase 5. That asymmetry is the finding.
+
+**Correction, P3b wave: the asymmetry is not absolute.** This entry originally said phase 5 fails
+under coverage and "so far never under a plain fork run". That is now falsified. One of five plain
+`pnpm test:fork` runs on the P3b branch went red at
+`phase5.fork.test.ts` `simulate-before-send surfaces reverts`, with
+`expected false to be true`: the Trove the test opened did not exist by the end, so the opening
+write did not take effect, which is the same symptom as the three under coverage. Coverage
+instrumentation therefore makes it much MORE likely, not uniquely possible, which weakens the
+timing hypothesis below from "the instrumentation causes it" to "the instrumentation widens a
+window that is already there". The rate under a plain fork run is one in five on that branch,
+against zero in twenty on the previous one, so it is not a stable rate either.
 
   MEZO_TESTNET_RPC_URL=<a Mezo testnet endpoint> MEZO_FORK_BLOCK=15043414 pnpm test:coverage
 
