@@ -162,13 +162,13 @@ cases:
 - **CI matrix:** the chain-free half (lint, path guard, build, typecheck, examples, and
   the `unit` project) runs on **Node 20, 22, and 24**. Against the official
   `nodejs/Release` schedule, checked rather than assumed: **24 is Active LTS**, **22 is
-  Maintenance LTS**, and **20 reached end of life on 30 Apr 2026**. So the matrix does
-  cover current and previous LTS, and additionally covers Node 20 because it is both the
-  floor of `engines.node` (`>=20.11.0`) and the version pinned in `.nvmrc`, which the
-  packages still promise to run on. Worth saying plainly rather than leaving implied: the
-  pinned toolchain is an end-of-life runtime, and moving that baseline is its own change,
-  not a testing change. The fork gate and the coverage floor run once, on the `.nvmrc`
-  toolchain, because that gate is chain-bound rather than runtime-bound. For
+  Maintenance LTS**, and **20 reached end of life on 30 Apr 2026**. So the matrix covers
+  current and previous LTS, and keeps Node 20 because users are still on it. `engines.node`
+  is set to the lowest version the matrix actually runs (`>=20.20.2`, the final Node 20
+  release, which that leg resolves to), and `.nvmrc` tracks the Active LTS: **`engines`
+  states what we test, `.nvmrc` states what we develop on** (`08-conventions` §1). The fork
+  gate and the coverage floor run once, on the `.nvmrc` toolchain, because that gate is
+  chain-bound rather than runtime-bound. For
   `@musd-kit/react`, the pack smoke installs against the **verified peer floors**
   (`wagmi 2.5.12` / `viem 2.22.8` / `@tanstack/react-query 5.28.4` / `react 18.2.0`) to
   catch resolution drift before users hit it.

@@ -17,7 +17,7 @@ env:
   # forks at `latest`, so the suite runs against whatever live testnet state exists at
   # that moment: Trove population, the sorted list, and the oracle round all drift under
   # it, and a run that fails cannot be reproduced. The harness reads this name from the
-  # environment (`packages/core/test/harness/anvil.ts:81`) and passes it to anvil as
+  # environment (`packages/core/test/harness/anvil.ts:83`) and passes it to anvil as
   # `--fork-block-number`.
   #
   # HOW TO BUMP: pick a recent FINALIZED block on Mezo testnet
@@ -32,7 +32,7 @@ env:
 
 jobs:
   # Cheap, deterministic, chain-free. Runs across the Node range the packages advertise
-  # in `engines` (>=20.11.0), so resolution drift is caught before users hit it. This is
+  # in `engines` (>=20.20.2), so resolution drift is caught before users hit it. This is
   # the matrix `docs/07-testing.md` §5 describes; keep the two in sync.
   checks:
     name: Checks (Node ${{ matrix.node }})
@@ -41,10 +41,11 @@ jobs:
       fail-fast: false
       matrix:
         # Checked against the nodejs/Release schedule, not assumed: 24 is Active LTS, 22 is
-        # Maintenance LTS, and 20 reached END OF LIFE on 2026-04-30. 20 stays in the matrix
-        # because it is the `.nvmrc` pin and the floor of `engines.node` (>=20.11.0), so the
-        # packages still promise it. Retiring it means moving that baseline, which is a
-        # separate change. See `docs/07-testing.md` §5.
+        # Maintenance LTS, and 20 reached END OF LIFE on 2026-04-30. 20 stays anyway,
+        # because users are still on it, and it is the floor `engines.node` advertises
+        # (>=20.20.2, the final Node 20 release, which this leg resolves to).
+        # `engines` states what we TEST; `.nvmrc` states what we DEVELOP ON, and that now
+        # tracks the Active LTS. See `docs/08-conventions.md` §1 and `docs/07-testing.md` §5.
         node: ['20', '22', '24']
     steps:
       - name: Checkout

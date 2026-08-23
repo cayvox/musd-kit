@@ -8,7 +8,13 @@ correctness.
 
 ## 1. Toolchain (pinned)
 
-- **Node:** LTS, pinned via `.nvmrc` / `engines`.
+- **Node:** `engines` states what we **test**, `.nvmrc` states what we **develop on**. So
+  `engines.node` is the lowest version the CI matrix actually runs (`>=20.20.2`, the final
+  Node 20 release, which the matrix's oldest leg resolves to), and `.nvmrc` tracks the
+  Active LTS (24.19.0). Checked against the `nodejs/Release` schedule rather than assumed:
+  Node 24 is Active LTS, 22 is Maintenance LTS, and 20 reached end of life on 30 Apr 2026.
+  Node 20 stays in the matrix because users are still on it; developing on it is a
+  different question from supporting it, which is exactly what the two files separate.
 - **Package manager:** `pnpm` workspaces. Lockfile committed. (Matches the Mezo/wagmi
   ecosystem.)
 - **Language:** TypeScript, `strict: true` (and `noUncheckedIndexedAccess`,
