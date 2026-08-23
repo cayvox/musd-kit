@@ -192,6 +192,8 @@ Events found: 0 add, 0 remove. Every address ever added was then re-checked with
 
 **The fee exempt set is empty at this block.** No address is fee exempt on this chain as of block 15043414.
 
+**Single provider result.** `MEZO_TESTNET_RPC_URL_SECOND` is not set, so the result rests on one provider. No account was ever granted exemption on this chain, so there were no getter answers to confirm; what rests on the single provider here is the log scan itself.
+
 ### Mezo mainnet (chain id 31612)
 
 Read at block **11330182**. Every value below is governable unless it
@@ -279,12 +281,15 @@ Range scanned: blocks **0 to 11330182**, the whole chain up to the pin, in 1134 
 
 Events found: 4 add, 2 remove. Every address ever added was then re-checked with `isAccountFeeExempt` at the pinned block, so a removal is confirmed by the contract rather than inferred from event pairing.
 
-**The fee exempt set is NOT empty: 2 address(es).**
+**The fee exempt set is NOT empty: 2 account(s).**
 
-- `0x56105c17beF06455e1066f7C455fF28f15C7283E`
-- `0xd19b598712413E69b48f70c5Ea16286cf8DFD632`
+2 further account(s) were granted exemption at some point and are not exempt at the pin, so the mechanism is actively administered rather than merely deployed.
 
-Addresses granted at some point and not exempt at the pin: `0x52d033E64774F31A8B7562806aA5782CbbD29382`, `0x5eaA8bdc315608E8Cf873CFAbA05e42826f68C4d`
+**What kind of accounts these are.** Of the 2 exempt at this block, 0 have non empty code and 2 have none, and 0 match an address known to the protocol, checked against 37 addresses drawn from every deployment record in the pinned contracts package, proxies and implementations alike, plus every address the SDK bundles. Across all 4 accounts ever granted: 0 with code, 4 without, 0 matching a known protocol address. Unmatched means only that: it is not evidence of who owns an account, and nothing here infers ownership.
+
+The individual addresses are deliberately not listed here. The count, the scanned range and the characterization above are what the severity rests on, and anyone can reproduce the addresses themselves by running `pnpm facts` against the same pinned block.
+
+**Confirmed against a second, independent provider.** All 4 historically granted account(s) were re-read with `isAccountFeeExempt` at the same pinned block through a different endpoint, and every answer agreed.
 
 <!-- END ONCHAIN FACTS -->
 

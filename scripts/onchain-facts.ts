@@ -332,6 +332,8 @@ interface FeeExemptResult {
   getterName: string
   /** What kind of accounts these are. Populated only when the scan concluded. */
   characterization?: ExemptCharacterization | undefined
+  /** Independent confirmation of the getter answers through a second provider. */
+  crossCheck?: CrossCheckResult | undefined
   inconclusive?: string
 }
 
@@ -352,6 +354,17 @@ interface ExemptCharacterization {
   grantedMatchingKnownContract: number
   /** How many addresses the known set was built from, so the negative result is checkable. */
   knownAddressCount: number
+}
+
+/** Result of re-reading the exemption getter through a second, independent provider. */
+interface CrossCheckResult {
+  attempted: boolean
+  agreed: boolean
+  checked: number
+  /** Set when the second provider could not serve the pinned block at all. */
+  unavailable?: string | undefined
+  /** Addresses whose answer differed between providers, as a count only. */
+  disagreements: number
 }
 
 async function collectFeeExempt(
@@ -510,6 +523,8 @@ async function collectFeeExempt(
     }
   }
 
+  const crossCheck = await crossCheckExemption(spec, candidates, exempt, blockNumber, getter.name)
+
   return {
     ...base,
     chunkCount: ranges.length,
@@ -518,6 +533,82 @@ async function collectFeeExempt(
     exempt,
     seenButNotExempt,
     characterization,
+    crossCheck,
+  }
+}
+
+/**
+ * Re-read the exemption getter for every historically granted address at the SAME pinned
+ * block through a SECOND, independent provider, and confirm the same answer.
+ *
+ * A severity in a public register should not rest on one provider without the reader knowing.
+ * If no second endpoint is configured, or it cannot serve the pinned block, that is stated in
+ * the generated block rather than quietly dropped: an unverified single source result is still
+ * publishable, an unlabelled one is not.
+ */
+async function crossCheckExemption(
+  spec: ChainSpec,
+  candidates: readonly Address[],
+  exempt: readonly Address[],
+  blockNumber: bigint,
+  getterName: string,
+): Promise<CrossCheckResult> {
+  const url = process.env[`${spec.rpcEnvVar}_SECOND`]
+  if (!url) {
+    return {
+      attempted: false,
+      agreed: false,
+      checked: 0,
+      disagreements: 0,
+      unavailable: `\`${spec.rpcEnvVar}_SECOND\` is not set, so the result rests on one provider.`,
+    }
+  }
+  if (candidates.length === 0) {
+    return { attempted: true, agreed: true, checked: 0, disagreements: 0 }
+  }
+  const record = loadDeployment(spec.deploymentsDir, 'GovernableVariables')
+  try {
+    const second = createPublicClient({
+      chain: spec.chain,
+      transport: http(url, { timeout: 120_000, retryCount: 3 }),
+    }) as PublicClient
+    const chainId = await second.getChainId()
+    if (chainId !== spec.chainId) {
+      return {
+        attempted: true,
+        agreed: false,
+        checked: 0,
+        disagreements: 0,
+        unavailable: `the second endpoint reports chain ${chainId}, expected ${spec.chainId}`,
+      }
+    }
+    let disagreements = 0
+    for (const account of candidates) {
+      const result = await withRetry(() =>
+        second.readContract({
+          address: getAddress(record.address),
+          abi: record.abi,
+          functionName: getterName,
+          args: [account],
+          blockNumber,
+        } as never),
+      )
+      if ((result === true) !== exempt.includes(account)) disagreements++
+    }
+    return {
+      attempted: true,
+      agreed: disagreements === 0,
+      checked: candidates.length,
+      disagreements,
+    }
+  } catch (error) {
+    return {
+      attempted: true,
+      agreed: false,
+      checked: 0,
+      disagreements: 0,
+      unavailable: `the second endpoint could not serve the pinned block: ${shortError(error)}`,
+    }
   }
 }
 
@@ -1033,6 +1124,32 @@ function renderChain(facts: ChainFacts): string {
           'and the characterization above are what the severity rests on, and anyone can reproduce ' +
           'the addresses themselves by running `pnpm facts` against the same pinned block.',
       )
+    }
+    const cross = feeExempt.crossCheck
+    if (cross) {
+      out.push('')
+      if (!cross.attempted || cross.unavailable) {
+        // Distinguish "nobody double checked the answers" from "there were no answers to
+        // double check". Both are single provider results, but only the first is a caveat
+        // a reader has to weigh.
+        const nothingToCheck =
+          feeExempt.exempt.length === 0 && feeExempt.seenButNotExempt.length === 0
+        out.push(
+          `**Single provider result.** ${cross.unavailable ?? 'No second provider was attempted.'} ${
+            nothingToCheck
+              ? 'No account was ever granted exemption on this chain, so there were no getter answers to confirm; what rests on the single provider here is the log scan itself.'
+              : 'The exemption answers above were not independently confirmed, and that caveat is left visible on purpose rather than deleted.'
+          }`,
+        )
+      } else if (cross.agreed) {
+        out.push(
+          `**Confirmed against a second, independent provider.** All ${cross.checked} historically granted account(s) were re-read with \`${feeExempt.getterName}\` at the same pinned block through a different endpoint, and every answer agreed.`,
+        )
+      } else {
+        out.push(
+          `**Providers DISAGREE.** ${cross.disagreements} of ${cross.checked} account(s) returned a different answer from the second endpoint at the same pinned block. Treat the exemption result as unconfirmed until this is resolved.`,
+        )
+      }
     }
   }
   return out.join('\n')

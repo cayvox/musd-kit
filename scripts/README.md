@@ -44,12 +44,19 @@ a tracked file.
 ```sh
 export MEZO_TESTNET_RPC_URL=<a Mezo testnet (31611) endpoint>
 export MEZO_MAINNET_RPC_URL=<a Mezo mainnet (31612) endpoint>
+# Optional, and worth setting: a SECOND, independent endpoint per chain. The fee exemption
+# answers are re-read through it at the same pinned block and confirmed, because a severity
+# in a public register should not rest on one provider without the reader knowing.
+export MEZO_MAINNET_RPC_URL_SECOND=<a different Mezo mainnet endpoint>
+export MEZO_TESTNET_RPC_URL_SECOND=<a different Mezo testnet endpoint>
 pnpm facts            # rewrites the generated block in docs/09
 pnpm facts --stdout   # prints it instead, changes nothing
 ```
 
 Either endpoint may be omitted. A chain whose endpoint is missing or unreachable is reported
-as missing in full, never as a partial table, because a partial table reads as complete.
+as missing in full, never as a partial table, because a partial table reads as complete. When a
+`_SECOND` endpoint is absent the generated block says so and labels the result single provider,
+rather than dropping the caveat.
 
 **Not in CI**, on purpose: it needs live endpoints and runs a genesis-to-pin log scan of a few
 thousand chunked `eth_getLogs` calls. Run it **before any release** and whenever you are about

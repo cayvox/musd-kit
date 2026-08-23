@@ -201,6 +201,9 @@ never accepts one. Endpoints come from the environment and are never printed or 
 ```sh
 export MEZO_TESTNET_RPC_URL=<a Mezo testnet (31611) endpoint>
 export MEZO_MAINNET_RPC_URL=<a Mezo mainnet (31612) endpoint>
+# Optional per chain, and worth setting: a SECOND, independent endpoint. The fee exemption
+# answers behind MK-018 are re-read through it at the same pinned block and confirmed.
+export MEZO_MAINNET_RPC_URL_SECOND=<a different Mezo mainnet endpoint>
 pnpm facts            # rewrites the generated block in docs/09
 pnpm facts --stdout   # prints it instead, changes nothing
 ```
