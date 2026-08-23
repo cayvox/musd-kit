@@ -97,8 +97,12 @@ correctness.
   public contract, renames are breaking.
 - **npm publish with provenance.** Tag every release; sign the build provenance.
 - **Reproducible builds:** committed lockfile, pinned toolchain.
-- **Two packages publish together** at v1: `@musd-kit/core`, `@musd-kit/react`. A
-  post-publish install smoke test runs in CI.
+- **Two packages publish together** at v1: `@musd-kit/core`, `@musd-kit/react`. Two
+  distinct install checks guard that, and they are not the same thing: CI runs a
+  **pre-publish** pack smoke on every push (`scripts/release-smoke.sh`, from locally
+  packed tarballs, no registry contact), and the release workflow runs a
+  **post-publish** check that installs the published version from the registry into an
+  empty directory and imports it. See `07-testing` §2.
 
 ---
 

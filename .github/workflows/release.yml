@@ -59,7 +59,11 @@ jobs:
         with:
           version: stable
 
-      - name: Test (forked-Mezo gate)
+      # Both projects (unit + fork). Deliberately NOT pinned to `MEZO_FORK_BLOCK` the way
+      # `ci.yml` is: CI wants a reproducible fixture, a release wants to know the SDK still
+      # works against CURRENT testnet state before it ships. If this is red while CI is
+      # green, that difference is the finding.
+      - name: Test (forked-Mezo gate, unpinned against current testnet state)
         run: pnpm test
         env:
           MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
@@ -68,3 +72,89 @@ jobs:
         run: pnpm publish -r --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # The genuinely POST-publish check: install the version that was just published, FROM THE
+  # REGISTRY, into an empty directory outside this repo, and import it. `scripts/release-smoke.sh`
+  # (run in CI on every push) is a PRE-publish check: it installs from locally packed tarballs and
+  # never touches the registry, so it cannot catch a bad publish. This job can: a missing dist, a
+  # broken `exports` map, or a tarball that did not actually reach npm all fail here.
+  #
+  # Release flow only. This workflow has no `push:` branch trigger, so nothing here runs on a
+  # normal push; it runs on a `v*` tag or a manual dispatch, and only after `publish` succeeds.
+  verify-published:
+    name: Post-publish install from the registry
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Resolve the published version
+        id: ver
+        run: echo "version=$(node -p "require('./packages/core/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # npm's registry read path is eventually consistent, so a fresh version can 404 for a
+      # short while after publish. Poll rather than sleep a fixed amount.
+      - name: Wait for the version to be visible on the registry
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          for i in $(seq 1 30); do
+            if npm view "@musd-kit/core@$V" version >/dev/null 2>&1 \
+               && npm view "@musd-kit/react@$V" version >/dev/null 2>&1; then
+              echo "both packages visible at $V"
+              exit 0
+            fi
+            echo "attempt $i: not visible yet, waiting"
+            sleep 10
+          done
+          echo "FAIL: @musd-kit/core@$V / @musd-kit/react@$V never became visible" >&2
+          exit 1
+
+      # An empty directory OUTSIDE the checkout, so nothing resolves through the workspace.
+      - name: Install from the registry into a clean project
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          mkdir -p "$RUNNER_TEMP/postpublish"
+          cd "$RUNNER_TEMP/postpublish"
+          echo '{ "name": "postpublish-check", "private": true, "version": "0.0.0" }' > package.json
+          npm install --no-audit --no-fund \
+            "@musd-kit/core@$V" "@musd-kit/react@$V" \
+            viem@2.22.8 react@18.2.0 react-dom@18.2.0 wagmi@2.5.12 @tanstack/react-query@5.28.4
+
+      - name: Import the published packages (ESM + CJS)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/postpublish"
+          node --input-type=module -e "
+          import { createMusdClient, MusdError, MusdErrorCode } from '@musd-kit/core'
+          import { useTrove, useOpenTrove } from '@musd-kit/react'
+          if (typeof createMusdClient !== 'function') throw new Error('core ESM export missing')
+          if (typeof useTrove !== 'function' || typeof useOpenTrove !== 'function') throw new Error('react ESM hooks missing')
+          if (typeof MusdError !== 'function' || !MusdErrorCode.BELOW_MINIMUM_DEBT) throw new Error('core errors missing')
+          console.log('  published ESM ok')
+          "
+          node -e "
+          const core = require('@musd-kit/core')
+          if (typeof core.createMusdClient !== 'function') throw new Error('core CJS export missing')
+          if (!core.MusdErrorCode || !core.MusdErrorCode.ICR_BELOW_MCR) throw new Error('core CJS errors missing')
+          console.log('  published CJS ok')
+          "
+
+      - name: Confirm the installed version is the published one
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          cd "$RUNNER_TEMP/postpublish"
+          for p in core react; do
+            INSTALLED="$(node -p "require('./node_modules/@musd-kit/$p/package.json').version")"
+            [ "$INSTALLED" = "$V" ] || { echo "FAIL: @musd-kit/$p resolved $INSTALLED, expected $V" >&2; exit 1; }
+          done
+          echo "post-publish verification PASSED at $V"

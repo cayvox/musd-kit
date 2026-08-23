@@ -24,6 +24,7 @@ community (interaction).
 | [Ground truth](/01-ground-truth) | Every verified constant, signature, address, and formula, the anti-assumption source |
 | [Testing](/07-testing) | The forked-Mezo harness, the test gates, the boundary corpus |
 | [Conventions](/08-conventions) | TS config, naming, units, viem patterns, release hygiene |
+| [Review and validated surface](/09-review-and-validated-surface) | What has been independently reviewed, what is actually validated and how, and where the SDK diverges from the protocol |
 | [Glossary](/10-glossary) | MUSD and Liquity-fork vocabulary, used precisely |
 
 **Reading order for a fresh start:** this overview, then [Ground truth](/01-ground-truth)

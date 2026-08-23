@@ -22,7 +22,31 @@ the *real* MUSD contracts.
 
 - **Fork the chain at a pinned block.** Use an EVM fork (Anvil/Foundry-style, or a
   viem test client against a forked RPC) of Mezo testnet (31611) or mainnet (31612).
-  Pin the block so the suite is deterministic across CI runs.
+  The harness reads `MEZO_FORK_BLOCK` and passes it to anvil as `--fork-block-number`;
+  CI sets it (`.github/workflows/ci.yml`), so the fixture no longer drifts with live
+  testnet state. Locally, leaving it unset forks at `latest`.
+
+::: warning What pinning does not buy you
+Pinning fixes the *starting chain state*. Two things it does **not** fix, and we should
+not claim it does.
+
+**It is not order independence.** The whole `fork` project shares ONE anvil instance, and
+several files warp the EVM clock forward (phase2 30d, phase4 45d, phase6 1y). Those warps
+are cumulative and leak into every later file, so the suite is one stateful sequence held
+together by an alphabetical sequencer (`vitest.config.mts`), not a set of independent
+tests. When a file's setup fails, later files fail as a consequence rather than on their
+own merits, which makes a red run harder to read than it should be.
+
+**It does not pin the price.** The oracle shim is seeded from a live
+`latestRoundData()` read against the upstream RPC at `latest`, not at the pinned block
+(`packages/core/test/harness/oracle.ts:52-62`). Two runs at the same
+`MEZO_FORK_BLOCK` therefore see different BTC/USD prices, which is observable: the
+harness logs the seeded answer at startup. Tests that assert against thresholds near MCR
+are exposed to this.
+
+Both are known structural limits, tracked under MK-016. Pinning the block was one fix,
+not the fix.
+:::
 - **Smoke test (the Phase-0 gate):** read `PriceFeed.fetchPrice()` and `MCR` **from
   the fork** (not a mock) and assert a real price and `1.1e18`. If this passes
   twice identically in CI, the harness is real.
@@ -44,7 +68,20 @@ Addresses come from `01-ground-truth` §4; ABIs are the bundled ones.
 | **Dual-validation** (`05` §5) | preview math vs actual-on-fork **and** vs the contract `pure` helpers | against the fork |
 | **React** | hooks render, read, and write correctly; refetch on new blocks | RTL + a fork-backed wagmi config |
 | **Example E2E** | both examples run end-to-end | against the fork/testnet |
-| **Post-publish** | `npm install` of the published packages works in a fresh project | CI, after publish |
+| **Pre-publish pack smoke** | the packed tarballs clean-install and import (ESM + CJS + types), and ship only `dist` + README + LICENSE | CI, every push, **before** and without publishing |
+| **Post-publish registry check** | `npm install` of the **published** version from the registry into an empty directory, then import it | the release workflow, **after** publish |
+
+**Two projects, and the unit layer really is chain-free.** `vitest.workspace.mts` defines
+a `unit` project (no `globalSetup`, no anvil, no RPC URL) and a `fork` project (the
+`*.fork.test.ts` files against the shared anvil fork). Run them with `pnpm test:unit`,
+`pnpm test:fork`, or both with `pnpm test`. CI runs `pnpm test:unit` before Foundry is
+installed and with no RPC secret in scope, so the claim in the Unit row above is
+enforced rather than asserted.
+
+**Pre-publish is not post-publish.** `scripts/release-smoke.sh` installs from locally
+packed tarballs and never contacts the registry; it says so in its own header. It cannot
+catch a bad publish. The post-publish row above is a separate job in
+`.github/workflows/release.yml` that runs only after the publish step.
 
 **No mocks for protocol truth.** Mocks are permitted only for wallet-client
 plumbing in React tests. Anything asserting protocol behavior runs on the fork.
@@ -81,20 +118,31 @@ cases:
 - `math/`, `hints/`, `read/`, `errors/` carry the **highest** coverage, target
   near-complete branch coverage. These are the correctness-critical modules.
 - A coverage floor is enforced in CI for the `core` package; PRs that drop below it
-  fail.
+  fail. It is configured in `vitest.config.mts` (`coverage.thresholds`, v8 provider over
+  `packages/core/src/**`, excluding `_generated/` which is ABI and address data rather
+  than logic) and run by `pnpm test:coverage` in the fork-gate job.
+- **The floor is a ratchet: it only ever moves upward.** It was set to the honestly
+  measured number rounded down, not to an aspiration. Raise it when real coverage rises.
+  Never lower it to turn a red build green, that converts the gate into decoration.
 - Coverage is necessary but not sufficient: a line covered by a mock proves nothing
-  about protocol truth, the fork tests are what count.
+  about protocol truth, the fork tests are what count. A high floor over
+  `previewOpen` would not have caught MK-005 or MK-006, both of which are fully covered
+  and wrong.
 
 ---
 
 ## 5. Determinism & CI matrix
 
-- **Determinism:** the fork is pinned to a block; randomized tests (hint trials,
-  math grids) use a **fixed seed**; the suite must pass twice identically.
-- **CI matrix:** Node LTS (current + previous). For `@musd-kit/react`, build against
-  the **verified peer floors** (`wagmi 2.5.12` / `viem 2.22.8` /
-  `@tanstack/react-query 5.28.4` / `react 18.2.0`) to catch resolution drift before
-  users hit it.
+- **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in
+  `.github/workflows/ci.yml`); randomized tests (hint trials, math grids) use a **fixed
+  seed**. Read the warning in §1: pinned is not order independent.
+- **CI matrix:** the chain-free half (lint, path guard, build, typecheck, examples, and
+  the `unit` project) runs on **Node 20, 22, and 24**, covering the range the packages
+  advertise in `engines` (`>=20.11.0`). The fork gate and the coverage floor run once, on
+  the pinned toolchain in `.nvmrc`, because that gate is chain-bound rather than
+  runtime-bound. For `@musd-kit/react`, the pack smoke installs against the **verified
+  peer floors** (`wagmi 2.5.12` / `viem 2.22.8` / `@tanstack/react-query 5.28.4` /
+  `react 18.2.0`) to catch resolution drift before users hit it.
 - **Gates wired to phases:** each build phase has a
   named test gate; CI does not let a phase's PR merge unless its gate is green.
 
