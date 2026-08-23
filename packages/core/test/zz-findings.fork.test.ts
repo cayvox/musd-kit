@@ -654,10 +654,21 @@ describe('Open findings, pinned by failing tests (P2)', () => {
         )
       } else {
         expect(principalAfter, `${label}: principal must fall`).toBeLessThan(principalBefore)
+        // Direction DERIVED, not guessed: the first version of this assertion had it
+        // backwards and the fork caught it on a later run.
+        //   principalAfter = principalBefore - (payment - interestOwedAtMine)
+        //   projected      = principalBefore - (payment - interestOwedAtRead)
+        //   principalAfter - projected = interestOwedAtMine - interestOwedAtRead >= 0
+        // because interest only accrues between the read and the mine. So the contract's
+        // principal is at or ABOVE the projection, and the gap is that accrual.
         expect(
-          projectedPrincipal,
-          `${label}: the SDK projection must match the contract, allowing for interest accrued between read and mine`,
-        ).toBeGreaterThanOrEqual(principalAfter)
+          principalAfter,
+          `${label}: the contract principal must be at or above the projection`,
+        ).toBeGreaterThanOrEqual(projectedPrincipal)
+        expect(
+          principalAfter - projectedPrincipal,
+          `${label}: the read-to-mine gap must be bounded by the payment, or the split is wrong`,
+        ).toBeLessThan(payment)
       }
 
       // The hint the SDK would place by must be the contract's post-repay sort key.
