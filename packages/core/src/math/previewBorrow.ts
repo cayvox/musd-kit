@@ -145,11 +145,6 @@ export async function previewBorrow(
 
   const collateral = entire[0]
   const entireDebt = entire[1] + entire[2]
-  const capacity: BorrowingCapacity = {
-    capacity: capacityRaw,
-    entireDebt,
-    remaining: capacityRaw > entireDebt ? capacityRaw - entireDebt : 0n,
-  }
 
   // The fee is skipped in Recovery Mode and for fee exempt accounts, exactly as on open
   // (`BorrowerOperations.sol:810-818`). Reading exemption rather than assuming nobody is
@@ -164,21 +159,74 @@ export async function previewBorrow(
           functionName: 'getBorrowingFee',
           args: [amount],
         })
-  const netDebtChange = amount + fee
 
+  const [systemColl, systemDebt] = await Promise.all([
+    publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
+    publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
+  ])
+
+  return evaluateBorrow({
+    status,
+    collateral,
+    entireDebt,
+    capacity: capacityRaw,
+    fee,
+    amount,
+    isRecoveryMode,
+    price,
+    systemColl,
+    systemDebt,
+  })
+}
+
+/** Everything {@link evaluateBorrow} needs, already read from the chain. */
+export interface EvaluateBorrowInput {
+  /** `TroveManager.getTroveStatus`. 1 is active; anything else cannot be adjusted. */
+  status: number
+  collateral: bigint
+  /** Live entire debt, principal plus accrued interest. */
+  entireDebt: bigint
+  /** `getTroveMaxBorrowingCapacity`. */
+  capacity: bigint
+  /** The fee the contract will actually charge, already zeroed for Recovery Mode or exemption. */
+  fee: bigint
+  amount: bigint
+  isRecoveryMode: boolean
+  price: bigint
+  systemColl: bigint
+  systemDebt: bigint
+}
+
+/**
+ * The decision itself, as a pure function of values already read from the chain.
+ *
+ * Split out from {@link previewBorrow} deliberately: the verdict is the part worth testing
+ * exhaustively, and as a pure function it can be, in the chain-free unit project, across
+ * every combination of reasons rather than only the combinations a fork happens to produce.
+ */
+export function evaluateBorrow(input: EvaluateBorrowInput): BorrowPreview {
+  const {
+    status,
+    collateral,
+    entireDebt,
+    capacity: capacityRaw,
+    fee,
+    amount,
+    isRecoveryMode,
+    price,
+    systemColl,
+    systemDebt,
+  } = input
+
+  const netDebtChange = amount + fee
+  const capacity: BorrowingCapacity = {
+    capacity: capacityRaw,
+    entireDebt,
+    remaining: capacityRaw > entireDebt ? capacityRaw - entireDebt : 0n,
+  }
   const resultingEntireDebt = entireDebt + netDebtChange
   const resultingIcr = computeICR({ collateral, entireDebt: resultingEntireDebt, price })
   const icrThreshold = isRecoveryMode ? CCR : MCR
-
-  // The system ratio after the borrow: debt grows by netDebtChange, collateral is unchanged.
-  const systemColl = await publicClient.readContract({
-    ...tm,
-    functionName: 'getEntireSystemColl',
-  })
-  const systemDebt = await publicClient.readContract({
-    ...tm,
-    functionName: 'getEntireSystemDebt',
-  })
   const resultingTcr = computeICR({
     collateral: systemColl,
     entireDebt: systemDebt + netDebtChange,
@@ -186,7 +234,6 @@ export async function previewBorrow(
   })
 
   const reasons: BorrowBlockReason[] = []
-  // Status 1 is active; anything else cannot be adjusted.
   if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
   if (capacityRaw < resultingEntireDebt) reasons.push('EXCEEDS_BORROWING_CAPACITY')
   if (resultingIcr < icrThreshold) reasons.push('ICR_BELOW_THRESHOLD')

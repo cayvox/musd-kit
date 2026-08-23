@@ -13,6 +13,8 @@ export {
   type PreviewOpenParams,
   type OpenPreview,
   type OpenBlockReason,
+  evaluateOpen,
+  type EvaluateOpenInput,
 } from './previewOpen'
 export {
   previewBorrow,
@@ -21,5 +23,7 @@ export {
   type BorrowPreview,
   type BorrowBlockReason,
   type BorrowingCapacity,
+  evaluateBorrow,
+  type EvaluateBorrowInput,
 } from './previewBorrow'
 export { getBorrowingPower, type GetBorrowingPowerParams } from './getBorrowingPower'

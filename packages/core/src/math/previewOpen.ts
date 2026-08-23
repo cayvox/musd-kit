@@ -119,6 +119,54 @@ export async function previewOpen(deps: MathDeps, params: PreviewOpenParams): Pr
           args: [debt],
         })
 
+  return evaluateOpen({
+    collateral,
+    debt,
+    fee,
+    feeExempt,
+    minNetDebt,
+    isRecoveryMode,
+    price,
+    systemColl,
+    systemDebt,
+  })
+}
+
+/** Everything {@link evaluateOpen} needs, already read from the chain. */
+export interface EvaluateOpenInput {
+  collateral: bigint
+  /** The requested draw. */
+  debt: bigint
+  /** The fee the contract will actually charge, already zeroed for Recovery Mode or exemption. */
+  fee: bigint
+  feeExempt: boolean
+  minNetDebt: bigint
+  isRecoveryMode: boolean
+  price: bigint
+  systemColl: bigint
+  systemDebt: bigint
+}
+
+/**
+ * The open verdict itself, as a pure function of values already read from the chain.
+ *
+ * Split out from {@link previewOpen} so the decision, which is the part that was wrong in
+ * MK-004 and MK-005, can be tested exhaustively in the chain-free unit project across every
+ * combination of reasons rather than only those a fork happens to produce.
+ */
+export function evaluateOpen(input: EvaluateOpenInput): OpenPreview {
+  const {
+    collateral,
+    debt,
+    fee,
+    feeExempt,
+    minNetDebt,
+    isRecoveryMode,
+    price,
+    systemColl,
+    systemDebt,
+  } = input
+
   const netDebt = debt + fee
   const entireDebt = netDebt + MUSD_GAS_COMPENSATION
   const icr = computeICR({ collateral, entireDebt, price })
