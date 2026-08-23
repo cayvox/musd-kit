@@ -49,7 +49,7 @@ claim about it was not).
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | open |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
-| MK-014 | `redeem` returns a rate in a field named `fee`, and caps against the wrong getter | S1 | open |
+| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | open |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
@@ -336,19 +336,43 @@ straddle blocks, which contradicts the one consistent price snapshot wording in 
 
 ---
 
-## MK-014 · `redeem` returns a rate in a field named `fee`, and caps against the wrong getter
+## MK-014 · `redeem` returns a rate in a field named `fee`
 
 **Class** S1 · **Status** open
 
-**SDK location.** `packages/core/src/redemption/redeem.ts`. The returned `fee` is a rate, not an
-amount, and the cap compares the no argument `redemptionRate()` rather than the amount aware
-`getRedemptionRate(collateralDrawn)`.
+**Ground truth, corrected.** An earlier version of this entry described the two redemption getters
+wrongly, and its fix instruction would have introduced a unit error. Both getters live on
+**`BorrowerOperations`**, not on `TroveManager`:
+
+| Getter | Argument | Returns | Source |
+|---|---|---|---|
+| `redemptionRate()` | none | the **rate**, a 1e18 scaled fraction. Declared `uint256 public redemptionRate; // expressed as a percentage in 1e18 precision`, initialized to `(DECIMAL_PRECISION * 3) / 400`, that is 0.75% | `BorrowerOperations.sol:129`, initialized `:151` |
+| `getRedemptionRate(uint256 _collateralDrawn)` | **collateral drawn, in BTC wei**, not a MUSD amount | despite the name, a fee **AMOUNT** in BTC wei: `fee = redemptionRate * _collateralDrawn / DECIMAL_PRECISION`, with `require(fee < _collateralDrawn)` | `BorrowerOperations.sol:499-509` |
+
+Read at mainnet block 11330182 and testnet block 15043414, `redemptionRate()` is
+`7500000000000000`, and `getRedemptionRate(1 BTC)` returns `7500000000000000` BTC wei of fee. The
+two happen to print the same digits at exactly one BTC, which is precisely the coincidence that
+makes the naming dangerous.
+
+**What is actually wrong in the SDK.** `packages/core/src/redemption/redeem.ts:38` returns a field
+named `fee` that holds the **rate**, read from `redemptionRate()` at `redeem.ts:65`. Its own
+docstring says "Effective redemption rate (1e18-scaled)", so the type is documented and the **name
+contradicts it**. A caller who trusts the field name and reads `fee` as an amount of BTC is wrong
+by the size of the redemption.
+
+**What is NOT wrong, contrary to the earlier text.** The cap at `redeem.ts:77` compares the rate
+against `maxFeePercentage`, documented at `redeem.ts:24` as a "1e18-scaled fraction". Rate against
+rate cap is unit consistent and correct. Swapping in `getRedemptionRate(collateralDrawn)` as the
+earlier fix instruction proposed would compare a BTC wei **amount** against a 1e18 scaled
+**fraction**, which is a unit error this entry would have caused rather than prevented.
 
 **Blast radius.** A caller reading `fee` as an amount is off by orders of magnitude. Classed S1
-because it is a silently wrong number in a field whose name asserts otherwise.
+because it is a silently wrong number in a field whose name asserts otherwise. Unchanged.
 
-**Decision.** Fix now. Rename to make the unit explicit, return both the rate and the estimated
-amount, and cap against the amount aware getter.
+**Decision.** Fix now, but narrower than previously written. Rename the field so the unit is
+explicit, and additionally return the estimated fee amount, computed with
+`getRedemptionRate(collateralDrawn)` for the collateral actually drawn, as a separate field.
+Leave the cap comparing rate against rate.
 
 ---
 
