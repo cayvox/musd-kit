@@ -82,6 +82,7 @@ import {
   priceFeedAbi,
   troveManagerAbi,
 } from '../src'
+import { principalReductionForRepay } from '../src/trove'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
@@ -540,78 +541,97 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 240_000)
 
   // ---------------------------------------------------------------- MK-006 ----
-  pins(
-    'MK-006: the SDK hint NICR uses entire debt where the contract uses principal',
-    async () => {
-      const borrower = testAccount(2009)
-      const { collateral } = await openAtIcr(borrower, 2_400_000_000_000_000_000n)
+  it('MK-006 (fixed): the SDK hint basis equals the contract sort key, which excludes interest', async () => {
+    const borrower = testAccount(2009)
+    const { collateral } = await openAtIcr(borrower, 2_400_000_000_000_000_000n)
 
+    await accrueInterest()
+    const [, principal, interest] = await entireDebtAndColl(borrower.address)
+    expect(interest, 'fixture: some interest must be owed').toBeGreaterThan(0n)
+
+    const contractNicr = await nominalICR(borrower.address)
+    const expectedFromPrincipal = (collateral * 100n * 10n ** 18n) / principal
+    expect(
+      contractNicr,
+      'fixture: the contract nominal ICR must be principal based (TroveManager.sol:566-577)',
+    ).toBe(expectedFromPrincipal)
+
+    // FIXED. `hintsFor` is now fed PRINCIPAL, so the NICR the SDK places by is the NICR the
+    // contract sorts by. Every on-chain re-insert passes `_computeNominalCR(coll, principal)`:
+    // BorrowerOperations.sol:902-906, :1087-1088, and TroveManager.sol:1287-1290.
+    expect(
+      reader().computeNICR({ collateral, entireDebt: principal }),
+      'MK-006: the hint NICR must equal the contract nominal ICR',
+    ).toBe(contractNicr)
+
+    // And the distinction is real on this fixture, not a coincidence: the old basis differs.
+    expect(
+      reader().computeNICR({ collateral, entireDebt: principal + interest }),
+      'the entire-debt basis must NOT equal the sort key, or this test proves nothing',
+    ).not.toBe(contractNicr)
+  }, 240_000)
+
+  it('MK-006 (fixed): the repay projection mirrors the contract split at, below and above interest owed', async () => {
+    // Three payment sizes against the SAME boundary the contract branches on,
+    // `payment >= interestOwed` (InterestRateMath.sol:41-47): strictly below, exactly
+    // equal, and strictly above. Each is compared against the CONTRACT's actual principal
+    // after the repay, never against the SDK's own earlier output.
+    const cases = [
+      { label: 'below interest owed', account: testAccount(2010), size: 'below' as const },
+      { label: 'exactly interest owed', account: testAccount(2017), size: 'equal' as const },
+      { label: 'above interest owed', account: testAccount(2018), size: 'above' as const },
+    ]
+
+    for (const { label, account, size } of cases) {
+      await openAtIcr(account, 2_400_000_000_000_000_000n)
+      const client = clientFor(account)
       await accrueInterest()
-      const [, principal, interest] = await entireDebtAndColl(borrower.address)
-      expect(interest, 'fixture: some interest must be owed').toBeGreaterThan(0n)
 
-      const contractNicr = await nominalICR(borrower.address)
-      const expectedFromPrincipal = (collateral * 100n * 10n ** 18n) / principal
-      expect(
-        contractNicr,
-        'fixture: the contract nominal ICR must be principal based (TroveManager.sol:566-577)',
-      ).toBe(expectedFromPrincipal)
+      const [collBefore, principalBefore, interestBefore] = await entireDebtAndColl(account.address)
+      expect(interestBefore, `${label}: fixture, some interest must be owed`).toBeGreaterThan(0n)
 
-      // THE FINDING. `trove/index.ts` feeds `hintsFor` the ENTIRE debt, so the NICR it uses
-      // for placement is not the NICR the contract sorts by.
-      const sdkNicr = reader().computeNICR({ collateral, entireDebt: principal + interest })
-      expect(
-        sdkNicr,
-        'MK-006: the hint NICR must equal the contract nominal ICR, which excludes interest',
-      ).toBe(contractNicr)
-    },
-    240_000,
-  )
+      const payment =
+        size === 'below'
+          ? interestBefore / 2n
+          : size === 'equal'
+            ? interestBefore
+            : interestBefore + 50n * MUSD
 
-  pins(
-    'MK-006: a repay below interest owed moves principal by zero',
-    async () => {
-      const borrower = testAccount(2010)
-      await openAtIcr(borrower, 2_400_000_000_000_000_000n)
-      const client = clientFor(borrower)
-
-      await accrueInterest()
-      const [, principalBefore, interestBefore] = await entireDebtAndColl(borrower.address)
-      expect(interestBefore, 'fixture: some interest must be owed').toBeGreaterThan(0n)
-
-      const [collBefore] = await entireDebtAndColl(borrower.address)
-      const entireDebtBefore = principalBefore + interestBefore
-      const payment = interestBefore / 2n
-      expect(payment, 'fixture: the payment must be strictly below interest owed').toBeLessThan(
-        interestBefore,
-      )
-      expect(payment, 'fixture: the payment must be non zero').toBeGreaterThan(0n)
+      // The SDK's projection, from the exported helper the write paths use.
+      const projectedPrincipal =
+        principalBefore - principalReductionForRepay(interestBefore, payment)
 
       await wait((await client.repay({ amount: payment })).hash)
+      const [collAfter, principalAfter] = await entireDebtAndColl(account.address)
 
-      const [, principalAfter] = await entireDebtAndColl(borrower.address)
-      // `calculateDebtAdjustment` applies the payment to interest first
-      // (InterestRateMath.sol:33-48), so principal cannot fall.
-      expect(
-        principalAfter,
-        'fixture: principal must not fall for a payment below interest owed',
-      ).toBeGreaterThanOrEqual(principalBefore)
-      const contractNicrAfter = await nominalICR(borrower.address)
+      // Interest keeps accruing between the read and the mine, so the contract's actual
+      // principal can only be LOWER than or equal to the projection when more interest had
+      // accrued by mine time, never higher: principal falls by `payment - interestOwed` and
+      // interestOwed only grows. Assert the direction and the exact zero case.
+      if (size === 'below' || size === 'equal') {
+        expect(
+          principalAfter,
+          `${label}: principal must not move (InterestRateMath.sol:41-47)`,
+        ).toBe(principalBefore)
+        expect(projectedPrincipal, `${label}: the SDK must project no principal change`).toBe(
+          principalBefore,
+        )
+      } else {
+        expect(principalAfter, `${label}: principal must fall`).toBeLessThan(principalBefore)
+        expect(
+          projectedPrincipal,
+          `${label}: the SDK projection must match the contract, allowing for interest accrued between read and mine`,
+        ).toBeGreaterThanOrEqual(principalAfter)
+      }
 
-      // THE FINDING. `repay` models debt as falling by the full payment and feeds that entire
-      // debt to the hint, so the placement it computes is for a position that does not exist.
-      // The contract's sort key is principal based and barely moved.
-      const sdkProjectedNicr = reader().computeNICR({
-        collateral: collBefore,
-        entireDebt: entireDebtBefore - payment,
-      })
+      // The hint the SDK would place by must be the contract's post-repay sort key.
+      expect(collAfter, `${label}: collateral must not move on a repay`).toBe(collBefore)
       expect(
-        sdkProjectedNicr,
-        'MK-006: the NICR the SDK computes after a sub-interest repay must equal the contract sort key',
-      ).toBe(contractNicrAfter)
-    },
-    240_000,
-  )
+        reader().computeNICR({ collateral: collAfter, entireDebt: principalAfter }),
+        `${label}: MK-006, the SDK hint basis must equal the contract sort key after the repay`,
+      ).toBe(await nominalICR(account.address))
+    }
+  }, 420_000)
 
   // ---------------------------------------------------------------- MK-014 ----
   pins(

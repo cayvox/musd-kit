@@ -34,17 +34,31 @@ const ONE = 10n ** 18n
 const BO_ABI = borrowerOperationsAbi as unknown as Abi
 
 /** Current (collateral, entireDebt) of `owner`, to-now, from the contract. */
+/**
+ * The live position, carrying principal and interest SEPARATELY (MK-006).
+ *
+ * `getEntireDebtAndColl` returns `(coll, principal, interest, ...)` and adds live-accrued
+ * interest to the stored values, which is what the contract itself sees: every write path
+ * calls `updateSystemAndTroveInterest(_borrower)` before reading
+ * (`BorrowerOperations.sol:769`). The stored `getTroveDebt` and `getTroveInterestOwed` are
+ * stale until something triggers that update, so they are deliberately not used here.
+ */
 async function currentPosition(
   deps: WriteDeps,
   owner: Address,
-): Promise<{ collateral: bigint; entireDebt: bigint }> {
+): Promise<{ collateral: bigint; entireDebt: bigint; principal: bigint; interestOwed: bigint }> {
   const edc = await deps.publicClient.readContract({
     address: deps.addresses.troveManager,
     abi: troveManagerAbi,
     functionName: 'getEntireDebtAndColl',
     args: [owner],
   })
-  return { collateral: edc[0], entireDebt: edc[1] + edc[2] }
+  return {
+    collateral: edc[0],
+    entireDebt: edc[1] + edc[2],
+    principal: edc[1],
+    interestOwed: edc[2],
+  }
 }
 
 /**
@@ -159,12 +173,51 @@ function assertFeeWithinCap(debtIncrease: bigint, fee: bigint, maxFeePercentage?
   }
 }
 
-/** Recompute insertion hints for the RESULTING position (good-enough; affects only gas). */
-function hintsFor(deps: WriteDeps, collateral: bigint, entireDebt: bigint) {
+/**
+ * Insertion hints for the RESULTING position, computed from PRINCIPAL (MK-006).
+ *
+ * `SortedTroves` is ordered by the nominal collateral ratio, and every quantity the protocol
+ * sorts by excludes interest:
+ *
+ *   - `TroveManager.getNominalICR` is `_computeNominalCR(coll + pending, principal + pending)`
+ *     (`TroveManager.sol:566-577`), with no interest term;
+ *   - every on-chain re-insert passes `_computeNominalCR(coll, PRINCIPAL)`:
+ *     `BorrowerOperations.sol:902-906` (adjust), `:1087-1088` (refinance) and
+ *     `TroveManager.sol:1287-1290` (partial redemption).
+ *
+ * This used to be fed the ENTIRE debt, principal plus accrued interest, so the hint named a
+ * position that does not exist in the list. `SortedTroves.reInsert` re-validates and
+ * traverses from a bad hint, so the cost was gas and latency rather than a wrong number, and
+ * in the worst case an out-of-gas insert.
+ *
+ * The parameter is named `principal` on purpose: the previous name, `entireDebt`, is exactly
+ * the quantity that must NOT be passed.
+ */
+function hintsFor(deps: WriteDeps, collateral: bigint, principal: bigint) {
   return computeHints(
     { publicClient: deps.publicClient, addresses: deps.addresses },
-    { collateral, entireDebt },
+    { collateral, entireDebt: principal },
   )
+}
+
+/**
+ * How much of `payment` reduces PRINCIPAL, mirroring the contract's split exactly (MK-006).
+ *
+ * `InterestRateMath.calculateDebtAdjustment` (`InterestRateMath.sol:33-48`) branches on
+ * `payment >= interestOwed`:
+ *
+ *   - `payment >= interestOwed` reduces principal by `payment - interestOwed`, which is ZERO
+ *     at exact equality, since the boundary is inclusive on this side;
+ *   - `payment < interestOwed` reduces principal by exactly zero and applies the whole
+ *     payment to interest.
+ *
+ * `TroveManager._updateTroveDebt` then applies that split to storage
+ * (`TroveManager.sol:854-869`). A repay at or below interest owed therefore does not move
+ * the Trove's sort key at all, which is why modeling debt as falling by the full payment
+ * produced a hint for a position that never exists.
+ */
+export function principalReductionForRepay(interestOwed: bigint, payment: bigint): bigint {
+  return payment >= interestOwed ? payment - interestOwed : 0n
 }
 
 const send = (
@@ -204,6 +257,9 @@ export async function openTrove(deps: WriteDeps, params: OpenTroveParams): Promi
   if (netDebt < minNetDebt) throw new BelowMinimumDebt(minNetDebt, netDebt)
   if (pos.entireDebt > 0n) throw new TroveAlreadyExists(wallet.account.address)
   const entireDebt = debt + fee + MUSD_GAS_COMPENSATION
+  // At open there is no accrued interest yet, so the composite debt IS the principal. This
+  // call was accidentally correct, which is why the open-only validation gate could never
+  // have caught MK-006 on any of the other paths.
   const { upperHint, lowerHint } = await hintsFor(deps, collateral, entireDebt)
   return send(deps, 'openTrove', [debt, upperHint, lowerHint], {
     value: collateral,
@@ -219,7 +275,8 @@ export async function addCollateral(
   assertPositiveAmount('amount', amount)
   const pos = await currentPosition(deps, wallet.account.address)
   assertTroveActive(pos.entireDebt, wallet.account.address)
-  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral + amount, pos.entireDebt)
+  // Adding collateral does not touch principal.
+  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral + amount, pos.principal)
   return send(deps, 'addColl', [upperHint, lowerHint], {
     value: amount,
     revert: { operation: 'addCollateral', address: wallet.account.address },
@@ -242,10 +299,12 @@ export async function borrow(deps: WriteDeps, params: BorrowParams): Promise<Wri
   assertTroveActive(pos.entireDebt, wallet.account.address)
   // MK-002: the capacity gate, checked before simulate rather than surfaced as a revert.
   await assertWithinBorrowingCapacity(deps, wallet.account.address, pos.entireDebt, amount + fee)
+  // `increaseTroveDebt` adds the whole draw plus fee to PRINCIPAL
+  // (`TroveManager.sol:529-530`), so the resulting sort key grows by exactly that.
   const { upperHint, lowerHint } = await hintsFor(
     deps,
     pos.collateral,
-    pos.entireDebt + amount + fee,
+    pos.principal + amount + fee,
   )
   return send(deps, 'withdrawMUSD', [amount, upperHint, lowerHint], {
     revert: { operation: 'borrow', address: wallet.account.address },
@@ -265,7 +324,12 @@ export async function repay(deps: WriteDeps, { amount }: { amount: bigint }): Pr
   const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
   if (amount > netDebt) throw new RepayExceedsDebt(undefined, { repay: amount, netDebt })
   if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
-  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.entireDebt - amount)
+  // Interest first: a payment at or below interest owed moves principal by zero.
+  const { upperHint, lowerHint } = await hintsFor(
+    deps,
+    pos.collateral,
+    pos.principal - principalReductionForRepay(pos.interestOwed, amount),
+  )
   return send(deps, 'repayMUSD', [amount, upperHint, lowerHint], {
     revert: { operation: 'repay', address: owner },
   })
@@ -279,7 +343,8 @@ export async function withdrawCollateral(
   assertPositiveAmount('amount', amount)
   const pos = await currentPosition(deps, wallet.account.address)
   assertTroveActive(pos.entireDebt, wallet.account.address)
-  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral - amount, pos.entireDebt)
+  // Withdrawing collateral does not touch principal.
+  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral - amount, pos.principal)
   return send(deps, 'withdrawColl', [amount, upperHint, lowerHint], {
     revert: { operation: 'withdrawCollateral', address: wallet.account.address },
   })
@@ -330,8 +395,14 @@ export async function adjustTrove(
     if (rpy > netDebt) throw new RepayExceedsDebt(undefined, { repay: rpy, netDebt })
   }
   const resultingColl = pos.collateral + collAdd - collWithdrawal
-  const resultingDebt = pos.entireDebt + (brw !== undefined ? brw + fee : 0n) - (rpy ?? 0n)
-  const { upperHint, lowerHint } = await hintsFor(deps, resultingColl, resultingDebt)
+  // The sort key moves by the PRINCIPAL change on both legs: a debt increase adds draw plus
+  // fee to principal, and a repayment reduces principal only by whatever is left after
+  // interest is paid off first (MK-006).
+  const resultingPrincipal =
+    pos.principal +
+    (brw !== undefined ? brw + fee : 0n) -
+    (rpy !== undefined ? principalReductionForRepay(pos.interestOwed, rpy) : 0n)
+  const { upperHint, lowerHint } = await hintsFor(deps, resultingColl, resultingPrincipal)
 
   return send(
     deps,
@@ -363,7 +434,7 @@ export async function refinance(deps: WriteDeps): Promise<WriteResult> {
   // position are good enough (placement is contract-guaranteed, hints only affect gas).
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
-  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.entireDebt)
+  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.principal)
   return send(deps, 'refinance', [upperHint, lowerHint], {
     revert: { operation: 'refinance', address: owner },
   })
