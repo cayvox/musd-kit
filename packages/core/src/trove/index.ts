@@ -427,17 +427,67 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
   return send(deps, 'closeTrove', [], { revert: { operation: 'close', address: owner } })
 }
 
+/**
+ * Move a Trove to the current global interest rate.
+ *
+ * **The contract charges a refinancing fee and capitalizes it into principal** (MK-003):
+ * `getBorrowingFee((refinancingFeePercentage * netDebt) / 100)`, added via
+ * `increaseTroveDebt` (`BorrowerOperations.sol:1033-1038`). The debt therefore grows, and
+ * the fee begins accruing interest immediately. Call `previewRefinance(owner)` first to see
+ * the fee and the resulting position before signing.
+ *
+ * **It always reverts in Recovery Mode** (MK-019): `_requireNotInRecoveryMode(price)` is the
+ * first requirement `_refinance` applies (`BorrowerOperations.sol:1024`), before the trove
+ * is even checked for being active. `previewRefinance` reports that as a
+ * `RECOVERY_MODE` reason, and simulate-before-send surfaces it as a typed
+ * `RecoveryModeRestriction` if you skip the preview.
+ */
 export async function refinance(deps: WriteDeps): Promise<WriteResult> {
   const wallet = requireWallet(deps)
   const owner = wallet.account.address
-  // Refinance adds a small fee and moves to the global rate; hints from the current
-  // position are good enough (placement is contract-guaranteed, hints only affect gas).
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
-  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.principal)
+  // MK-003: fold the fee into the hint, so it describes the position that WILL exist rather
+  // than the one that does. The fee is capitalized into principal, which is the sort key.
+  const fee = await refinancingFee(deps, owner, pos.entireDebt)
+  const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral, pos.principal + fee)
   return send(deps, 'refinance', [upperHint, lowerHint], {
     revert: { operation: 'refinance', address: owner },
   })
+}
+
+/**
+ * The refinancing fee the contract will charge, computed the way it computes it (MK-003).
+ *
+ * `amount = (refinancingFeePercentage * _getNetDebt(getTroveDebt)) / 100`, then
+ * `getBorrowingFee(amount)`, and zero for a fee exempt account
+ * (`BorrowerOperations.sol:1030-1036`). The percentage is READ, never hardcoded: it is
+ * governable, and a hardcoded value is a stale fact waiting to happen.
+ */
+async function refinancingFee(
+  deps: WriteDeps,
+  owner: Address,
+  entireDebt: bigint,
+): Promise<bigint> {
+  const governableVariables = await deps.publicClient.readContract({
+    address: deps.addresses.borrowerOperations,
+    abi: borrowerOperationsAbi,
+    functionName: 'governableVariables',
+  })
+  const exempt = await deps.publicClient.readContract({
+    address: governableVariables,
+    abi: governableVariablesAbi,
+    functionName: 'isAccountFeeExempt',
+    args: [owner],
+  })
+  if (exempt) return 0n
+  const percentage = await deps.publicClient.readContract({
+    address: deps.addresses.borrowerOperations,
+    abi: borrowerOperationsAbi,
+    functionName: 'refinancingFeePercentage',
+  })
+  const netDebt = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
+  return getBorrowingFee(deps, (BigInt(percentage) * netDebt) / 100n)
 }
 
 /**

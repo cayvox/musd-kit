@@ -336,57 +336,76 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 240_000)
 
   // ---------------------------------------------------------------- MK-003 ----
-  pins(
-    'MK-003: the refinancing fee is charged on chain and modeled nowhere in the SDK',
-    async () => {
-      const borrower = testAccount(2004)
-      await openAtIcr(borrower, 2_400_000_000_000_000_000n)
-      const client = clientFor(borrower)
+  it('MK-003 (fixed): previewRefinance reports the fee the contract actually charges', async () => {
+    const borrower = testAccount(2004)
+    await openAtIcr(borrower, 2_400_000_000_000_000_000n)
+    const client = clientFor(borrower)
 
-      // Compute the fee the contract WILL charge, independently, from the formula at
-      // BorrowerOperations.sol:1033-1036 and the live governable percentage.
-      const percentage = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'refinancingFeePercentage',
-      })
-      const debtBefore = await troveDebt(borrower.address)
-      const netDebtBefore = debtBefore - MUSD_GAS_COMPENSATION
-      const feeBase = (BigInt(percentage) * netDebtBefore) / 100n
-      const expectedFee = await client.getBorrowingFee(feeBase)
-      expect(
-        expectedFee,
-        'fixture: the refinancing fee must be non zero to be worth pinning',
-      ).toBeGreaterThan(0n)
+    // Compute the fee the contract WILL charge, independently, from the formula at
+    // BorrowerOperations.sol:1033-1036 and the live governable percentage.
+    const percentage = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'refinancingFeePercentage',
+    })
+    const debtBefore = await troveDebt(borrower.address)
+    const netDebtBefore = debtBefore - MUSD_GAS_COMPENSATION
+    const feeBase = (BigInt(percentage) * netDebtBefore) / 100n
+    const expectedFee = await client.getBorrowingFee(feeBase)
+    expect(
+      expectedFee,
+      'fixture: the refinancing fee must be non zero to be worth pinning',
+    ).toBeGreaterThan(0n)
 
-      await wait((await client.refinance()).hash)
+    // The preview, taken BEFORE the write, must name the same fee and the same resulting
+    // principal the contract then produces.
+    const preview = await client.previewRefinance(borrower.address)
+    expect(preview.viable, 'fixture: a normal mode refinance must be viable').toBe(true)
+    expect(preview.reasons).toEqual([])
+    expect(
+      preview.refinancingFeePercentage,
+      'the percentage must be READ from the chain, not hardcoded',
+    ).toBe(Number(percentage))
+    expect(preview.fee, 'MK-003: the previewed fee must equal the contract formula').toBe(
+      expectedFee,
+    )
+    const principalBefore = (await entireDebtAndColl(borrower.address))[1]
+    expect(preview.resultingPrincipal, 'MK-003: the fee is capitalized into principal').toBe(
+      principalBefore + expectedFee,
+    )
 
-      const debtAfter = await troveDebt(borrower.address)
-      expect(
-        debtAfter - debtBefore,
-        'fixture: the contract must have capitalized at least the computed fee',
-      ).toBeGreaterThanOrEqual(expectedFee)
+    await wait((await client.refinance()).hash)
 
-      // THE FINDING. The SDK never reads `refinancingFeePercentage` and offers no way to
-      // learn the fee before signing, so a caller cannot know their debt is about to grow.
-      expect(
-        typeof (client as unknown as Record<string, unknown>).previewRefinance,
-        'MK-003: the SDK must expose the refinancing fee before the write, e.g. previewRefinance',
-      ).toBe('function')
-    },
-    240_000,
-  )
+    const debtAfter = await troveDebt(borrower.address)
+    expect(
+      debtAfter - debtBefore,
+      'fixture: the contract must have capitalized at least the computed fee',
+    ).toBeGreaterThanOrEqual(expectedFee)
+
+    // And the hint the SDK placed by describes the position that NOW exists: the sort key
+    // includes the capitalized fee.
+    const [collAfter, principalAfter] = await entireDebtAndColl(borrower.address)
+    expect(
+      reader().computeNICR({ collateral: collAfter, entireDebt: principalAfter }),
+      'MK-003: the post-refinance sort key must match what the SDK computed hints from',
+    ).toBe(await nominalICR(borrower.address))
+
+    // FIXED. The preview reports the fee, and the numbers match the contract's own.
+    expect(
+      typeof (client as unknown as Record<string, unknown>).previewRefinance,
+      'MK-003: the SDK must expose the refinancing fee before the write',
+    ).toBe('function')
+  }, 240_000)
 
   // ---------------------------------------------------------------- MK-019 ----
   /**
-   * Deliberately NOT a `pins` test. It was written as one, asserting that the Recovery Mode
-   * restriction surfaces as the typed error, and it PASSED: the SDK already does that,
-   * because simulate precedes send and `mapRevert` recognises the revert. The gap MK-019
-   * still names, no up front mode check and no mention in the docstring, is not expressible
-   * as a runtime assertion distinct from MK-003's missing preview. Recorded here as
-   * verified behavior rather than dressed up as a failure.
+   * MK-019 closes here. It was never a safety gap: simulate before send already surfaced the
+   * revert as a typed `RECOVERY_MODE_RESTRICTION`, which this test asserted and which still
+   * holds. What was missing was that the restriction could not be learned WITHOUT sending,
+   * and was documented nowhere. `previewRefinance` and the `refinance()` docstring close
+   * both, so the test now asserts the preview as well as the typed error.
    */
-  it('MK-019 (verified correct today): refinance in Recovery Mode surfaces the typed error', async () => {
+  it('MK-019 (fixed): refinance in Recovery Mode is previewable AND typed', async () => {
     const fork = connectFork()
     const borrower = testAccount(2005)
     const original = await livePrice()
@@ -412,14 +431,21 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       }
       expect(caught, 'fixture: refinance must revert in Recovery Mode').toBeDefined()
 
-      // VERIFIED, not pinned: the restriction DOES reach the caller as a typed error, so
-      // a caller can branch on it. What MK-019 still names is the absence of an up front
-      // mode check and of any mention in the `refinance()` docstring, neither of which a
-      // runtime assertion can distinguish from MK-003's missing preview.
+      // The typed error already reached the caller before this wave, and still does.
       expect(
         (caught as { code?: string }).code,
         'MK-019: the Recovery Mode restriction reaches the caller as a typed error',
       ).toBe('RECOVERY_MODE_RESTRICTION')
+
+      // FIXED. What was missing is now present: the restriction is PREVIEWABLE, so a caller
+      // can learn it without sending anything and paying for a failed simulate.
+      const preview = await client.previewRefinance(borrower.address)
+      expect(preview.viable, 'MK-019: a Recovery Mode refinance must not be viable').toBe(false)
+      expect(preview.reasons).toContain('RECOVERY_MODE')
+      expect(
+        preview.bindingConstraint,
+        'MK-019: Recovery Mode is the contract FIRST requirement, so it binds first',
+      ).toBe('RECOVERY_MODE')
     } finally {
       await fork.setPrice(original)
       await fork.refreshOracle()

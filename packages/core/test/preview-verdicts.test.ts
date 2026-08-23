@@ -3,10 +3,12 @@ import {
   CCR,
   type EvaluateBorrowInput,
   type EvaluateOpenInput,
+  type EvaluateRefinanceInput,
   MCR,
   MUSD_GAS_COMPENSATION,
   evaluateBorrow,
   evaluateOpen,
+  evaluateRefinance,
 } from '../src'
 
 /**
@@ -244,3 +246,119 @@ describe('evaluateBorrow, the borrow verdict (MK-002)', () => {
     expect(p.viable).toBe(false)
   })
 })
+
+/** A healthy normal-mode refinance: active, out of Recovery Mode, ratios comfortable. */
+function refinanceInput(over: Partial<EvaluateRefinanceInput> = {}): EvaluateRefinanceInput {
+  return {
+    status: 1,
+    collateral: E18,
+    principal: 2_200n * E18,
+    interestOwed: 5n * E18,
+    refinancingFeePercentage: 20,
+    borrowingFeeOnBase: 401n * 10n ** 15n, // ~0.401 MUSD
+    feeExempt: false,
+    isRecoveryMode: false,
+    price: PRICE,
+    systemColl: 1_000n * E18,
+    systemDebt: 1_000_000n * E18,
+    ...over,
+  }
+}
+
+describe('evaluateRefinance, the refinance verdict (MK-003, MK-019)', () => {
+  it('is viable with no reasons when every condition holds', () => {
+    const p = evaluateRefinance(refinanceInput())
+    expect(p.viable).toBe(true)
+    expect(p.reasons).toEqual([])
+    expect(p.bindingConstraint).toBeNull()
+  })
+
+  it('the fee base is the NET debt, entire debt minus the gas reserve', () => {
+    const p = evaluateRefinance(refinanceInput({ principal: 2_200n * E18, interestOwed: 5n * E18 }))
+    expect(p.feeBase).toBe(2_205n * E18 - MUSD_GAS_COMPENSATION)
+  })
+
+  it('a Trove at or below the gas reserve has a zero fee base rather than underflowing', () => {
+    const p = evaluateRefinance(
+      refinanceInput({ principal: MUSD_GAS_COMPENSATION, interestOwed: 0n }),
+    )
+    expect(p.feeBase).toBe(0n)
+  })
+
+  it('MK-003: the fee is capitalized into principal', () => {
+    const fee = 401n * 10n ** 15n
+    const p = evaluateRefinance(refinanceInput({ borrowingFeeOnBase: fee }))
+    expect(p.fee).toBe(fee)
+    expect(p.resultingPrincipal).toBe(2_200n * E18 + fee)
+    expect(p.resultingEntireDebt).toBe(2_205n * E18 + fee)
+  })
+
+  it('MK-003: a fee exempt account is charged nothing and its principal does not move', () => {
+    const p = evaluateRefinance(refinanceInput({ feeExempt: true }))
+    expect(p.fee).toBe(0n)
+    expect(p.feeExempt).toBe(true)
+    expect(p.resultingPrincipal).toBe(p.principal)
+  })
+
+  it('MK-003: the governable percentage is carried through, not assumed', () => {
+    expect(
+      evaluateRefinance(refinanceInput({ refinancingFeePercentage: 20 })).refinancingFeePercentage,
+    ).toBe(20)
+    expect(
+      evaluateRefinance(refinanceInput({ refinancingFeePercentage: 35 })).refinancingFeePercentage,
+    ).toBe(35)
+  })
+
+  it('MK-019: Recovery Mode makes it not viable and binds FIRST', () => {
+    const p = evaluateRefinance(refinanceInput({ isRecoveryMode: true }))
+    expect(p.viable).toBe(false)
+    expect(p.reasons).toContain('RECOVERY_MODE')
+    expect(p.bindingConstraint).toBe('RECOVERY_MODE')
+  })
+
+  it('MK-019: Recovery Mode still binds first when other constraints also fail', () => {
+    // `_requireNotInRecoveryMode` is the contract's first requirement
+    // (BorrowerOperations.sol:1024), so it is what the caller actually hits.
+    const p = evaluateRefinance(
+      refinanceInput({ isRecoveryMode: true, collateral: 1n, systemColl: 1n }),
+    )
+    expect(p.reasons[0]).toBe('RECOVERY_MODE')
+    expect(p.reasons).toContain('ICR_BELOW_MCR')
+  })
+
+  it('flags TROVE_NOT_ACTIVE for any status other than active, ahead of everything', () => {
+    for (const status of [0, 2, 3, 4]) {
+      const p = evaluateRefinance(refinanceInput({ status }))
+      expect(p.reasons, `status ${status}`).toContain('TROVE_NOT_ACTIVE')
+      expect(p.bindingConstraint).toBe('TROVE_NOT_ACTIVE')
+    }
+  })
+
+  it('flags ICR_BELOW_MCR on the resulting position, which includes the fee', () => {
+    // Collateral sized so the pre-fee ICR clears MCR and the post-fee ICR does not.
+    const principal = 2_200n * E18
+    const interestOwed = 0n
+    const fee = 100n * E18
+    const preFee = principal + interestOwed
+    const collateral = (MCR * (preFee + fee)) / PRICE - 1n
+    const p = evaluateRefinance(
+      refinanceInput({ collateral, principal, interestOwed, borrowingFeeOnBase: fee }),
+    )
+    expect(computeIcrOf(collateral, preFee)).toBeGreaterThanOrEqual(MCR)
+    expect(p.resultingIcr).toBeLessThan(MCR)
+    expect(p.reasons).toContain('ICR_BELOW_MCR')
+  })
+
+  it('flags TCR_BELOW_CCR when the system is already strained', () => {
+    const p = evaluateRefinance(
+      refinanceInput({ systemColl: 20n * E18, systemDebt: 1_400_000n * E18 }),
+    )
+    expect(p.resultingTcr).toBeLessThan(CCR)
+    expect(p.reasons).toContain('TCR_BELOW_CCR')
+  })
+})
+
+/** Local mirror of the contract's `_computeCR`, for the pre-fee comparison above. */
+function computeIcrOf(collateral: bigint, entireDebt: bigint): bigint {
+  return entireDebt === 0n ? (1n << 256n) - 1n : (collateral * PRICE) / entireDebt
+}

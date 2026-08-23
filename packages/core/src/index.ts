@@ -85,6 +85,11 @@ export {
   type BorrowingCapacity,
   evaluateBorrow,
   type EvaluateBorrowInput,
+  previewRefinance,
+  evaluateRefinance,
+  type RefinancePreview,
+  type RefinanceBlockReason,
+  type EvaluateRefinanceInput,
   type GetBorrowingPowerParams,
 } from './math'
 
