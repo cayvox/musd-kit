@@ -74,6 +74,13 @@ export {
   type ComputeEntireDebtParams,
   type PreviewOpenParams,
   type OpenPreview,
+  type OpenBlockReason,
+  previewBorrow,
+  getBorrowingCapacity,
+  type PreviewBorrowParams,
+  type BorrowPreview,
+  type BorrowBlockReason,
+  type BorrowingCapacity,
   type GetBorrowingPowerParams,
 } from './math'
 
@@ -104,6 +111,7 @@ export {
   revertReason,
   // validation / preview-time
   BelowMinimumDebt,
+  ExceedsBorrowingCapacity,
   MaxFeeExceeded,
   InsufficientCollateral,
   TroveNotFound,

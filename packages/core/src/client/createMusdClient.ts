@@ -1,6 +1,6 @@
 import type { Address, PublicClient, WalletClient } from 'viem'
 import { type MusdAddresses, getAddresses } from '../addresses'
-import { type MusdContracts, createContracts } from '../clients'
+import { type MusdContracts, createContracts, governableVariablesAbi } from '../clients'
 import {
   CCR as BUNDLED_CCR,
   MCR as BUNDLED_MCR,
@@ -16,18 +16,23 @@ import {
   computeNICR,
 } from '../hints'
 import {
+  type BorrowPreview,
+  type BorrowingCapacity,
   type ComputeEntireDebtParams,
   type ComputeICRParams,
   type ComputeLiquidationPriceParams,
   type GetBorrowingPowerParams,
   type MathDeps,
   type OpenPreview,
+  type PreviewBorrowParams,
   type PreviewOpenParams,
   computeEntireDebt,
   computeICR,
   computeLiquidationPrice,
+  getBorrowingCapacity,
   getBorrowingPower,
   getHealthFactor,
+  previewBorrow,
   previewOpen,
 } from '../math'
 import {
@@ -139,8 +144,16 @@ export interface MusdClient {
   getHealthFactor(params: { icr: bigint }): number
   /** Project entire debt with simple time-based interest. Pure. */
   computeEntireDebt(params: ComputeEntireDebtParams): bigint
-  /** Preview opening a Trove: fee, debt, ICR, liquidation price, and the floor/RM flags. */
+  /** Preview opening a Trove: an explicit verdict plus fee, debt, ICR, and liquidation price. */
   previewOpen(params: PreviewOpenParams): Promise<OpenPreview>
+  /**
+   * Preview borrowing against an EXISTING Trove (MK-002): verdict, binding constraint, the
+   * capacity picture, and the resulting ratios. Use this rather than `getBorrowingPower`,
+   * which is an open time calculator.
+   */
+  previewBorrow(params: PreviewBorrowParams): Promise<BorrowPreview>
+  /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
+  getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
   /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
   getBorrowingPower(params: GetBorrowingPowerParams): Promise<bigint>
 
@@ -215,11 +228,33 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     return contracts.borrowerOperations.read.getBorrowingFee([debt])
   }
 
+  /**
+   * `GovernableVariables.isAccountFeeExempt` (MK-018). The contract is NOT in the bundled
+   * address map, and deliberately stays out of it: its address is read from the deployment
+   * itself, `borrowerOperations.governableVariables()`, so it cannot disagree with the
+   * BorrowerOperations the SDK is already talking to. Cached for the client lifetime like
+   * the other wiring pointers; unlike a governable VALUE, a wiring pointer changing is a
+   * redeployment, not a governance action.
+   */
+  let cachedGovernableVariables: Address | undefined
+  async function isAccountFeeExempt(account: Address): Promise<boolean> {
+    if (!cachedGovernableVariables) {
+      cachedGovernableVariables = await contracts.borrowerOperations.read.governableVariables()
+    }
+    return publicClient.readContract({
+      address: cachedGovernableVariables,
+      abi: governableVariablesAbi,
+      functionName: 'isAccountFeeExempt',
+      args: [account],
+    })
+  }
+
   const readDeps: ReadDeps = { publicClient, addresses }
   const mathDeps: MathDeps = {
     publicClient,
     addresses,
     getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
+    isAccountFeeExempt,
   }
   const writeDeps: WriteDeps = { publicClient, walletClient, addresses }
 
@@ -243,6 +278,8 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     getHealthFactor,
     computeEntireDebt,
     previewOpen: (params) => previewOpen(mathDeps, params),
+    previewBorrow: (params) => previewBorrow(mathDeps, params),
+    getBorrowingCapacity: (owner) => getBorrowingCapacity(mathDeps, owner),
     getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
     openTrove: (params) => openTrove(writeDeps, params),
     addCollateral: (params) => addCollateral(writeDeps, params),

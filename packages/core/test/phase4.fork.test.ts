@@ -204,7 +204,9 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       const midDebt = (coll * p) / 1_300_000_000_000_000_000n - GAS
       const pvMid = await c.previewOpen({ collateral: coll, debt: midDebt, price: p })
       expect(pvMid.isRecoveryMode).toBe(true)
-      expect(pvMid.meetsRecoveryRequirement).toBe(false)
+      // MK-005: `meetsRecoveryRequirement` is replaced by an explicit verdict plus reasons.
+      expect(pvMid.viable).toBe(false)
+      expect(pvMid.reasons).toContain('ICR_BELOW_THRESHOLD')
       await expect(
         openTroveRaw(fork, {
           collateralBtc: coll,
@@ -217,7 +219,8 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       // ICR ≥ CCR (~1.7): allowed.
       const safeDebt = (coll * p) / 1_700_000_000_000_000_000n - GAS
       const pvSafe = await c.previewOpen({ collateral: coll, debt: safeDebt, price: p })
-      expect(pvSafe.meetsRecoveryRequirement).toBe(true)
+      expect(pvSafe.viable).toBe(true)
+      expect(pvSafe.reasons).toEqual([])
       await openTroveRaw(fork, {
         collateralBtc: coll,
         debtMusd: safeDebt,
