@@ -53,11 +53,19 @@ evidence for what it actually exercises.
 | `previewOpen`, `getBorrowingPower` | Dual validated: against a fork of the real contracts, and against the contracts' pure helpers | **Open path only** |
 | `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `refinance` | Fork exercised, not dual validated | **No preview validation** |
 | Preview verdict against actual transaction outcome | The differential harness, see below | Being built |
+| Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | Reasoned from `BorrowerOperations.sol:879-897`, **not observed executing** | **Owed to the differential harness** (MK-002) |
+| Fee exemption on the DEBT INCREASE path, not just on open | Reasoned from `BorrowerOperations.sol:810-818`, **not observed executing** | **Owed to the differential harness** (MK-018) |
 | `@musd-kit/react`, the whole published hook layer | Fork exercised via React Testing Library against a fork-backed wagmi config | **Not measured by the coverage gate at all.** The floor covers `packages/core/src` only, so no number on this page or in CI describes how much of the React package is exercised |
 
 Read the middle row twice. Until the differential harness lands, a preview being green is not
 evidence that the corresponding write succeeds. The open only gate is exactly why MK-006 survived
 into a published release.
+
+The two rows marked **owed** are obligations on that harness, not footnotes. Both are branches the
+P3a wave implemented from the Solidity and could not drive on a fork: the capacity ratchet needs a
+collateral withdrawal that lowers the recalculated value below the stored one, and the exempt fee
+skip on a debt increase needs an exempt account that already holds a Trove. They are listed here so
+the harness is designed to reach them, rather than being built first and pointed at them after.
 
 ## 4. Three way divergence matrix
 

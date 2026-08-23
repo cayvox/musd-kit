@@ -159,6 +159,14 @@ and never rises; it also now enforces the resulting system TCR, which the contra
 every normal mode open and which it previously ignored. The precheck compares against the LIVE
 entire debt, not the stored `getTroveDebt`, because `_adjustTrove` updates interest first
 (`BorrowerOperations.sol:769`) and the gate therefore sees accrued interest.
+
+**Not witnessed, and therefore owed.** The downward ratchet is reasoned from
+`BorrowerOperations.sol:879-897` and is NOT observed executing on chain: no test performs a
+collateral withdrawal and watches `min(current, recalculated)` take the lower branch. The tests pin
+only that capacity does not RISE with price, which is the half the reported defect turned on.
+Reaching the ratchet is on the differential harness coverage list in
+`docs/09-review-and-validated-surface.md` §3, so the harness is built to exercise it rather than
+pointed at it afterwards.
 ---
 
 ## MK-003 · Refinancing fee is not modeled
@@ -562,6 +570,12 @@ charges what the contract charges for that caller. The GovernableVariables addre
 disagree with the BorrowerOperations already in use. With no account supplied the preview assumes
 not exempt and reports that via `feeExempt: false`, making the assumption visible rather than
 silent. The same rule is applied on the debt increase path, where the fee is likewise skipped.
+
+**Not witnessed, and therefore owed.** The exempt branch on the DEBT INCREASE path,
+`effectiveBorrowingFee` in `packages/core/src/trove/index.ts` mirroring
+`BorrowerOperations.sol:810-818`, is reasoned from source and NOT observed: the fork test grants
+exemption and exercises the OPEN path only. Reaching the exempt debt increase is on the
+differential harness coverage list in `docs/09-review-and-validated-surface.md` §3.
 ---
 
 ## MK-019 · `refinance()` reverts in Recovery Mode, unchecked and undocumented
