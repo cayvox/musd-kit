@@ -126,6 +126,22 @@ jobs:
         with:
           version: stable
 
+      # anvil lazily fetches upstream state on first access and persists it, per pinned
+      # block, under ~/.foundry/cache/rpc/<chainId>/<block>/ (MK-021). Without this, CI is
+      # cold on every push: one `computeHints` warm-up alone cost 913 upstream JSON-RPC
+      # calls, 849 of them eth_getStorageAt, versus 3 once cached.
+      #
+      # DETERMINISM: both the cache PATH and the cache KEY carry the block number, so a
+      # cache entry can never be reused across blocks. That matters: state cached at one
+      # block and replayed at another is exactly the nondeterminism MK-020 removed. There
+      # is deliberately NO `restore-keys` fallback here, because a prefix match would
+      # restore a different block's entry.
+      - name: Cache anvil fork state (per pinned block)
+        uses: actions/cache@v4
+        with:
+          path: ~/.foundry/cache/rpc/31611/${{ env.MEZO_FORK_BLOCK }}
+          key: anvil-fork-31611-${{ env.MEZO_FORK_BLOCK }}
+
       # Both projects, with the coverage gate for @musd-kit/core. The floor is configured
       # in `vitest.config.mts` and is a ratchet: it only moves up.
       - name: Test (forked-Mezo gate) + coverage floor

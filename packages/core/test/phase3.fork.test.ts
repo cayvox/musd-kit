@@ -1,5 +1,5 @@
 import { type Address, zeroAddress } from 'viem'
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   computeNICR,
   createMusdClient,
@@ -62,13 +62,11 @@ const getNext = (addr: Address) =>
   })
 
 describe('Phase 3, hints/ insertion-hint module', () => {
-  // Warm the fork's lazy state once: getApproxHint(seed 42, default trials) samples a
-  // fixed node set (chosen by the seed, not the NICR), so this single call caches them
-  // and every later default computeHints reuses anvil's cache instead of re-fetching.
-  beforeAll(async () => {
-    await client().computeHints({ collateral: 10n ** 17n, entireDebt: 2202n * 10n ** 18n })
-  }, 180_000)
-
+  // The fork-state warm-up that used to live here, under a fixed 180s budget, now runs
+  // once for the whole suite in `harness/globalSetup.ts` (MK-021). The budget is gone
+  // rather than raised: it was sized below the cold path's real cost, so a slow network
+  // skipped all six of these tests and reported a latency event as an untested hint
+  // module. These tests now run under the normal `testTimeout`.
   beforeEach(() => connectFork().refreshOracle())
 
   it('computeNICR == HintHelpers.computeNominalCR exactly (grid)', async () => {

@@ -151,11 +151,14 @@ cases:
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in
   `.github/workflows/ci.yml`) and the oracle seed is read at that same block, so the price
   is pinned with it; randomized tests (hint trials, math grids) use a **fixed seed**. Read
-  the warning in §1: pinned is not order independent. And the "passes twice identically"
-  line above is an intent, not yet a fact: across five consecutive runs at the pinned
-  block the inputs were identical every time, but two runs still went red on the phase 3
-  warm-up hook exceeding its fixed time budget on a cold fork, which skips that whole
-  file. That is MK-021, open.
+  the warning in §1: pinned is not order independent.
+- **Fork state caching.** anvil lazily fetches upstream state on first access and persists
+  it per pinned block under `~/.foundry/cache/rpc/<chainId>/<block>/`. The harness stops
+  anvil with `SIGTERM` so that cache is actually written; it used to `SIGKILL`, so every
+  run refetched everything and the first hint computation cost 849 sequential
+  `eth_getStorageAt` round trips (MK-021). CI restores that directory keyed on the block.
+  The key and the path both carry the block number and there is no prefix fallback, on
+  purpose: replaying one block's state at another block would undo MK-020.
 - **CI matrix:** the chain-free half (lint, path guard, build, typecheck, examples, and
   the `unit` project) runs on **Node 20, 22, and 24**. Against the official
   `nodejs/Release` schedule, checked rather than assumed: **24 is Active LTS**, **22 is
