@@ -61,6 +61,7 @@ claim about it was not).
 | MK-023 | Phase 6 `claim` fixture intermittently leaves the target Trove unredeemed | S3 | open |
 | MK-024 | Phase 6 normal mode liquidation intermittently crashes on a missing event | S3 | open |
 | MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
+| MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
 
 ---
 
@@ -847,6 +848,59 @@ prevented it. The revert reason was not captured.
 
 **Decision.** Diagnose in the mitigation removal wave, when `ensureWriteMined` is removed and
 whatever then fails becomes a finding. Capture the revert reason first.
+
+---
+
+## MK-026 · Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, and PROVEN pre existing**
+
+**What happens.** `packages/core/test/phase5.fork.test.ts` fails intermittently under
+`pnpm test:coverage` and, so far, never under `pnpm test:fork`. Three different symptoms have been
+seen in the same file, all of them a write that did not take effect:
+
+| Where | Symptom |
+|---|---|
+| `phase5.fork.test.ts:191` `adjustTrove combined` | `expected 600000000000000000n to be 550000000000000000n`, the collateral withdrawal did not apply |
+| `phase5.fork.test.ts:191` `adjustTrove combined` | `No open Trove for 0xEB41...`, the `openTrove` that starts the test did not take effect at all |
+| `phase5.fork.test.ts:114` `full lifecycle via the SDK` | `expected 500000000000000000n to be 600000000000000000n`, likewise a collateral step |
+
+**It is NOT ours, and that was proven rather than argued.** This first appeared while landing the
+P3a changes, in `adjustTrove`, code that wave modified, so it had every appearance of a regression.
+Two checks settled it:
+
+1. **Reproduced on unchanged `main`.** `main` was checked out and `pnpm test:coverage` run twice at
+   pinned block 15043414: one green, one red, in the same `phase5.fork.test.ts`. No P3a change is
+   present on that tree.
+2. **The changed code is not on the failing path.** The failing step in the `adjustTrove` case is
+   `withdrawCollateral + repay`, where `brw` is undefined, so the borrowing capacity precheck added
+   in P3a never runs and the effective fee stays zero. The remaining P3a edit to that function is
+   hoisting a `const owner` declaration, which changes no behavior.
+
+**Reproduction and rate.** Two red in three `pnpm test:coverage` runs on the P3a branch, and one
+red in two on `main`. Against that, ZERO red in twenty `pnpm test:fork` runs on the same branch at
+the same block, where the four failures that did occur were MK-022, MK-023, MK-024 and MK-025, none
+of them in phase 5. That asymmetry is the finding.
+
+  MEZO_TESTNET_RPC_URL=<a Mezo testnet endpoint> MEZO_FORK_BLOCK=15043414 pnpm test:coverage
+
+**The condition traced, and what we do NOT claim.** The only difference between the two commands is
+the v8 coverage instrumentation and the extra unit project, so the working hypothesis is that
+instrumentation slows execution enough to widen the window between simulate and mine on the shared
+fork, which is the same window `openTroveRaw` already carries two `refreshOracle` calls and a fixed
+gas limit to defend against. That is a hypothesis about the mechanism, not a verified root cause:
+the reverts were not captured with their on chain reason, and no timing was measured. What IS
+verified is the asymmetry, that it predates P3a, and that the P3a changes are off the failing path.
+
+**Why it matters.** CI runs `pnpm test:coverage`, not `pnpm test:fork`. So this is the flake that
+actually reddens the pipeline, and it is the one least visible to anyone running the fork suite
+locally. It also means the coverage number itself is only obtainable on a green run, which cost
+three attempts in the P3a wave.
+
+**Decision.** Not fixed here. Diagnose in the mitigation removal wave alongside MK-016: capture the
+revert reason first, then measure whether the simulate to mine window is really the variable. Do
+not paper over it by disabling coverage in CI, which would trade a visible flake for an invisible
+gap.
 
 ---
 
