@@ -58,6 +58,9 @@ claim about it was not).
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
 | MK-022 | `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated | S3 | open |
+| MK-023 | Phase 6 `claim` fixture intermittently leaves the target Trove unredeemed | S3 | open |
+| MK-024 | Phase 6 normal mode liquidation intermittently crashes on a missing event | S3 | open |
+| MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
 
 ---
 
@@ -728,6 +731,14 @@ Three additional `pnpm test:fork` runs on the same tree were green. The seeded o
 byte identical, `77051107320000000000000`, in every one of those runs, so this is not MK-020
 resurfacing.
 
+**Observed rate, measured in the P3a wave: one in twenty.** Twenty full `pnpm test:fork` runs at
+the same pinned block produced four red runs, and exactly ONE of those was this finding's location,
+`phase6.fork.test.ts:245`, again with `expected 1 to be 3`. The seed was byte identical in all
+twenty. The other three red runs failed elsewhere and are registered separately as MK-023, MK-024
+and MK-025 rather than folded in here: a flake without its own entry is indistinguishable from a
+real regression when it surfaces in a later wave. So the phase 6 file is not one flaky test, it is
+at least three distinct ones plus this.
+
 **Not caused by the merge that surfaced it.** `git diff` between `chore/p0.2-cold-fork-warmup` and
 `main` after the restore merge is empty, so the tree that produced the failure is byte identical to
 the tree that ran five consecutive green earlier. The merge introduced nothing. It follows that the
@@ -748,6 +759,94 @@ liquidation behavior.
 
 **Decision.** Diagnose in the mitigation removal wave, alongside MK-016. Do not raise a timeout or
 add a retry: nothing here timed out, and a retry would hide exactly the signal worth keeping.
+
+---
+
+## MK-023 · Phase 6 `claim` fixture intermittently leaves the target Trove unredeemed
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, attributing red runs**
+
+**What happens.** `packages/core/test/phase6.fork.test.ts:334` opens a Trove at the very bottom of
+the redeemable list, redeems past it so that it is FULLY consumed, and asserts its status reaches
+4, closed by redemption, leaving a collateral surplus for its owner to claim. Intermittently the
+status is still 1, active: `expected 1 to be 4`. The redemption did not consume the Trove it was
+sized to consume.
+
+**Reproduction and rate.** Two in twenty. Twenty full `pnpm test:fork` runs at pinned block
+15043414 on the P3a branch, red on runs 3 and C, both with the identical assertion. The seeded
+oracle answer was byte identical, `77051107320000000000000`, in all twenty, so the price is not the
+variable.
+
+**Why it is NOT MK-022.** Different test, different line, different assertion, different operation.
+MK-022 is `batchLiquidate` at `:245` asserting status 3. This is a redemption at `:334` asserting
+status 4. They share a file and a suspected family, the shared mutable fork, and nothing else.
+
+**What we do NOT claim.** No root cause. The redeemable tail is mutated by every earlier file that
+opens, liquidates or redeems, so how much of it survives to this test is a function of everything
+before it, which is the MK-016 ordering coupling. Whether that alone explains it, or whether the
+truncation arithmetic in `getRedemptionHints` is also involved, is unestablished.
+
+**Decision.** Diagnose in the mitigation removal wave alongside MK-016 and MK-022. Do not add a
+retry: the assertion is about a redemption completing, and a retry would hide precisely the signal.
+
+---
+
+## MK-024 · Phase 6 normal mode liquidation intermittently crashes on a missing event
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, attributing red runs**
+
+**What happens.** `packages/core/test/phase6.fork.test.ts:198` fails with
+`TypeError: Cannot read properties of undefined (reading 'args')`. It is a CRASH, not an assertion:
+the test looks up an expected event in the receipt's logs and the lookup returns `undefined`, so
+the property read throws before any assertion runs.
+
+**Reproduction and rate.** One in twenty, run 10 of the twenty P3a fork runs at pinned block
+15043414, seed byte identical.
+
+**Why it is NOT MK-022, and why it is worth its own entry more than the others.** Different test and
+different line, but the reason to separate it is the failure MODE. A `TypeError` on a missing event
+tells you nothing about what actually went wrong on chain: the liquidation may have reverted,
+liquidated nothing, or emitted a different event, and the crash hides which. Folded into another
+entry it would read as the same symptom as an assertion failure, which it is not. The test should
+be made to fail with the on-chain reason rather than a property access on `undefined`; until it
+does, every occurrence of this costs a diagnosis from scratch.
+
+**What we do NOT claim.** No root cause, and deliberately no guess about which of the three
+possibilities above it is, because the crash removed the evidence that would have told us.
+
+**Decision.** Diagnose in the mitigation removal wave. The first fix is to the test's own error
+handling, so that the next occurrence reports what the chain did.
+
+---
+
+## MK-025 · React block watching test intermittently sends a write that reverts
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, attributing red runs**
+
+**What happens.** `packages/react/test/hooks.fork.test.ts:157`, the hook refetch on a new block,
+fails with `expected 'reverted' to be 'success'`. A transaction the test sends to produce a new
+block reverted instead of mining successfully.
+
+**Reproduction and rate.** One in twenty, run F of the twenty P3a fork runs at pinned block
+15043414, seed byte identical. Notably run F was the only run with TWO failures: this and MK-022.
+
+**Why it is NOT MK-022.** Different package entirely, `@musd-kit/react` rather than
+`@musd-kit/core`, a different mechanism, a write reverting rather than a liquidation not taking
+effect, and a different failure surface. It is also the only observed failure outside
+`phase6.fork.test.ts`, which matters: it shows the intermittency is not confined to one file.
+
+**Relationship to an existing mitigation.** `hooks.fork.test.ts` already carries `ensureWriteMined`,
+the four attempt refire loop listed as mitigation 2 in the P0 flake inventory, precisely because
+writes on the shared fork revert after a passing simulate. This failure means the mitigation did
+not save this particular write, which is information about the mitigation as much as about the
+test. The P0 inventory flagged that loop as the most suspicious of the set, because a simulate that
+passes followed by a revert is the MK-005 bug class; MK-005 is now fixed, and this still happened.
+
+**What we do NOT claim.** No root cause, and specifically not that MK-005's fix should have
+prevented it. The revert reason was not captured.
+
+**Decision.** Diagnose in the mitigation removal wave, when `ensureWriteMined` is removed and
+whatever then fails becomes a finding. Capture the revert reason first.
 
 ---
 
