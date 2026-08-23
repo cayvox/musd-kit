@@ -154,7 +154,11 @@ export async function startFork(opts: StartForkOptions = {}): Promise<ForkHandle
   }
 
   const forkBlockNumber = await publicClient.getBlockNumber({ cacheTime: 0 })
-  const seededPrice = await installOracleShim(testClient, publicClient, upstream)
+  // Seed the oracle at the SAME block the fork is anchored at, so the fork block is the
+  // one input that determines the price (MK-020). When `MEZO_FORK_BLOCK` is set this is
+  // that block; when it is not, it is whatever `latest` was at boot, which at least keeps
+  // the price and the chain state consistent with each other within a run.
+  const seededPrice = await installOracleShim(testClient, publicClient, upstream, forkBlockNumber)
 
   let stopped = false
   const stopFork = async (): Promise<void> => {

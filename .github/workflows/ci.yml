@@ -40,7 +40,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 20 is the pinned toolchain (`.nvmrc`); 22 and 24 are the newer LTS lines.
+        # Checked against the nodejs/Release schedule, not assumed: 24 is Active LTS, 22 is
+        # Maintenance LTS, and 20 reached END OF LIFE on 2026-04-30. 20 stays in the matrix
+        # because it is the `.nvmrc` pin and the floor of `engines.node` (>=20.11.0), so the
+        # packages still promise it. Retiring it means moving that baseline, which is a
+        # separate change. See `docs/07-testing.md` §5.
         node: ['20', '22', '24']
     steps:
       - name: Checkout
