@@ -55,6 +55,8 @@ claim about it was not).
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
 | MK-018 | Fee exemption is not modeled | TBD | open |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
+| MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
+| MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | open |
 
 ---
 
@@ -373,7 +375,7 @@ marked done only when a check in CI enforces it, never when a document merely de
 | Claim | Status | What makes it true |
 |---|---|---|
 | A coverage floor is enforced in CI | **done** | `coverage.thresholds` in `vitest.config.mts`, run by `pnpm test:coverage` in the fork gate job. The floor is the measured number rounded down, and it is a ratchet: upward only |
-| The fork is pinned to a block for determinism | **done** | `MEZO_FORK_BLOCK` set in `.github/workflows/ci.yml`, read by the harness at `packages/core/test/harness/anvil.ts:81`. Pinning is not order independence, see MK-016 |
+| The fork is pinned to a block for determinism | **done** | `MEZO_FORK_BLOCK` set in `.github/workflows/ci.yml`, read by the harness at `packages/core/test/harness/anvil.ts:81`, and the oracle seed is read at that same block so the price is pinned with it (MK-020). Pinning is still not order independence, see MK-016 |
 | CI matrix: Node LTS, current and previous | **done, claim narrowed** | The chain-free half runs on Node 20, 22, and 24; the fork gate runs once on the `.nvmrc` toolchain. `docs/07-testing.md` §5 now names the concrete versions instead of a category that goes stale |
 | Post publish install verification | **done, wording corrected** | The pack smoke is now described as pre publish everywhere, because that is what it is. A genuine post publish job installs the published version from the registry into an empty directory and imports it, in `.github/workflows/release.yml`, after publish and never on push |
 | The unit layer is in process with no chain | **done** | Two vitest projects in `vitest.workspace.mts`. CI runs `pnpm test:unit` before Foundry is installed and with no RPC secret in scope, so the claim fails loudly if it stops being true |
@@ -416,23 +418,10 @@ cumulative EVM clock warps couple the phases, which the alphabetical sequencer o
 decouple. That coupling is now stated as a known structural limit in `docs/07-testing.md` §1
 rather than left implied, but stating a limit is not removing it.
 
-**Found while pinning: the block pin does not pin the price.** The oracle shim is seeded by
-reading `latestRoundData()` from the upstream RPC at `latest`, not at the forked block
-(`packages/core/test/harness/oracle.ts:52-62`). Runs at the same `MEZO_FORK_BLOCK` therefore start
-from the same chain state at a different BTC/USD price. Three full runs at block 15043414 seeded
-three different answers: `77226724770000000000000`, `77005799990000000000000`,
-`77090810000000000000000`. So "the fork is pinned to a block for determinism" is now true as
-written, and still not the same sentence as "the suite is deterministic". Pinning the seeded round
-alongside the block is the obvious next step and belongs to the same later wave as the mitigation
-removal, because it changes what every threshold adjacent fork assertion runs against.
-
-**Observed consequence, not yet a separate finding.** Across those same three runs,
-`packages/core/test/phase9-keeper.fork.test.ts:66` failed twice with `liquidated.length === 0`.
-The test asserts that the fork's lowest ICR tail sits under MCR, which is a function of the seeded
-price, and it runs after phase 6 has already liquidated part of that tail, which is the ordering
-coupling above. Both inputs are unpinned, so the test is a coin flip rather than a check. This is
-recorded here under MK-016 rather than opened as its own ID, because it is a symptom of exactly
-the two defects this finding names; it gets its own ID if it survives the determinism work.
+**The pin alone did not resolve this finding**, because the oracle shim seeded itself from a
+`latest` read rather than from the forked block, so the fork block determined the chain state but
+not the price; that half is now MK-020, fixed, and the ordering coupling above is what still keeps
+MK-016 open.
 
 ---
 
@@ -476,6 +465,104 @@ mapped revert rather than a bad transaction, which is why this is S2 and not S1.
 
 **Decision.** Fix now, alongside MK-003: surface the restriction in the preview and in the
 docstring.
+
+---
+
+## MK-020 · Oracle shim seed is not pinned, so a pinned fork block is not a pinned price
+
+**Class** S3, harness · **Status** fixed · **Found by us while remediating MK-016**
+
+**What was wrong.** The fork harness cannot read Mezo's BTC/USD oracle from the fork itself: the
+address is a native precompile served by the node's Cosmos oracle module, and the stored EVM
+bytecode only self-recurses, so an anvil fork of it reverts. The harness works around that by
+reading the real round from the upstream node and seeding a shim
+(`packages/core/test/harness/oracle.ts`, `installOracleShim`). That read passed no block number,
+so it resolved at the upstream chain's `latest`. Pinning `MEZO_FORK_BLOCK` therefore pinned the
+chain state and left the price floating with wall clock time.
+
+The consequence is narrow to state and wide in effect: the fork suite had two independent inputs,
+one pinned and one not, while the documentation claimed determinism from the pin alone.
+
+**Reproduction.** Four full suite runs, all at fork block 15043414, seeded four different answers:
+
+| Run | Fork block | Seeded answer (BTC/USD, 1e18) |
+|---|---|---|
+| 1 | 15043414 | `77226724770000000000000` |
+| 2 | 15043414 | `77005799990000000000000` |
+| 3 | 15043414 | `77090810000000000000000` |
+| 4 | 15043414 | `77011376590000000000000` |
+
+The observable failure was `packages/core/test/phase9-keeper.fork.test.ts`, which asserted that
+the fork's lowest ICR tail was still under MCR. Whether that held depended on the seeded price and
+on how much of that tail phase 6 had already liquidated. It failed with `liquidated.length === 0`
+on runs 1 and 3, and passed on runs 2 and 4: a coin flip, not a check. That failure is a symptom of
+this finding combined with the ordering coupling that remains in MK-016, and is deliberately not
+given an ID of its own.
+
+**Ground truth for the fix.** Whether the endpoint honours a historical block tag on a precompile
+served outside the EVM is a property of the endpoint, not something to assume, so it was measured:
+twelve consecutive `eth_call` reads of `latestRoundData()` pinned to block 15043414 returned one
+identical round (`roundId 13948341`, answer `77051107320000000000000`), a read pinned one million
+blocks earlier returned a genuinely older round (`roundId 12899794`), and a read at block 4096
+returned `header not found`, which is the endpoint's pruning boundary rather than a silent wrong
+answer.
+
+**Fix.** `installOracleShim` now takes the block to read at and receives the fork's own anchor
+block (`packages/core/test/harness/anvil.ts`), so the fork block is the single input that
+determines the price. When the endpoint can no longer serve that block, the harness falls back to
+`RECORDED_ORACLE_SEED` in `packages/core/test/harness/constants.ts`, but only for the exact block
+that seed was recorded at, and never quietly: it warns loudly, and for any other block it throws
+rather than seed a price that does not belong to the forked state. The seeded answer and the block
+it came from are printed at suite startup, so a future divergence is readable in the log instead of
+being reconstructed from a failure.
+
+Note what is unchanged: `startedAt` and `updatedAt` are still stamped with the fork's own block
+time, not the round's, because the PriceFeed freshness check would otherwise reject a historical
+round outright. Only the price and the round id come from the pinned read.
+
+---
+
+## MK-021 · Phase 3 warm up hook exceeds its fixed budget on a cold fork
+
+**Class** S3, harness · **Status** open · **Found by us while proving MK-020**
+
+**Ground truth for our own policy.** `docs/07-testing.md` §5 states the suite must pass twice
+identically. It does not, and the remaining reason is this one.
+
+**What happens.** `packages/core/test/phase3.fork.test.ts:67-69` runs a `beforeAll` whose only job
+is to warm anvil's lazy state cache, with a hard 180 second budget:
+
+```ts
+beforeAll(async () => {
+  await client().computeHints({ collateral: 10n ** 17n, entireDebt: 2202n * 10n ** 18n })
+}, 180_000)
+```
+
+It asserts nothing. When it exceeds the budget, vitest fails the suite and **skips all six phase 3
+tests**, so a latency event is reported as if the insertion hint module were untested.
+
+**Reproduction.** Five consecutive full suite runs at pinned block 15043414: runs 1 and 3 failed
+with `Hook timed out in 180000ms` and `97 passed | 6 skipped`; runs 2, 4 and 5 passed 103 of 103.
+An earlier wave saw the same hook time out once in four runs, so three of nine observed full runs.
+Nothing else failed in any of the nine.
+
+**Why we think it is latency and not a defect in the code under test.** The warm up calls
+`computeHints`, whose `getApproxHint` samples many SortedTroves nodes, and every sampled node on a
+cold anvil fork is a lazy state fetch to the upstream RPC. Measured directly: the same cold fork
+hint ritual inside an isolated `openTrove` took 271 seconds, comfortably past this hook's 180
+second budget, while the identical call once the cache is warm takes about 4 seconds. So the budget
+sits inside the range the cold path actually occupies, rather than above it.
+
+That is a hypothesis about the cause, not a verified root cause. What is verified is the timing
+spread and that the hook asserts nothing.
+
+**Decision.** Not fixed here, and deliberately not papered over by raising the number: this is a
+flake mitigation whose own budget is the flake, and the mitigation removal wave is where it
+belongs. Raising a timeout to turn a red run green is the move this programme exists to stop. The
+candidate fixes are to make the warm up cheap and explicit rather than a full hint computation, to
+run it against a smaller sampled set, or to drop it and accept slower first hints. Whichever is
+chosen, the fix must make the failure mode loud rather than silent: skipping six correctness tests
+because a cache was cold is the part that is unacceptable, more than the latency itself.
 
 ---
 

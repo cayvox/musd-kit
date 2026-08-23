@@ -40,6 +40,27 @@ export const ORACLE_SHIM_RUNTIME =
   '0x6080604052348015600e575f5ffd5b50600436106030575f3560e01c8063313ce567146034578063feaf968c14604d575b5f5ffd5b5f5460405160ff90911681526020015b60405180910390f35b6001546002546005546040805169ffffffffffffffffffff9485168152602081019390935242908301819052606083015291909116608082015260a001604456fea264697066735822122053221683ccd442d5ea99f045fc6176fd883edcf36d49b8ea6a9bcb118f128b3b64736f6c63430008230033' as const
 
 /**
+ * Last-resort seed for the oracle shim, used ONLY when the upstream endpoint cannot
+ * serve `latestRoundData()` at {@link RECORDED_ORACLE_SEED.block} any more, and ONLY when
+ * the fork is anchored at exactly that block (MK-020).
+ *
+ * These are not invented values. They are the real round the Mezo testnet oracle served
+ * at block 15043414, read with an `eth_call` pinned to that block and confirmed identical
+ * across twelve consecutive reads. Recorded 22 Aug 2026.
+ *
+ * The fallback is deliberately narrow and deliberately loud: a recorded price is a
+ * snapshot, and a snapshot silently substituted for a chain read is exactly the kind of
+ * quiet fiction this harness exists to avoid. See `oracle.ts`.
+ */
+export const RECORDED_ORACLE_SEED = {
+  block: 15_043_414n,
+  decimals: 18,
+  roundId: 13_948_341n,
+  /** BTC/USD, 1e18-scaled: 77051.10732 USD. */
+  answer: 77_051_107_320_000_000_000_000n,
+} as const
+
+/**
  * Fixed storage-slot layout the shim reads from (one field per slot). The harness
  * writes these with `anvil_setStorageAt`.
  */

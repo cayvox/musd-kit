@@ -80,7 +80,8 @@ check in CI makes it true.
 | Claim | Status |
 |---|---|
 | Coverage floor enforced in CI | See MK-015 |
-| Fork pinned to a block for determinism | See MK-016 |
+| Fork pinned to a block for determinism | See MK-016 and MK-020 |
+| Fork price pinned with the block | See MK-020 |
 | CI matrix across Node versions | See MK-015 |
 | Post publish install verification | See MK-015 |
 | Unit layer runs with no chain | See MK-015 |

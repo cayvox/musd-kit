@@ -13,12 +13,21 @@ export async function setup(): Promise<void> {
   fork = await startFork()
   process.env.MUSD_FORK_RPC_URL = fork.rpcUrl
 
-  const { answer, roundId, decimals } = fork.seededPrice
+  const { answer, roundId, decimals, sourceBlock, source } = fork.seededPrice
   console.log(`[harness] anvil fork ready at ${fork.rpcUrl}, block ${fork.forkBlockNumber}`)
+  // Print the seed AND the block it came from. Both are inputs to every price-dependent
+  // assertion in the fork suite, so a future divergence should be readable straight off
+  // the log rather than reconstructed from a failure (MK-020).
   console.log(
-    `[harness] oracle shim seeded with real round data: answer=${answer} ` +
+    `[harness] oracle shim seeded from ${source} at block ${sourceBlock}: answer=${answer} ` +
       `(decimals=${decimals}, roundId=${roundId})`,
   )
+  if (sourceBlock !== fork.forkBlockNumber) {
+    console.warn(
+      `[harness] WARNING: oracle seed block ${sourceBlock} differs from the fork block ` +
+        `${fork.forkBlockNumber}; the price does not correspond to the forked state.`,
+    )
+  }
 }
 
 export async function teardown(): Promise<void> {
