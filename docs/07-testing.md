@@ -186,3 +186,41 @@ cases:
 - SDK NICR `== computeNominalCR(coll, entireDebt)` exactly.
 - Every mapped error is reachable by a real revert on the fork.
 - Both examples build and run; the keeper imports no React.
+
+---
+
+## 7. On-chain facts (`pnpm facts`, manual)
+
+`scripts/onchain-facts.ts` reads the governable values, the cross wiring, the proxy
+implementations, and the fee exemption set from **both** chains at a **pinned block per
+chain**, and writes the result between the markers in
+[`09-review-and-validated-surface`](/09-review-and-validated-surface) §6. It is read only:
+it builds a viem *public* client only, so it has no signing path, needs no private key, and
+never accepts one. Endpoints come from the environment and are never printed or committed.
+
+```sh
+export MEZO_TESTNET_RPC_URL=<a Mezo testnet (31611) endpoint>
+export MEZO_MAINNET_RPC_URL=<a Mezo mainnet (31612) endpoint>
+# Optional per chain, and worth setting: a SECOND, independent endpoint. The fee exemption
+# answers behind MK-018 are re-read through it at the same pinned block and confirmed.
+export MEZO_MAINNET_RPC_URL_SECOND=<a different Mezo mainnet endpoint>
+pnpm facts            # rewrites the generated block in docs/09
+pnpm facts --stdout   # prints it instead, changes nothing
+```
+
+Either endpoint may be omitted; a chain without one is reported as missing in full rather
+than as a partial table, because a partial table reads as complete.
+
+**It is deliberately NOT in push CI.** It needs live endpoints and runs a genesis-to-pin log
+scan of a few thousand chunked `eth_getLogs` calls, so a network hiccup would redden an
+unrelated pull request. It is a manual gate.
+
+**When to run it.** Regenerate **before any release**, and whenever you are about to cite one
+of those values. The values are governable and can change without notice, which is the whole
+reason each is recorded with its block: a value without a block number is a memory, not a
+fact. Bumping a pinned block changes every recorded value, so it belongs in its own commit
+with the reason stated.
+
+The output is **byte identical across runs at the same pinned block**: no wall clock, no run
+id, and every table ordered by an explicit list rather than by map iteration. If two runs
+ever differ, that is a defect in the script or a reorg at the pin, not noise to be ignored.

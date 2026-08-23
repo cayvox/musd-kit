@@ -49,14 +49,15 @@ claim about it was not).
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | open |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
-| MK-014 | `redeem` returns a rate in a field named `fee`, and caps against the wrong getter | S1 | open |
+| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | open |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
-| MK-018 | Fee exemption is not modeled | TBD | open |
+| MK-018 | Fee exemption is not modeled | S1 | open |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
+| MK-022 | `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated | S3 | open |
 
 ---
 
@@ -336,19 +337,43 @@ straddle blocks, which contradicts the one consistent price snapshot wording in 
 
 ---
 
-## MK-014 · `redeem` returns a rate in a field named `fee`, and caps against the wrong getter
+## MK-014 · `redeem` returns a rate in a field named `fee`
 
 **Class** S1 · **Status** open
 
-**SDK location.** `packages/core/src/redemption/redeem.ts`. The returned `fee` is a rate, not an
-amount, and the cap compares the no argument `redemptionRate()` rather than the amount aware
-`getRedemptionRate(collateralDrawn)`.
+**Ground truth, corrected.** An earlier version of this entry described the two redemption getters
+wrongly, and its fix instruction would have introduced a unit error. Both getters live on
+**`BorrowerOperations`**, not on `TroveManager`:
+
+| Getter | Argument | Returns | Source |
+|---|---|---|---|
+| `redemptionRate()` | none | the **rate**, a 1e18 scaled fraction. Declared `uint256 public redemptionRate; // expressed as a percentage in 1e18 precision`, initialized to `(DECIMAL_PRECISION * 3) / 400`, that is 0.75% | `BorrowerOperations.sol:129`, initialized `:151` |
+| `getRedemptionRate(uint256 _collateralDrawn)` | **collateral drawn, in BTC wei**, not a MUSD amount | despite the name, a fee **AMOUNT** in BTC wei: `fee = redemptionRate * _collateralDrawn / DECIMAL_PRECISION`, with `require(fee < _collateralDrawn)` | `BorrowerOperations.sol:499-509` |
+
+Read at mainnet block 11330182 and testnet block 15043414, `redemptionRate()` is
+`7500000000000000`, and `getRedemptionRate(1 BTC)` returns `7500000000000000` BTC wei of fee. The
+two happen to print the same digits at exactly one BTC, which is precisely the coincidence that
+makes the naming dangerous.
+
+**What is actually wrong in the SDK.** `packages/core/src/redemption/redeem.ts:38` returns a field
+named `fee` that holds the **rate**, read from `redemptionRate()` at `redeem.ts:65`. Its own
+docstring says "Effective redemption rate (1e18-scaled)", so the type is documented and the **name
+contradicts it**. A caller who trusts the field name and reads `fee` as an amount of BTC is wrong
+by the size of the redemption.
+
+**What is NOT wrong, contrary to the earlier text.** The cap at `redeem.ts:77` compares the rate
+against `maxFeePercentage`, documented at `redeem.ts:24` as a "1e18-scaled fraction". Rate against
+rate cap is unit consistent and correct. Swapping in `getRedemptionRate(collateralDrawn)` as the
+earlier fix instruction proposed would compare a BTC wei **amount** against a 1e18 scaled
+**fraction**, which is a unit error this entry would have caused rather than prevented.
 
 **Blast radius.** A caller reading `fee` as an amount is off by orders of magnitude. Classed S1
-because it is a silently wrong number in a field whose name asserts otherwise.
+because it is a silently wrong number in a field whose name asserts otherwise. Unchanged.
 
-**Decision.** Fix now. Rename to make the unit explicit, return both the rate and the estimated
-amount, and cap against the amount aware getter.
+**Decision.** Fix now, but narrower than previously written. Rename the field so the unit is
+explicit, and additionally return the estimated fee amount, computed with
+`getRedemptionRate(collateralDrawn)` for the collateral actually drawn, as a separate field.
+Leave the cap comparing rate against rate.
 
 ---
 
@@ -441,14 +466,54 @@ and type the write path properly.
 
 ## MK-018 · Fee exemption is not modeled
 
-**Class** to be decided by the live read · **Status** open
+**Class** S1 · **Status** open · **Severity assigned from evidence, not assumption**
 
 `GovernableVariables.isAccountFeeExempt` zeroes the borrowing fee on open, on debt increase, and on
 refinance. The SDK does not model it. Neither does Mezo's production dApp.
 
-Severity depends on whether the exempt set is non empty on chain, which is answered by the event
-scan recorded in `docs/09-review-and-validated-surface.md`. Empty set means a documented limit.
-Non empty means a wrong number for that cohort.
+**The exempt set is NOT empty on mainnet.** That is what decides this, and it is now measured
+rather than guessed. At mainnet block 11330182, two accounts are fee exempt. Four accounts have
+been granted exemption over the chain's history and two of those have since had it removed, so the
+mechanism is not merely deployed, it is actively administered. On testnet, at block 15043414, the
+set is empty.
+
+**Blast radius: these are ordinary accounts, not protocol plumbing.** Both accounts exempt at
+mainnet block 11330182 have **no code**, and neither matches any address the protocol is known to
+own: they were checked against 37 addresses drawn from every deployment record in the pinned
+contracts package, proxy and implementation addresses alike, plus every address the SDK bundles.
+The same holds for all four accounts ever granted. That distinction matters more than the severity
+letter. Had the exempt set been protocol owned contracts, the wrong number would surface inside
+Mezo's own tooling; instead it surfaces for external accounts, which is exactly the population that
+reaches for an SDK. Unmatched and code free is all that is claimed here: it is not evidence of who
+owns those accounts, and nothing in this register infers ownership.
+
+The individual addresses are deliberately not listed, here or in the generated block. They are
+public chain data and `pnpm facts` reproduces them against the same pinned block, so withholding
+them costs a reader nothing they cannot recompute; printing them would attach a durable "fee
+exempt" label to specific accounts in a public register without adding anything the count and the
+characterization above do not already carry.
+
+**How that was established.** A genesis to pinned block scan of `FeeExemptAccountAdded` and
+`FeeExemptAccountRemoved` on `GovernableVariables`, event and getter names read from the deployed
+ABI rather than assumed, in 1134 chunks of 10000 blocks on mainnet and 1505 on testnet, with every
+address ever granted then re-checked against `isAccountFeeExempt` at the pinned block so a removal
+is confirmed by the contract rather than inferred from event pairing. No address was guessed or
+probed. Recorded in full in `docs/09-review-and-validated-surface.md` §6.
+
+**Why S1.** For an exempt account the contract charges no borrowing fee, while
+`packages/core/src/math/previewOpen.ts` applies `getBorrowingFee(debt)` unconditionally. The
+caller is shown a debt, an ICR and a liquidation price computed from a fee that will not be
+charged. It is a silently wrong number with no error raised, which is the S1 definition, and the
+cohort it is wrong for exists on mainnet today.
+
+**Scope of the claim.** Both statements above are facts about specific blocks, not permanent
+properties: the set is governable and can change without notice in either direction. The empty
+testnet result in particular must not be read as "fee exemption is unused"; it was empty at block
+15043414 and nothing more.
+
+**Decision.** Fix, in the same wave as MK-004, since both are the borrowing fee being applied when
+the contract will not charge it. Read `isAccountFeeExempt` for the account being previewed and
+skip the fee when it returns true.
 
 ---
 
@@ -604,11 +669,50 @@ overshoots the 180000 ms budget by 1.3 seconds. The same call on the next run to
 
 ---
 
+## MK-022 · `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated
+
+**Class** S3, harness · **Status** open · **Found by us while verifying the MK-020 and MK-021
+merge into `main`**
+
+**What happens.** `packages/core/test/phase6.fork.test.ts:270` opens two Troves at a target ICR of
+about 1.12, drops the price to `originalPrice * 100 / 113` so both sit well under MCR, calls
+`batchLiquidate` on the pair, and asserts both reach status 3, closed by liquidation. On one run in
+six it failed with `expected 1 to be 3`: one of the two was still status 1, active, after the batch
+call returned and the receipt was awaited.
+
+**Reproduction and rate.** Six full runs of `pnpm test:coverage` at pinned block 15043414, one red.
+Three additional `pnpm test:fork` runs on the same tree were green. The seeded oracle answer was
+byte identical, `77051107320000000000000`, in every one of those runs, so this is not MK-020
+resurfacing.
+
+**Not caused by the merge that surfaced it.** `git diff` between `chore/p0.2-cold-fork-warmup` and
+`main` after the restore merge is empty, so the tree that produced the failure is byte identical to
+the tree that ran five consecutive green earlier. The merge introduced nothing. It follows that the
+same flake was latent in those five green runs and simply did not fire.
+
+**What we do NOT claim.** No root cause. The obvious candidates were not confirmed and some are
+already contradicted: interest accrual between open and liquidation lowers ICR further, so it makes
+liquidation more likely rather than less, and both Troves are constructed identically from the same
+captured `originalPrice`. Whether the Stability Pool balance at that moment, the ordering coupling
+in MK-016, or something in the batch path is responsible is unestablished, and this entry
+deliberately stops short of guessing.
+
+**Why it matters more than a flaky test usually would.** The assertion is about liquidation
+completing, which is the same surface MK-001 concerns. A test that passes five times in six is not
+evidence about the sixth, and this one sits next to a finding we already know is wrong about
+liquidation rules. It should be diagnosed before anyone reads the phase 6 file as confirmation of
+liquidation behavior.
+
+**Decision.** Diagnose in the mitigation removal wave, alongside MK-016. Do not raise a timeout or
+add a retry: nothing here timed out, and a retry would hide exactly the signal worth keeping.
+
+---
+
 ## Open questions and their answers
 
 | # | Question | Answer |
 |---|---|---|
 | Q1 | Does the contracts package version we pin differ from the one Mezo's dApp resolves? | Closed. Across both testnet and mainnet deployment sets, no contract address changed between the two versions, including the hint helpers, sorted troves, and interest rate manager. What changed: proxy implementation targets behind three contracts, one removed function and one changed event signature on the trove manager, and a set of new functions on the PCV. The SDK touches none of those surfaces. |
-| Q2 | Is the fee exempt set non empty on chain? | Pending the event scan. Decides MK-018. |
-| Q3 | Which contract revision is ground truth? | Reframed. The right question is which implementation sits behind each proxy on chain. Answered by reading the proxy implementation slot at a pinned block and comparing it to the pinned package. Recorded in `docs/09`. |
+| Q2 | Is the fee exempt set non empty on chain? | Closed. **Yes on mainnet, no on testnet.** At mainnet block 11330182 two accounts are fee exempt, out of four granted over the chain's history with two since removed; both are code free and neither matches any address the protocol is known to own. At testnet block 15043414 the set is empty. Established by a genesis to pin scan of `FeeExemptAccountAdded` and `FeeExemptAccountRemoved`, every granted address then re-checked against `isAccountFeeExempt` at the pinned block. This assigns MK-018 its class, S1. Recorded in `docs/09-review-and-validated-surface.md` §6. |
+| Q3 | Which contract revision is ground truth? | Closed. The right question is which implementation sits behind each proxy on chain, and it now has an answer: at testnet block 15043414 and mainnet block 11330182, the EIP-1967 implementation behind every bundled proxy matches the deployment record in `@mezo-org/musd-contracts@1.1.0`, the version `packages/core/package.json` actually pins, on both chains. Six of the seven bundled addresses are proxies of that shape; `musd` has an empty implementation slot, so it is not a transparent proxy of that shape and there is nothing to compare. So the pinned package IS ground truth for the deployed code at those blocks. Recorded in `docs/09-review-and-validated-surface.md` §6. |
 | Q4 | Does the SDK bundle a mainnet interest rate manager? | Yes. It is present in the source and in the published package, and matches both the contracts package deployment record and Mezo's own literal. No gap here. |
