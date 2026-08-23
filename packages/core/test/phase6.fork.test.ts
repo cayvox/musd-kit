@@ -157,7 +157,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       // rather than leave one below minNetDebt (an invalid partial → "Unable to redeem any
       // amount"). truncatedAmount is whatever those whole Troves sum to.
       const res = await redeemFresh(musdR, { amount: 5_000n * MUSD })
-      expect(res.fee).toBe(rate)
+      expect(res.redemptionRate).toBe(rate) // MK-014: the RATE field, named as a rate
       expect(res.truncatedAmount).toBeGreaterThan(0n)
       const evR = await redemptionEv(res.hash)
       const feeFracR = Number(evR._collateralFee) / Number(evR._collateralSent + evR._collateralFee)

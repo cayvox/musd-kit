@@ -106,10 +106,20 @@ async function accrueInterest(seconds = 3): Promise<void> {
 }
 
 /**
- * `it.fails` by default, see the header. `MUSD_FINDINGS_RAW=1` runs them as ordinary
- * tests so the raw assertion output can be read; it never skips anything either way.
+ * NOTHING IN THIS FILE IS PINNED ANY MORE, as of the P3b wave.
+ *
+ * Every finding this file was written to pin has been fixed, so the `pins` helper that
+ * wrapped each body in `it.fails` has nothing left to wrap and is removed rather than left
+ * as dead code. No test was deleted: each one became an ordinary passing assertion in the
+ * same commit as its fix, and together they are now the regression suite for MK-001 through
+ * MK-006, MK-014, MK-018 and MK-019.
+ *
+ * To pin a new finding, restore one line and wrap the failing body with it:
+ *
+ *   const pins = process.env.MUSD_FINDINGS_RAW ? it : it.fails
+ *
+ * The mechanism and why it is preferred over a skip flag are documented in the header above.
  */
-const pins = process.env.MUSD_FINDINGS_RAW ? it : it.fails
 
 function clientFor(account: PrivateKeyAccount) {
   const fork = connectFork()
@@ -660,81 +670,100 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 420_000)
 
   // ---------------------------------------------------------------- MK-014 ----
-  pins(
-    'MK-014: redeem returns the RATE in a field named fee',
-    async () => {
-      const fork = connectFork()
-      const original = await livePrice()
-      const redeemer = testAccount(2011)
-      // Open a Trove to obtain MUSD to redeem with.
-      await openAtIcr(redeemer, 3_000_000_000_000_000_000n, 3_000n * MUSD)
-      const client = clientFor(redeemer)
+  it('MK-014 (fixed): the redemption result names its units, rate and amount separately', async () => {
+    const fork = connectFork()
+    const original = await livePrice()
+    const redeemer = testAccount(2011)
+    // Open a Trove to obtain MUSD to redeem with.
+    await openAtIcr(redeemer, 3_000_000_000_000_000_000n, 3_000n * MUSD)
+    const client = clientFor(redeemer)
 
-      // The two getters, from BorrowerOperations.sol. `redemptionRate()` is the rate
-      // (:129, :151); `getRedemptionRate(collateralDrawn)` is a fee AMOUNT (:499-509).
-      const rate = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'redemptionRate',
-      })
-      const amountForOneBtc = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'getRedemptionRate',
-        args: [BTC],
-      })
-      const amountForTenthBtc = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'getRedemptionRate',
-        args: [BTC / 10n],
-      })
-      expect(amountForOneBtc, 'fixture: at one BTC the amount coincides with the rate').toBe(rate)
-      expect(
-        amountForTenthBtc,
-        'fixture: away from one BTC the amount and the rate differ',
-      ).not.toBe(rate)
+    // The two getters, from BorrowerOperations.sol. `redemptionRate()` is the rate
+    // (:129, :151); `getRedemptionRate(collateralDrawn)` is a fee AMOUNT (:499-509).
+    const rate = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'redemptionRate',
+    })
+    const amountForOneBtc = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'getRedemptionRate',
+      args: [BTC],
+    })
+    const amountForTenthBtc = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'getRedemptionRate',
+      args: [BTC / 10n],
+    })
+    expect(amountForOneBtc, 'fixture: at one BTC the amount coincides with the rate').toBe(rate)
+    expect(amountForTenthBtc, 'fixture: away from one BTC the amount and the rate differ').not.toBe(
+      rate,
+    )
 
-      // Redeem at a raised price so the lowest redeemable Trove keeps comfortable margin
-      // above MCR; otherwise `redeemCollateral` reverts with "Unable to redeem any amount"
-      // and the assertion is never reached. The redemption fee is a price INDEPENDENT
-      // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate this
-      // test compares against is unaffected by the shim. Restored in `finally`.
-      try {
-        // Redeem at a doubled price so the lowest redeemable Trove keeps a wide margin over
-        // MCR, and refresh-and-retry exactly as `phase6.fork.test.ts` does: a cold
-        // `getRedemptionHints` traversal is slow enough that the oracle can go stale before
-        // `redeemCollateral` mines. That mitigation is reused here, not invented, and no
-        // existing mitigation is removed. The redemption fee is a price INDEPENDENT
-        // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate
-        // this test compares against is unaffected by the shim.
-        await fork.setPrice(original * 2n)
-        let result: Awaited<ReturnType<typeof client.redeem>> | undefined
-        let lastError: unknown
-        for (let attempt = 0; attempt < 4 && !result; attempt++) {
-          await fork.refreshOracle()
-          try {
-            result = await client.redeem({ amount: 100n * MUSD })
-          } catch (error) {
-            lastError = error
-          }
-        }
-        expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
-        if (!result) throw new Error('unreachable')
-        await wait(result.hash)
-
-        // THE FINDING. The field named `fee` carries the rate verbatim, not an amount of
-        // BTC. This fails the moment the field is renamed or its content corrected.
-        expect(result.fee, 'MK-014: a field named fee must not be the raw redemptionRate').not.toBe(
-          rate,
-        )
-      } finally {
-        await fork.setPrice(original)
+    // Redeem at a raised price so the lowest redeemable Trove keeps comfortable margin
+    // above MCR; otherwise `redeemCollateral` reverts with "Unable to redeem any amount"
+    // and the assertion is never reached. The redemption fee is a price INDEPENDENT
+    // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate this
+    // test compares against is unaffected by the shim. Restored in `finally`.
+    try {
+      // Redeem at a doubled price so the lowest redeemable Trove keeps a wide margin over
+      // MCR, and refresh-and-retry exactly as `phase6.fork.test.ts` does: a cold
+      // `getRedemptionHints` traversal is slow enough that the oracle can go stale before
+      // `redeemCollateral` mines. That mitigation is reused here, not invented, and no
+      // existing mitigation is removed. The redemption fee is a price INDEPENDENT
+      // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate
+      // this test compares against is unaffected by the shim.
+      await fork.setPrice(original * 2n)
+      let result: Awaited<ReturnType<typeof client.redeem>> | undefined
+      let lastError: unknown
+      for (let attempt = 0; attempt < 4 && !result; attempt++) {
         await fork.refreshOracle()
+        try {
+          result = await client.redeem({ amount: 100n * MUSD })
+        } catch (error) {
+          lastError = error
+        }
       }
-    },
-    300_000,
-  )
+      expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
+      if (!result) throw new Error('unreachable')
+      await wait(result.hash)
+
+      // FIXED. There is no field named `fee` any more. The rate is named as a rate, and
+      // the fee AMOUNT is returned separately, in BTC wei, alongside the collateral it was
+      // estimated against.
+      expect(
+        (result as unknown as Record<string, unknown>).fee,
+        'MK-014: the ambiguous `fee` field must be gone',
+      ).toBeUndefined()
+      expect(
+        result.redemptionRate,
+        'MK-014: the rate field carries the rate, and is named for it',
+      ).toBe(rate)
+
+      // The amount is a genuinely different number from the rate, computed by the contract
+      // from the collateral drawn (BorrowerOperations.sol:499-508), not a relabelling.
+      expect(result.estimatedCollateralDrawn).toBeGreaterThan(0n)
+      const expectedAmount = await connectFork().publicClient.readContract({
+        address: T.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'getRedemptionRate',
+        args: [result.estimatedCollateralDrawn],
+      })
+      expect(
+        result.estimatedFeeCollateral,
+        'MK-014: the fee amount must come from getRedemptionRate(collateralDrawn)',
+      ).toBe(expectedAmount)
+      expect(
+        result.estimatedFeeCollateral,
+        'MK-014: at this size the amount and the rate must not coincide',
+      ).not.toBe(result.redemptionRate)
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 300_000)
 
   // ---------------------------------------------------------------- MK-018 ----
   it('MK-018 (fixed): previewOpen waives the fee for a fee exempt account', async () => {
