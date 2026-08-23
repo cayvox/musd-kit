@@ -56,7 +56,7 @@ claim about it was not).
 | MK-018 | Fee exemption is not modeled | TBD | open |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
-| MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | open |
+| MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
 
 ---
 
@@ -375,7 +375,7 @@ marked done only when a check in CI enforces it, never when a document merely de
 | Claim | Status | What makes it true |
 |---|---|---|
 | A coverage floor is enforced in CI | **done** | `coverage.thresholds` in `vitest.config.mts`, run by `pnpm test:coverage` in the fork gate job. The floor is the measured number rounded down, and it is a ratchet: upward only |
-| The fork is pinned to a block for determinism | **done** | `MEZO_FORK_BLOCK` set in `.github/workflows/ci.yml`, read by the harness at `packages/core/test/harness/anvil.ts:81`, and the oracle seed is read at that same block so the price is pinned with it (MK-020). Pinning is still not order independence, see MK-016 |
+| The fork is pinned to a block for determinism | **done** | `MEZO_FORK_BLOCK` set in `.github/workflows/ci.yml`, read by the harness at `packages/core/test/harness/anvil.ts:83`, and the oracle seed is read at that same block so the price is pinned with it (MK-020). Pinning is still not order independence, see MK-016 |
 | CI matrix: Node LTS, current and previous | **done, claim narrowed** | The chain-free half runs on Node 20, 22, and 24; the fork gate runs once on the `.nvmrc` toolchain. `docs/07-testing.md` §5 now names the concrete versions instead of a category that goes stale |
 | Post publish install verification | **done, wording corrected** | The pack smoke is now described as pre publish everywhere, because that is what it is. A genuine post publish job installs the published version from the registry into an empty directory and imports it, in `.github/workflows/release.yml`, after publish and never on push |
 | The unit layer is in process with no chain | **done** | Two vitest projects in `vitest.workspace.mts`. CI runs `pnpm test:unit` before Foundry is installed and with no RPC secret in scope, so the claim fails loudly if it stops being true |
@@ -524,7 +524,7 @@ round outright. Only the price and the round id come from the pinned read.
 
 ## MK-021 · Phase 3 warm up hook exceeds its fixed budget on a cold fork
 
-**Class** S3, harness · **Status** open · **Found by us while proving MK-020**
+**Class** S3, harness · **Status** fixed · **Found by us while proving MK-020**
 
 **Ground truth for our own policy.** `docs/07-testing.md` §5 states the suite must pass twice
 identically. It does not, and the remaining reason is this one.
@@ -556,13 +556,51 @@ sits inside the range the cold path actually occupies, rather than above it.
 That is a hypothesis about the cause, not a verified root cause. What is verified is the timing
 spread and that the hook asserts nothing.
 
-**Decision.** Not fixed here, and deliberately not papered over by raising the number: this is a
-flake mitigation whose own budget is the flake, and the mitigation removal wave is where it
-belongs. Raising a timeout to turn a red run green is the move this programme exists to stop. The
-candidate fixes are to make the warm up cheap and explicit rather than a full hint computation, to
-run it against a smaller sampled set, or to drop it and accept slower first hints. Whichever is
-chosen, the fix must make the failure mode loud rather than silent: skipping six correctness tests
-because a cache was cold is the part that is unacceptable, more than the latency itself.
+**Root cause, measured rather than reasoned about.** The 60x cold-to-warm gap is not computation,
+it is upstream state fetching, and the reason it recurred on every run is that the cache which was
+supposed to prevent it was never written. anvil lazily fetches upstream state on first access and,
+when the fork block is pinned, persists it to `~/.foundry/cache/rpc/<chainId>/<block>/storage.json`.
+It writes that file only on a graceful shutdown. `packages/core/test/harness/anvil.ts` sent
+`SIGKILL`, so it never did.
+
+A counting proxy placed between anvil and the upstream RPC, measuring one warm up call:
+
+| | Cold (no cache) | Warm (cache present) |
+|---|---|---|
+| Warm up duration | 168997 ms | 130 ms |
+| Upstream JSON-RPC calls | 913 | 3 |
+| of which `eth_getStorageAt` | 849 | 0 |
+| Bytes from upstream | 163743 | 1514 |
+| Hints returned | `0xd151..02d, 0xCB0a..9Cd` | identical |
+
+849 sequential storage reads at public endpoint latency is the entire cost. Isolating the shutdown
+signal confirmed the cause directly: forking, touching state, then `SIGTERM` writes a 52 KB
+`storage.json`; the identical sequence with `SIGKILL` writes nothing.
+
+**Fix.**
+
+- `stopFork` now sends `SIGTERM` and only escalates to `SIGKILL` after a 15 second grace period, so
+  anvil flushes its fork cache and a wedged process still cannot outlive the suite.
+- The warm up moved from `phase3.fork.test.ts` into `harness/globalSetup.ts`. The cost is paid once
+  for the suite, is attributed to the harness rather than to one phase, and is logged.
+- That warm up now traverses the WHOLE sorted list, via one `findInsertPosition` call with a
+  near zero NICR and no hints, which walks from head to tail and touches every node. The first
+  attempt warmed a single `computeHints` position instead and a cold run still failed, in a
+  different phase 3 test, at the ordinary 60 second timeout. The reason is worth recording: phases
+  that open Troves grow the list, `trialsForSize` then returns a different trial count, and
+  `getApproxHint` therefore samples a different node set which was never warmed. Traversing the
+  whole list is a superset of any later sample or traversal, so it is immune to that. Troves opened
+  during the run are local anvil state and need no upstream fetch.
+- CI caches `~/.foundry/cache/rpc/31611/<block>` keyed on the block, so a cold fetch happens once
+  per pinned block rather than once per push. Both the path and the key carry the block number and
+  there is deliberately no `restore-keys` prefix fallback, because replaying one block's state at
+  another block would reintroduce precisely the nondeterminism MK-020 removed.
+
+**The budget is gone, not raised.** The 180 second `beforeAll` timeout was deleted rather than
+enlarged. vitest imposes no timeout on `globalSetup`, so a cold run is now slow instead of red, and
+the phase 3 tests run under the ordinary `testTimeout`. That the old number was the flake is not a
+guess: measured end to end through the real harness, the cold warm up took 181335 ms, which
+overshoots the 180000 ms budget by 1.3 seconds. The same call on the next run took 42 ms.
 
 ---
 

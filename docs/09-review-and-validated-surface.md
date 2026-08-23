@@ -53,6 +53,7 @@ evidence for what it actually exercises.
 | `previewOpen`, `getBorrowingPower` | Dual validated: against a fork of the real contracts, and against the contracts' pure helpers | **Open path only** |
 | `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `refinance` | Fork exercised, not dual validated | **No preview validation** |
 | Preview verdict against actual transaction outcome | The differential harness, see below | Being built |
+| `@musd-kit/react`, the whole published hook layer | Fork exercised via React Testing Library against a fork-backed wagmi config | **Not measured by the coverage gate at all.** The floor covers `packages/core/src` only, so no number on this page or in CI describes how much of the React package is exercised |
 
 Read the middle row twice. Until the differential harness lands, a preview being green is not
 evidence that the corresponding write succeeds. The open only gate is exactly why MK-006 survived
