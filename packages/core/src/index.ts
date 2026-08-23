@@ -90,6 +90,10 @@ export {
   type RefinancePreview,
   type RefinanceBlockReason,
   type EvaluateRefinanceInput,
+  isBorrowingFeeCharged,
+  effectiveBorrowingFee,
+  estimateCollateralDrawn,
+  exceedsRateCap,
   type GetBorrowingPowerParams,
 } from './math'
 

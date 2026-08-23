@@ -3,6 +3,7 @@ import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients
 import { CCR, MCR } from '../constants'
 import { computeICR } from './compute'
 import type { MathDeps } from './deps'
+import { isBorrowingFeeCharged } from './fee'
 
 /**
  * MK-002. Borrowing against an EXISTING Trove, which `getBorrowingPower` never modeled.
@@ -150,15 +151,14 @@ export async function previewBorrow(
   // (`BorrowerOperations.sol:810-818`). Reading exemption rather than assuming nobody is
   // exempt is MK-018's rule applied here too: the exempt cohort is non empty on mainnet.
   const exempt = await deps.isAccountFeeExempt(owner)
-  const fee =
-    isRecoveryMode || exempt
-      ? 0n
-      : await publicClient.readContract({
-          address: addresses.borrowerOperations,
-          abi: borrowerOperationsAbi,
-          functionName: 'getBorrowingFee',
-          args: [amount],
-        })
+  const fee = !isBorrowingFeeCharged(isRecoveryMode, exempt)
+    ? 0n
+    : await publicClient.readContract({
+        address: addresses.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'getBorrowingFee',
+        args: [amount],
+      })
 
   const [systemColl, systemDebt] = await Promise.all([
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),

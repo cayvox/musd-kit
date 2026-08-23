@@ -3,6 +3,7 @@ import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients
 import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
 import { computeICR, computeLiquidationPrice } from './compute'
 import type { MathDeps } from './deps'
+import { isBorrowingFeeCharged } from './fee'
 
 /** Inputs to {@link MusdClient.previewOpen}: the collateral + draw to preview. */
 export interface PreviewOpenParams {
@@ -109,15 +110,14 @@ export async function previewOpen(deps: MathDeps, params: PreviewOpenParams): Pr
   // ask about, so the preview assumes not exempt and reports that assumption.
   const feeExempt = account !== undefined ? await deps.isAccountFeeExempt(account) : false
 
-  const fee =
-    isRecoveryMode || feeExempt
-      ? 0n
-      : await publicClient.readContract({
-          address: addresses.borrowerOperations,
-          abi: borrowerOperationsAbi,
-          functionName: 'getBorrowingFee',
-          args: [debt],
-        })
+  const fee = !isBorrowingFeeCharged(isRecoveryMode, feeExempt)
+    ? 0n
+    : await publicClient.readContract({
+        address: addresses.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'getBorrowingFee',
+        args: [debt],
+      })
 
   return evaluateOpen({
     collateral,

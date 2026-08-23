@@ -34,3 +34,9 @@ export {
   type RefinanceBlockReason,
   type EvaluateRefinanceInput,
 } from './previewRefinance'
+export {
+  isBorrowingFeeCharged,
+  effectiveBorrowingFee,
+  estimateCollateralDrawn,
+  exceedsRateCap,
+} from './fee'

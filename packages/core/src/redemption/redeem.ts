@@ -9,6 +9,7 @@ import {
 import { InsufficientMusdBalance, MaxFeeExceeded, assertPositiveAmount } from '../errors'
 import { findHintsForNICR } from '../hints'
 import { type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
+import { estimateCollateralDrawn, exceedsRateCap } from '../math/fee'
 
 const TM_ABI = troveManagerAbi as unknown as Abi
 
@@ -112,8 +113,8 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
   if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
   // Rate against rate cap: unit consistent, and deliberately left that way. Comparing the
   // fee AMOUNT from `getRedemptionRate` against a 1e18 fraction would be a unit error.
-  if (params.maxFeePercentage !== undefined && redemptionRate > params.maxFeePercentage) {
-    throw new MaxFeeExceeded(params.maxFeePercentage, redemptionRate, redemptionRate)
+  if (exceedsRateCap(redemptionRate, params.maxFeePercentage)) {
+    throw new MaxFeeExceeded(params.maxFeePercentage as bigint, redemptionRate, redemptionRate)
   }
 
   const [firstRedemptionHint, partialNICR, truncatedAmount] = await deps.publicClient.readContract({
@@ -140,7 +141,7 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
   // The fee AMOUNT, estimated. `getRedemptionRate` takes COLLATERAL DRAWN, not a MUSD
   // amount, so convert first: the redemption returns collateral worth `truncatedAmount` of
   // MUSD at the price used for the hints.
-  const estimatedCollateralDrawn = price > 0n ? (truncatedAmount * 10n ** 18n) / price : 0n
+  const estimatedCollateralDrawn = estimateCollateralDrawn(truncatedAmount, price)
   const estimatedFeeCollateral =
     estimatedCollateralDrawn > 0n
       ? await deps.publicClient.readContract({

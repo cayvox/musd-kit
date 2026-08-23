@@ -6,9 +6,13 @@ import {
   type EvaluateRefinanceInput,
   MCR,
   MUSD_GAS_COMPENSATION,
+  effectiveBorrowingFee,
+  estimateCollateralDrawn,
   evaluateBorrow,
   evaluateOpen,
   evaluateRefinance,
+  exceedsRateCap,
+  isBorrowingFeeCharged,
 } from '../src'
 
 /**
@@ -362,3 +366,42 @@ describe('evaluateRefinance, the refinance verdict (MK-003, MK-019)', () => {
 function computeIcrOf(collateral: bigint, entireDebt: bigint): bigint {
   return entireDebt === 0n ? (1n << 256n) - 1n : (collateral * PRICE) / entireDebt
 }
+
+describe('the fee and redemption rules, as pure functions (MK-004, MK-011, MK-014, MK-018)', () => {
+  it('isBorrowingFeeCharged: only in normal mode AND only when not exempt', () => {
+    // The contract's condition verbatim: `!isRecoveryMode && !isAccountFeeExempt`
+    // (BorrowerOperations.sol:637-643 on open, :810-818 on a debt increase).
+    expect(isBorrowingFeeCharged(false, false)).toBe(true)
+    expect(isBorrowingFeeCharged(true, false)).toBe(false)
+    expect(isBorrowingFeeCharged(false, true)).toBe(false)
+    expect(isBorrowingFeeCharged(true, true)).toBe(false)
+  })
+
+  it('effectiveBorrowingFee: the quote survives only when the fee applies', () => {
+    const quoted = 2n * E18
+    expect(effectiveBorrowingFee(quoted, false, false)).toBe(quoted)
+    expect(effectiveBorrowingFee(quoted, true, false)).toBe(0n)
+    expect(effectiveBorrowingFee(quoted, false, true)).toBe(0n)
+    expect(effectiveBorrowingFee(quoted, true, true)).toBe(0n)
+  })
+
+  it('estimateCollateralDrawn: converts MUSD to BTC wei at the given price', () => {
+    // 100k MUSD at 100k per BTC is one BTC.
+    expect(estimateCollateralDrawn(100_000n * E18, PRICE)).toBe(E18)
+    expect(estimateCollateralDrawn(50_000n * E18, PRICE)).toBe(E18 / 2n)
+    expect(estimateCollateralDrawn(0n, PRICE)).toBe(0n)
+  })
+
+  it('estimateCollateralDrawn: returns zero rather than dividing by a zero price', () => {
+    expect(estimateCollateralDrawn(100_000n * E18, 0n)).toBe(0n)
+    expect(estimateCollateralDrawn(100_000n * E18, -1n)).toBe(0n)
+  })
+
+  it('exceedsRateCap: rate against rate, and no cap means no breach', () => {
+    const rate = 75n * 10n ** 14n // 0.75%
+    expect(exceedsRateCap(rate, undefined)).toBe(false)
+    expect(exceedsRateCap(rate, rate)).toBe(false) // equality is within the cap
+    expect(exceedsRateCap(rate, rate - 1n)).toBe(true)
+    expect(exceedsRateCap(rate, rate + 1n)).toBe(false)
+  })
+})
