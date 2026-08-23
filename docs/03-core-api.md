@@ -75,14 +75,24 @@ musd.previewOpen({ collateral, debt });
 // → {
 //     fee: bigint, // getBorrowingFee(debt), read on-chain
 //     netDebt: bigint, // debt + fee
-//     entireDebt: bigint, // debt + fee + 200
+//     entireDebt: bigint, // netDebt + 200
 //     icr: bigint, // computeCR(collateral, entireDebt, price)
+//     icrThreshold: bigint, // CCR in Recovery Mode, MCR in normal mode
+//     resultingTcr: bigint, // the system TCR if this open went through
 //     liquidationPrice: bigint,
-//     meetsMinimum: boolean, // (debt + fee) >= minNetDebt
-//     isRecoveryMode: boolean, // and rules reflected if so
+//     meetsMinimum: boolean, // netDebt >= minNetDebt
+//     isRecoveryMode: boolean,
+//     feeExempt: boolean, // false when no `account` was supplied
+//     viable: boolean, // every condition _openTrove enforces
+//     reasons: ('BELOW_MINIMUM_DEBT'|'ICR_BELOW_THRESHOLD'|'TCR_BELOW_CCR')[],
+//     bindingConstraint: (typeof reasons)[number] | null,
 //   }
 
-musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw s.t. opening leaves ICR ≥ MCR, ≥ minNetDebt floor
+// Existing Trove? These, not getBorrowingPower (MK-002).
+musd.getBorrowingCapacity(owner);                 // → { capacity, entireDebt, remaining }
+musd.previewBorrow({ owner, amount });            // → verdict + binding constraint + numbers
+
+musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw for an OPEN only
 musd.computeICR({ collateral, entireDebt, price });        // → bigint
 musd.computeLiquidationPrice({ collateral, entireDebt });  // → bigint
 musd.computeEntireDebt({ draw, rate, elapsedSeconds });    // → bigint (preview accrual; see 05 §2)
@@ -90,9 +100,53 @@ musd.getHealthFactor({ icr });                             // → number
 ```
 
 `previewOpen` powers a "Borrowing Power Calculator": give it intended collateral and
-debt, get the resulting ICR, liquidation price, fee, total debt, and whether it
-satisfies the minimum, before the user signs anything. It implements the verified
-arithmetic of `01-ground-truth` §6 and is dual-validated (`05` §5).
+debt, get the resulting ICR, liquidation price, fee, total debt, and an explicit
+**verdict** before the user signs anything.
+
+**Pass `account` whenever you have it.** The borrowing fee is skipped entirely for a
+fee exempt account (`BorrowerOperations.sol:637-643`), and the exempt cohort is not
+empty on mainnet. Without an account the preview assumes not exempt and says so via
+`feeExempt: false` (MK-018).
+
+**`viable` replaced `meetsRecoveryRequirement`** (MK-005). The old flag was
+`!isRecoveryMode || icr >= CCR`, unconditionally `true` in normal mode, so the only
+viability flag the preview carried could never be false for the mode most opens happen
+in. `viable` covers every condition `_openTrove` enforces: the debt floor, the mode
+correct ICR threshold, and, in normal mode, the resulting system TCR. `reasons` is a
+machine readable list and `bindingConstraint` is the one that binds first.
+
+```ts
+// before
+if (!preview.meetsRecoveryRequirement) show('recovery mode blocks this');
+// after
+if (!preview.viable) show(preview.reasons); // or preview.bindingConstraint
+```
+
+**In Recovery Mode the fee is zero** (MK-004). The contract charges no borrowing fee
+on a Recovery Mode open, and the preview no longer invents one. That also fixes a
+second order bug: the debt floor is checked against `draw + fee`, so a preview that
+added a phantom fee reported the floor met in the band
+`draw < minNetDebt <= draw + fee`, for an open that reverts.
+
+### Borrowing against an existing Trove
+
+`getBorrowingPower` is an **open time calculator** and nothing else. Every Trove carries
+a `maxBorrowingCapacity`, fixed at the **opening price**
+(`BorrowerOperations.sol:1323-1328`), ratcheted only downward on a collateral decrease
+(`:879-897`), and **never raised**, not by a price rise and not by adding collateral. A
+debt increase is gated on `maxBorrowingCapacity >= netDebtChange + debt` (`:1358-1365`).
+
+```ts
+const { capacity, entireDebt, remaining } = await musd.getBorrowingCapacity(owner);
+// `remaining` is headroom for draw + fee, not for the draw alone.
+
+const p = await musd.previewBorrow({ owner, amount: parseMusd('5000') });
+if (!p.viable) console.log(p.bindingConstraint); // EXCEEDS_BORROWING_CAPACITY | ...
+```
+
+`borrow()` and the debt increase path of `adjustTrove()` precheck the same gate and
+throw `ExceedsBorrowingCapacity` **before** simulate, with capacity, entire debt,
+netDebtChange and remaining attached (MK-002).
 
 ---
 

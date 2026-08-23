@@ -99,6 +99,33 @@ correct at read time.
 
 ---
 
+## 4b. What the open preview actually models
+
+`previewOpen` mirrors `_openTrove` (`BorrowerOperations.sol:631-665`) rather than
+approximating it. Three rules that the earlier version got wrong, each now enforced:
+
+| Rule | Source | Consequence |
+|---|---|---|
+| The fee is charged **only** when `!isRecoveryMode && !isAccountFeeExempt(borrower)` | `:637-643` | In Recovery Mode, or for an exempt account, `netDebt` is the bare draw and the fee is **zero** (MK-004, MK-018) |
+| The debt floor is checked against that same `netDebt` | `:645` | Adding a phantom fee made the floor look met in the band `draw < minNetDebt <= draw + fee`, for an open that reverts. Charging the fee correctly closes it |
+| Recovery Mode requires `ICR >= CCR`; normal mode requires **both** `ICR >= MCR` and a resulting system `TCR >= CCR` | `:654-665` | `viable` covers all three; the old `meetsRecoveryRequirement` covered none of them in normal mode (MK-005) |
+
+Pass `account` whenever you have it: exemption is read, not assumed, and the exempt
+cohort is non empty on mainnet.
+
+**Borrowing against an existing Trove is a different calculation.** `getBorrowingPower`
+solves the OPEN constraints only. An existing Trove is additionally gated by
+`maxBorrowingCapacity >= netDebtChange + debt` (`:1358-1365`), where capacity was fixed at
+the **opening price** (`:1323-1328`), ratchets only downward (`:879-897`), and never rises.
+That is `previewBorrow` (MK-002). Note the `debt` in that comparison is read after
+`updateSystemAndTroveInterest` (`:769`), so it includes accrued interest, which is why the
+SDK compares against the live entire debt rather than the stored `getTroveDebt`.
+
+`getBorrowingPower` also enforces the resulting system TCR in normal mode, which the
+contract requires on every normal mode open and which it previously ignored.
+
+---
+
 ## 5. The dual-validation method (how preview math earns trust)
 
 Every formula in `math/` is validated **twice**. This is the mechanism behind
@@ -179,6 +206,8 @@ opening/adjusting one requires supplying correct insertion hints
   getEntireDebtAndColl.debt, price)`.
 - `previewOpen(x).entireDebt == getEntireDebtAndColl(addr).debt` after opening `x`.
 - `previewOpen(x).meetsMinimum == false` ⟺ `openTrove(x)` reverts `BelowMinimumDebt`.
+- `previewOpen(x).viable == false` ⟹ `openTrove(x)` reverts, with the reason named in
+  `reasons` (MK-005).
 - `liquidationPrice` such that `computeCR(coll, entireDebt, liquidationPrice) == MCR`.
 - NICR from the SDK `== computeNominalCR(coll, entireDebt)` exactly.
 - A position with ICR just below MCR is `isLiquidatable`; just above is not, and a

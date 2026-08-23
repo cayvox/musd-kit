@@ -171,102 +171,168 @@ async function openAtIcr(
 
 describe('Open findings, pinned by failing tests (P2)', () => {
   // ---------------------------------------------------------------- MK-001 ----
-  pins(
-    'MK-001: isLiquidatable reports true for a trove the protocol refuses to liquidate',
-    async () => {
-      const fork = connectFork()
-      const victim = testAccount(2001)
-      const keeper = testAccount(2002)
-      const original = await livePrice()
-      await fork.fundAccount(keeper.address, 5n * BTC)
-      try {
-        // Open comfortably, then crash the price so the system enters Recovery Mode and
-        // this Trove lands in the band MCR <= ICR < CCR.
-        await openAtIcr(victim, 2_600_000_000_000_000_000n)
-        await fork.setPrice((original * 50n) / 100n)
-        await fork.refreshOracle()
+  // FIXED in the P3a wave: this is now an ordinary passing assertion, not a pin.
+  it('MK-001 (fixed): isLiquidatable follows ICR < MCR with no Recovery Mode widening', async () => {
+    const fork = connectFork()
+    const victim = testAccount(2001)
+    const keeper = testAccount(2002)
+    const original = await livePrice()
+    await fork.fundAccount(keeper.address, 5n * BTC)
+    try {
+      // Open comfortably, then crash the price so the system enters Recovery Mode and
+      // this Trove lands in the band MCR <= ICR < CCR.
+      await openAtIcr(victim, 2_600_000_000_000_000_000n)
+      await fork.setPrice((original * 50n) / 100n)
+      await fork.refreshOracle()
 
-        const state = await reader().getSystemState()
-        expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
-        const trove = await reader().getTrove(victim.address)
-        expect(trove.icr, 'fixture: ICR must be at or above MCR').toBeGreaterThanOrEqual(MCR)
-        expect(trove.icr, 'fixture: ICR must be below CCR').toBeLessThan(CCR)
+      const state = await reader().getSystemState()
+      expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
+      const trove = await reader().getTrove(victim.address)
+      expect(trove.icr, 'fixture: ICR must be at or above MCR').toBeGreaterThanOrEqual(MCR)
+      expect(trove.icr, 'fixture: ICR must be below CCR').toBeLessThan(CCR)
 
-        // The protocol's answer, from TroveManager.sol:1148: the only gate is ICR < MCR,
-        // and this Trove is at or above MCR, so liquidation must be refused.
-        await expect(
-          clientFor(keeper).liquidate(victim.address),
-          'fixture: the protocol must refuse this liquidation',
-        ).rejects.toThrow()
+      // The protocol's answer, from TroveManager.sol:1148: the only gate is ICR < MCR,
+      // and this Trove is at or above MCR, so liquidation must be refused.
+      await expect(
+        clientFor(keeper).liquidate(victim.address),
+        'fixture: the protocol must refuse this liquidation',
+      ).rejects.toThrow()
 
-        // THE FINDING. `read/system.ts` widens the predicate to CCR in Recovery Mode, a
-        // rule TroveManager does not contain. The contract-correct answer is false.
-        expect(
-          await reader().isLiquidatable(victim.address),
-          'MK-001: isLiquidatable must follow the protocol rule ICR < MCR, with no CCR widening',
-        ).toBe(false)
-      } finally {
-        await fork.setPrice(original)
-        await fork.refreshOracle()
+      // FIXED. `read/system.ts` no longer widens the predicate in Recovery Mode: there is
+      // no mode branch at all, because `TroveManager.sol` contains no reference to CCR.
+      expect(
+        await reader().isLiquidatable(victim.address),
+        'MK-001: isLiquidatable must follow the protocol rule ICR < MCR, with no CCR widening',
+      ).toBe(false)
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 240_000)
+
+  /**
+   * MK-001's underlying defect was not the mode branch, it was that TWO APIs answered one
+   * question differently: `isLiquidatable(address)` and `getTrove(address).isLiquidatable`.
+   * This pins that they agree, across the whole band that matters, so they cannot drift
+   * apart again. If a future change reintroduces a branch in one of them, this fails.
+   */
+  it('MK-001 (regression): both liquidatability read paths agree, in normal mode and in Recovery Mode', async () => {
+    const fork = connectFork()
+    const below = testAccount(2013)
+    const between = testAccount(2014)
+    const above = testAccount(2015)
+    const original = await livePrice()
+    try {
+      // Three Troves that, after a 50% price crash, straddle the band: under MCR,
+      // between MCR and CCR, and above CCR.
+      await openAtIcr(below, 2_100_000_000_000_000_000n)
+      await openAtIcr(between, 2_600_000_000_000_000_000n)
+      await openAtIcr(above, 3_400_000_000_000_000_000n)
+
+      const client = reader()
+      for (const mode of ['normal', 'recovery'] as const) {
+        if (mode === 'recovery') {
+          await fork.setPrice((original * 50n) / 100n)
+          await fork.refreshOracle()
+        }
+        const inRecovery = (await client.getSystemState()).isRecoveryMode
+        expect(inRecovery, `fixture: expected ${mode} mode`).toBe(mode === 'recovery')
+
+        for (const account of [below, between, above]) {
+          const trove = await client.getTrove(account.address)
+          const direct = await client.isLiquidatable(account.address)
+          expect(
+            direct,
+            `MK-001: the two read paths disagree for ${account.address} in ${mode} mode`,
+          ).toBe(trove.isLiquidatable)
+          // And both equal the protocol's own rule at the same price.
+          expect(direct, `MK-001: ${mode} mode verdict must be icr < MCR`).toBe(trove.icr < MCR)
+        }
       }
-    },
-    240_000,
-  )
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 300_000)
 
   // ---------------------------------------------------------------- MK-002 ----
-  pins(
-    'MK-002: getBorrowingPower ignores maxBorrowingCapacity, which never rises with price',
-    async () => {
-      const fork = connectFork()
-      const borrower = testAccount(2003)
-      const original = await livePrice()
-      try {
-        const { collateral } = await openAtIcr(borrower, 2_000_000_000_000_000_000n)
+  it('MK-002 (fixed): previewBorrow respects maxBorrowingCapacity, which never rises with price', async () => {
+    const fork = connectFork()
+    const borrower = testAccount(2003)
+    const original = await livePrice()
+    try {
+      const { collateral } = await openAtIcr(borrower, 2_000_000_000_000_000_000n)
 
-        // Capacity is fixed at OPEN from the opening price (BorrowerOperations.sol:692-698
-        // via :1323-1328) and never recomputed upward, so a price rise cannot raise it.
-        const capacity = await connectFork().publicClient.readContract({
-          address: T.troveManager,
-          abi: troveManagerAbi,
-          functionName: 'getTroveMaxBorrowingCapacity',
-          args: [borrower.address],
-        })
-        const expectedCapacity = (collateral * original) / (110n * 10n ** 16n)
-        expect(capacity, 'fixture: capacity must equal the contract formula at open').toBe(
-          expectedCapacity,
-        )
+      // Capacity is fixed at OPEN from the opening price (BorrowerOperations.sol:692-698
+      // via :1323-1328) and never recomputed upward, so a price rise cannot raise it.
+      const capacity = await connectFork().publicClient.readContract({
+        address: T.troveManager,
+        abi: troveManagerAbi,
+        functionName: 'getTroveMaxBorrowingCapacity',
+        args: [borrower.address],
+      })
+      const expectedCapacity = (collateral * original) / (110n * 10n ** 16n)
+      expect(capacity, 'fixture: capacity must equal the contract formula at open').toBe(
+        expectedCapacity,
+      )
 
-        await fork.setPrice(original * 2n)
-        await fork.refreshOracle()
+      await fork.setPrice(original * 2n)
+      await fork.refreshOracle()
 
-        const capacityAfterRise = await connectFork().publicClient.readContract({
-          address: T.troveManager,
-          abi: troveManagerAbi,
-          functionName: 'getTroveMaxBorrowingCapacity',
-          args: [borrower.address],
-        })
-        expect(capacityAfterRise, 'fixture: capacity must not rise with price').toBe(capacity)
+      const capacityAfterRise = await connectFork().publicClient.readContract({
+        address: T.troveManager,
+        abi: troveManagerAbi,
+        functionName: 'getTroveMaxBorrowingCapacity',
+        args: [borrower.address],
+      })
+      expect(capacityAfterRise, 'fixture: capacity must not rise with price').toBe(capacity)
 
-        // The contract gates a debt increase on `capacity >= netDebtChange + debt`
-        // (BorrowerOperations.sol:1358-1365), so the largest additional draw is bounded by
-        // the remainder, not by the ICR alone.
-        const debtNow = await troveDebt(borrower.address)
-        const remaining = capacity > debtNow ? capacity - debtNow : 0n
+      // The contract gates a debt increase on `capacity >= netDebtChange + debt`
+      // (BorrowerOperations.sol:1358-1365), so the largest additional draw is bounded by
+      // the remainder, not by the ICR alone.
+      const debtNow = await troveDebt(borrower.address)
+      const remaining = capacity > debtNow ? capacity - debtNow : 0n
 
-        // THE FINDING. `math/getBorrowingPower.ts` solves only the ICR constraint and never
-        // reads the capacity, so at the raised price it reports a draw the contract rejects.
-        const power = await reader().getBorrowingPower({ collateral })
-        expect(
-          power,
-          'MK-002: getBorrowingPower must not exceed the remaining on-chain borrowing capacity',
-        ).toBeLessThanOrEqual(remaining)
-      } finally {
-        await fork.setPrice(original)
-        await fork.refreshOracle()
-      }
-    },
-    240_000,
-  )
+      // FIXED. `getBorrowingPower` stays the OPEN time calculator it is documented to be,
+      // so it is still allowed to exceed the capacity of an existing Trove. What is new is
+      // `previewBorrow`, which models the gate the contract actually applies.
+      const client = reader()
+      const capacityView = await client.getBorrowingCapacity(borrower.address)
+      expect(capacityView.capacity, 'the capacity read must match the chain').toBe(capacity)
+      expect(capacityView.remaining, 'remaining must be capacity minus live entire debt').toBe(
+        remaining,
+      )
+
+      // A draw inside the remaining headroom is viable; one beyond it is not, and names
+      // the capacity gate as the binding constraint.
+      const withinHeadroom = remaining / 2n
+      const okPreview = await client.previewBorrow({
+        owner: borrower.address,
+        amount: withinHeadroom,
+      })
+      expect(okPreview.viable, 'a draw inside the headroom must be viable').toBe(true)
+
+      const overPreview = await client.previewBorrow({
+        owner: borrower.address,
+        amount: remaining + 10n ** 18n,
+      })
+      expect(
+        overPreview.viable,
+        'MK-002: a draw beyond the remaining capacity must not be viable',
+      ).toBe(false)
+      expect(overPreview.reasons).toContain('EXCEEDS_BORROWING_CAPACITY')
+      expect(overPreview.bindingConstraint).toBe('EXCEEDS_BORROWING_CAPACITY')
+
+      // And the write path refuses it BEFORE simulate, with the real numbers attached.
+      await expect(
+        clientFor(borrower).borrow({ amount: remaining + 10n ** 18n }),
+        'MK-002: borrow must precheck the capacity gate',
+      ).rejects.toMatchObject({ code: 'EXCEEDS_BORROWING_CAPACITY' })
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 240_000)
 
   // ---------------------------------------------------------------- MK-003 ----
   pins(
@@ -360,125 +426,118 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 240_000)
 
   // ---------------------------------------------------------------- MK-004 ----
-  pins(
-    'MK-004: previewOpen charges a borrowing fee Recovery Mode does not',
-    async () => {
-      const fork = connectFork()
-      const anchor = testAccount(2006)
-      const original = await livePrice()
-      try {
-        await openAtIcr(anchor, 2_600_000_000_000_000_000n)
-        await fork.setPrice((original * 50n) / 100n)
-        await fork.refreshOracle()
+  it('MK-004 (fixed): previewOpen charges no borrowing fee in Recovery Mode', async () => {
+    const fork = connectFork()
+    const anchor = testAccount(2006)
+    const original = await livePrice()
+    try {
+      await openAtIcr(anchor, 2_600_000_000_000_000_000n)
+      await fork.setPrice((original * 50n) / 100n)
+      await fork.refreshOracle()
 
-        const client = reader()
-        const state = await client.getSystemState()
-        expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
-
-        const draw = 2_000n * MUSD
-        const preview = await client.previewOpen({ collateral: BTC, debt: draw })
-        expect(preview.isRecoveryMode, 'fixture: the preview must see Recovery Mode').toBe(true)
-
-        // THE FINDING. In Recovery Mode `_openTrove` skips `_triggerBorrowingFee` entirely
-        // (BorrowerOperations.sol:637-643), so the fee the contract charges is zero.
-        expect(
-          preview.fee,
-          'MK-004: in Recovery Mode the contract charges no borrowing fee, so the preview must report none',
-        ).toBe(0n)
-      } finally {
-        await fork.setPrice(original)
-        await fork.refreshOracle()
-      }
-    },
-    240_000,
-  )
-
-  pins(
-    'MK-004: the phantom fee lifts a sub-floor draw over minNetDebt in the preview only',
-    async () => {
-      const fork = connectFork()
-      const anchor = testAccount(2007)
-      const original = await livePrice()
-      try {
-        await openAtIcr(anchor, 2_600_000_000_000_000_000n)
-        await fork.setPrice((original * 50n) / 100n)
-        await fork.refreshOracle()
-
-        const client = reader()
-        expect(
-          (await client.getSystemState()).isRecoveryMode,
-          'fixture: system must be in Recovery Mode',
-        ).toBe(true)
-
-        // Construct the band: draw < minNetDebt <= draw + fee. In Recovery Mode the
-        // contract checks the floor against the bare draw (BorrowerOperations.sol:635-645),
-        // so an open at this draw reverts, while the SDK adds a fee that lifts it over.
-        const { minNetDebt } = await client.getConstants()
-        const rate = await connectFork().publicClient.readContract({
-          address: T.borrowerOperations,
-          abi: borrowerOperationsAbi,
-          functionName: 'borrowingRate',
-        })
-        // Largest draw strictly below the floor whose fee still carries it to the floor.
-        const draw = minNetDebt - 1n
-        const feeOnDraw = (draw * rate) / 10n ** 18n
-        expect(draw, 'fixture: draw must be below the floor').toBeLessThan(minNetDebt)
-        expect(
-          draw + feeOnDraw,
-          'fixture: draw plus fee must reach the floor for the band to exist',
-        ).toBeGreaterThanOrEqual(minNetDebt)
-
-        const preview = await client.previewOpen({ collateral: 5n * BTC, debt: draw })
-
-        // THE FINDING. `meetsMinimum` is computed against draw + fee, but the contract in
-        // Recovery Mode compares the bare draw, so the preview says yes to a reverting open.
-        expect(
-          preview.meetsMinimum,
-          'MK-004: in Recovery Mode the floor applies to the bare draw, so this must not meet the minimum',
-        ).toBe(false)
-      } finally {
-        await fork.setPrice(original)
-        await fork.refreshOracle()
-      }
-    },
-    240_000,
-  )
-
-  // ---------------------------------------------------------------- MK-005 ----
-  pins(
-    'MK-005: meetsRecoveryRequirement is true in normal mode for an open that reverts on ICR',
-    async () => {
       const client = reader()
       const state = await client.getSystemState()
-      expect(state.isRecoveryMode, 'fixture: system must be in NORMAL mode').toBe(false)
+      expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
 
-      // An open whose ICR is below MCR. Normal mode requires `ICR >= MCR`
-      // (BorrowerOperations.sol:656-657), so this open reverts.
       const draw = 2_000n * MUSD
-      const fee = await client.getBorrowingFee(draw)
-      const entireDebt = draw + fee + MUSD_GAS_COMPENSATION
-      const price = await livePrice()
-      const collateral = (1_000_000_000_000_000_000n * entireDebt) / price // ICR ~1.0
+      const preview = await client.previewOpen({ collateral: BTC, debt: draw })
+      expect(preview.isRecoveryMode, 'fixture: the preview must see Recovery Mode').toBe(true)
 
-      const preview = await client.previewOpen({ collateral, debt: draw })
-      expect(preview.icr, 'fixture: the previewed ICR must be below MCR').toBeLessThan(MCR)
-
-      const opener = testAccount(2008)
-      await connectFork().fundAccount(opener.address, collateral + 5n * BTC)
-      await expect(
-        clientFor(opener).openTrove({ collateral, debt: draw }),
-        'fixture: the contract must reject an open below MCR',
-      ).rejects.toThrow()
-
-      // THE FINDING. The only viability flag the preview carries is vacuously true in
-      // normal mode, so it reports a requirement met for an open that cannot succeed.
+      // THE FINDING. In Recovery Mode `_openTrove` skips `_triggerBorrowingFee` entirely
+      // (BorrowerOperations.sol:637-643), so the fee the contract charges is zero.
       expect(
-        preview.meetsRecoveryRequirement,
-        'MK-005: the preview verdict must be false for an open the contract rejects',
+        preview.fee,
+        'MK-004: in Recovery Mode the contract charges no borrowing fee, so the preview must report none',
+      ).toBe(0n)
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 240_000)
+
+  it('MK-004 (fixed): the sub-floor band is closed, the preview no longer lifts a draw over the floor', async () => {
+    const fork = connectFork()
+    const anchor = testAccount(2007)
+    const original = await livePrice()
+    try {
+      await openAtIcr(anchor, 2_600_000_000_000_000_000n)
+      await fork.setPrice((original * 50n) / 100n)
+      await fork.refreshOracle()
+
+      const client = reader()
+      expect(
+        (await client.getSystemState()).isRecoveryMode,
+        'fixture: system must be in Recovery Mode',
+      ).toBe(true)
+
+      // Construct the band: draw < minNetDebt <= draw + fee. In Recovery Mode the
+      // contract checks the floor against the bare draw (BorrowerOperations.sol:635-645),
+      // so an open at this draw reverts, while the SDK adds a fee that lifts it over.
+      const { minNetDebt } = await client.getConstants()
+      const rate = await connectFork().publicClient.readContract({
+        address: T.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'borrowingRate',
+      })
+      // Largest draw strictly below the floor whose fee still carries it to the floor.
+      const draw = minNetDebt - 1n
+      const feeOnDraw = (draw * rate) / 10n ** 18n
+      expect(draw, 'fixture: draw must be below the floor').toBeLessThan(minNetDebt)
+      expect(
+        draw + feeOnDraw,
+        'fixture: draw plus fee must reach the floor for the band to exist',
+      ).toBeGreaterThanOrEqual(minNetDebt)
+
+      const preview = await client.previewOpen({ collateral: 5n * BTC, debt: draw })
+
+      // FIXED. `meetsMinimum` is computed against the netDebt the CONTRACT will see. In
+      // Recovery Mode that is the bare draw, so the band where draw < floor <= draw + fee
+      // no longer reports the floor met for an open that reverts.
+      expect(
+        preview.meetsMinimum,
+        'MK-004: in Recovery Mode the floor applies to the bare draw, so this must not meet the minimum',
       ).toBe(false)
-    },
-    240_000,
-  )
+      expect(preview.viable).toBe(false)
+      expect(preview.reasons).toContain('BELOW_MINIMUM_DEBT')
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 240_000)
+
+  // ---------------------------------------------------------------- MK-005 ----
+  it('MK-005 (fixed): the open preview reports a verdict plus reasons, not a vacuous flag', async () => {
+    const client = reader()
+    const state = await client.getSystemState()
+    expect(state.isRecoveryMode, 'fixture: system must be in NORMAL mode').toBe(false)
+
+    // An open whose ICR is below MCR. Normal mode requires `ICR >= MCR`
+    // (BorrowerOperations.sol:656-657), so this open reverts.
+    const draw = 2_000n * MUSD
+    const fee = await client.getBorrowingFee(draw)
+    const entireDebt = draw + fee + MUSD_GAS_COMPENSATION
+    const price = await livePrice()
+    const collateral = (1_000_000_000_000_000_000n * entireDebt) / price // ICR ~1.0
+
+    const preview = await client.previewOpen({ collateral, debt: draw })
+    expect(preview.icr, 'fixture: the previewed ICR must be below MCR').toBeLessThan(MCR)
+
+    const opener = testAccount(2008)
+    await connectFork().fundAccount(opener.address, collateral + 5n * BTC)
+    await expect(
+      clientFor(opener).openTrove({ collateral, debt: draw }),
+      'fixture: the contract must reject an open below MCR',
+    ).rejects.toThrow()
+
+    // FIXED. `meetsRecoveryRequirement` is gone; the preview carries an explicit verdict
+    // plus machine readable reasons, and it says no to an open the contract rejects.
+    expect(
+      preview.viable,
+      'MK-005: the preview verdict must be false for an open the contract rejects',
+    ).toBe(false)
+    expect(preview.reasons).toContain('ICR_BELOW_THRESHOLD')
+    expect(preview.bindingConstraint).toBe('ICR_BELOW_THRESHOLD')
+  }, 240_000)
 
   // ---------------------------------------------------------------- MK-006 ----
   pins(
@@ -632,94 +691,100 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   )
 
   // ---------------------------------------------------------------- MK-018 ----
-  pins(
-    'MK-018: previewOpen charges a fee the contract waives for a fee exempt account',
-    async () => {
-      const fork = connectFork()
-      const exempt = testAccount(2012)
+  it('MK-018 (fixed): previewOpen waives the fee for a fee exempt account', async () => {
+    const fork = connectFork()
+    const exempt = testAccount(2012)
 
-      // GovernableVariables is not in the SDK's bundled surface, which is part of the point:
-      // the SDK has no concept of exemption. Load its address and ABI from the deployment
-      // record, and act as governance by impersonation (`onlyGovernance` is council or
-      // treasury, GovernableVariables.sol:22-24, :120).
-      const record = (await import(
-        '@mezo-org/musd-contracts/deployments/matsnet/GovernableVariables.json'
-      )) as unknown as { default?: { address: Address }; address?: Address }
-      const governableVariables = (record.default?.address ?? record.address) as Address
-      const gvAbi = parseAbi([
-        'function council() view returns (address)',
-        'function isAccountFeeExempt(address) view returns (bool)',
-        'function addFeeExemptAccount(address)',
-      ])
-      const council = await fork.publicClient.readContract({
+    // GovernableVariables is not in the SDK's bundled surface, which is part of the point:
+    // the SDK has no concept of exemption. Load its address and ABI from the deployment
+    // record, and act as governance by impersonation (`onlyGovernance` is council or
+    // treasury, GovernableVariables.sol:22-24, :120).
+    const record = (await import(
+      '@mezo-org/musd-contracts/deployments/matsnet/GovernableVariables.json'
+    )) as unknown as { default?: { address: Address }; address?: Address }
+    const governableVariables = (record.default?.address ?? record.address) as Address
+    const gvAbi = parseAbi([
+      'function council() view returns (address)',
+      'function isAccountFeeExempt(address) view returns (bool)',
+      'function addFeeExemptAccount(address)',
+    ])
+    const council = await fork.publicClient.readContract({
+      address: governableVariables,
+      abi: gvAbi,
+      functionName: 'council',
+    })
+
+    await fork.testClient.impersonateAccount({ address: council })
+    await fork.fundAccount(council, 5n * BTC)
+    const governance = createWalletClient({
+      account: council,
+      chain: mezoTestnet,
+      transport: http(fork.rpcUrl),
+    })
+    const grant = await governance.writeContract({
+      account: council,
+      chain: mezoTestnet,
+      address: governableVariables,
+      abi: gvAbi,
+      functionName: 'addFeeExemptAccount',
+      args: [exempt.address],
+    })
+    await wait(grant)
+    await fork.testClient.stopImpersonatingAccount({ address: council })
+
+    expect(
+      await fork.publicClient.readContract({
         address: governableVariables,
         abi: gvAbi,
-        functionName: 'council',
-      })
-
-      await fork.testClient.impersonateAccount({ address: council })
-      await fork.fundAccount(council, 5n * BTC)
-      const governance = createWalletClient({
-        account: council,
-        chain: mezoTestnet,
-        transport: http(fork.rpcUrl),
-      })
-      const grant = await governance.writeContract({
-        account: council,
-        chain: mezoTestnet,
-        address: governableVariables,
-        abi: gvAbi,
-        functionName: 'addFeeExemptAccount',
+        functionName: 'isAccountFeeExempt',
         args: [exempt.address],
-      })
-      await wait(grant)
-      await fork.testClient.stopImpersonatingAccount({ address: council })
+      }),
+      'fixture: the test account must be fee exempt on the fork',
+    ).toBe(true)
 
-      expect(
-        await fork.publicClient.readContract({
-          address: governableVariables,
-          abi: gvAbi,
-          functionName: 'isAccountFeeExempt',
-          args: [exempt.address],
-        }),
-        'fixture: the test account must be fee exempt on the fork',
-      ).toBe(true)
+    const client = reader()
+    const draw = 2_000n * MUSD
+    const preview = await client.previewOpen({
+      collateral: 2n * BTC,
+      debt: draw,
+      account: exempt.address,
+    })
 
-      const client = reader()
-      const draw = 2_000n * MUSD
-      const preview = await client.previewOpen({ collateral: 2n * BTC, debt: draw })
+    await openTroveRaw(fork, {
+      collateralBtc: 2n * BTC,
+      debtMusd: draw,
+      account: exempt,
+      numTrials: 15,
+    })
+    const actualDebt = await troveDebt(exempt.address)
+    expect(
+      actualDebt,
+      'fixture: an exempt open must be charged no fee, so debt is draw plus the gas reserve',
+    ).toBe(draw + MUSD_GAS_COMPENSATION)
 
-      await openTroveRaw(fork, {
-        collateralBtc: 2n * BTC,
-        debtMusd: draw,
-        account: exempt,
-        numTrials: 15,
-      })
-      const actualDebt = await troveDebt(exempt.address)
-      expect(
-        actualDebt,
-        'fixture: an exempt open must be charged no fee, so debt is draw plus the gas reserve',
-      ).toBe(draw + MUSD_GAS_COMPENSATION)
-
-      // THE FINDING. `previewOpen` applies `getBorrowingFee` unconditionally and takes no
-      // account argument at all, so it cannot model exemption even in principle.
-      expect(
-        preview.entireDebt,
-        'MK-018: the preview must match the debt an exempt account actually incurs',
-      ).toBe(actualDebt)
-    },
-    300_000,
-  )
+    // FIXED. `previewOpen` now takes the account and reads
+    // `GovernableVariables.isAccountFeeExempt`, so it charges what the contract charges.
+    expect(
+      preview.entireDebt,
+      'MK-018: the preview must match the debt an exempt account actually incurs',
+    ).toBe(actualDebt)
+    expect(preview.feeExempt, 'MK-018: the preview must report the exemption').toBe(true)
+    expect(preview.fee, 'MK-018: an exempt account is charged no fee').toBe(0n)
+  }, 300_000)
 
   // A cheap, chain-free companion to the fork test above: the SDK has no concept of fee
   // exemption anywhere in its public surface. Kept because it states the gap structurally
   // rather than by observation.
-  pins('MK-018: the SDK surface has no concept of fee exemption', async () => {
+  it('MK-018 (fixed): the open preview surfaces fee exemption', async () => {
+    // The concept now exists on the public surface: `previewOpen` accepts an `account` and
+    // reports `feeExempt`. A non exempt account reports false and is charged the fee.
     const client = reader()
-    const surface = Object.keys(client)
-    expect(
-      surface.some((key) => /exempt/i.test(key)),
-      'MK-018: the client surface must expose fee exemption in some form',
-    ).toBe(true)
+    const preview = await client.previewOpen({
+      collateral: BTC,
+      debt: 2_000n * MUSD,
+      account: testAccount(2016).address,
+    })
+    expect(preview.feeExempt, 'a non exempt account must report feeExempt false').toBe(false)
+    expect(preview.fee, 'a non exempt account in normal mode pays a fee').toBeGreaterThan(0n)
   })
 })

@@ -12,6 +12,7 @@ export const MusdErrorCode = {
   TROVE_ALREADY_EXISTS: 'TROVE_ALREADY_EXISTS',
   INVALID_AMOUNT: 'INVALID_AMOUNT',
   INVALID_ADJUSTMENT: 'INVALID_ADJUSTMENT',
+  EXCEEDS_BORROWING_CAPACITY: 'EXCEEDS_BORROWING_CAPACITY',
 
   //, Protocol reverts (mapped from on-chain revert data, see ground-truth §11),
   ICR_BELOW_MCR: 'ICR_BELOW_MCR',

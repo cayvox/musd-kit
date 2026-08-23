@@ -1,4 +1,4 @@
-import type { Trove } from '@musd-kit/core'
+import type { BorrowPreview, BorrowingCapacity, Trove } from '@musd-kit/core'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { Address } from 'viem'
 import { useChainId } from 'wagmi'
@@ -48,8 +48,15 @@ export function useLiquidationPrice({
 }
 
 /**
- * Largest valid draw for a given collateral (core `getBorrowingPower`), a preview; no live
- * position needed. Refetches on new blocks (the binding ratio / price can move).
+ * Largest valid draw for an **open**, for a given collateral (core `getBorrowingPower`).
+ *
+ * This is an OPEN time calculator and its name is easy to misread: it does NOT tell you how
+ * much an EXISTING Trove can still borrow. Every Trove carries a `maxBorrowingCapacity`
+ * fixed at the opening price, which never rises afterwards, and a debt increase is gated on
+ * it (`BorrowerOperations.sol:1358-1365`). For a Trove that already exists use
+ * {@link useBorrowPreview} or {@link useBorrowingCapacity} (MK-002).
+ *
+ * Refetches on new blocks (the binding ratio, the price and the system TCR can all move).
  */
 export function useBorrowingPower({
   collateral,
@@ -59,6 +66,42 @@ export function useBorrowingPower({
     queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n),
     fetch: (client) => client.getBorrowingPower({ collateral: collateral as bigint }),
     enabled: collateral !== undefined,
+  })
+}
+
+/**
+ * Preview borrowing against an EXISTING Trove (core `previewBorrow`, MK-002): a verdict, the
+ * binding constraint, the capacity picture, and the resulting ratios. This is the hook to
+ * reach for when a position already exists; `useBorrowingPower` is for sizing an open.
+ */
+export function useBorrowPreview({
+  owner,
+  amount,
+}: {
+  owner: Address | undefined
+  amount: bigint | undefined
+}): UseQueryResult<BorrowPreview, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<BorrowPreview>({
+    queryKey: musdQueryKeys.borrowPreview(chainId, owner ?? '0x', amount ?? 0n),
+    fetch: (client) => client.previewBorrow({ owner: owner as Address, amount: amount as bigint }),
+    enabled: owner !== undefined && amount !== undefined,
+  })
+}
+
+/**
+ * The live borrowing capacity picture for an owner (core `getBorrowingCapacity`, MK-002):
+ * the on-chain `maxBorrowingCapacity`, the live entire debt, and the remaining headroom.
+ * The headroom is for `draw + fee`, not for the draw alone.
+ */
+export function useBorrowingCapacity({
+  owner,
+}: { owner: Address | undefined }): UseQueryResult<BorrowingCapacity, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<BorrowingCapacity>({
+    queryKey: musdQueryKeys.borrowingCapacity(chainId, owner ?? '0x'),
+    fetch: (client) => client.getBorrowingCapacity(owner as Address),
+    enabled: owner !== undefined,
   })
 }
 

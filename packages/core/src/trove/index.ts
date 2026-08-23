@@ -1,8 +1,15 @@
 import type { Abi, Address } from 'viem'
-import { borrowerOperationsAbi, musdAbi, troveManagerAbi } from '../clients'
+import {
+  borrowerOperationsAbi,
+  governableVariablesAbi,
+  musdAbi,
+  priceFeedAbi,
+  troveManagerAbi,
+} from '../clients'
 import { MUSD_GAS_COMPENSATION } from '../constants'
 import {
   BelowMinimumDebt,
+  ExceedsBorrowingCapacity,
   InsufficientMusdBalance,
   InvalidAdjustment,
   MaxFeeExceeded,
@@ -38,6 +45,78 @@ async function currentPosition(
     args: [owner],
   })
   return { collateral: edc[0], entireDebt: edc[1] + edc[2] }
+}
+
+/**
+ * The borrowing fee the contract will ACTUALLY charge for a debt increase (MK-004, MK-018).
+ *
+ * `_adjustTrove` charges it only when `_isDebtIncrease && !isRecoveryMode`, and then only
+ * when the account is not fee exempt (`BorrowerOperations.sol:810-818`). Reading both
+ * rather than assuming keeps the capacity precheck comparing the same quantity the gate
+ * compares, and the exempt cohort is not empty on mainnet.
+ */
+async function effectiveBorrowingFee(
+  deps: WriteDeps,
+  owner: Address,
+  debt: bigint,
+): Promise<bigint> {
+  const price = await deps.publicClient.readContract({
+    address: deps.addresses.priceFeed,
+    abi: priceFeedAbi,
+    functionName: 'fetchPrice',
+  })
+  const [isRecoveryMode, governableVariables] = await Promise.all([
+    deps.publicClient.readContract({
+      address: deps.addresses.troveManager,
+      abi: troveManagerAbi,
+      functionName: 'checkRecoveryMode',
+      args: [price],
+    }),
+    deps.publicClient.readContract({
+      address: deps.addresses.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'governableVariables',
+    }),
+  ])
+  if (isRecoveryMode) return 0n
+  const exempt = await deps.publicClient.readContract({
+    address: governableVariables,
+    abi: governableVariablesAbi,
+    functionName: 'isAccountFeeExempt',
+    args: [owner],
+  })
+  if (exempt) return 0n
+  return getBorrowingFee(deps, debt)
+}
+
+/**
+ * Fail a debt increase the contract's capacity gate would reject, BEFORE simulate, with the
+ * real numbers attached (MK-002).
+ *
+ * The gate is `maxBorrowingCapacity >= netDebtChange + debt`
+ * (`BorrowerOperations.sol:1358-1365`). `debt` there is read after
+ * `updateSystemAndTroveInterest` (`:769`), so accrued interest counts; the SDK compares
+ * against the live entire debt for the same reason.
+ */
+async function assertWithinBorrowingCapacity(
+  deps: WriteDeps,
+  owner: Address,
+  entireDebt: bigint,
+  netDebtChange: bigint,
+): Promise<void> {
+  const capacity = await deps.publicClient.readContract({
+    address: deps.addresses.troveManager,
+    abi: troveManagerAbi,
+    functionName: 'getTroveMaxBorrowingCapacity',
+    args: [owner],
+  })
+  if (capacity >= entireDebt + netDebtChange) return
+  throw new ExceedsBorrowingCapacity(
+    capacity,
+    entireDebt,
+    netDebtChange,
+    capacity > entireDebt ? capacity - entireDebt : 0n,
+  )
 }
 
 function getBorrowingFee(deps: WriteDeps, debt: bigint): Promise<bigint> {
@@ -157,10 +236,12 @@ export async function borrow(deps: WriteDeps, params: BorrowParams): Promise<Wri
   const wallet = requireWallet(deps)
   const { amount } = params
   assertPositiveAmount('amount', amount)
-  const fee = await getBorrowingFee(deps, amount)
+  const fee = await effectiveBorrowingFee(deps, wallet.account.address, amount)
   assertFeeWithinCap(amount, fee, params.maxFeePercentage)
   const pos = await currentPosition(deps, wallet.account.address)
   assertTroveActive(pos.entireDebt, wallet.account.address)
+  // MK-002: the capacity gate, checked before simulate rather than surfaced as a revert.
+  await assertWithinBorrowingCapacity(deps, wallet.account.address, pos.entireDebt, amount + fee)
   const { upperHint, lowerHint } = await hintsFor(
     deps,
     pos.collateral,
@@ -231,15 +312,19 @@ export async function adjustTrove(
   const isDebtIncrease = brw !== undefined
   const debtChange = brw ?? rpy ?? 0n
 
+  const owner = wallet.account.address
   let fee = 0n
   if (brw !== undefined) {
-    fee = await getBorrowingFee(deps, brw)
+    fee = await effectiveBorrowingFee(deps, owner, brw)
     assertFeeWithinCap(brw, fee, params.maxFeePercentage)
   }
 
-  const owner = wallet.account.address
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
+  // MK-002: the capacity gate applies to the debt increase path of adjust too.
+  if (brw !== undefined) {
+    await assertWithinBorrowingCapacity(deps, owner, pos.entireDebt, brw + fee)
+  }
   if (rpy !== undefined) {
     const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
     if (rpy > netDebt) throw new RepayExceedsDebt(undefined, { repay: rpy, netDebt })

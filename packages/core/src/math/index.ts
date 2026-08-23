@@ -8,5 +8,22 @@ export {
   type ComputeLiquidationPriceParams,
   type ComputeEntireDebtParams,
 } from './compute'
-export { previewOpen, type PreviewOpenParams, type OpenPreview } from './previewOpen'
+export {
+  previewOpen,
+  type PreviewOpenParams,
+  type OpenPreview,
+  type OpenBlockReason,
+  evaluateOpen,
+  type EvaluateOpenInput,
+} from './previewOpen'
+export {
+  previewBorrow,
+  getBorrowingCapacity,
+  type PreviewBorrowParams,
+  type BorrowPreview,
+  type BorrowBlockReason,
+  type BorrowingCapacity,
+  evaluateBorrow,
+  type EvaluateBorrowInput,
+} from './previewBorrow'
 export { getBorrowingPower, type GetBorrowingPowerParams } from './getBorrowingPower'

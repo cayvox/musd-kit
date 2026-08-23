@@ -273,7 +273,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
     }
   }, 180_000)
 
-  it('Recovery Mode: detection + isLiquidatable rule (CCR ceiling) + a real RM liquidation', async () => {
+  it('Recovery Mode: detection + isLiquidatable has NO CCR widening (MK-001) + a real RM liquidation', async () => {
     const fork = connectFork()
     try {
       const open = async (acct: PrivateKeyAccount, coll: bigint, icrAtOrig: bigint) => {
@@ -308,12 +308,20 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       console.log(`[phase6] RM: icrB=${icrB} (MCR=${MCR} CCR=${CCR})`)
       expect(icrB).toBeGreaterThanOrEqual(MCR)
       expect(icrB).toBeLessThan(CCR)
-      // Mode-aware isLiquidatable: under-MCR and MCR≤ICR<CCR are flagged in RM; ICR≥CCR is not.
-      // (The single-Trove liquidate of a MCR≤ICR<CCR Trove also needs ICR<TCR + SP cover,
-      // simulate-before-send is the real gate; isLiquidatable is the optimistic precheck.)
+      // REGRESSION, MK-001. This block used to assert `isLiquidatable(B) === true` and
+      // defended it with an invented "ICR < TCR plus Stability Pool cover" rule that does
+      // not exist in this fork. That comment is deleted rather than reworded: it was the
+      // reason the wrong rule survived review. `TroveManager.sol` contains no reference to
+      // `CCR`, and the only gate is `if (vars.ICR < MCR)` at `TroveManager.sol:1148`, so
+      // Recovery Mode widens nothing. B sits at MCR <= ICR < CCR and is NOT liquidatable.
       expect(await musdLQ.isLiquidatable(U.address)).toBe(true)
-      expect(await musdLQ.isLiquidatable(B.address)).toBe(true)
+      expect(await musdLQ.isLiquidatable(B.address)).toBe(false)
       expect(await musdLQ.isLiquidatable(C.address)).toBe(false)
+
+      // And the protocol agrees: liquidating B reverts. The old test never exercised its
+      // own claim, it liquidated a different Trove, the under-MCR one.
+      await expect(musdLQ.liquidate(B.address)).rejects.toThrow()
+      expect(await statusOf(B.address)).toBe(1) // still active
 
       // A real RM liquidation: the under-MCR Trove liquidates (redistribution) in RM.
       await wait((await musdLQ.liquidate(U.address)).hash)

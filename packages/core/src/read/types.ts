@@ -39,7 +39,11 @@ export interface Trove {
   liquidationPrice: bigint
   /** Derived: icr / MCR as a number (1.0 at MCR). */
   healthFactor: number
-  /** Normal-mode condition `icr < MCR`. Recovery-Mode nuances are Phase 6, see `getSystemState().isRecoveryMode`. */
+  /**
+   * `icr < MCR`, the protocol's ONLY liquidation gate (`TroveManager.sol:1148`). There is
+   * no Recovery Mode widening: `TroveManager.sol` contains no reference to `CCR`. Always
+   * equal to `isLiquidatable(address)`; a fork test pins that the two agree (MK-001).
+   */
   isLiquidatable: boolean
   /** The fixed rate locked at open, in basis points, `getTroveInterestRate`. */
   interestRate: number

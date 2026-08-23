@@ -11,6 +11,8 @@ export {
   useHealthFactor,
   useLiquidationPrice,
   useBorrowingPower,
+  useBorrowPreview,
+  useBorrowingCapacity,
   useOraclePrice,
   useMusdBalance,
 } from './hooks/reads'

@@ -36,11 +36,11 @@ claim about it was not).
 
 | ID | Title | Class | Status |
 |---|---|---|---|
-| MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | test-written |
-| MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | test-written |
+| MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | fixed |
+| MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | fixed |
 | MK-003 | Refinancing fee is not modeled | S1 | test-written |
-| MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | test-written |
-| MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | test-written |
+| MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | fixed |
+| MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
 | MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | test-written |
 | MK-007 | `claim()` swallows every error | S2 | open |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
@@ -53,17 +53,21 @@ claim about it was not).
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
-| MK-018 | Fee exemption is not modeled | S1 | test-written |
+| MK-018 | Fee exemption is not modeled | S1 | fixed |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
 | MK-022 | `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated | S3 | open |
+| MK-023 | Phase 6 `claim` fixture intermittently leaves the target Trove unredeemed | S3 | open |
+| MK-024 | Phase 6 normal mode liquidation intermittently crashes on a missing event | S3 | open |
+| MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
+| MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
 
 ---
 
 ## MK-001 · `isLiquidatable` applies a Recovery Mode rule the protocol does not have
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** `TroveManager.sol` contains no reference to `CCR` in any liquidation path. The
 only gate is `ICR < MCR`, inside the batch liquidation loop (`TroveManager.sol`, the
@@ -97,11 +101,20 @@ that `liquidate()` on it reverts while `isLiquidatable()` returns `true`.
 assertion into a regression test that pins the revert. Breaking behavior change, shipped in 0.2.0
 with a migration note.
 
+
+**Fixed in the P3a wave.** `read/system.ts` now applies a single `icr < MCR` with no mode
+branch, and the docstring that claimed the Recovery Mode behavior was verified is corrected to
+state the rule and cite `TroveManager.sol:1148`. The phase 6 assertion that enshrined the wrong
+rule is inverted and the comment inventing an "ICR versus TCR plus Stability Pool cover" rule is
+deleted rather than reworded. A regression test pins that the two read paths,
+`isLiquidatable(address)` and `getTrove().isLiquidatable`, agree across the whole band in both
+modes, because two APIs disagreeing about one question was the underlying defect. Breaking
+behavior change for anyone who consumed the old verdict.
 ---
 
 ## MK-002 · `maxBorrowingCapacity` is not modeled anywhere in the SDK
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** Every trove carries a `maxBorrowingCapacity`, set at open from the opening price
 as `coll * price / (110 * 1e16)` (`BorrowerOperations.sol`, `_calculateMaxBorrowingCapacity`, called
@@ -133,6 +146,27 @@ a borrowing figure the contract rejects.
 **Decision.** Fix now. Add capacity reads and a preview for existing troves, add a precheck to
 `borrow()`, and state in the docs that capacity is fixed at the opening price and never rises.
 
+
+**Fixed in the P3a wave.** Capacity is now a first class concept: `getBorrowingCapacity(owner)`
+returns the on-chain capacity, the live entire debt and the remaining headroom;
+`previewBorrow({ owner, amount })` returns a verdict, a machine readable reason list and the
+binding constraint, covering the capacity gate, the resulting ICR against the mode correct
+threshold and the resulting system TCR; `borrow()` and the debt increase path of `adjustTrove()`
+precheck the gate and throw the typed `ExceedsBorrowingCapacity` with the real numbers before
+simulate. React gains `useBorrowPreview` and `useBorrowingCapacity`. `getBorrowingPower` stays
+the open time calculator and now says so, including that capacity is fixed at the opening price
+and never rises; it also now enforces the resulting system TCR, which the contract requires on
+every normal mode open and which it previously ignored. The precheck compares against the LIVE
+entire debt, not the stored `getTroveDebt`, because `_adjustTrove` updates interest first
+(`BorrowerOperations.sol:769`) and the gate therefore sees accrued interest.
+
+**Not witnessed, and therefore owed.** The downward ratchet is reasoned from
+`BorrowerOperations.sol:879-897` and is NOT observed executing on chain: no test performs a
+collateral withdrawal and watches `min(current, recalculated)` take the lower branch. The tests pin
+only that capacity does not RISE with price, which is the half the reported defect turned on.
+Reaching the ratchet is on the differential harness coverage list in
+`docs/09-review-and-validated-surface.md` §3, so the harness is built to exercise it rather than
+pointed at it afterwards.
 ---
 
 ## MK-003 · Refinancing fee is not modeled
@@ -162,7 +196,7 @@ rather than ship wrong numbers.
 
 ## MK-004 · Recovery Mode borrowing fee skip is not modeled
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** On open, the borrowing fee is charged only when the system is not in Recovery
 Mode and the account is not fee exempt. In Recovery Mode `netDebt` equals the requested draw with
@@ -185,11 +219,17 @@ most.
 
 **Decision.** Fix now, and record in the divergence matrix that the gap is shared.
 
+
+**Fixed in the P3a wave.** `previewOpen` charges the fee only when the contract does, that is
+when not in Recovery Mode and the account is not fee exempt. The second order effect is closed
+with it: because the floor is checked against `netDebt`, removing the phantom fee removes the
+band `draw < minNetDebt <= draw + fee` where the preview reported the floor met for an open that
+reverts. The findings test that pins that band is kept and now passes.
 ---
 
 ## MK-005 · `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** `openTrove` requires, in Recovery Mode, `ICR >= CCR`; and in normal mode, both
 `ICR >= MCR` and a resulting system TCR at or above CCR.
@@ -205,6 +245,13 @@ against an actual attempt.
 **Decision.** Fix now. Replace the flag with an explicit verdict plus reasons, covering the debt
 floor, the mode correct ICR threshold, and the projected TCR.
 
+
+**Fixed in the P3a wave.** `meetsRecoveryRequirement` is REMOVED, a breaking change, and
+replaced by `viable` plus a machine readable `reasons` list and `bindingConstraint`. The verdict
+covers the debt floor, the mode correct ICR threshold (`CCR` in Recovery Mode, `MCR` in normal
+mode) and, in normal mode only, the projected system TCR, which the contract enforces on every
+normal mode open and which the SDK never projected. The migration note is in
+`docs/03-core-api.md`.
 ---
 
 ## MK-006 · Hint NICR is fed entire debt, and repay ignores interest first ordering
@@ -466,7 +513,7 @@ and type the write path properly.
 
 ## MK-018 · Fee exemption is not modeled
 
-**Class** S1 · **Status** open · **Severity assigned from evidence, not assumption**
+**Class** S1 · **Status** fixed · **Severity assigned from evidence, not assumption**
 
 `GovernableVariables.isAccountFeeExempt` zeroes the borrowing fee on open, on debt increase, and on
 refinance. The SDK does not model it. Neither does Mezo's production dApp.
@@ -515,6 +562,20 @@ testnet result in particular must not be read as "fee exemption is unused"; it w
 the contract will not charge it. Read `isAccountFeeExempt` for the account being previewed and
 skip the fee when it returns true.
 
+
+**Fixed in the P3a wave.** `previewOpen` takes an optional `account` and consults
+`GovernableVariables.isAccountFeeExempt` through the new `MathDeps.isAccountFeeExempt`, so it
+charges what the contract charges for that caller. The GovernableVariables address is read from
+`borrowerOperations.governableVariables()` rather than added to the bundled map, so it cannot
+disagree with the BorrowerOperations already in use. With no account supplied the preview assumes
+not exempt and reports that via `feeExempt: false`, making the assumption visible rather than
+silent. The same rule is applied on the debt increase path, where the fee is likewise skipped.
+
+**Not witnessed, and therefore owed.** The exempt branch on the DEBT INCREASE path,
+`effectiveBorrowingFee` in `packages/core/src/trove/index.ts` mirroring
+`BorrowerOperations.sol:810-818`, is reasoned from source and NOT observed: the fork test grants
+exemption and exercises the OPEN path only. Reaching the exempt debt increase is on the
+differential harness coverage list in `docs/09-review-and-validated-surface.md` §3.
 ---
 
 ## MK-019 · `refinance()` reverts in Recovery Mode, unchecked and undocumented
@@ -685,6 +746,14 @@ Three additional `pnpm test:fork` runs on the same tree were green. The seeded o
 byte identical, `77051107320000000000000`, in every one of those runs, so this is not MK-020
 resurfacing.
 
+**Observed rate, measured in the P3a wave: one in twenty.** Twenty full `pnpm test:fork` runs at
+the same pinned block produced four red runs, and exactly ONE of those was this finding's location,
+`phase6.fork.test.ts:245`, again with `expected 1 to be 3`. The seed was byte identical in all
+twenty. The other three red runs failed elsewhere and are registered separately as MK-023, MK-024
+and MK-025 rather than folded in here: a flake without its own entry is indistinguishable from a
+real regression when it surfaces in a later wave. So the phase 6 file is not one flaky test, it is
+at least three distinct ones plus this.
+
 **Not caused by the merge that surfaced it.** `git diff` between `chore/p0.2-cold-fork-warmup` and
 `main` after the restore merge is empty, so the tree that produced the failure is byte identical to
 the tree that ran five consecutive green earlier. The merge introduced nothing. It follows that the
@@ -705,6 +774,147 @@ liquidation behavior.
 
 **Decision.** Diagnose in the mitigation removal wave, alongside MK-016. Do not raise a timeout or
 add a retry: nothing here timed out, and a retry would hide exactly the signal worth keeping.
+
+---
+
+## MK-023 · Phase 6 `claim` fixture intermittently leaves the target Trove unredeemed
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, attributing red runs**
+
+**What happens.** `packages/core/test/phase6.fork.test.ts:334` opens a Trove at the very bottom of
+the redeemable list, redeems past it so that it is FULLY consumed, and asserts its status reaches
+4, closed by redemption, leaving a collateral surplus for its owner to claim. Intermittently the
+status is still 1, active: `expected 1 to be 4`. The redemption did not consume the Trove it was
+sized to consume.
+
+**Reproduction and rate.** Two in twenty. Twenty full `pnpm test:fork` runs at pinned block
+15043414 on the P3a branch, red on runs 3 and C, both with the identical assertion. The seeded
+oracle answer was byte identical, `77051107320000000000000`, in all twenty, so the price is not the
+variable.
+
+**Why it is NOT MK-022.** Different test, different line, different assertion, different operation.
+MK-022 is `batchLiquidate` at `:245` asserting status 3. This is a redemption at `:334` asserting
+status 4. They share a file and a suspected family, the shared mutable fork, and nothing else.
+
+**What we do NOT claim.** No root cause. The redeemable tail is mutated by every earlier file that
+opens, liquidates or redeems, so how much of it survives to this test is a function of everything
+before it, which is the MK-016 ordering coupling. Whether that alone explains it, or whether the
+truncation arithmetic in `getRedemptionHints` is also involved, is unestablished.
+
+**Decision.** Diagnose in the mitigation removal wave alongside MK-016 and MK-022. Do not add a
+retry: the assertion is about a redemption completing, and a retry would hide precisely the signal.
+
+---
+
+## MK-024 · Phase 6 normal mode liquidation intermittently crashes on a missing event
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, attributing red runs**
+
+**What happens.** `packages/core/test/phase6.fork.test.ts:198` fails with
+`TypeError: Cannot read properties of undefined (reading 'args')`. It is a CRASH, not an assertion:
+the test looks up an expected event in the receipt's logs and the lookup returns `undefined`, so
+the property read throws before any assertion runs.
+
+**Reproduction and rate.** One in twenty, run 10 of the twenty P3a fork runs at pinned block
+15043414, seed byte identical.
+
+**Why it is NOT MK-022, and why it is worth its own entry more than the others.** Different test and
+different line, but the reason to separate it is the failure MODE. A `TypeError` on a missing event
+tells you nothing about what actually went wrong on chain: the liquidation may have reverted,
+liquidated nothing, or emitted a different event, and the crash hides which. Folded into another
+entry it would read as the same symptom as an assertion failure, which it is not. The test should
+be made to fail with the on-chain reason rather than a property access on `undefined`; until it
+does, every occurrence of this costs a diagnosis from scratch.
+
+**What we do NOT claim.** No root cause, and deliberately no guess about which of the three
+possibilities above it is, because the crash removed the evidence that would have told us.
+
+**Decision.** Diagnose in the mitigation removal wave. The first fix is to the test's own error
+handling, so that the next occurrence reports what the chain did.
+
+---
+
+## MK-025 · React block watching test intermittently sends a write that reverts
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, attributing red runs**
+
+**What happens.** `packages/react/test/hooks.fork.test.ts:157`, the hook refetch on a new block,
+fails with `expected 'reverted' to be 'success'`. A transaction the test sends to produce a new
+block reverted instead of mining successfully.
+
+**Reproduction and rate.** One in twenty, run F of the twenty P3a fork runs at pinned block
+15043414, seed byte identical. Notably run F was the only run with TWO failures: this and MK-022.
+
+**Why it is NOT MK-022.** Different package entirely, `@musd-kit/react` rather than
+`@musd-kit/core`, a different mechanism, a write reverting rather than a liquidation not taking
+effect, and a different failure surface. It is also the only observed failure outside
+`phase6.fork.test.ts`, which matters: it shows the intermittency is not confined to one file.
+
+**Relationship to an existing mitigation.** `hooks.fork.test.ts` already carries `ensureWriteMined`,
+the four attempt refire loop listed as mitigation 2 in the P0 flake inventory, precisely because
+writes on the shared fork revert after a passing simulate. This failure means the mitigation did
+not save this particular write, which is information about the mitigation as much as about the
+test. The P0 inventory flagged that loop as the most suspicious of the set, because a simulate that
+passes followed by a revert is the MK-005 bug class; MK-005 is now fixed, and this still happened.
+
+**What we do NOT claim.** No root cause, and specifically not that MK-005's fix should have
+prevented it. The revert reason was not captured.
+
+**Decision.** Diagnose in the mitigation removal wave, when `ensureWriteMined` is removed and
+whatever then fails becomes a finding. Capture the revert reason first.
+
+---
+
+## MK-026 · Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run
+
+**Class** S3, harness · **Status** open · **Found by us in the P3a wave, and PROVEN pre existing**
+
+**What happens.** `packages/core/test/phase5.fork.test.ts` fails intermittently under
+`pnpm test:coverage` and, so far, never under `pnpm test:fork`. Three different symptoms have been
+seen in the same file, all of them a write that did not take effect:
+
+| Where | Symptom |
+|---|---|
+| `phase5.fork.test.ts:191` `adjustTrove combined` | `expected 600000000000000000n to be 550000000000000000n`, the collateral withdrawal did not apply |
+| `phase5.fork.test.ts:191` `adjustTrove combined` | `No open Trove for 0xEB41...`, the `openTrove` that starts the test did not take effect at all |
+| `phase5.fork.test.ts:114` `full lifecycle via the SDK` | `expected 500000000000000000n to be 600000000000000000n`, likewise a collateral step |
+
+**It is NOT ours, and that was proven rather than argued.** This first appeared while landing the
+P3a changes, in `adjustTrove`, code that wave modified, so it had every appearance of a regression.
+Two checks settled it:
+
+1. **Reproduced on unchanged `main`.** `main` was checked out and `pnpm test:coverage` run twice at
+   pinned block 15043414: one green, one red, in the same `phase5.fork.test.ts`. No P3a change is
+   present on that tree.
+2. **The changed code is not on the failing path.** The failing step in the `adjustTrove` case is
+   `withdrawCollateral + repay`, where `brw` is undefined, so the borrowing capacity precheck added
+   in P3a never runs and the effective fee stays zero. The remaining P3a edit to that function is
+   hoisting a `const owner` declaration, which changes no behavior.
+
+**Reproduction and rate.** Two red in three `pnpm test:coverage` runs on the P3a branch, and one
+red in two on `main`. Against that, ZERO red in twenty `pnpm test:fork` runs on the same branch at
+the same block, where the four failures that did occur were MK-022, MK-023, MK-024 and MK-025, none
+of them in phase 5. That asymmetry is the finding.
+
+  MEZO_TESTNET_RPC_URL=<a Mezo testnet endpoint> MEZO_FORK_BLOCK=15043414 pnpm test:coverage
+
+**The condition traced, and what we do NOT claim.** The only difference between the two commands is
+the v8 coverage instrumentation and the extra unit project, so the working hypothesis is that
+instrumentation slows execution enough to widen the window between simulate and mine on the shared
+fork, which is the same window `openTroveRaw` already carries two `refreshOracle` calls and a fixed
+gas limit to defend against. That is a hypothesis about the mechanism, not a verified root cause:
+the reverts were not captured with their on chain reason, and no timing was measured. What IS
+verified is the asymmetry, that it predates P3a, and that the P3a changes are off the failing path.
+
+**Why it matters.** CI runs `pnpm test:coverage`, not `pnpm test:fork`. So this is the flake that
+actually reddens the pipeline, and it is the one least visible to anyone running the fork suite
+locally. It also means the coverage number itself is only obtainable on a green run, which cost
+three attempts in the P3a wave.
+
+**Decision.** Not fixed here. Diagnose in the mitigation removal wave alongside MK-016: capture the
+revert reason first, then measure whether the simulate to mine window is really the variable. Do
+not paper over it by disabling coverage in CI, which would trade a visible flake for an invisible
+gap.
 
 ---
 
