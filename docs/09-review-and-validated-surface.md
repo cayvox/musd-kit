@@ -59,9 +59,25 @@ evidence for what it actually exercises.
 | Fee exemption on the DEBT INCREASE path, not just on open | Reasoned from `BorrowerOperations.sol:810-818`, **not observed executing** | **Owed to the differential harness** (MK-018) |
 | `@musd-kit/react`, the whole published hook layer | Fork exercised via React Testing Library against a fork-backed wagmi config | **Not measured by the coverage gate at all.** The floor covers `packages/core/src` only, so no number on this page or in CI describes how much of the React package is exercised |
 
-Read the middle row twice. Until the differential harness lands, a preview being green is not
-evidence that the corresponding write succeeds. The open only gate is exactly why MK-006 survived
-into a published release.
+Read the **open path only** row twice. Until the differential harness lands, a preview being green
+is not evidence that the corresponding write succeeds.
+
+That row is also the clearest lesson this project has learned about its own testing, so it is worth
+stating outright rather than leaving to be inferred:
+
+> **A gate that covers only the case where two quantities coincide cannot tell you which one was
+> meant.**
+
+That is exactly why the dual validation gate could never have caught MK-006. Every insertion hint
+was computed from the ENTIRE debt, while `SortedTroves` sorts by PRINCIPAL. At open those two
+quantities are equal, because no interest has accrued yet, so the one path the gate covered was the
+one path where the distinction is invisible. The gate was green, repeatedly, on a value that was
+right by coincidence. It stayed green while every write path against an existing Trove placed hints
+by a number the contract does not sort by, and it survived into a published release.
+
+The generalisation, which is what makes it worth writing down: when validation is scoped to a
+single case, check whether that case is degenerate before trusting the result. A boundary where two
+inputs happen to be identical is the worst possible place to test a rule that distinguishes them.
 
 The two rows marked **owed** are obligations on that harness, not footnotes. Both are branches the
 P3a wave implemented from the Solidity and could not drive on a fork: the capacity ratchet needs a
