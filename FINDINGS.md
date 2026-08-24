@@ -64,7 +64,7 @@ claim about it was not).
 | MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
 | MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
 | MK-028 | The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`, which Node 24 rejects | S2 | fixed |
-| MK-029 | Acceptance never included CI, and the fork gate runs a Node no local run used | S2 | open, partially closed |
+| MK-029 | Local evidence and CI evidence were both true, because they ran different runtimes | S2 | fixed |
 
 ---
 
@@ -1132,10 +1132,21 @@ written there is silently ignored: the file runs on the project default and noth
 
 ---
 
-## MK-029 · Acceptance never included CI, and the fork gate runs a Node no local run used
+## MK-029 · Local evidence and CI evidence were both true, because they ran different runtimes
 
-**Class** S2, process · **Status** open, partially closed · **Found by us when asked to look at a
-CI run for the first time**
+**Class** S2, process · **Status** fixed · **Found by us when asked to look at a CI run for the
+first time**
+
+**What it actually was, in one sentence.** Every wave's local acceptance and every CI run were both
+reporting honestly, and they never contradicted each other, because they were never running the
+same thing: the fork gate resolved its Node from `.nvmrc` while every local run used the Node the
+author happened to have. Five merges landed on a red trunk and nobody noticed, not because anyone
+overlooked a red X, but because nothing in the process ever put the two sources of evidence in the
+same room.
+
+That is the part worth carrying forward. A green local run was not a false claim. It was a true
+claim about a different system, presented as though it settled the question, and no rule required
+anyone to check whether it did.
 
 **What happens.** Two separate things that combine into one hole.
 
@@ -1155,10 +1166,13 @@ CI run for the first time**
    PR 8 report even said in as many words that CI had not been checked. Saying so is not the same
    as looking.
 
-2. **The fork gate runs a Node that no local run used.** `.github/workflows/ci.yml:116` pins that
-   job from `.nvmrc`, which commit `a22299f` moved to `24.19.0`, while every local acceptance run
-   in this programme was on Node 20.20.1. Five green local runs and four red CI runs were both true
-   at once and were never in contradiction, because they were not running the same thing.
+2. **The fork gate ran a Node that no local run used.** That job read
+   `node-version-file: .nvmrc`, and commit `a22299f`, a housekeeping change about the DEVELOPMENT
+   runtime, moved `.nvmrc` from `20.18.1` to `24.19.0`. Every local acceptance run in this
+   programme was on Node 20.20.1. So five green local runs and four red CI runs were true at the
+   same time and never in contradiction. Neither number was wrong. The pair was meaningless,
+   because a change to what a contributor develops on had quietly become a change to what CI
+   executes.
 
 **Why this is a finding and not a footnote.** The standing checklist added in
 `docs/08-conventions.md` §10 lists seven commands and does not list "read the CI run". It was
@@ -1175,16 +1189,35 @@ before the tests and an `actions/cache/save@v4` step guarded by
 still keeps the state it fetched. `continue-on-error: true` on the save, because a cache problem
 must never be the reason a green run reports red.
 
-**Closed by this work.** The checklist gains a CI step, and MK-028's pin now runs in the `unit`
-project across the whole `Checks` matrix, so a Node that breaks the react environment fails in a
-job that takes about 80 seconds rather than only in the 287 second fork gate.
+**Fixed, in three parts, one per cause.**
 
-**Still open.** The version split itself is untouched here, deliberately. `engines` says
-`>=20.20.2`, the matrix tests 20, 22 and 24, and the fork gate tests only whatever `.nvmrc` says.
-Whether the fork gate should be matrixed, or pinned to the lowest supported Node instead of the
-newest, is a decision for its own wave. See also the note on GitHub's Node 20 action runtime
-deprecation in `docs/07-testing.md` §5, which is a different question about the runtime of the
-actions themselves and must not be conflated with this one.
+1. **The coupling is gone.** No job in any workflow reads `node-version-file` any more. All three
+   that did (`ci.yml` `fork-gate`, `release.yml` `publish` and `verify-published`) declare
+   `node-version: 24.19.0` explicitly, with the reason in a comment beside each. The other two jobs
+   already declared their own and were checked, not assumed. The rule is stated in
+   `docs/08-conventions.md` §1: **CI runtime versions are declared in the workflow, never inherited
+   from the development pin.** `.nvmrc` still says 24.19.0, so nothing about CI moved; what changed
+   is that the next edit to `.nvmrc` cannot move it either.
+
+2. **The two evidence sources are required to meet.** `docs/08-conventions.md` §10 gains two rules
+   rather than two suggestions. Step 2 now requires the fork suite to be run locally on the Node
+   version the fork gate DECLARES, and to report that version. Step 9 requires the CI run on `main`
+   to be read after a merge, and makes a red trunk block the next wave. Those two are exactly the
+   absences that produced this finding: without the first, local and CI cannot be compared; without
+   the second, five red merges accumulate unremarked.
+
+3. **The failure surfaces sooner.** MK-028's pin runs in the `unit` project across the whole
+   `Checks` matrix, so a Node that breaks the react environment fails in a job of about 80 seconds
+   rather than only in the fork gate.
+
+**Deliberately NOT done, and why it is not "still open" here.** Whether the fork gate should be
+matrixed across 20, 22 and 24 rather than run on one declared version is a real question, and it is
+recorded in `docs/07-testing.md` §5 next to the falsified claim that motivated it. It is not part of
+this finding: MK-029 is about a silent coupling and an unenforced comparison, and both are closed.
+Matrixing is a scope decision about cost, and a decision that is not blocked on anything here.
+Separately, the note on GitHub's Node 20 ACTION runtime deprecation in the same section is a
+different subject entirely, about the runtime GitHub uses to execute a JavaScript action, and must
+not be conflated with either.
 
 ---
 

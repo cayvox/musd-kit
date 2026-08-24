@@ -146,26 +146,39 @@ selected window.
 | # | Command | What must be reported |
 |---|---|---|
 | 1 | `pnpm test:unit`, with `MEZO_TESTNET_RPC_URL` unset and `anvil` off `PATH` | The pass count, and evidence the chain was genuinely absent |
-| 2 | `pnpm test:fork`, five consecutive runs | **All five results, in full.** Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
+| 2 | `pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
 | 3 | `pnpm test:coverage` | All four metrics against the ratchet. A metric below its floor is fixed with tests, never by lowering the floor |
 | 4 | `pnpm typecheck` | Clean |
 | 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
 | 6 | `pnpm lint` | Clean |
 | 7 | `pnpm build:site` | Clean, which includes `pnpm check:links` |
-| 8 | **Read the CI run.** `gh run list --branch <branch> --workflow CI` then `gh run view --job <id> --log` for every job that is not green | The run link, its conclusion, and the first real failure in any red job. Local green does not stand in for this |
+| 8 | **Read the CI run for the branch.** `gh run list --branch <branch> --workflow CI` then `gh run view --job <id> --log` for every job that is not green | The run link, its conclusion, and the first real failure in any red job. Local green does not stand in for this |
+| 9 | **Read the CI run on `main` after the merge.** `gh run list --branch main --workflow CI --limit 1` | The run link and its conclusion. **A red `main` blocks the next wave**: repair it first, and register the cause before fixing it |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
 `main` through step 5, which CI runs, so CI was red on a merged pull request and nobody
 noticed, because nobody ran the step locally and nothing asked them to (MK-027).
 
-Step 8 was added after the first version of this list, and the reason is worth keeping.
-This section was written the day before anyone read a CI run, and it did not survive contact
-with one: `main` had been red on five consecutive merges. Steps 1 through 7 would not have
-caught a single one of them, because the fork gate runs a Node that no local run used and the
-list had no line that pointed at CI at all (MK-029). A checklist that can be completed in full
-while the repository's own gate is red is not a checklist, and the fix is step 8, not a
-stronger adjective on the other seven.
+Steps 8 and 9, and the Node version requirement in step 2, were added after the first version
+of this list, and the reason is worth keeping. This section was written the day before anyone
+read a CI run, and it did not survive contact with one: `main` had been red on five
+consecutive merges. Steps 1 through 7 would not have caught a single one of them. A checklist
+that can be completed in full while the repository's own gate is red is not a checklist, and
+the fix is more lines, not a stronger adjective on the ones already there.
+
+Each of the three closes one specific absence that produced MK-029.
+
+- **Step 2's Node requirement** exists because local and CI evidence cannot be compared unless
+  they ran the same runtime. Five green local runs on Node 20.20.1 and four red fork gate runs
+  on 24.19.0 were all reporting honestly and were never in contradiction. Running the fork
+  suite on the version the gate declares is what turns "it passed here" into evidence about
+  the build rather than about a laptop.
+- **Step 8** exists because nothing pointed at CI at all. The PR 8 report even said in as many
+  words that CI had not been checked. Saying so is not the same as looking.
+- **Step 9** exists because a branch being green does not make `main` green, and because five
+  red merges accumulated with no rule anywhere that treated the second one as a reason to
+  stop. A red trunk is not a backlog item; it is the next wave.
 
 **Local green is evidence about your machine, not about the build.** The `Checks` jobs run a
 Node matrix; the fork gate runs the single Node its workflow declares, and that is not
