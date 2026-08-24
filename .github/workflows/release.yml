@@ -35,10 +35,14 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
+      # RUNTIME: declared here, NOT inherited from `.nvmrc`, so that a change to the
+      # development pin can never silently change the runtime that builds and signs a
+      # published artifact. Same version as the CI fork gate, deliberately: the gate that
+      # proves a release is the gate that must run on the release runtime (MK-029).
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version-file: .nvmrc
+          node-version: 24.19.0
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
 
@@ -89,10 +93,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # RUNTIME: declared here, NOT inherited from `.nvmrc`, so that a change to the
+      # development pin can never silently change the runtime that builds and signs a
+      # published artifact. Same version as the CI fork gate, deliberately: the gate that
+      # proves a release is the gate that must run on the release runtime (MK-029).
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version-file: .nvmrc
+          node-version: 24.19.0
           registry-url: 'https://registry.npmjs.org'
 
       - name: Resolve the published version

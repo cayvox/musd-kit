@@ -63,6 +63,8 @@ claim about it was not).
 | MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
 | MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
 | MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
+| MK-028 | The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`, which Node 24 rejects | S2 | fixed |
+| MK-029 | Local evidence and CI evidence were both true, because they ran different runtimes | S2 | fixed |
 
 ---
 
@@ -1041,6 +1043,181 @@ is cheap and specific: add the root configs and the two `tsup.config.ts` files t
 `docs` a tsconfig covering `.vitepress`, and either install `@astrojs/check` and run it in CI or
 remove the `check` script so it stops implying a gate that does not exist. This entry stays open
 until that is done.
+
+---
+
+## MK-028 · The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`
+
+**Class** S2, harness · **Status** fixed · **Found by us reading the first CI run anyone in this
+programme had looked at**
+
+**What happens.** The whole of `packages/react/test/hooks.fork.test.ts` fails at suite level, before
+a single assertion runs. All ten of its tests are reported skipped:
+
+```
+ FAIL |fork|  packages/react/test/hooks.fork.test.ts [ packages/react/test/hooks.fork.test.ts ]
+HttpRequestError: HTTP request failed.
+URL: http://127.0.0.1:39709
+Request body: {"method":"anvil_mine","params":["0x1","0x0"]}
+Details: RequestInit: Expected signal ("AbortSignal {}") to be an instance of AbortSignal.
+Caused by: TypeError: RequestInit: Expected signal ("AbortSignal {}") to be an instance of AbortSignal.
+ at Object.webidl.errors.exception node:internal/deps/undici/undici:4859:14
+ at Object.AbortSignal node:internal/deps/undici/undici:5118:31
+```
+
+`packages/react/test/phase9-app.fork.test.ts` is reported as passing but leaks the same error as an
+unhandled rejection on `eth_accounts` through the wagmi mock connector, so vitest also reports
+`Errors 1 error`. Both files, not one.
+
+**What it is NOT.** Not a test assertion, not a timeout, not the coverage gate, not an RPC problem,
+and not the fork cache. Coverage never ran at all: the failing job's log contains zero coverage
+output lines, because `vitest run --coverage` exits non zero before printing the table. The URL in
+the error is the local anvil endpoint, not an upstream one.
+
+**Mechanism, measured rather than assumed.** viem's HTTP transport builds
+`new Request(url, { signal })` from an `AbortController` it constructs itself
+(`viem/utils/rpc/http.ts:118`, reached from `clients/transports/http.ts:125`). jsdom supplies its
+own `AbortController` and `AbortSignal` but supplies neither `fetch` nor `Request`, and vitest's
+jsdom environment copies the jsdom window over `globalThis`. A test file therefore holds jsdom's
+signal and Node's `Request`. From Node 24 on, undici brand checks `RequestInit.signal` against its
+own class and throws.
+
+Probed directly, on Node 24, in this repository:
+
+| Environment | `String(globalThis.AbortSignal)` starts | `new Request(url, { signal })` |
+|---|---|---|
+| `node` | `class AbortSignal extends EventTarget` | ACCEPTED |
+| `jsdom` | `class AbortSignal extends globalObject.E` | REJECTED |
+
+The same probe on Node 20.20.1 and Node 22.23.1 under `jsdom` returns ACCEPTED, which is the entire
+reason this was never seen locally.
+
+**A wrong turn worth recording.** An earlier probe compared `globalThis.AbortSignal` with
+`global.AbortSignal` inside the jsdom environment, found them identical, and briefly concluded jsdom
+was not shadowing anything. That comparison proves nothing: inside the jsdom environment `global`
+and `globalThis` are the same jsdom window, so the test compared jsdom's class with itself. The
+question is whether it matches undici's class, and only building a `Request` answers it.
+
+**Why CI and never locally.** The fork gate takes its Node from `.nvmrc`
+(`.github/workflows/ci.yml:116`, `node-version-file: .nvmrc`). Commit `a22299f` changed `.nvmrc`
+from `20.18.1` to `24.19.0`. Every local run in this programme was on Node 20.20.1. See MK-029: the
+version split is the finding, this is only its first casualty.
+
+**Rate.** Not a flake. Four fork gate runs on `main` since that commit, four identical failures:
+runs `32633970784`, `32640501671`, `32648091286`, `32703530387`. Reproduced locally on Node 24 at
+the same pinned block, byte identical error. Zero failures on Node 20 and Node 22.
+
+**Blast radius.** No SDK source is wrong. A browser pairs its own `AbortSignal` with its own
+`fetch`, and a Node process pairs Node's with Node's; only the mixed pair a DOM test environment
+creates is broken. The cost was real anyway: the react hooks were unverified on every merge since
+`a22299f`, and the fork cache was never saved once, because the `actions/cache` post step is skipped
+when the job fails, so every run re-warmed from cold at 85 to 122 seconds.
+
+**Fix.** `packages/react/test/harness/jsdom-node-abort.ts`, a custom vitest environment that runs
+the built in jsdom environment and then puts Node's `AbortController` and `AbortSignal` back. It
+captures them at module load, which is before vitest populates the jsdom globals; reading them
+inside `setup` would read jsdom's and restore nothing. Wired through `environmentMatchGlobs` in
+`vitest.workspace.mts` for BOTH projects.
+
+**Pinned by** `packages/react/test/abort-signal.test.ts`, chain free and in the `unit` project, so
+it runs on all three matrix Nodes in the fast `Checks` jobs rather than only on the one Node the
+fork gate pins. Verified by mutation: pointing the glob back at plain `jsdom` makes it fail on Node
+24 with the exact error above and pass on Node 20 and 22.
+
+**Note for anyone adding a DOM test.** The `@vitest-environment` docblock cannot name this
+environment. Vitest 2 parses it with `/@(?:vitest|jest)-environment\s+([\w-]+)\b/`
+(`vitest/dist/chunks/resolveConfig.RxKrDli4.js:6558`), which cannot express a path, and a path
+written there is silently ignored: the file runs on the project default and nothing warns. Use
+`environmentMatchGlobs`.
+
+---
+
+## MK-029 · Local evidence and CI evidence were both true, because they ran different runtimes
+
+**Class** S2, process · **Status** fixed · **Found by us when asked to look at a CI run for the
+first time**
+
+**What it actually was, in one sentence.** Every wave's local acceptance and every CI run were both
+reporting honestly, and they never contradicted each other, because they were never running the
+same thing: the fork gate resolved its Node from `.nvmrc` while every local run used the Node the
+author happened to have. Five merges landed on a red trunk and nobody noticed, not because anyone
+overlooked a red X, but because nothing in the process ever put the two sources of evidence in the
+same room.
+
+That is the part worth carrying forward. A green local run was not a false claim. It was a true
+claim about a different system, presented as though it settled the question, and no rule required
+anyone to check whether it did.
+
+**What happens.** Two separate things that combine into one hole.
+
+1. **Nobody read CI.** The `CI` workflow on `main` has been red on every merge since
+   `2026-08-23T10:31`. Measured from the run list, oldest first:
+
+   | Run | Merge | Failing job | Cause |
+   |---|---|---|---|
+   | `32628458775` | PR 1 | none, green | the last green run on `main` |
+   | `32633970784` | PR 5 | Fork gate + coverage | MK-028 |
+   | `32640501671` | PR 4 | Fork gate + coverage | MK-028 |
+   | `32648091286` | PR 6 | Fork gate + coverage | MK-028 |
+   | `32657938617` | PR 7 | Checks, all three Nodes | MK-027, the broken example |
+   | `32703530387` | PR 8 | Fork gate + coverage | MK-028 |
+
+   Five consecutive red merges. Every wave reported acceptance as met on local evidence, and the
+   PR 8 report even said in as many words that CI had not been checked. Saying so is not the same
+   as looking.
+
+2. **The fork gate ran a Node that no local run used.** That job read
+   `node-version-file: .nvmrc`, and commit `a22299f`, a housekeeping change about the DEVELOPMENT
+   runtime, moved `.nvmrc` from `20.18.1` to `24.19.0`. Every local acceptance run in this
+   programme was on Node 20.20.1. So five green local runs and four red CI runs were true at the
+   same time and never in contradiction. Neither number was wrong. The pair was meaningless,
+   because a change to what a contributor develops on had quietly become a change to what CI
+   executes.
+
+**Why this is a finding and not a footnote.** The standing checklist added in
+`docs/08-conventions.md` §10 lists seven commands and does not list "read the CI run". It was
+written the day before this, specifically to stop a wave being called done on partial evidence, and
+it would not have caught any of the five. A checklist whose green means less than a reader assumes
+is exactly the failure MK-006 taught, one level up.
+
+**Consequence beyond the tests, now fixed.** Because the fork gate never reached its post step,
+the `actions/cache` save was skipped on all four runs, so `anvil-fork-31611-15043414` was never
+written once and every run paid a cold warm up of 85 to 122 seconds. That is self perpetuating: red
+job, no save, cold next run. `actions/cache` is now split into an `actions/cache/restore@v4` step
+before the tests and an `actions/cache/save@v4` step guarded by
+`if: always() && steps.anvil-fork-cache.outputs.cache-hit != 'true'` after them, so a failed run
+still keeps the state it fetched. `continue-on-error: true` on the save, because a cache problem
+must never be the reason a green run reports red.
+
+**Fixed, in three parts, one per cause.**
+
+1. **The coupling is gone.** No job in any workflow reads `node-version-file` any more. All three
+   that did (`ci.yml` `fork-gate`, `release.yml` `publish` and `verify-published`) declare
+   `node-version: 24.19.0` explicitly, with the reason in a comment beside each. The other two jobs
+   already declared their own and were checked, not assumed. The rule is stated in
+   `docs/08-conventions.md` §1: **CI runtime versions are declared in the workflow, never inherited
+   from the development pin.** `.nvmrc` still says 24.19.0, so nothing about CI moved; what changed
+   is that the next edit to `.nvmrc` cannot move it either.
+
+2. **The two evidence sources are required to meet.** `docs/08-conventions.md` §10 gains two rules
+   rather than two suggestions. Step 2 now requires the fork suite to be run locally on the Node
+   version the fork gate DECLARES, and to report that version. Step 9 requires the CI run on `main`
+   to be read after a merge, and makes a red trunk block the next wave. Those two are exactly the
+   absences that produced this finding: without the first, local and CI cannot be compared; without
+   the second, five red merges accumulate unremarked.
+
+3. **The failure surfaces sooner.** MK-028's pin runs in the `unit` project across the whole
+   `Checks` matrix, so a Node that breaks the react environment fails in a job of about 80 seconds
+   rather than only in the fork gate.
+
+**Deliberately NOT done, and why it is not "still open" here.** Whether the fork gate should be
+matrixed across 20, 22 and 24 rather than run on one declared version is a real question, and it is
+recorded in `docs/07-testing.md` §5 next to the falsified claim that motivated it. It is not part of
+this finding: MK-029 is about a silent coupling and an unenforced comparison, and both are closed.
+Matrixing is a scope decision about cost, and a decision that is not blocked on anything here.
+Separately, the note on GitHub's Node 20 ACTION runtime deprecation in the same section is a
+different subject entirely, about the runtime GitHub uses to execute a JavaScript action, and must
+not be conflated with either.
 
 ---
 

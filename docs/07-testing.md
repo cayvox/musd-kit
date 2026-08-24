@@ -168,10 +168,31 @@ cases:
   release, which that leg resolves to), and `.nvmrc` tracks the Active LTS: **`engines`
   states what we test, `.nvmrc` states what we develop on** (`08-conventions` §1). The fork
   gate and the coverage floor run once, on the `.nvmrc` toolchain, because that gate is
-  chain-bound rather than runtime-bound. For
+  chain-bound rather than runtime-bound. **That last clause has since been falsified and is
+  kept here so the correction is visible where the claim was made**: the fork gate broke on a
+  purely runtime-bound difference, jsdom's `AbortSignal` against Node 24's undici, and stayed
+  broken for four runs because the one Node it pins was not the Node anyone ran locally
+  (MK-028, MK-029). Whether that gate should be matrixed, or pinned to the lowest supported
+  Node rather than the newest, is an open decision. For
   `@musd-kit/react`, the pack smoke installs against the **verified peer floors**
   (`wagmi 2.5.12` / `viem 2.22.8` / `@tanstack/react-query 5.28.4` / `react 18.2.0`) to
   catch resolution drift before users hit it.
+- **A separate Node question, recorded and NOT acted on here.** Every CI run currently emits
+  this warning four times, verbatim:
+
+  > Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need
+  > to temporarily use Node 20, you can set the `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true`
+  > environment variable. For more information see
+  > `https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/`
+
+  Read it carefully, because it is easy to mistake for a statement about our matrix and it is
+  not one. It is about the Node runtime GitHub uses to execute a JavaScript **action**, and it
+  fires only on the actions still declaring `node20`: `pnpm/action-setup@v4` (twice, main and
+  post), `actions/cache@v4`, and `actions/upload-artifact@v4`. `actions/checkout@v5` and
+  `actions/setup-node@v5` do not warn. Nothing in the message concerns the Node versions our
+  code is tested against, and the runner is already forcing those actions onto Node 24
+  regardless. No action taken in this pull request, deliberately: the matrix question and the
+  action-version question are separate decisions and are worth taking separately.
 - **Gates wired to phases:** each build phase has a
   named test gate; CI does not let a phase's PR merge unless its gate is green.
 

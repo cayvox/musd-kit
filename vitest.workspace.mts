@@ -19,6 +19,12 @@ export default defineWorkspace([
       include: ['packages/**/test/**/*.test.ts'],
       exclude: [...configDefaults.exclude, '**/*.fork.test.ts'],
       environment: 'node',
+      // Except the @musd-kit/react tests, which need a DOM. `abort-signal.test.ts` pins
+      // MK-028 chain free, so it has to run under the same environment the fork tests use,
+      // on every Node in the matrix rather than only the one the fork gate pins.
+      environmentMatchGlobs: [
+        ['**/packages/react/test/**', './packages/react/test/harness/jsdom-node-abort.ts'],
+      ],
       testTimeout: 10_000,
     },
   },
@@ -34,7 +40,14 @@ export default defineWorkspace([
       pool: 'forks',
       // The @musd-kit/react hook tests need a DOM (React Testing Library); the core fork
       // tests stay on node. Everything still shares the one anvil fork via globalSetup.
-      environmentMatchGlobs: [['**/packages/react/test/**', 'jsdom']],
+      //
+      // Not plain `jsdom`: from Node 24 on, jsdom's AbortSignal paired with Node's Request
+      // makes every viem RPC call throw before a single assertion runs (MK-028). The custom
+      // environment is jsdom with Node's AbortController and AbortSignal left in place, and
+      // nothing else changed. See `./packages/react/test/harness/jsdom-node-abort.ts`.
+      environmentMatchGlobs: [
+        ['**/packages/react/test/**', './packages/react/test/harness/jsdom-node-abort.ts'],
+      ],
     },
   },
 ])
