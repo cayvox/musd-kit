@@ -62,6 +62,7 @@ claim about it was not).
 | MK-024 | Phase 6 normal mode liquidation intermittently crashes on a missing event | S3 | open |
 | MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
 | MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
+| MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
 
 ---
 
@@ -969,6 +970,77 @@ three attempts in the P3a wave.
 revert reason first, then measure whether the simulate to mine window is really the variable. Do
 not paper over it by disabling coverage in CI, which would trade a visible flake for an invisible
 gap.
+
+---
+
+## MK-027 · Source files sit outside every typecheck and lint configuration
+
+**Class** S3 · **Status** open, partially closed · **Found by us in the P3b wave, after it cost a
+false green and a broken example**
+
+**What was uncovered, and what it cost.** `packages/react/tsconfig.json` had
+`"include": ["src"]`, so the whole of `packages/react/test` was outside every typecheck
+configuration in the repository. This is not a one off oversight in a scratch directory: it is a
+PUBLISHED package whose tests nothing typechecked. It produced two consequences, both observed
+rather than hypothesised:
+
+1. **A false green on a rename.** The P3b wave renamed `RedeemResult.fee` (MK-014).
+   `pnpm typecheck` passed clean, because the only file still referencing the removed field was
+   `packages/react/test/hooks.fork.test.ts`. The suite then failed FIVE out of five fork runs on
+   that file. A rename that a compiler should have caught in a second cost five full fork runs to
+   discover, at roughly four minutes each.
+2. **A broken example reaching `main`.** `examples/open-and-manage/src/App.tsx:94` still read
+   `preview.meetsRecoveryRequirement`, removed in the P3a wave, so
+   `pnpm -r --filter "./examples/*" typecheck` FAILS on `main`. That is a step CI actually runs, so
+   CI on PR 7 would have been red. It reached `main` because nobody, including us, ran that step
+   locally and the acceptance criteria for that wave did not list it. That second half is addressed
+   separately by the standing checklist in `docs/08-conventions.md` §10.
+
+**What now covers it.** `packages/react/tsconfig.test.json` typechecks `src` and `test` together.
+It is a separate config rather than an edit to the package tsconfig because that one also drives
+the `tsup` build, and widening its `rootDir` would move the emitted layout. `packages/react`'s
+`typecheck` script runs both. Adding that config is what surfaced the broken example, which is the
+argument for it.
+
+**What the audit found still outside, measured not guessed.** Every typecheck configuration the
+repository runs was asked, with `tsc --listFilesOnly`, which files it actually visits, and the
+result diffed against `git ls-files '*.ts' '*.tsx' '*.mts'`. Of 76 tracked TypeScript files, EIGHT
+are visited by no configuration at all:
+
+| File | Why it is outside |
+|---|---|
+| `packages/core/test/phase9-keeper.fork.test.ts` | Explicitly excluded at `packages/core/tsconfig.json:9` |
+| `docs/.vitepress/config.ts` | `docs` has no `typecheck` script and no tsconfig covering it |
+| `docs/.vitepress/theme/index.ts` | Same |
+| `examples/open-and-manage/vite.config.ts` | The example tsconfig includes `src` only |
+| `packages/core/tsup.config.ts` | Build config, in no `include` |
+| `packages/react/tsup.config.ts` | Build config, in no `include` |
+| `vitest.config.mts` | Root config, in no `include` |
+| `vitest.workspace.mts` | Root config, in no `include` |
+
+The first row is the sharpest: a fork test is excluded BY NAME, so it has exactly the property that
+just cost five red runs, and it is the test that exercises the keeper example.
+
+**The landing site is outside both gates.** `landing/` carries 27 tracked source files and is
+listed in `biome.json`'s `files.ignore`, so none of them are linted. It has a `check` script,
+`astro check`, but nothing runs it: not CI, not `pnpm build:site`. It also cannot run as configured,
+because `@astrojs/check` is not installed; invoking it prompts to add the dependency. So the site
+that fronts the project is neither linted nor typechecked, and the command that would typecheck it
+is not installed.
+
+**Why this is S3 and not lower.** Nothing here is a wrong number for a user. But this class of gap
+produces exactly the failure the register exists to prevent: a green signal that means less than a
+reader assumes. Someone reading "typecheck: Done" reasonably concludes the TypeScript in this
+repository compiles. For eight files and an entire site, it does not say that.
+
+**Decision.** The hole that caused both observed consequences is closed. The eight files and the
+landing site are recorded here and NOT fixed in this wave, because closing them means touching build
+configuration and adding a dependency, which does not belong in a bookkeeping commit. Closing them
+is cheap and specific: add the root configs and the two `tsup.config.ts` files to
+`scripts/tsconfig.json`, drop the `phase9-keeper` exclusion and fix whatever it then reports, give
+`docs` a tsconfig covering `.vitepress`, and either install `@astrojs/check` and run it in CI or
+remove the `check` script so it stops implying a gate that does not exist. This entry stays open
+until that is done.
 
 ---
 
