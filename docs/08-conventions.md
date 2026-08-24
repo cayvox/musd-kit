@@ -148,11 +148,25 @@ selected window.
 | 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
 | 6 | `pnpm lint` | Clean |
 | 7 | `pnpm build:site` | Clean, which includes `pnpm check:links` |
+| 8 | **Read the CI run.** `gh run list --branch <branch> --workflow CI` then `gh run view --job <id> --log` for every job that is not green | The run link, its conclusion, and the first real failure in any red job. Local green does not stand in for this |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
 `main` through step 5, which CI runs, so CI was red on a merged pull request and nobody
 noticed, because nobody ran the step locally and nothing asked them to (MK-027).
+
+Step 8 was added after the first version of this list, and the reason is worth keeping.
+This section was written the day before anyone read a CI run, and it did not survive contact
+with one: `main` had been red on five consecutive merges. Steps 1 through 7 would not have
+caught a single one of them, because the fork gate runs a Node that no local run used and the
+list had no line that pointed at CI at all (MK-029). A checklist that can be completed in full
+while the repository's own gate is red is not a checklist, and the fix is step 8, not a
+stronger adjective on the other seven.
+
+**Local green is evidence about your machine, not about the build.** The `Checks` jobs run a
+Node matrix; the fork gate runs whichever single Node `.nvmrc` names, and that is not
+necessarily one you have. When local and CI disagree, the first question is which Node, which
+`environment`, and which cache state each of them used, not which one is lying (MK-028).
 
 **The pass rules.**
 
