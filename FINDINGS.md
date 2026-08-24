@@ -1166,10 +1166,14 @@ written the day before this, specifically to stop a wave being called done on pa
 it would not have caught any of the five. A checklist whose green means less than a reader assumes
 is exactly the failure MK-006 taught, one level up.
 
-**Consequence beyond the tests.** Because the fork gate never reached its post step, the
-`actions/cache` save at `.github/workflows/ci.yml:141` was skipped on all four runs, so
-`anvil-fork-31611-15043414` was never written and every run paid a cold warm up of 85 to 122
-seconds. That is self perpetuating: red job, no save, cold next run.
+**Consequence beyond the tests, now fixed.** Because the fork gate never reached its post step,
+the `actions/cache` save was skipped on all four runs, so `anvil-fork-31611-15043414` was never
+written once and every run paid a cold warm up of 85 to 122 seconds. That is self perpetuating: red
+job, no save, cold next run. `actions/cache` is now split into an `actions/cache/restore@v4` step
+before the tests and an `actions/cache/save@v4` step guarded by
+`if: always() && steps.anvil-fork-cache.outputs.cache-hit != 'true'` after them, so a failed run
+still keeps the state it fetched. `continue-on-error: true` on the save, because a cache problem
+must never be the reason a green run reports red.
 
 **Closed by this work.** The checklist gains a CI step, and MK-028's pin now runs in the `unit`
 project across the whole `Checks` matrix, so a Node that breaks the react environment fails in a

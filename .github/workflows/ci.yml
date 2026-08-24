@@ -137,8 +137,15 @@ jobs:
       # block and replayed at another is exactly the nondeterminism MK-020 removed. There
       # is deliberately NO `restore-keys` fallback here, because a prefix match would
       # restore a different block's entry.
-      - name: Cache anvil fork state (per pinned block)
-        uses: actions/cache@v4
+      #
+      # RESTORE AND SAVE ARE SEPARATE STEPS ON PURPOSE. `actions/cache` saves in a post step
+      # that GitHub skips when the job fails, so a red job threw away the state it had just
+      # spent 85 to 122 seconds fetching, and the next run started cold and re-fetched it.
+      # Four consecutive red runs never wrote this cache once (MK-029). A warm up is not the
+      # thing under test, so it should survive a failure.
+      - name: Restore anvil fork state (per pinned block)
+        id: anvil-fork-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.foundry/cache/rpc/31611/${{ env.MEZO_FORK_BLOCK }}
           key: anvil-fork-31611-${{ env.MEZO_FORK_BLOCK }}
@@ -149,6 +156,18 @@ jobs:
         run: pnpm test:coverage
         env:
           MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+
+      # `always()` is the whole point: save even when the tests failed. Skipped on a hit,
+      # because the key is exact and re-saving it would only log a collision. `continue-on-
+      # error` so a cache problem can never be the reason a green run is reported red, which
+      # would invert the signal this job exists to give.
+      - name: Save anvil fork state (per pinned block)
+        if: always() && steps.anvil-fork-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.foundry/cache/rpc/31611/${{ env.MEZO_FORK_BLOCK }}
+          key: anvil-fork-31611-${{ env.MEZO_FORK_BLOCK }}
 
       - name: Upload coverage report
         if: always()
