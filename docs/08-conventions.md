@@ -15,6 +15,10 @@ correctness.
   Node 24 is Active LTS, 22 is Maintenance LTS, and 20 reached end of life on 30 Apr 2026.
   Node 20 stays in the matrix because users are still on it; developing on it is a
   different question from supporting it, which is exactly what the two files separate.
+  **CI runtime versions are declared in the workflow, never inherited from the development
+  pin:** no job reads `node-version-file: .nvmrc`, because a change to the version a
+  contributor develops on must never silently change what CI executes. It did once, and the
+  fork gate stayed red for four runs on a Node no local run had used (MK-029).
 - **Package manager:** `pnpm` workspaces. Lockfile committed. (Matches the Mezo/wagmi
   ecosystem.)
 - **Language:** TypeScript, `strict: true` (and `noUncheckedIndexedAccess`,
@@ -164,7 +168,7 @@ while the repository's own gate is red is not a checklist, and the fix is step 8
 stronger adjective on the other seven.
 
 **Local green is evidence about your machine, not about the build.** The `Checks` jobs run a
-Node matrix; the fork gate runs whichever single Node `.nvmrc` names, and that is not
+Node matrix; the fork gate runs the single Node its workflow declares, and that is not
 necessarily one you have. When local and CI disagree, the first question is which Node, which
 `environment`, and which cache state each of them used, not which one is lying (MK-028).
 

@@ -37,6 +37,12 @@ jobs:
         with:
           version: 9.15.9
 
+      # RUNTIME: already declared here rather than read from `.nvmrc`, which is the rule
+      # (`docs/08-conventions.md` §1), so this job was not touched when the other four were
+      # decoupled. Two things about it are open and deliberately NOT changed in a repair:
+      # `20` is a floating major, and Node 20 reached end of life on 2026-04-30. This
+      # workflow is manual dispatch behind a typed confirmation and builds a static site, so
+      # neither is urgent; both are worth a deliberate decision rather than a drive by bump.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
