@@ -1,4 +1,4 @@
-import type { BorrowPreview, BorrowingCapacity, Trove } from '@musd-kit/core'
+import type { BorrowPreview, BorrowingCapacity, RefinancePreview, Trove } from '@musd-kit/core'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { Address } from 'viem'
 import { useChainId } from 'wagmi'
@@ -101,6 +101,25 @@ export function useBorrowingCapacity({
   return useMusdQuery<BorrowingCapacity>({
     queryKey: musdQueryKeys.borrowingCapacity(chainId, owner ?? '0x'),
     fetch: (client) => client.getBorrowingCapacity(owner as Address),
+    enabled: owner !== undefined,
+  })
+}
+
+/**
+ * Preview refinancing an existing Trove (core `previewRefinance`, MK-003 and MK-019): the
+ * fee the contract will charge and capitalize, the resulting principal and ICR, and a
+ * verdict that is false when the contract would refuse.
+ *
+ * Refinancing is NOT free and it is NOT always available: the fee is added to principal, and
+ * the operation reverts outright while the system is in Recovery Mode. Both show up here.
+ */
+export function useRefinancePreview({
+  owner,
+}: { owner: Address | undefined }): UseQueryResult<RefinancePreview, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<RefinancePreview>({
+    queryKey: musdQueryKeys.refinancePreview(chainId, owner ?? '0x'),
+    fetch: (client) => client.previewRefinance(owner as Address),
     enabled: owner !== undefined,
   })
 }

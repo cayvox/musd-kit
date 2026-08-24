@@ -91,7 +91,10 @@ function OpenCard() {
   const { data: preview } = usePreviewOpen(collateral, draw)
   const { openTrove, isPending, error, hash } = useOpenTrove()
 
-  const canOpen = Boolean(preview?.meetsMinimum && preview?.meetsRecoveryRequirement && !isPending)
+  // `viable` replaced `meetsRecoveryRequirement` (MK-005) and already covers the debt floor,
+  // the mode correct ICR threshold and the projected system TCR, so it subsumes both of the
+  // flags this used to combine.
+  const canOpen = Boolean(preview?.viable && !isPending)
 
   return (
     <Card title="Open a Trove">

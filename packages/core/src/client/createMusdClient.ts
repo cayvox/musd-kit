@@ -26,6 +26,7 @@ import {
   type OpenPreview,
   type PreviewBorrowParams,
   type PreviewOpenParams,
+  type RefinancePreview,
   computeEntireDebt,
   computeICR,
   computeLiquidationPrice,
@@ -34,6 +35,7 @@ import {
   getHealthFactor,
   previewBorrow,
   previewOpen,
+  previewRefinance,
 } from '../math'
 import {
   type ReadDeps,
@@ -152,6 +154,11 @@ export interface MusdClient {
    * which is an open time calculator.
    */
   previewBorrow(params: PreviewBorrowParams): Promise<BorrowPreview>
+  /**
+   * Preview refinancing (MK-003, MK-019): the fee, the resulting principal and ICR, and a
+   * verdict that is false when the contract would refuse, Recovery Mode included.
+   */
+  previewRefinance(owner: Address): Promise<RefinancePreview>
   /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
   getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
   /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
@@ -279,6 +286,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     computeEntireDebt,
     previewOpen: (params) => previewOpen(mathDeps, params),
     previewBorrow: (params) => previewBorrow(mathDeps, params),
+    previewRefinance: (owner) => previewRefinance(mathDeps, owner),
     getBorrowingCapacity: (owner) => getBorrowingCapacity(mathDeps, owner),
     getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
     openTrove: (params) => openTrove(writeDeps, params),

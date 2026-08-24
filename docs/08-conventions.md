@@ -130,3 +130,40 @@ launch. "MUSD" is Mezo's asset, so the README must frame the package explicitly 
 unofficial community tooling to avoid implying endorsement. Candidate alternates if
 the check fails: `musd-sdk`, `use-musd`, `trovekit`, `mezofi-kit`. The npm scope and
 identifiers track whatever survives the check.
+
+---
+
+## 10. The wave checklist (standing, not advice)
+
+A wave is not done until every line below has been **run and reported**. Reported means the
+actual output, in the pull request body. "It passed" is not a report, and neither is a
+selected window.
+
+| # | Command | What must be reported |
+|---|---|---|
+| 1 | `pnpm test:unit`, with `MEZO_TESTNET_RPC_URL` unset and `anvil` off `PATH` | The pass count, and evidence the chain was genuinely absent |
+| 2 | `pnpm test:fork`, five consecutive runs | **All five results, in full.** Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
+| 3 | `pnpm test:coverage` | All four metrics against the ratchet. A metric below its floor is fixed with tests, never by lowering the floor |
+| 4 | `pnpm typecheck` | Clean |
+| 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
+| 6 | `pnpm lint` | Clean |
+| 7 | `pnpm build:site` | Clean, which includes `pnpm check:links` |
+
+**Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
+and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
+`main` through step 5, which CI runs, so CI was red on a merged pull request and nobody
+noticed, because nobody ran the step locally and nothing asked them to (MK-027).
+
+**The pass rules.**
+
+- **Report the whole window, never the best one.** Five runs with one red is a five run
+  window with one red. Quoting the four green ones misrepresents the suite's reliability, and
+  the reliability is itself a tracked finding (MK-016, MK-022 through MK-026).
+- **Attribute every failure before calling it a flake.** A consistent failure is a
+  regression, not noise: five out of five identical failures is the signal that something
+  landed broken. If a failure does not match an existing finding, it gets its own ID, because
+  a flake without an entry is indistinguishable from a regression when it reappears.
+- **Coverage floors only ever move up.** They are a ratchet.
+- **A green signal must mean what a reader will assume it means.** If a gate does not cover
+  something, say so where the gate is claimed, rather than letting the word "clean" carry more
+  than it earned.

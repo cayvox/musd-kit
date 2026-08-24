@@ -236,7 +236,7 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
     )
   }, 120_000)
 
-  it('useRedeem sends and returns { hash, truncatedAmount, fee }', async () => {
+  it('useRedeem sends and returns { hash, truncatedAmount, redemptionRate, fee amount }', async () => {
     // Same razor-edge handling as the Phase-6 redemption gate: redeem at a +50% price (so the
     // lowest redeemable Trove has comfortable margin), warm the slow getRedemptionHints
     // traversal at that price, and refresh the oracle immediately before the redeem so it
@@ -264,7 +264,10 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
       )
       expect(result.current.redeem.hash).toMatch(/^0x/)
       expect(result.current.redeem.data?.truncatedAmount).toBeGreaterThan(0n)
-      expect(result.current.redeem.data?.fee).toBeGreaterThan(0n)
+      // MK-014: `fee` is gone. The rate and the fee AMOUNT are separate, named fields.
+      expect(result.current.redeem.data?.redemptionRate).toBeGreaterThan(0n)
+      expect(result.current.redeem.data?.estimatedFeeCollateral).toBeGreaterThan(0n)
+      expect(result.current.redeem.data?.estimatedCollateralDrawn).toBeGreaterThan(0n)
     } finally {
       await fork.setPrice(orig)
       await fork.refreshOracle()

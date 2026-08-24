@@ -82,6 +82,7 @@ import {
   priceFeedAbi,
   troveManagerAbi,
 } from '../src'
+import { principalReductionForRepay } from '../src/trove'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
@@ -105,10 +106,20 @@ async function accrueInterest(seconds = 3): Promise<void> {
 }
 
 /**
- * `it.fails` by default, see the header. `MUSD_FINDINGS_RAW=1` runs them as ordinary
- * tests so the raw assertion output can be read; it never skips anything either way.
+ * NOTHING IN THIS FILE IS PINNED ANY MORE, as of the P3b wave.
+ *
+ * Every finding this file was written to pin has been fixed, so the `pins` helper that
+ * wrapped each body in `it.fails` has nothing left to wrap and is removed rather than left
+ * as dead code. No test was deleted: each one became an ordinary passing assertion in the
+ * same commit as its fix, and together they are now the regression suite for MK-001 through
+ * MK-006, MK-014, MK-018 and MK-019.
+ *
+ * To pin a new finding, restore one line and wrap the failing body with it:
+ *
+ *   const pins = process.env.MUSD_FINDINGS_RAW ? it : it.fails
+ *
+ * The mechanism and why it is preferred over a skip flag are documented in the header above.
  */
-const pins = process.env.MUSD_FINDINGS_RAW ? it : it.fails
 
 function clientFor(account: PrivateKeyAccount) {
   const fork = connectFork()
@@ -335,57 +346,76 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 240_000)
 
   // ---------------------------------------------------------------- MK-003 ----
-  pins(
-    'MK-003: the refinancing fee is charged on chain and modeled nowhere in the SDK',
-    async () => {
-      const borrower = testAccount(2004)
-      await openAtIcr(borrower, 2_400_000_000_000_000_000n)
-      const client = clientFor(borrower)
+  it('MK-003 (fixed): previewRefinance reports the fee the contract actually charges', async () => {
+    const borrower = testAccount(2004)
+    await openAtIcr(borrower, 2_400_000_000_000_000_000n)
+    const client = clientFor(borrower)
 
-      // Compute the fee the contract WILL charge, independently, from the formula at
-      // BorrowerOperations.sol:1033-1036 and the live governable percentage.
-      const percentage = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'refinancingFeePercentage',
-      })
-      const debtBefore = await troveDebt(borrower.address)
-      const netDebtBefore = debtBefore - MUSD_GAS_COMPENSATION
-      const feeBase = (BigInt(percentage) * netDebtBefore) / 100n
-      const expectedFee = await client.getBorrowingFee(feeBase)
-      expect(
-        expectedFee,
-        'fixture: the refinancing fee must be non zero to be worth pinning',
-      ).toBeGreaterThan(0n)
+    // Compute the fee the contract WILL charge, independently, from the formula at
+    // BorrowerOperations.sol:1033-1036 and the live governable percentage.
+    const percentage = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'refinancingFeePercentage',
+    })
+    const debtBefore = await troveDebt(borrower.address)
+    const netDebtBefore = debtBefore - MUSD_GAS_COMPENSATION
+    const feeBase = (BigInt(percentage) * netDebtBefore) / 100n
+    const expectedFee = await client.getBorrowingFee(feeBase)
+    expect(
+      expectedFee,
+      'fixture: the refinancing fee must be non zero to be worth pinning',
+    ).toBeGreaterThan(0n)
 
-      await wait((await client.refinance()).hash)
+    // The preview, taken BEFORE the write, must name the same fee and the same resulting
+    // principal the contract then produces.
+    const preview = await client.previewRefinance(borrower.address)
+    expect(preview.viable, 'fixture: a normal mode refinance must be viable').toBe(true)
+    expect(preview.reasons).toEqual([])
+    expect(
+      preview.refinancingFeePercentage,
+      'the percentage must be READ from the chain, not hardcoded',
+    ).toBe(Number(percentage))
+    expect(preview.fee, 'MK-003: the previewed fee must equal the contract formula').toBe(
+      expectedFee,
+    )
+    const principalBefore = (await entireDebtAndColl(borrower.address))[1]
+    expect(preview.resultingPrincipal, 'MK-003: the fee is capitalized into principal').toBe(
+      principalBefore + expectedFee,
+    )
 
-      const debtAfter = await troveDebt(borrower.address)
-      expect(
-        debtAfter - debtBefore,
-        'fixture: the contract must have capitalized at least the computed fee',
-      ).toBeGreaterThanOrEqual(expectedFee)
+    await wait((await client.refinance()).hash)
 
-      // THE FINDING. The SDK never reads `refinancingFeePercentage` and offers no way to
-      // learn the fee before signing, so a caller cannot know their debt is about to grow.
-      expect(
-        typeof (client as unknown as Record<string, unknown>).previewRefinance,
-        'MK-003: the SDK must expose the refinancing fee before the write, e.g. previewRefinance',
-      ).toBe('function')
-    },
-    240_000,
-  )
+    const debtAfter = await troveDebt(borrower.address)
+    expect(
+      debtAfter - debtBefore,
+      'fixture: the contract must have capitalized at least the computed fee',
+    ).toBeGreaterThanOrEqual(expectedFee)
+
+    // And the hint the SDK placed by describes the position that NOW exists: the sort key
+    // includes the capitalized fee.
+    const [collAfter, principalAfter] = await entireDebtAndColl(borrower.address)
+    expect(
+      reader().computeNICR({ collateral: collAfter, entireDebt: principalAfter }),
+      'MK-003: the post-refinance sort key must match what the SDK computed hints from',
+    ).toBe(await nominalICR(borrower.address))
+
+    // FIXED. The preview reports the fee, and the numbers match the contract's own.
+    expect(
+      typeof (client as unknown as Record<string, unknown>).previewRefinance,
+      'MK-003: the SDK must expose the refinancing fee before the write',
+    ).toBe('function')
+  }, 240_000)
 
   // ---------------------------------------------------------------- MK-019 ----
   /**
-   * Deliberately NOT a `pins` test. It was written as one, asserting that the Recovery Mode
-   * restriction surfaces as the typed error, and it PASSED: the SDK already does that,
-   * because simulate precedes send and `mapRevert` recognises the revert. The gap MK-019
-   * still names, no up front mode check and no mention in the docstring, is not expressible
-   * as a runtime assertion distinct from MK-003's missing preview. Recorded here as
-   * verified behavior rather than dressed up as a failure.
+   * MK-019 closes here. It was never a safety gap: simulate before send already surfaced the
+   * revert as a typed `RECOVERY_MODE_RESTRICTION`, which this test asserted and which still
+   * holds. What was missing was that the restriction could not be learned WITHOUT sending,
+   * and was documented nowhere. `previewRefinance` and the `refinance()` docstring close
+   * both, so the test now asserts the preview as well as the typed error.
    */
-  it('MK-019 (verified correct today): refinance in Recovery Mode surfaces the typed error', async () => {
+  it('MK-019 (fixed): refinance in Recovery Mode is previewable AND typed', async () => {
     const fork = connectFork()
     const borrower = testAccount(2005)
     const original = await livePrice()
@@ -411,14 +441,21 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       }
       expect(caught, 'fixture: refinance must revert in Recovery Mode').toBeDefined()
 
-      // VERIFIED, not pinned: the restriction DOES reach the caller as a typed error, so
-      // a caller can branch on it. What MK-019 still names is the absence of an up front
-      // mode check and of any mention in the `refinance()` docstring, neither of which a
-      // runtime assertion can distinguish from MK-003's missing preview.
+      // The typed error already reached the caller before this wave, and still does.
       expect(
         (caught as { code?: string }).code,
         'MK-019: the Recovery Mode restriction reaches the caller as a typed error',
       ).toBe('RECOVERY_MODE_RESTRICTION')
+
+      // FIXED. What was missing is now present: the restriction is PREVIEWABLE, so a caller
+      // can learn it without sending anything and paying for a failed simulate.
+      const preview = await client.previewRefinance(borrower.address)
+      expect(preview.viable, 'MK-019: a Recovery Mode refinance must not be viable').toBe(false)
+      expect(preview.reasons).toContain('RECOVERY_MODE')
+      expect(
+        preview.bindingConstraint,
+        'MK-019: Recovery Mode is the contract FIRST requirement, so it binds first',
+      ).toBe('RECOVERY_MODE')
     } finally {
       await fork.setPrice(original)
       await fork.refreshOracle()
@@ -540,155 +577,204 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 240_000)
 
   // ---------------------------------------------------------------- MK-006 ----
-  pins(
-    'MK-006: the SDK hint NICR uses entire debt where the contract uses principal',
-    async () => {
-      const borrower = testAccount(2009)
-      const { collateral } = await openAtIcr(borrower, 2_400_000_000_000_000_000n)
+  it('MK-006 (fixed): the SDK hint basis equals the contract sort key, which excludes interest', async () => {
+    const borrower = testAccount(2009)
+    const { collateral } = await openAtIcr(borrower, 2_400_000_000_000_000_000n)
 
+    await accrueInterest()
+    const [, principal, interest] = await entireDebtAndColl(borrower.address)
+    expect(interest, 'fixture: some interest must be owed').toBeGreaterThan(0n)
+
+    const contractNicr = await nominalICR(borrower.address)
+    const expectedFromPrincipal = (collateral * 100n * 10n ** 18n) / principal
+    expect(
+      contractNicr,
+      'fixture: the contract nominal ICR must be principal based (TroveManager.sol:566-577)',
+    ).toBe(expectedFromPrincipal)
+
+    // FIXED. `hintsFor` is now fed PRINCIPAL, so the NICR the SDK places by is the NICR the
+    // contract sorts by. Every on-chain re-insert passes `_computeNominalCR(coll, principal)`:
+    // BorrowerOperations.sol:902-906, :1087-1088, and TroveManager.sol:1287-1290.
+    expect(
+      reader().computeNICR({ collateral, entireDebt: principal }),
+      'MK-006: the hint NICR must equal the contract nominal ICR',
+    ).toBe(contractNicr)
+
+    // And the distinction is real on this fixture, not a coincidence: the old basis differs.
+    expect(
+      reader().computeNICR({ collateral, entireDebt: principal + interest }),
+      'the entire-debt basis must NOT equal the sort key, or this test proves nothing',
+    ).not.toBe(contractNicr)
+  }, 240_000)
+
+  it('MK-006 (fixed): the repay projection mirrors the contract split at, below and above interest owed', async () => {
+    // Three payment sizes against the SAME boundary the contract branches on,
+    // `payment >= interestOwed` (InterestRateMath.sol:41-47): strictly below, exactly
+    // equal, and strictly above. Each is compared against the CONTRACT's actual principal
+    // after the repay, never against the SDK's own earlier output.
+    const cases = [
+      { label: 'below interest owed', account: testAccount(2010), size: 'below' as const },
+      { label: 'exactly interest owed', account: testAccount(2017), size: 'equal' as const },
+      { label: 'above interest owed', account: testAccount(2018), size: 'above' as const },
+    ]
+
+    for (const { label, account, size } of cases) {
+      await openAtIcr(account, 2_400_000_000_000_000_000n)
+      const client = clientFor(account)
       await accrueInterest()
-      const [, principal, interest] = await entireDebtAndColl(borrower.address)
-      expect(interest, 'fixture: some interest must be owed').toBeGreaterThan(0n)
 
-      const contractNicr = await nominalICR(borrower.address)
-      const expectedFromPrincipal = (collateral * 100n * 10n ** 18n) / principal
-      expect(
-        contractNicr,
-        'fixture: the contract nominal ICR must be principal based (TroveManager.sol:566-577)',
-      ).toBe(expectedFromPrincipal)
+      const [collBefore, principalBefore, interestBefore] = await entireDebtAndColl(account.address)
+      expect(interestBefore, `${label}: fixture, some interest must be owed`).toBeGreaterThan(0n)
 
-      // THE FINDING. `trove/index.ts` feeds `hintsFor` the ENTIRE debt, so the NICR it uses
-      // for placement is not the NICR the contract sorts by.
-      const sdkNicr = reader().computeNICR({ collateral, entireDebt: principal + interest })
-      expect(
-        sdkNicr,
-        'MK-006: the hint NICR must equal the contract nominal ICR, which excludes interest',
-      ).toBe(contractNicr)
-    },
-    240_000,
-  )
+      const payment =
+        size === 'below'
+          ? interestBefore / 2n
+          : size === 'equal'
+            ? interestBefore
+            : interestBefore + 50n * MUSD
 
-  pins(
-    'MK-006: a repay below interest owed moves principal by zero',
-    async () => {
-      const borrower = testAccount(2010)
-      await openAtIcr(borrower, 2_400_000_000_000_000_000n)
-      const client = clientFor(borrower)
-
-      await accrueInterest()
-      const [, principalBefore, interestBefore] = await entireDebtAndColl(borrower.address)
-      expect(interestBefore, 'fixture: some interest must be owed').toBeGreaterThan(0n)
-
-      const [collBefore] = await entireDebtAndColl(borrower.address)
-      const entireDebtBefore = principalBefore + interestBefore
-      const payment = interestBefore / 2n
-      expect(payment, 'fixture: the payment must be strictly below interest owed').toBeLessThan(
-        interestBefore,
-      )
-      expect(payment, 'fixture: the payment must be non zero').toBeGreaterThan(0n)
+      // The SDK's projection, from the exported helper the write paths use.
+      const projectedPrincipal =
+        principalBefore - principalReductionForRepay(interestBefore, payment)
 
       await wait((await client.repay({ amount: payment })).hash)
+      const [collAfter, principalAfter] = await entireDebtAndColl(account.address)
 
-      const [, principalAfter] = await entireDebtAndColl(borrower.address)
-      // `calculateDebtAdjustment` applies the payment to interest first
-      // (InterestRateMath.sol:33-48), so principal cannot fall.
-      expect(
-        principalAfter,
-        'fixture: principal must not fall for a payment below interest owed',
-      ).toBeGreaterThanOrEqual(principalBefore)
-      const contractNicrAfter = await nominalICR(borrower.address)
+      // Interest keeps accruing between the read and the mine, so the contract's actual
+      // principal can only be LOWER than or equal to the projection when more interest had
+      // accrued by mine time, never higher: principal falls by `payment - interestOwed` and
+      // interestOwed only grows. Assert the direction and the exact zero case.
+      if (size === 'below' || size === 'equal') {
+        expect(
+          principalAfter,
+          `${label}: principal must not move (InterestRateMath.sol:41-47)`,
+        ).toBe(principalBefore)
+        expect(projectedPrincipal, `${label}: the SDK must project no principal change`).toBe(
+          principalBefore,
+        )
+      } else {
+        expect(principalAfter, `${label}: principal must fall`).toBeLessThan(principalBefore)
+        // Direction DERIVED, not guessed: the first version of this assertion had it
+        // backwards and the fork caught it on a later run.
+        //   principalAfter = principalBefore - (payment - interestOwedAtMine)
+        //   projected      = principalBefore - (payment - interestOwedAtRead)
+        //   principalAfter - projected = interestOwedAtMine - interestOwedAtRead >= 0
+        // because interest only accrues between the read and the mine. So the contract's
+        // principal is at or ABOVE the projection, and the gap is that accrual.
+        expect(
+          principalAfter,
+          `${label}: the contract principal must be at or above the projection`,
+        ).toBeGreaterThanOrEqual(projectedPrincipal)
+        expect(
+          principalAfter - projectedPrincipal,
+          `${label}: the read-to-mine gap must be bounded by the payment, or the split is wrong`,
+        ).toBeLessThan(payment)
+      }
 
-      // THE FINDING. `repay` models debt as falling by the full payment and feeds that entire
-      // debt to the hint, so the placement it computes is for a position that does not exist.
-      // The contract's sort key is principal based and barely moved.
-      const sdkProjectedNicr = reader().computeNICR({
-        collateral: collBefore,
-        entireDebt: entireDebtBefore - payment,
-      })
+      // The hint the SDK would place by must be the contract's post-repay sort key.
+      expect(collAfter, `${label}: collateral must not move on a repay`).toBe(collBefore)
       expect(
-        sdkProjectedNicr,
-        'MK-006: the NICR the SDK computes after a sub-interest repay must equal the contract sort key',
-      ).toBe(contractNicrAfter)
-    },
-    240_000,
-  )
+        reader().computeNICR({ collateral: collAfter, entireDebt: principalAfter }),
+        `${label}: MK-006, the SDK hint basis must equal the contract sort key after the repay`,
+      ).toBe(await nominalICR(account.address))
+    }
+  }, 420_000)
 
   // ---------------------------------------------------------------- MK-014 ----
-  pins(
-    'MK-014: redeem returns the RATE in a field named fee',
-    async () => {
-      const fork = connectFork()
-      const original = await livePrice()
-      const redeemer = testAccount(2011)
-      // Open a Trove to obtain MUSD to redeem with.
-      await openAtIcr(redeemer, 3_000_000_000_000_000_000n, 3_000n * MUSD)
-      const client = clientFor(redeemer)
+  it('MK-014 (fixed): the redemption result names its units, rate and amount separately', async () => {
+    const fork = connectFork()
+    const original = await livePrice()
+    const redeemer = testAccount(2011)
+    // Open a Trove to obtain MUSD to redeem with.
+    await openAtIcr(redeemer, 3_000_000_000_000_000_000n, 3_000n * MUSD)
+    const client = clientFor(redeemer)
 
-      // The two getters, from BorrowerOperations.sol. `redemptionRate()` is the rate
-      // (:129, :151); `getRedemptionRate(collateralDrawn)` is a fee AMOUNT (:499-509).
-      const rate = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'redemptionRate',
-      })
-      const amountForOneBtc = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'getRedemptionRate',
-        args: [BTC],
-      })
-      const amountForTenthBtc = await connectFork().publicClient.readContract({
-        address: T.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'getRedemptionRate',
-        args: [BTC / 10n],
-      })
-      expect(amountForOneBtc, 'fixture: at one BTC the amount coincides with the rate').toBe(rate)
-      expect(
-        amountForTenthBtc,
-        'fixture: away from one BTC the amount and the rate differ',
-      ).not.toBe(rate)
+    // The two getters, from BorrowerOperations.sol. `redemptionRate()` is the rate
+    // (:129, :151); `getRedemptionRate(collateralDrawn)` is a fee AMOUNT (:499-509).
+    const rate = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'redemptionRate',
+    })
+    const amountForOneBtc = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'getRedemptionRate',
+      args: [BTC],
+    })
+    const amountForTenthBtc = await connectFork().publicClient.readContract({
+      address: T.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'getRedemptionRate',
+      args: [BTC / 10n],
+    })
+    expect(amountForOneBtc, 'fixture: at one BTC the amount coincides with the rate').toBe(rate)
+    expect(amountForTenthBtc, 'fixture: away from one BTC the amount and the rate differ').not.toBe(
+      rate,
+    )
 
-      // Redeem at a raised price so the lowest redeemable Trove keeps comfortable margin
-      // above MCR; otherwise `redeemCollateral` reverts with "Unable to redeem any amount"
-      // and the assertion is never reached. The redemption fee is a price INDEPENDENT
-      // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate this
-      // test compares against is unaffected by the shim. Restored in `finally`.
-      try {
-        // Redeem at a doubled price so the lowest redeemable Trove keeps a wide margin over
-        // MCR, and refresh-and-retry exactly as `phase6.fork.test.ts` does: a cold
-        // `getRedemptionHints` traversal is slow enough that the oracle can go stale before
-        // `redeemCollateral` mines. That mitigation is reused here, not invented, and no
-        // existing mitigation is removed. The redemption fee is a price INDEPENDENT
-        // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate
-        // this test compares against is unaffected by the shim.
-        await fork.setPrice(original * 2n)
-        let result: Awaited<ReturnType<typeof client.redeem>> | undefined
-        let lastError: unknown
-        for (let attempt = 0; attempt < 4 && !result; attempt++) {
-          await fork.refreshOracle()
-          try {
-            result = await client.redeem({ amount: 100n * MUSD })
-          } catch (error) {
-            lastError = error
-          }
-        }
-        expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
-        if (!result) throw new Error('unreachable')
-        await wait(result.hash)
-
-        // THE FINDING. The field named `fee` carries the rate verbatim, not an amount of
-        // BTC. This fails the moment the field is renamed or its content corrected.
-        expect(result.fee, 'MK-014: a field named fee must not be the raw redemptionRate').not.toBe(
-          rate,
-        )
-      } finally {
-        await fork.setPrice(original)
+    // Redeem at a raised price so the lowest redeemable Trove keeps comfortable margin
+    // above MCR; otherwise `redeemCollateral` reverts with "Unable to redeem any amount"
+    // and the assertion is never reached. The redemption fee is a price INDEPENDENT
+    // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate this
+    // test compares against is unaffected by the shim. Restored in `finally`.
+    try {
+      // Redeem at a doubled price so the lowest redeemable Trove keeps a wide margin over
+      // MCR, and refresh-and-retry exactly as `phase6.fork.test.ts` does: a cold
+      // `getRedemptionHints` traversal is slow enough that the oracle can go stale before
+      // `redeemCollateral` mines. That mitigation is reused here, not invented, and no
+      // existing mitigation is removed. The redemption fee is a price INDEPENDENT
+      // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate
+      // this test compares against is unaffected by the shim.
+      await fork.setPrice(original * 2n)
+      let result: Awaited<ReturnType<typeof client.redeem>> | undefined
+      let lastError: unknown
+      for (let attempt = 0; attempt < 4 && !result; attempt++) {
         await fork.refreshOracle()
+        try {
+          result = await client.redeem({ amount: 100n * MUSD })
+        } catch (error) {
+          lastError = error
+        }
       }
-    },
-    300_000,
-  )
+      expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
+      if (!result) throw new Error('unreachable')
+      await wait(result.hash)
+
+      // FIXED. There is no field named `fee` any more. The rate is named as a rate, and
+      // the fee AMOUNT is returned separately, in BTC wei, alongside the collateral it was
+      // estimated against.
+      expect(
+        (result as unknown as Record<string, unknown>).fee,
+        'MK-014: the ambiguous `fee` field must be gone',
+      ).toBeUndefined()
+      expect(
+        result.redemptionRate,
+        'MK-014: the rate field carries the rate, and is named for it',
+      ).toBe(rate)
+
+      // The amount is a genuinely different number from the rate, computed by the contract
+      // from the collateral drawn (BorrowerOperations.sol:499-508), not a relabelling.
+      expect(result.estimatedCollateralDrawn).toBeGreaterThan(0n)
+      const expectedAmount = await connectFork().publicClient.readContract({
+        address: T.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'getRedemptionRate',
+        args: [result.estimatedCollateralDrawn],
+      })
+      expect(
+        result.estimatedFeeCollateral,
+        'MK-014: the fee amount must come from getRedemptionRate(collateralDrawn)',
+      ).toBe(expectedAmount)
+      expect(
+        result.estimatedFeeCollateral,
+        'MK-014: at this size the amount and the rate must not coincide',
+      ).not.toBe(result.redemptionRate)
+    } finally {
+      await fork.setPrice(original)
+      await fork.refreshOracle()
+    }
+  }, 300_000)
 
   // ---------------------------------------------------------------- MK-018 ----
   it('MK-018 (fixed): previewOpen waives the fee for a fee exempt account', async () => {

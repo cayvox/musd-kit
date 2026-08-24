@@ -41,7 +41,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@musd-kit/core": "workspace:*"

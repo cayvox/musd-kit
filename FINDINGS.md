@@ -38,10 +38,10 @@ claim about it was not).
 |---|---|---|---|
 | MK-001 | `isLiquidatable` applies a Recovery Mode rule the protocol does not have | S1 | fixed |
 | MK-002 | `maxBorrowingCapacity` is not modeled anywhere in the SDK | S1 | fixed |
-| MK-003 | Refinancing fee is not modeled | S1 | test-written |
+| MK-003 | Refinancing fee is not modeled | S1 | fixed |
 | MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | fixed |
 | MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
-| MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | test-written |
+| MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | fixed |
 | MK-007 | `claim()` swallows every error | S2 | open |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
 | MK-009 | Address overrides accept any string | S2 | open |
@@ -49,12 +49,12 @@ claim about it was not).
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | open |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
-| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | test-written |
+| MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
 | MK-017 | Duplicated derivations and placeholder values | S3 | open |
 | MK-018 | Fee exemption is not modeled | S1 | fixed |
-| MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | open |
+| MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | fixed |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
 | MK-021 | Phase 3 warm up hook exceeds its fixed budget on a cold fork, skipping the whole file | S3 | fixed |
 | MK-022 | `batchLiquidate` phase 6 test intermittently leaves one Trove unliquidated | S3 | open |
@@ -62,6 +62,7 @@ claim about it was not).
 | MK-024 | Phase 6 normal mode liquidation intermittently crashes on a missing event | S3 | open |
 | MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
 | MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
+| MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
 
 ---
 
@@ -171,7 +172,7 @@ pointed at it afterwards.
 
 ## MK-003 · Refinancing fee is not modeled
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth.** On refinance the contract charges
 `fee = borrowingRate applied to (refinancingFeePercentage / 100) * (getTroveDebt - 200e18)`, adds it
@@ -192,6 +193,15 @@ the fee, and the hint is computed for a position that will not exist.
 into the hint. If it cannot be shipped correctly, remove `refinance()` from the public surface
 rather than ship wrong numbers.
 
+
+**Fixed in the P3b wave.** `previewRefinance(owner)` returns the fee, the fee base, the live
+governable percentage, the resulting principal, entire debt, ICR and TCR, and a verdict with
+machine readable reasons. `refinancingFeePercentage` is READ on every call rather than hardcoded,
+because it is governable. `refinance()` folds the fee into the hint, so the hint describes the
+position that will exist: combined with MK-006 the hint is principal based and fee inclusive,
+matching what `BorrowerOperations.sol:1087-1088` re-inserts with. The function was NOT removed from
+the public surface: the numbers can be produced correctly, so the fallback of shipping less surface
+did not apply.
 ---
 
 ## MK-004 · Recovery Mode borrowing fee skip is not modeled
@@ -256,7 +266,7 @@ normal mode open and which the SDK never projected. The migration note is in
 
 ## MK-006 · Hint NICR is fed entire debt, and repay ignores interest first ordering
 
-**Class** S2 · **Status** open
+**Class** S2 · **Status** fixed
 
 **Ground truth.** `TroveManager.getNominalICR` uses collateral plus pending collateral against
 principal plus pending principal, with no interest. Every on chain re insert passes a principal
@@ -279,6 +289,22 @@ a wrong number shown to the user, which is why this finding sits at the top of S
 **Decision.** Fix now: principal based hints on every existing trove write, and an interest first
 repay projection mirroring the contract helper.
 
+
+**Fixed in the P3b wave.** Every hint is computed from PRINCIPAL. All seven hint call sites in
+`packages/core/src/trove/index.ts` were enumerated from source and corrected: `addCollateral`,
+`borrow`, `repay`, `withdrawCollateral`, `adjustTrove` and `refinance`; `openTrove` was already
+correct and `close` computes no hint because it removes the node. `hintsFor`'s parameter is renamed
+`principal` so the wrong quantity cannot be passed by habit. The repay projection mirrors
+`InterestRateMath.calculateDebtAdjustment` exactly through the exported
+`principalReductionForRepay`, and is pinned on a fork at three payment sizes against the contract's
+own branch boundary: below, exactly equal to, and above interest owed.
+
+**Why the open path was accidentally correct.** At open there is no accrued interest, so the
+composite debt IS the principal. The dual validation gate covered the open path only, so it compared
+a quantity that happens to be right there and never exercised a path where interest exists. A gate
+that only covers the case where two quantities coincide cannot tell you which one you meant. That is
+the reason this survived into a published release, and it is why the differential harness must cover
+existing trove paths, not only opens.
 ---
 
 ## MK-007 · `claim()` swallows every error
@@ -386,7 +412,7 @@ straddle blocks, which contradicts the one consistent price snapshot wording in 
 
 ## MK-014 · `redeem` returns a rate in a field named `fee`
 
-**Class** S1 · **Status** open
+**Class** S1 · **Status** fixed
 
 **Ground truth, corrected.** An earlier version of this entry described the two redemption getters
 wrongly, and its fix instruction would have introduced a unit error. Both getters live on
@@ -422,6 +448,15 @@ explicit, and additionally return the estimated fee amount, computed with
 `getRedemptionRate(collateralDrawn)` for the collateral actually drawn, as a separate field.
 Leave the cap comparing rate against rate.
 
+
+**Fixed in the P3b wave.** `RedeemResult.fee` is removed, a breaking change. The result now carries
+`redemptionRate`, the rate named as a rate, `estimatedFeeCollateral`, the fee AMOUNT in BTC wei from
+`getRedemptionRate(collateralDrawn)`, and `estimatedCollateralDrawn`, so a caller can see what the
+estimate assumed. The amount is labelled an estimate because the collateral actually drawn is only
+known once the redemption mines; the docstring points at the `Redemption` event's `collateralFee`
+as authoritative. The cap is deliberately unchanged and still compares rate against rate, which was
+already consistent; MK-011's note that no on chain fee cap exists is kept and strengthened with the
+citation `TroveManager.sol:294-301` and the read-then-send race spelled out.
 ---
 
 ## MK-015 · Documentation claims that overstate reality
@@ -580,7 +615,7 @@ differential harness coverage list in `docs/09-review-and-validated-surface.md` 
 
 ## MK-019 · `refinance()` reverts in Recovery Mode, unchecked and undocumented
 
-**Class** S2 · **Status** open · **Found by us during remediation**
+**Class** S2 · **Status** fixed
 
 **Ground truth.** The refinance path calls `_requireNotInRecoveryMode(price)` before anything else,
 so a refinance attempted in Recovery Mode always reverts.
@@ -592,6 +627,14 @@ mapped revert rather than a bad transaction, which is why this is S2 and not S1.
 **Decision.** Fix now, alongside MK-003: surface the restriction in the preview and in the
 docstring.
 
+
+**Fixed in the P3b wave, and the record corrected.** This was never a safety gap. Simulate before
+send already surfaced the revert as a typed `RECOVERY_MODE_RESTRICTION`, which a test written in the
+P2 wave asserted and which still passes: the SDK behavior a caller could observe was already
+correct. What was missing is that the restriction could not be learned WITHOUT sending, and was
+documented nowhere. `previewRefinance` reports it, and reports it as the FIRST binding reason
+because `_requireNotInRecoveryMode` is the first requirement `_refinance` applies
+(`BorrowerOperations.sol:1024`), and the `refinance()` docstring now states it.
 ---
 
 ## MK-020 · Oracle shim seed is not pinned, so a pinned fork block is not a pinned price
@@ -869,15 +912,16 @@ whatever then fails becomes a finding. Capture the revert reason first.
 
 **Class** S3, harness · **Status** open · **Found by us in the P3a wave, and PROVEN pre existing**
 
-**What happens.** `packages/core/test/phase5.fork.test.ts` fails intermittently under
-`pnpm test:coverage` and, so far, never under `pnpm test:fork`. Three different symptoms have been
-seen in the same file, all of them a write that did not take effect:
+**What happens.** `packages/core/test/phase5.fork.test.ts` fails intermittently, far more often
+under `pnpm test:coverage` than under `pnpm test:fork`. Four symptoms have been seen in the same
+file, all of them a write that did not take effect:
 
 | Where | Symptom |
 |---|---|
 | `phase5.fork.test.ts:191` `adjustTrove combined` | `expected 600000000000000000n to be 550000000000000000n`, the collateral withdrawal did not apply |
 | `phase5.fork.test.ts:191` `adjustTrove combined` | `No open Trove for 0xEB41...`, the `openTrove` that starts the test did not take effect at all |
 | `phase5.fork.test.ts:114` `full lifecycle via the SDK` | `expected 500000000000000000n to be 600000000000000000n`, likewise a collateral step |
+| `phase5.fork.test.ts` `simulate-before-send surfaces reverts` | `expected false to be true`, the Trove the test opened does not exist at the end |
 
 **It is NOT ours, and that was proven rather than argued.** This first appeared while landing the
 P3a changes, in `adjustTrove`, code that wave modified, so it had every appearance of a regression.
@@ -895,6 +939,17 @@ Two checks settled it:
 red in two on `main`. Against that, ZERO red in twenty `pnpm test:fork` runs on the same branch at
 the same block, where the four failures that did occur were MK-022, MK-023, MK-024 and MK-025, none
 of them in phase 5. That asymmetry is the finding.
+
+**Correction, P3b wave: the asymmetry is not absolute.** This entry originally said phase 5 fails
+under coverage and "so far never under a plain fork run". That is now falsified. One of five plain
+`pnpm test:fork` runs on the P3b branch went red at
+`phase5.fork.test.ts` `simulate-before-send surfaces reverts`, with
+`expected false to be true`: the Trove the test opened did not exist by the end, so the opening
+write did not take effect, which is the same symptom as the three under coverage. Coverage
+instrumentation therefore makes it much MORE likely, not uniquely possible, which weakens the
+timing hypothesis below from "the instrumentation causes it" to "the instrumentation widens a
+window that is already there". The rate under a plain fork run is one in five on that branch,
+against zero in twenty on the previous one, so it is not a stable rate either.
 
   MEZO_TESTNET_RPC_URL=<a Mezo testnet endpoint> MEZO_FORK_BLOCK=15043414 pnpm test:coverage
 
@@ -915,6 +970,77 @@ three attempts in the P3a wave.
 revert reason first, then measure whether the simulate to mine window is really the variable. Do
 not paper over it by disabling coverage in CI, which would trade a visible flake for an invisible
 gap.
+
+---
+
+## MK-027 · Source files sit outside every typecheck and lint configuration
+
+**Class** S3 · **Status** open, partially closed · **Found by us in the P3b wave, after it cost a
+false green and a broken example**
+
+**What was uncovered, and what it cost.** `packages/react/tsconfig.json` had
+`"include": ["src"]`, so the whole of `packages/react/test` was outside every typecheck
+configuration in the repository. This is not a one off oversight in a scratch directory: it is a
+PUBLISHED package whose tests nothing typechecked. It produced two consequences, both observed
+rather than hypothesised:
+
+1. **A false green on a rename.** The P3b wave renamed `RedeemResult.fee` (MK-014).
+   `pnpm typecheck` passed clean, because the only file still referencing the removed field was
+   `packages/react/test/hooks.fork.test.ts`. The suite then failed FIVE out of five fork runs on
+   that file. A rename that a compiler should have caught in a second cost five full fork runs to
+   discover, at roughly four minutes each.
+2. **A broken example reaching `main`.** `examples/open-and-manage/src/App.tsx:94` still read
+   `preview.meetsRecoveryRequirement`, removed in the P3a wave, so
+   `pnpm -r --filter "./examples/*" typecheck` FAILS on `main`. That is a step CI actually runs, so
+   CI on PR 7 would have been red. It reached `main` because nobody, including us, ran that step
+   locally and the acceptance criteria for that wave did not list it. That second half is addressed
+   separately by the standing checklist in `docs/08-conventions.md` §10.
+
+**What now covers it.** `packages/react/tsconfig.test.json` typechecks `src` and `test` together.
+It is a separate config rather than an edit to the package tsconfig because that one also drives
+the `tsup` build, and widening its `rootDir` would move the emitted layout. `packages/react`'s
+`typecheck` script runs both. Adding that config is what surfaced the broken example, which is the
+argument for it.
+
+**What the audit found still outside, measured not guessed.** Every typecheck configuration the
+repository runs was asked, with `tsc --listFilesOnly`, which files it actually visits, and the
+result diffed against `git ls-files '*.ts' '*.tsx' '*.mts'`. Of 76 tracked TypeScript files, EIGHT
+are visited by no configuration at all:
+
+| File | Why it is outside |
+|---|---|
+| `packages/core/test/phase9-keeper.fork.test.ts` | Explicitly excluded at `packages/core/tsconfig.json:9` |
+| `docs/.vitepress/config.ts` | `docs` has no `typecheck` script and no tsconfig covering it |
+| `docs/.vitepress/theme/index.ts` | Same |
+| `examples/open-and-manage/vite.config.ts` | The example tsconfig includes `src` only |
+| `packages/core/tsup.config.ts` | Build config, in no `include` |
+| `packages/react/tsup.config.ts` | Build config, in no `include` |
+| `vitest.config.mts` | Root config, in no `include` |
+| `vitest.workspace.mts` | Root config, in no `include` |
+
+The first row is the sharpest: a fork test is excluded BY NAME, so it has exactly the property that
+just cost five red runs, and it is the test that exercises the keeper example.
+
+**The landing site is outside both gates.** `landing/` carries 27 tracked source files and is
+listed in `biome.json`'s `files.ignore`, so none of them are linted. It has a `check` script,
+`astro check`, but nothing runs it: not CI, not `pnpm build:site`. It also cannot run as configured,
+because `@astrojs/check` is not installed; invoking it prompts to add the dependency. So the site
+that fronts the project is neither linted nor typechecked, and the command that would typecheck it
+is not installed.
+
+**Why this is S3 and not lower.** Nothing here is a wrong number for a user. But this class of gap
+produces exactly the failure the register exists to prevent: a green signal that means less than a
+reader assumes. Someone reading "typecheck: Done" reasonably concludes the TypeScript in this
+repository compiles. For eight files and an entire site, it does not say that.
+
+**Decision.** The hole that caused both observed consequences is closed. The eight files and the
+landing site are recorded here and NOT fixed in this wave, because closing them means touching build
+configuration and adding a dependency, which does not belong in a bookkeeping commit. Closing them
+is cheap and specific: add the root configs and the two `tsup.config.ts` files to
+`scripts/tsconfig.json`, drop the `phase9-keeper` exclusion and fix whatever it then reports, give
+`docs` a tsconfig covering `.vitepress`, and either install `@astrojs/check` and run it in CI or
+remove the `check` script so it stops implying a gate that does not exist. This entry stays open
+until that is done.
 
 ---
 
