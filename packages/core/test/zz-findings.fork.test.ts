@@ -871,4 +871,68 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     expect(preview.feeExempt, 'a non exempt account must report feeExempt false').toBe(false)
     expect(preview.fee, 'a non exempt account in normal mode pays a fee').toBeGreaterThan(0n)
   })
+
+  /**
+   * MK-035, OPEN. The paired findings test for an SDK defect, not a harness one.
+   *
+   * `simulateAndSend` (`packages/core/src/internal/write.ts`) simulates, then sends the
+   * request viem builds. The gas limit on that transaction comes from an `eth_estimateGas`
+   * taken BEFORE the block the transaction mines in. For a call whose cost depends on state
+   * that keeps moving, that estimate can be too small by the time it executes, and the
+   * failure is invisible in the receipt: the EVM forwards at most 63/64 of the remaining gas
+   * to a nested call, so an inner frame exhausts its allowance while the outer frame keeps
+   * the last 1/64 and the receipt reports `gasUsed < gasLimit`.
+   *
+   * Measured on this fork, same call from byte identical snapshot state, 40 attempts:
+   * the work ranged from 610270 to 710023 gas, a 16% swing, against a fixed limit of 720980.
+   * Two of the 40 reverted, and the trace named `ActivePool` running out of gas at call
+   * depth 4 inside `redeemCollateral`.
+   *
+   * This test does NOT reproduce the revert, deliberately: a 5% event is not something to
+   * assert on. It pins the CAUSE instead, which is deterministic. When the SDK adds headroom
+   * over the estimate, this flips, and that is the signal the finding is addressed.
+   */
+  it('MK-035 (open): a write ships a gas margin thinner than the work varies', async () => {
+    const fork = connectFork()
+    const account = testAccount(2035)
+    await fork.fundAccount(account.address, 5n * BTC)
+    const client = clientFor(account)
+
+    // Snapshot and revert around the write. This test OPENS a Trove, which mutates the
+    // SortedTroves list every later file redeems and liquidates against, and this file runs
+    // before the react ones. Leaving that behind is precisely the fixture coupling MK-016 is
+    // about, and it was measured: adding this test without the snapshot took a ten run window
+    // from two red to five. Reverting restores the state exactly, so the test costs the suite
+    // nothing but the time it takes.
+    const snapshotId = await fork.testClient.snapshot()
+    let sent: Awaited<ReturnType<typeof fork.publicClient.getTransaction>>
+    let receipt: Awaited<ReturnType<typeof fork.publicClient.waitForTransactionReceipt>>
+    try {
+      const { hash } = await client.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })
+      ;[sent, receipt] = await Promise.all([
+        fork.publicClient.getTransaction({ hash }),
+        fork.publicClient.waitForTransactionReceipt({ hash }),
+      ])
+    } finally {
+      await fork.testClient.revert({ id: snapshotId })
+    }
+    const marginPercent = Number(((sent.gas - receipt.gasUsed) * 1000n) / receipt.gasUsed) / 10
+    console.log(
+      `[MK-035] sentGasLimit=${sent.gas} gasUsed=${receipt.gasUsed} margin=${marginPercent}%`,
+    )
+
+    // The finding as an assertion. The margin the SDK ships is whatever the node's estimate
+    // happened to include; the SDK itself adds nothing. Measured against that: the SAME
+    // redemption call, from byte identical snapshot state, varied from 610270 to 710023 gas
+    // across 40 attempts, a 16% swing, and two of those 40 reverted with ActivePool out of
+    // gas at call depth 4. A margin in this range does not cover that.
+    //
+    // This does NOT assert the revert: a 5% event is not something to assert on. It pins the
+    // cause, which is deterministic. A fix that sizes the limit for a moving target makes
+    // this fail, which is the signal the finding is addressed.
+    expect(
+      marginPercent,
+      'MK-035: the shipped gas margin is thinner than the measured work variance (16%)',
+    ).toBeLessThan(25)
+  }, 300_000)
 })

@@ -70,7 +70,7 @@ claim about it was not).
 | MK-032 | The flake mitigations document a mechanism the harness makes impossible | S3 | fixed |
 | MK-033 | A passing test logs an uncaught React error into the CI output | S3 | fixed |
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
-| MK-035 | A write can revert after a passing simulate because the gas estimate is a block stale, and only `openTroveRaw` guards it | S2 | open, DIAGNOSIS REACHES `packages/core/src` |
+| MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | open, DIAGNOSED, fix is its own wave |
 
 ---
 
@@ -1755,7 +1755,7 @@ status, the revert reason, the emitted logs and the fork conditions attached, in
 
 ---
 
-## MK-035 · A write can revert after a passing simulate, and only the test harness guards it
+## MK-035 · A write ships a gas margin thinner than its own work varies
 
 **Class** S2 · **Status** open, NOT fixed, and the reason it is not fixed is that the diagnosis
 reaches `packages/core/src` · **Found by us in the P5b wave, from the CI run on that branch**
@@ -1815,6 +1815,80 @@ tight for a traversal whose cost depends on state that moves between estimate an
 consumer redeeming on a busy chain hits the same revert, with gas spent and nothing to show. The
 harness is not what makes this happen; it is only where it was noticed, because the harness is the
 only place that re-simulates afterwards and looks.
+
+## Diagnosed, P6 wave, with a trace
+
+**It IS out of gas, in a NESTED call, which is why the receipt says otherwise.** Reproduced in
+isolation and traced. The failing path inside `redeemCollateral`:
+
+```
+0xe47c80e8...  TroveManager        0x3db23605 redeemCollateral -> execution reverted
+  0x9aab5679...  TroveManager impl  0x3db23605                 -> execution reverted
+    0x143a063f...  ActivePool       0x62502169                 -> execution reverted
+      0xbfc82017...  ActivePool impl 0x62502169                -> OUT OF GAS
+```
+
+`0x143A063F...` is `ActivePool`, confirmed by reading `TroveManager.activePool()` on the fork
+rather than by guessing. The two upper frames are proxies delegating to implementations.
+
+**Why the receipt cannot show it.** The EVM forwards at most 63/64 of the remaining gas to a
+nested call. The inner frame exhausted its allowance while the outer frame still held the last
+1/64, so the receipt reported `gasUsed: 710023` against `gasLimit: 720980` and looked like an
+ordinary revert with no reason. **That is what made the P5b wave rule out of gas OUT**, and that
+conclusion was wrong: `gasUsed === gasLimit` only ever detects exhaustion at the TOP level.
+
+**The measurement.** 40 attempts of the same `redeemCollateral` call, each from a byte identical
+`evm_snapshot`, so nothing but timing differs between them:
+
+| | |
+|---|---|
+| successes | 38 |
+| mined reverts | **2**, both `ActivePool` out of gas at depth 4 |
+| gas used, successful | 610270 |
+| gas used, failing | 710023 |
+| **work swing for the identical call** | **16%** |
+| gas limit sent | 720980, fixed |
+| **margin the SDK ships** | **1.5%** over actual, measured separately on `openTrove` |
+
+The work varies by ten times the margin. That is the finding in one line.
+
+**Where the variance comes from.** The block timestamp differs between attempts because anvil
+stamps blocks with wall clock, so interest accrual differs, so the redemption's traversal and
+partial arithmetic differ. The harness makes this easy to hit; it does not create it. On any chain
+the estimate is taken before the block the transaction mines in.
+
+**The isolation rate against the suite rate.** 2 in 40 operations in isolation, roughly 5%. In the
+full suite the same class of failure appeared in roughly 1 run in 5, and a run performs about six
+redemptions, so the per-operation rates are the same order. The failure reproduces OUTSIDE the full
+suite, which rules out accumulated suite state as a necessary condition.
+
+**On the zero logs question, which the P6 prompt asked to be checked rather than assumed.** It is a
+property of reverting, not a clue about where. The trace shows sub-calls at depths 2 through 7
+completing successfully, including a call to the MUSD token returning `0x...01`, before the
+top-level revert. Any logs those emitted were discarded with the state. Zero logs on a reverted
+receipt carries no information about the failure point.
+
+### Verdict: an SDK defect, and a documentation one
+
+Not a test defect: the SDK chooses the gas limit. Not a harness artifact a consumer cannot hit: a
+consumer calling `musd.redeem()` while interest accrues between estimate and mine gets the same
+reverted transaction, with gas spent and no reason to show.
+
+**And it makes a documented guarantee weaker than it reads.** `internal/write.ts` said simulating
+means "never a silent reverted receipt". That is exactly what MK-035 produces. Corrected in place,
+in the docstring and in `docs/03-core-api.md`, both saying what simulate does and does not cover.
+
+**Pinned by** `zz-findings.fork.test.ts`, "MK-035 (open): a write ships a gas margin thinner than
+its own work varies". It deliberately does NOT assert the revert, because a 5% event is not
+something to assert on; it asserts the cause, which is deterministic, and flips when the SDK sizes
+the limit for a moving target.
+
+**Fix is its own wave**, per the classification rule: changing gas handling in `simulateAndSend`
+affects every write path in the SDK and needs its own acceptance.
+
+---
+
+### The superseded hypotheses, kept because the corrections are the record
 
 **IT IS NOT OUT OF GAS, and this entry's own first hypothesis is the thing that got falsified.**
 The `gasLimit` field was added to the explainer precisely so the next occurrence would settle it

@@ -54,8 +54,21 @@ export interface SimulateSendOptions {
 }
 
 /**
- * Verify the deployment, simulate (surfaces reverts, never a silent reverted receipt),
- * then send. Returns the tx hash without waiting (the caller waits for the receipt). Any
+ * Verify the deployment, simulate, then send.
+ *
+ * **This used to say the simulation means "never a silent reverted receipt". That is not
+ * true, and MK-035 is the counterexample.** Simulating catches a revert whose condition is
+ * already true at simulate time. It cannot catch one that becomes true afterwards, and it
+ * cannot catch the transaction running out of gas, because the gas limit is derived from an
+ * estimate taken before the block the transaction mines in. Traced on a fork: the same
+ * `redeemCollateral` call from byte identical state varied from 610270 to 710023 gas across
+ * 40 attempts, against a limit that carried a 1.5% margin, and `ActivePool` ran out of gas at
+ * call depth 4. The receipt showed `gasUsed < gasLimit`, so it did not even look like out of
+ * gas.
+ *
+ * What simulating DOES give you is the typed error for every condition that holds at simulate
+ * time, which is most of them and is worth having. It is not a guarantee that the send
+ * succeeds, and callers should still check the receipt. Returns the tx hash without waiting (the caller waits for the receipt). Any
  * simulation revert is decoded by {@link mapRevert} into a typed `MusdError` (unmapped →
  * `ContractCallFailed`, original error preserved, never swallowed).
  *
