@@ -66,6 +66,10 @@ claim about it was not).
 | MK-028 | The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`, which Node 24 rejects | S2 | fixed |
 | MK-029 | Local evidence and CI evidence were both true, because they ran different runtimes | S2 | fixed |
 | MK-030 | `zz-findings` MK-003 refinance fee assertion fails intermittently on a plain fork run | S3 | open |
+| MK-031 | Fork failures destroy their own cause: a missing event surfaces as a bare `TypeError` | S3 | fixed |
+| MK-032 | The flake mitigations document a mechanism the harness makes impossible | S3 | fixed |
+| MK-033 | A passing test logs an uncaught React error into the CI output | S3 | fixed |
+| MK-034 | The redemption path failed twice in one CI run, reddening `main` after PR 10 | S3 | open |
 
 ---
 
@@ -1105,6 +1109,7 @@ file, all of them a write that did not take effect:
 | `phase5.fork.test.ts:191` `adjustTrove combined` | `No open Trove for 0xEB41...`, the `openTrove` that starts the test did not take effect at all |
 | `phase5.fork.test.ts:114` `full lifecycle via the SDK` | `expected 500000000000000000n to be 600000000000000000n`, likewise a collateral step |
 | `phase5.fork.test.ts` `simulate-before-send surfaces reverts` | `expected false to be true`, the Trove the test opened does not exist at the end |
+| `phase5.fork.test.ts:176` `full lifecycle` | `expected 'reverted' to be 'success'`, the `close()` receipt came back reverted. Added in the P5a wave, the first symptom in this family where a receipt STATUS is the assertion that fails rather than a downstream read |
 
 **It is NOT ours, and that was proven rather than argued.** This first appeared while landing the
 P3a changes, in `adjustTrove`, code that wave modified, so it had every appearance of a regression.
@@ -1122,6 +1127,13 @@ Two checks settled it:
 red in two on `main`. Against that, ZERO red in twenty `pnpm test:fork` runs on the same branch at
 the same block, where the four failures that did occur were MK-022, MK-023, MK-024 and MK-025, none
 of them in phase 5. That asymmetry is the finding.
+
+**Rate under coverage, P5a wave.** Five `pnpm test:coverage` runs on the P5a branch, Node 24.19.0,
+pinned block 15043414: three green, two red, both in this test. Run 1 was
+`expected false to be true` at `:123`, the opening write not taking effect, which is the second row
+of the table above. Run 2 was the new `:176` row. Two in five is the worst rate observed for this
+entry so far, against two in three on the P3a branch and one in two on `main`, so the spread across
+windows remains wide and no stable rate can be quoted.
 
 **Correction, P3b wave: the asymmetry is not absolute.** This entry originally said phase 5 fails
 under coverage and "so far never under a plain fork run". That is now falsified. One of five plain
@@ -1435,6 +1447,180 @@ and MK-026 (run 7), leaving 7 green.
 
 **Decision.** Not diagnosed here, and not fixed. It joins MK-016 and MK-022 through MK-026 for the
 mitigation removal wave. Capture the assertion with full output before anything else.
+
+---
+
+## MK-031 · Fork failures destroy their own cause
+
+**Class** S3, harness · **Status** fixed · **Found by us reading the CI run that reddened `main`
+after PR 10, and previously written down as a complaint inside MK-024 without being acted on**
+
+**What happens.** Three separate call sites turned a diagnosable failure into an undiagnosable one.
+
+| Site | What it threw | What it destroyed |
+|---|---|---|
+| `phase6.fork.test.ts` `redemptionEv` | `TypeError: Cannot read properties of undefined (reading 'args')` | Whether the redeem reverted, redeemed nothing, or emitted something else |
+| `phase6.fork.test.ts` liquidation event lookup | the same `TypeError` | the same, for a liquidation. This is the exact line MK-024 asked to be fixed |
+| `hooks.fork.test.ts` `ensureWriteMined` | `Error: mutation errored without a tx hash` | The mutation's OWN typed error, which the hook already exposed |
+
+The third is the sharpest. Four attempts each discarding a `RedemptionFailed` read identically to
+four attempts each discarding an `InsufficientMusdBalance`, and those mean opposite things: one is
+the fork's state, the other is the test's own setup being wrong.
+
+**Why it is its own finding rather than a line in each flake entry.** Because it is what makes the
+flake entries expensive. MK-024 already said "the test should be made to fail with the on-chain
+reason rather than a property access on `undefined`; until it does, every occurrence of this costs a
+diagnosis from scratch". It then cost exactly that, twice more.
+
+**Fix.** `packages/core/test/harness/explainReceipt.ts`. When an expected event is absent, the
+thrown error carries the receipt status, the block and gas used, every log that WAS emitted with its
+emitter and topic, the revert reason recovered by replaying the call at the mined block, and the
+fork conditions the suite's own findings keep pointing at: head block, block timestamp, `fetchPrice()`,
+Recovery Mode and `MEZO_FORK_BLOCK`.
+
+It does not retry, does not soften an assertion, and does not change what passes. The failing test
+still fails; it just says why.
+
+**Also added, and worth as much:** the two redemption tests now log the redeemable margin BEFORE
+every redeem, passing or failing. A rate cannot be attributed from failures alone, and it was that
+logging which established that the redeemable tail is NOT the variable, see MK-034.
+
+**Pinned by** `packages/core/test/harness-explain.fork.test.ts`, two cases: a mined transaction with
+no such event, and a transaction that reverts, where the assertion is on the recovered REASON
+(`Trove does not exist or is closed`) rather than on the status alone. A diagnostic that silently
+stops reporting is worse than none, because the next failure then looks like it had nothing to say.
+
+---
+
+## MK-032 · The flake mitigations document a mechanism the harness makes impossible
+
+**Class** S3, harness · **Status** fixed as documentation, the mitigations deliberately left in
+place · **Found by us in the P5a wave, checking a comment instead of believing it**
+
+**The claim, repeated in four places.** `redeemFresh` in `phase6.fork.test.ts`,
+`ensureWriteMined` in `hooks.fork.test.ts`, the +50% price manoeuvre in both files, and
+`refreshOracle` in `harness/oracle.ts` all say the same thing: `getRedemptionHints` is slow, the
+latency lets the seeded oracle go stale before the write mines, `PriceFeed` then reads a stale or
+lower price, and the marginal Trove falls under MCR.
+
+**It cannot happen.** `packages/core/test/harness/OracleShim.sol:24-29` returns `timestamp()` for
+BOTH `startedAt` and `updatedAt`, so the shim reports itself fresh at every block and no freshness
+guard can trip. The shim's own header says so in as many words. `ORACLE_SLOT.startedAt` and
+`.updatedAt` are slots 3 and 4 (`harness/constants.ts:71-72`) and `latestRoundData` reads only slots
+0, 1, 2 and 5, so the two writes `refreshOracle` performs land in **dead storage**.
+
+Verified on the fork rather than argued: warping 30 days forward with NO call to `refreshOracle`
+leaves `fetchPrice()` returning `77051107320000000000000`, unchanged, throwing nothing.
+
+**So `refreshOracle` has exactly one real effect: it mines a block.** That is not nothing, a fresh
+block advances the timestamp every subsequent `eth_call` is evaluated at, but it is a different
+thing from what its name and every caller's comment claim.
+
+**And interest drift is not the mechanism either**, at least not where it was measured. The first
+redemption hint sits at ICR `1118410742529159124` against an MCR of `1.1e18`, a margin of
+`1.84e16`. Thirty seconds of accrued interest moves it by `1.06e10` wei, about one fifty thousandth
+of that margin. Crossing MCR by interest drift alone would take on the order of fifteen hours.
+
+**What this changes.** Every past diagnosis of this family started from a mechanism that is false,
+which is worse than starting from none. The comments are corrected in place, and each says what was
+wrong rather than being quietly rewritten.
+
+**What is deliberately NOT done.** The mitigations stay. Removing them is the mitigation removal
+wave (MK-016), and pulling one out while its siblings remain would make the next failure harder to
+attribute, not easier. What changed is that they no longer claim to know why they are there.
+
+---
+
+## MK-033 · A passing test logs an uncaught React error into the CI output
+
+**Class** S3, harness · **Status** fixed · **Found by us reading the CI run that reddened `main`**
+
+**What happens.** `packages/react/test/hooks.fork.test.ts` renders `useOraclePrice` with no
+provider and asserts that it throws. It does throw, and the test passes. React's development build
+then prints an uncaught-error block for the render throw, `WagmiProviderNotFoundError` with a full
+component stack and "Consider adding an error boundary", straight into the CI log.
+
+**It is NOT an SDK defect, and that was checked rather than assumed.** `useOraclePrice` reaches
+wagmi through `useMusdQuery` (`packages/react/src/internal/useMusdQuery.ts`) and `useChainId`, which
+is how EVERY hook in the package reaches it. A consumer rendering any of them outside a
+`WagmiProvider` gets the same throw, and that is correct, desirable, and exactly what this test
+exists to pin. The hook is being used deliberately incorrectly by a negative test.
+
+**The defect is the signal.** In a run that is already red for other reasons, an uncaught
+`WagmiProviderNotFoundError` in the log is indistinguishable from a real one. That is the condition
+`docs/08-conventions.md` §10 forbids in as many words: a green signal that does not mean what a
+reader assumes.
+
+**Fix.** The render's `console.error` output is CAPTURED rather than silenced, and then asserted to
+contain the expected provider error. If React stops logging, or logs something else, the test fails
+instead of hiding a genuine uncaught error. The throw itself is now asserted against
+`WagmiProviderNotFoundError` rather than `toThrow()` with no argument, so the test pins which error
+it means.
+
+---
+
+## MK-034 · The redemption path failed twice in one CI run, reddening `main` after PR 10
+
+**Class** S3, harness · **Status** open, not fixed in this wave · **Found by us in the P5a wave**
+
+**What happened.** Run
+[32962767819](https://github.com/cayvox/musd-kit/actions/runs/32962767819) on `main` at `e7f77f4`,
+fork gate, two failures in one run, both on the redemption path:
+
+- `phase6.fork.test.ts:175` (the no-loan redeemer), `TypeError: Cannot read properties of undefined
+  (reading 'args')` from `redemptionEv` at `:138`. The redeem mined without emitting `Redemption`.
+- `hooks.fork.test.ts:261` (`useRedeem`), `Error: mutation errored without a tx hash` from
+  `ensureWriteMined` at `:92` after four attempts.
+
+**It is NOT a regression from PR 10, and that was the first question asked.** Eight
+`pnpm test:coverage` runs at the merge commit `e7f77f4` and eight at its first parent `af04519`,
+Node 24.19.0, pinned block 15043414:
+
+| Commit | Green | Red | Which |
+|---|---|---|---|
+| `af04519`, the parent | 7 | 1 | MK-023, the phase 6 claim fixture |
+| `e7f77f4`, the merge | 6 | 2 | one phase 6 RM liquidation, one MK-026 |
+
+The parent is **not clean over the window**, so the condition for calling this a regression is not
+met. Neither arm reproduced the CI pair. A further twelve runs at the branch produced ten green and
+two red, again neither of them the CI pair. Twenty runs at or after the merge commit, zero
+reproductions.
+
+**Why it is not MK-024, MK-025 or MK-023, decided rather than assumed.** MK-024 is the normal mode
+LIQUIDATION crash at `:198`: it shares the failure MODE, a crash on a missing event, and that mode is
+now fixed for both by MK-031, but it is a different test and a different operation. MK-025 is the
+react block WATCHING test at `hooks:157`, a write that mined and reverted; this is `useRedeem` at
+`:261`, erroring before any send. MK-023 is the phase 6 CLAIM fixture at `:400` asserting status 4.
+Different tests, different operations, different failure modes.
+
+**Why the two are ONE entry rather than two siblings.** They co-occurred in a single run, they are
+both redemption, and a later local run reproduced the same PAIRING shape in different tests: run 10
+of twelve failed at both the phase 6 claim fixture (a redemption that under-consumed) AND
+`zz-findings` MK-014 (`RedemptionFailed: Unable to redeem any amount`). Two redemptions
+under-performing in the same run, twice observed, is weak evidence for a common cause and strong
+evidence against treating them as independent. It is one entry with the caveat attached rather than
+two entries that will be diagnosed twice.
+
+**What was ruled OUT, with numbers.** The redeemable tail is not exhausted and is not the variable.
+Both redemption sites now log the margin before every attempt, and across all twelve runs it was
+byte identical and ample every time: phase 6 no-loan requested `5000e18` with `5000e18` redeemable,
+hooks requested `3000e18` with `3000e18` redeemable and a holder balance of
+`5346042498991720800205`. Oracle staleness is impossible, see MK-032. Interest drift on the marginal
+hint is four orders of magnitude too small, also MK-032.
+
+**What we do NOT claim.** A root cause. Two stated mechanisms are now disproven and no third is
+established, which is progress of a kind but is not a fix.
+
+**Cost of carrying it.** The fork gate is intermittent at roughly two runs in twelve locally under
+coverage, across a family of tests, of which this pair is one member. That is a `main` that goes red
+without a regression, roughly one merge in six, and under the standing rule each of those blocks the
+next wave until someone reads the run. The mitigations make the rate look better than the underlying
+stability is, which is MK-016's point.
+
+**Decision.** Diagnose in the mitigation removal wave with MK-016 and MK-021 through MK-030. It is
+now much cheaper to diagnose than it was: MK-031 means the next occurrence arrives with the receipt
+status, the revert reason, the emitted logs and the fork conditions attached, instead of a
+`TypeError`.
 
 ---
 

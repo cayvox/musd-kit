@@ -168,10 +168,25 @@ export async function setPrice(
 }
 
 /**
- * Bump the shim's `startedAt`/`updatedAt` to the current block time WITHOUT changing
- * the price. anvil advances block timestamps by wall-clock, so the seeded oracle
- * eventually trips the PriceFeed's "Oracle is stale" guard during a long run; call
- * this before price-dependent operations to keep it fresh. The answer is untouched.
+ * Mine a block, and write two slots the shim does not read. The answer is untouched.
+ *
+ * **MK-032. Read the name and the history together, because they disagree.** This was
+ * written to keep the seeded oracle from tripping the PriceFeed's staleness guard, and that
+ * is no longer what it does. `OracleShim.sol:24-29` returns `timestamp()` for BOTH
+ * `startedAt` and `updatedAt`, so the shim reports itself fresh at every block and the guard
+ * can never trip. `ORACLE_SLOT.startedAt` and `.updatedAt` are slots 3 and 4
+ * (`constants.ts:71-72`), and `latestRoundData` reads only slots 0, 1, 2 and 5. The two
+ * writes below land in dead storage.
+ *
+ * Verified on the fork rather than reasoned about: warping 30 days forward with NO call to
+ * this function leaves `fetchPrice()` returning the same answer and throwing nothing.
+ *
+ * So its ONE remaining effect is `testClient.mine`. That is not nothing, a fresh block
+ * advances the timestamp every subsequent `eth_call` is evaluated at, but it is a different
+ * thing from what every caller's comment says it is doing. Those comments are corrected
+ * where they appear. This function is left in place rather than removed because pulling
+ * flake mitigations out is its own wave (MK-016), and removing one while its siblings stay
+ * would make the next failure harder to attribute, not easier.
  */
 export async function refreshOracle(
   testClient: TestClient,
