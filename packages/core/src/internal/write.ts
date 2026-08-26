@@ -8,6 +8,23 @@ export interface WriteDeps {
   publicClient: PublicClient
   walletClient: WalletClient | undefined
   addresses: MusdAddresses
+  /**
+   * Assert the contracts at these addresses really are a consistent MUSD deployment,
+   * resolving on success and throwing otherwise (MK-008).
+   *
+   * REQUIRED rather than optional, and deliberately so. Optional would mean a write path
+   * could be built that quietly skips verification, which is the shape of the defect being
+   * fixed: `verifyDeployment` existed but ran only from `getConstants()`, so every write
+   * that did not happen to read a constant went unverified. `createMusdClient` supplies a
+   * memoized implementation, so this costs one multicall per client, not one per send.
+   */
+  ensureVerified: () => Promise<void>
+  /**
+   * The live, cached `minNetDebt()` floor, from the same accessor every other caller uses
+   * (MK-008, MK-012). The open path used to read it directly, which is precisely how it
+   * bypassed verification.
+   */
+  getMinNetDebt: () => Promise<bigint>
 }
 
 /** Result of a write, wagmi-idiomatic; the caller waits for the receipt. */
@@ -37,10 +54,14 @@ export interface SimulateSendOptions {
 }
 
 /**
- * Simulate first (surfaces reverts, never a silent reverted receipt), then send.
- * Returns the tx hash without waiting (the caller waits for the receipt). Any simulation
- * revert is decoded by {@link mapRevert} into a typed `MusdError` (unmapped →
+ * Verify the deployment, simulate (surfaces reverts, never a silent reverted receipt),
+ * then send. Returns the tx hash without waiting (the caller waits for the receipt). Any
+ * simulation revert is decoded by {@link mapRevert} into a typed `MusdError` (unmapped →
  * `ContractCallFailed`, original error preserved, never swallowed).
+ *
+ * Verification runs FIRST, before simulate, because a simulation against a lookalike
+ * contract can succeed. Being on this path is what makes `verifyDeployment` a gate rather
+ * than a function nobody calls (MK-008).
  */
 export async function simulateAndSend(
   deps: WriteDeps,
@@ -51,6 +72,10 @@ export async function simulateAndSend(
   args: readonly unknown[],
   opts?: SimulateSendOptions,
 ): Promise<WriteResult> {
+  // Before the first value bearing send, not after it, and not only when a constant
+  // happens to be read (MK-008). Memoized by the client, so this is one multicall for the
+  // life of the client and a resolved promise on every send after that.
+  await deps.ensureVerified()
   try {
     // Dynamic dispatch over a write set; viem's per-function typing can't be expressed
     // generically here, so the params object is untyped.

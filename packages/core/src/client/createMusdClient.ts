@@ -1,13 +1,7 @@
 import type { Address, PublicClient, WalletClient } from 'viem'
 import { type MusdAddresses, getAddresses } from '../addresses'
 import { type MusdContracts, createContracts, governableVariablesAbi } from '../clients'
-import {
-  CCR as BUNDLED_CCR,
-  MCR as BUNDLED_MCR,
-  FIXED_CONSTANTS,
-  type FixedConstants,
-} from '../constants'
-import { MismatchedDeployment } from '../errors'
+import { FIXED_CONSTANTS, type FixedConstants } from '../constants'
 import {
   type ComputeHintsParams,
   type ComputeNICRParams,
@@ -72,10 +66,11 @@ import {
   repay,
   withdrawCollateral,
 } from '../trove'
+import { verifyDeployment as runVerifyDeployment } from './verifyDeployment'
 
 // `MismatchedDeployment` now lives in the unified `errors/` taxonomy (a `MusdError`);
 // re-exported here so existing `from './client/createMusdClient'` imports keep working.
-export { MismatchedDeployment } from '../errors'
+export { MismatchedDeployment, DeploymentVerificationFailed } from '../errors'
 
 /** Governable values read live (never bundled). */
 export interface GovernableConstants {
@@ -88,6 +83,29 @@ export interface GovernableConstants {
 /** The bundled fixed constants plus the live-read governable ones. */
 export type MusdConstants = FixedConstants & GovernableConstants
 
+/**
+ * How long {@link MusdClient.getConstants} may reuse a cached read of the GOVERNABLE
+ * values, in milliseconds. 60 seconds (MK-012).
+ *
+ * The values behind it, `minNetDebt()` and the global interest rate, are governable: they
+ * can change under a running process at any time. They were previously cached for the
+ * lifetime of the client object, so a keeper or a server that builds one client at boot
+ * could act on a debt floor that changed hours earlier, and nothing in the SDK would ever
+ * notice.
+ *
+ * 60 seconds is chosen against the cost of being wrong in each direction. Being stale is
+ * unbounded harm: a preview reports a floor the contract no longer enforces, so an open
+ * that the SDK says is fine reverts, or one it rejects would have succeeded. Being fresh
+ * costs two `eth_call`s a minute per client, which is nothing next to the reads a single
+ * `previewOpen` already makes. It is not lower because these are governance parameters,
+ * changed by a timelocked process, not a price: sub second freshness would buy nothing real
+ * and would turn every preview into an extra round trip.
+ *
+ * Override it with `constantsTtlMs`, or drop the cache at a moment you choose with
+ * {@link MusdClient.invalidateConstants}. `0` re-reads on every call.
+ */
+export const DEFAULT_CONSTANTS_TTL_MS = 60_000
+
 /** Inputs to {@link createMusdClient}: the chain, a viem public client, and (for writes) a wallet client; `addresses` overrides the bundled deployment. */
 export interface CreateMusdClientParams {
   chainId: number
@@ -96,6 +114,12 @@ export interface CreateMusdClientParams {
   walletClient?: WalletClient
   /** Per-contract address overrides (also enables an unsupported chainId). */
   addresses?: Partial<MusdAddresses>
+  /**
+   * How long a cached read of the governable constants stays usable, in milliseconds.
+   * Defaults to {@link DEFAULT_CONSTANTS_TTL_MS} (60 seconds). `0` re-reads every time
+   * (MK-012).
+   */
+  constantsTtlMs?: number
 }
 
 /** The `createMusdClient` surface: live reads, preview math, hints, lifecycle writes, and the redemption/keeper functions, all bound to one chain + clients. */
@@ -106,16 +130,38 @@ export interface MusdClient {
   /** The bundled fixed constants (synchronous, no network). */
   readonly fixed: FixedConstants
   /**
-   * Read + cache the governable constants on first use, returned together
-   * with the fixed ones. Also runs {@link verifyDeployment} once.
+   * Read the governable constants, returned together with the fixed ones, cached for
+   * `constantsTtlMs` (default {@link DEFAULT_CONSTANTS_TTL_MS}, 60 seconds). Also runs
+   * {@link verifyDeployment} once.
+   *
+   * The cache is time bounded because `minNetDebt` and the interest rate are governable and
+   * used to be held for the lifetime of the client, so a long lived process could act on a
+   * stale floor indefinitely (MK-012).
    */
   getConstants(): Promise<MusdConstants>
+  /**
+   * Drop the cached governable constants, so the next {@link getConstants} re-reads them
+   * (MK-012).
+   *
+   * For when you know something changed and do not want to wait out the TTL: a governance
+   * event observed in a log subscription, or a test that wants a deterministic re-read. It
+   * does NOT clear the deployment verification, which is memoized for the client's lifetime
+   * on purpose: a wiring pointer changing is a redeployment, not a governance action.
+   */
+  invalidateConstants(): void
   /** Passthrough to `borrowerOperations.getBorrowingFee(debt)` (parameterized, not cached). */
   getBorrowingFee(debt: bigint): Promise<bigint>
   /**
-   * Defense-in-depth: read `MCR`/`CCR` from the chain and assert they equal the
-   * bundled fixed constants. Cached after the first success.
-   * @throws {MismatchedDeployment}
+   * Assert the contracts at the resolved addresses really are a consistent MUSD deployment
+   * (MK-008): code present at all seven bundled addresses, all fourteen cross wiring
+   * pointers resolving to that same map, `HintHelpers.priceFeed()` still unset, and
+   * `MCR`/`CCR` equal to the bundled fixed constants. One `multicall`, memoized after the
+   * first success, and awaited automatically before the first write.
+   *
+   * Calling it yourself is only necessary if you want the check to happen at a moment you
+   * choose, for example right after constructing a client against an overridden address map.
+   * @throws {MismatchedDeployment} a bundled constant disagrees with the chain.
+   * @throws {DeploymentVerificationFailed} missing code, or wiring that does not resolve.
    */
   verifyDeployment(): Promise<void>
 
@@ -203,32 +249,63 @@ export interface MusdClient {
  */
 export function createMusdClient(params: CreateMusdClientParams): MusdClient {
   const { chainId, publicClient, walletClient, addresses: override } = params
+  const ttlMs = params.constantsTtlMs ?? DEFAULT_CONSTANTS_TTL_MS
   const addresses = getAddresses(chainId, override)
   const contracts = createContracts(addresses, publicClient, walletClient)
 
   let cachedConstants: MusdConstants | undefined
-  let verified = false
 
-  async function verifyDeployment(): Promise<void> {
-    if (verified) return
-    const [onchainMcr, onchainCcr] = await Promise.all([
-      contracts.troveManager.read.MCR(),
-      contracts.troveManager.read.CCR(),
-    ])
-    if (onchainMcr !== BUNDLED_MCR) throw new MismatchedDeployment('MCR', BUNDLED_MCR, onchainMcr)
-    if (onchainCcr !== BUNDLED_CCR) throw new MismatchedDeployment('CCR', BUNDLED_CCR, onchainCcr)
-    verified = true
+  /**
+   * The in-flight or completed verification (MK-008).
+   *
+   * A promise rather than a boolean, so that concurrent first writes share ONE multicall
+   * instead of racing into several. It is cleared on failure so a transient transport error
+   * does not permanently poison a client that is otherwise fine.
+   */
+  let verification: Promise<void> | undefined
+
+  function verifyDeployment(): Promise<void> {
+    if (!verification) {
+      verification = runVerifyDeployment(publicClient, addresses).catch((error: unknown) => {
+        verification = undefined
+        throw error
+      })
+    }
+    return verification
+  }
+
+  /**
+   * MK-012. `cachedConstants` alone had no expiry, so `minNetDebt` and the interest rate,
+   * both governable, were pinned for as long as the client object lived. `readAt` is what
+   * bounds that. An in-flight read is shared through `constantsInFlight` so a burst of
+   * concurrent callers after an expiry issues one pair of reads, not one pair each.
+   */
+  let constantsReadAt = 0
+  let constantsInFlight: Promise<MusdConstants> | undefined
+
+  function invalidateConstants(): void {
+    cachedConstants = undefined
+    constantsInFlight = undefined
+    constantsReadAt = 0
   }
 
   async function getConstants(): Promise<MusdConstants> {
-    if (cachedConstants) return cachedConstants
-    await verifyDeployment()
-    const [minNetDebt, interestRate] = await Promise.all([
-      contracts.borrowerOperations.read.minNetDebt(),
-      contracts.interestRateManager.read.interestRate(),
-    ])
-    cachedConstants = { ...FIXED_CONSTANTS, minNetDebt, interestRate: Number(interestRate) }
-    return cachedConstants
+    if (cachedConstants && Date.now() - constantsReadAt < ttlMs) return cachedConstants
+    if (!constantsInFlight) {
+      constantsInFlight = (async () => {
+        await verifyDeployment()
+        const [minNetDebt, interestRate] = await Promise.all([
+          contracts.borrowerOperations.read.minNetDebt(),
+          contracts.interestRateManager.read.interestRate(),
+        ])
+        cachedConstants = { ...FIXED_CONSTANTS, minNetDebt, interestRate: Number(interestRate) }
+        constantsReadAt = Date.now()
+        return cachedConstants
+      })().finally(() => {
+        constantsInFlight = undefined
+      })
+    }
+    return constantsInFlight
   }
 
   function getBorrowingFee(debt: bigint): Promise<bigint> {
@@ -263,7 +340,13 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
     isAccountFeeExempt,
   }
-  const writeDeps: WriteDeps = { publicClient, walletClient, addresses }
+  const writeDeps: WriteDeps = {
+    publicClient,
+    walletClient,
+    addresses,
+    ensureVerified: verifyDeployment,
+    getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
+  }
 
   return {
     chainId,
@@ -271,6 +354,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     contracts,
     fixed: FIXED_CONSTANTS,
     getConstants,
+    invalidateConstants,
     getBorrowingFee,
     verifyDeployment,
     getTrove: (address) => getTrove(readDeps, address),

@@ -65,7 +65,11 @@ export function useBorrowingPower({
   return useMusdQuery<bigint>({
     queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n),
     fetch: (client) => client.getBorrowingPower({ collateral: collateral as bigint }),
-    enabled: collateral !== undefined,
+    // Zero is disabled rather than queried: `getBorrowingPower` now rejects a non-positive
+    // collateral with `InvalidAmount` instead of searching over it (MK-010), and an empty
+    // text input parsing to `0n` is the ordinary state of a calculator being typed into, not
+    // an error to render.
+    enabled: collateral !== undefined && collateral > 0n,
   })
 }
 

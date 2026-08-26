@@ -59,12 +59,20 @@ export default defineConfig({
        *
        * Measured at the time this gate was wired, at fork block 15043414:
        *   statements 95.32 · branches 91.28 · functions 99.02 · lines 95.32
+       * Re-measured after the P4 S2 sweep (MK-007 through MK-013), same block:
+       *   statements 98.20 · branches 91.72 · functions 99.27 · lines 98.20
+       *
+       * Statements and lines move up to 98, the measured number rounded down. Branches
+       * stays at 91 rather than following 91.72 up: the branch metric is the one that sits
+       * closest to its floor, several of its remaining branches are fork-path dependent,
+       * and a ratchet that has to be argued down later was set too tight. Functions stays
+       * at 99 for the same reason, the measured 99.27 rounds down to 99.
        */
       thresholds: {
-        lines: 95,
+        lines: 98,
         functions: 99,
         branches: 91,
-        statements: 95,
+        statements: 98,
       },
     },
   },

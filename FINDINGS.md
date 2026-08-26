@@ -42,13 +42,13 @@ claim about it was not).
 | MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | fixed |
 | MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
 | MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | fixed |
-| MK-007 | `claim()` swallows every error | S2 | open |
-| MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
-| MK-009 | Address overrides accept any string | S2 | open |
-| MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
-| MK-011 | `maxFeePercentage` is advisory only | S2 | open |
-| MK-012 | Governable constants are cached for the client lifetime | S2 | open |
-| MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
+| MK-007 | `claim()` swallows every error | S2 | fixed |
+| MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | fixed |
+| MK-009 | Address overrides accept any string | S2 | fixed |
+| MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | fixed |
+| MK-011 | `maxFeePercentage` is advisory only | S2 | documented |
+| MK-012 | Governable constants are cached for the client lifetime | S2 | fixed |
+| MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | fixed |
 | MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
@@ -65,6 +65,7 @@ claim about it was not).
 | MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
 | MK-028 | The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`, which Node 24 rejects | S2 | fixed |
 | MK-029 | Local evidence and CI evidence were both true, because they ran different runtimes | S2 | fixed |
+| MK-030 | `zz-findings` MK-003 refinance fee assertion fails intermittently on a plain fork run | S3 | open |
 
 ---
 
@@ -328,6 +329,21 @@ indistinguishably from the truth, that they have nothing.
 **Decision.** Fix now. Match only the no surplus revert, route everything else through `mapRevert`
 and rethrow.
 
+**Fixed, P4 wave.** The contract's behavior was established by triggering it rather than assumed,
+which mattered: `claimCollateral()` does NOT return zero when there is nothing to claim. Called
+from an account with no surplus on the fork it reverts with the classic Liquity require string
+`CollSurplusPool: No collateral available to claim`, decoded by viem as `Error(string)`. That is
+now a row in `docs/01-ground-truth.md` §11, marked as the one reason matched but deliberately not
+mapped to a typed error.
+
+`claim` matches that reason through a new `decodeRevertReason` export from
+`errors/mapRevert.ts`, so it reuses the one decoder's walk rather than re-implementing it, and
+rethrows everything else through `mapRevert`. Pinned chain free by
+`packages/core/test/s2-guards.test.ts`, which had no predecessor: there was no paired findings test
+for MK-007 before this wave. Three of its four cases fail against the old bare `catch {}`, verified
+by putting the old body back and running them; the fourth, the no surplus no-op, passes both ways,
+which is the point.
+
 ---
 
 ## MK-008 · `verifyDeployment()` is weak and off the critical path
@@ -343,6 +359,46 @@ unverified, and `trove/index.ts` re reads `minNetDebt` directly, bypassing the h
 **Decision.** Fix now. Assert the cross wiring pointers, run it once before the first write, and
 route the direct `minNetDebt` read through the same path.
 
+**Fixed, P4 wave.** `packages/core/src/client/verifyDeployment.ts` asserts, in ONE `multicall`:
+
+- **Code at all seven bundled addresses.** Not as a separate sweep. Every one of the seven has at
+  least one read in the batch, and `allowFailure: false` means an address with no code fails the
+  whole call. Three of them, `priceFeed`, `musd` and `interestRateManager`, hold no wiring pointer,
+  so they carry a presence probe each; without those, an empty address at any of the three would
+  have satisfied every other assertion. The `eth_getCode` sweep runs only ON failure, to name which
+  address is empty instead of leaving an opaque decode error.
+- **All fourteen cross wiring pointers**, each against the resolved address map.
+- **`HintHelpers.priceFeed()` still unset**, the one pointer that is correctly zero.
+- **`MCR` and `CCR`**, as before, still throwing `MismatchedDeployment` so that branch is unchanged.
+
+The pointer set is the set `scripts/onchain-facts.ts` reads and `docs/09` §6 records as holding at
+a pinned block on BOTH chains, reused rather than re-derived. A pointer asserted but never observed
+would be a guess, and a guess that fails looks exactly like a compromised deployment. The presence
+probes assert PRESENCE only: no value has been established as invariant for them, and claiming more
+is how a verification step starts lying.
+
+**On the critical path.** `WriteDeps` gained a REQUIRED `ensureVerified`, awaited by
+`simulateAndSend` before simulate and by `claim`, which simulates itself. Required rather than
+optional on purpose: optional would let a future write path skip it silently, which is the shape of
+this very finding. The compiler found every construction site. `createMusdClient` memoizes it as a
+PROMISE, not a boolean, so concurrent first writes share one batch instead of racing into several,
+and clears it on failure so a transient transport error does not poison an otherwise healthy client.
+
+**The direct read is gone.** `trove/index.ts`'s `getMinNetDebt` called
+`borrowerOperations.minNetDebt()` straight through, which is precisely how `openTrove` bypassed
+verification. It now goes through the client's cached accessor, which also removes a round trip from
+every open.
+
+**Pinned by** `packages/core/test/s2-verify-deployment.test.ts`, chain free, and three fork tests in
+`phase1.fork.test.ts`. Four of the six chain free cases fail against the old two constant
+implementation, verified by putting it back. The one pre existing test, "verifyDeployment passes",
+passes against both implementations, which is exactly why it never caught this.
+
+**A limit worth stating.** The fork test for a wrong address asserts the NO CODE shape, because on a
+real chain a wrong address either has no code or lacks the function. The other shape, a substitute
+that has code and answers correctly but is not the one the deployment points at, is pinned chain
+free; constructing it on the fork would mean deploying a lookalike contract.
+
 ---
 
 ## MK-009 · Address overrides accept any string
@@ -357,6 +413,28 @@ inside an otherwise trusted map, with no verification before a value bearing sen
 **Decision.** Fix now. Validate and checksum every override, reject the zero address, and require
 deployment verification when any override is present.
 
+**Fixed, P4 wave.** `validateOverride` rejects an unknown contract key, a value that is not a valid
+EVM address, and the zero address, and returns every value through `getAddress` so the resolved map
+is canonical. Validation now runs on BOTH paths; before, the little that existed ran only on the
+unsupported-chain branch, so a bad value on a supported chain was spread straight into the map.
+
+The unknown-key case is the one that had no failure at all: `pricefeed` was spread over a map that
+already had `priceFeed`, so the bundled address survived and the caller believed they had redirected
+it. `MUSD_CONTRACT_NAMES` is now the single list behind both the completeness check and the
+unknown-key rejection, so the two cannot drift.
+
+**On requiring verification when an override is present:** it is required, but not conditionally.
+MK-008 makes `verifyDeployment` run before the first write on every path, which is strictly
+stronger than making it conditional on an override, and a conditional rule invites someone to narrow
+the condition later. The reasoning is in the pull request body. What makes it an answer to this
+finding rather than a coincidence is WHICH assertions verification now makes: the cross wiring
+pointers. Address validation cannot tell whether a replacement belongs to the same deployment;
+`TroveManager.sortedTroves()` can.
+
+**Pinned by** the MK-009 block in `packages/core/test/addresses.test.ts`, chain free. There was no
+paired findings test before. Six of its cases fail with the validation removed, verified by removing
+it.
+
 ---
 
 ## MK-010 · `getBorrowingPower` performs unbounded RPC iteration
@@ -370,6 +448,38 @@ inflict this on its own RPC endpoint.
 
 **Decision.** Fix now. Validate the input, bound the iteration count, and cut the per iteration
 round trips.
+
+**Fixed, P4 wave.** Three things, and the third depended on establishing a fact first.
+
+1. **The input is validated.** A non-positive collateral throws `InvalidAmount` rather than being
+   searched over. The React `useBorrowingPower` hook is now `enabled` only for a positive
+   collateral, because an empty text input parsing to `0n` is a calculator being typed into, not an
+   error to render.
+2. **The search is bounded**, `MAX_BORROWING_POWER_ITERATIONS = 256`. That is the number of halvings
+   a 256 bit range can survive, so a search that has not converged by then cannot: it is a backstop
+   against a bug, not a budget.
+3. **The search is no longer the primary path.** Every chain read happens in one `multicall`, the
+   answer is solved in closed form, and the chain is asked for a real `getBorrowingFee` only to
+   CONFIRM it. Roughly 77 sequential calls becomes about four.
+
+**The fee shape was established, not assumed.** Probed against the forked deployment at the pinned
+block, `getBorrowingFee(d)` equals `borrowingRate() * d / DECIMAL_PRECISION()` EXACTLY, at
+`d` = 1, 7, 1000, 1e18, 1.234...e18, 5000e18 and 1e30. 1000 matters: at the live rate it is the
+smallest sample where the floor division is visible. Live values are `borrowingRate() = 1e15`
+against `DECIMAL_PRECISION() = 1e18`, a flat 0.1% with no intercept, no tier and no minimum.
+
+**And it is still only a premise, which is why the fallback stays.** `borrowingRate` is governable:
+`proposeBorrowingRate` and `approveBorrowingRate` are both on the ABI. Linearity is a property of
+today's implementation, not a guarantee. So the closed form's answer is confirmed against a real
+`getBorrowingFee` call, and a mismatch falls back to the bounded search. A closed form that silently
+disagreed with the chain would be worse than the slow loop it replaced.
+
+**Pinned by** four chain-free cases in `packages/core/test/s2-guards.test.ts` (validation, the call
+count, the exact boundary, and the dust case) and two fork tests in `phase4.fork.test.ts`: linearity
+asserted directly against the contract, and the closed form compared to a locally reimplemented
+binary search, to the wei, at four collateral sizes. The reference search is written out in the test
+rather than shared with `src`, so the comparison is against the implementation that was replaced
+rather than against a helper that could drift with it. There was no paired findings test before.
 
 ---
 
@@ -386,6 +496,29 @@ can move between the check and the transaction.
 **Decision.** Documented limit, with the wording strengthened so no integrator reads it as an on
 chain guarantee.
 
+**Done, P4 wave. No code change, by design: there is nothing to change.** The scope was widened
+after checking: it is not only `redeemCollateral` that takes no fee cap. The full signatures in
+`docs/01-ground-truth.md` §5.1 show `openTrove`, `withdrawMUSD`, `adjustTrove` and `refinance` are
+all `(amount, upperHint, lowerHint)` shaped, so NO MUSD write path takes one. There is nothing for
+the SDK to pass a cap to.
+
+The existing honest note in `redemption/redeem.ts` is kept and extended rather than replaced. The
+same statement now also sits on `assertFeeWithinCap`, on all three `maxFeePercentage` fields in
+`trove/index.ts`, in `docs/03-core-api.md` under its own heading, and on the `MaxFeeExceeded` row in
+`docs/06-errors.md`.
+
+The read then send race is stated as a sequence rather than as an adjective, because "advisory" is
+easy to skim past: the SDK reads the fee, compares it, then sends, and between the read and the mine
+the governable rate can change while the transaction goes through anyway. Nothing reverts. **A
+passing check means the fee was within the cap when it was read, and nothing more.** It is opt in
+and defaults to no cap, so the default behavior is to accept whatever the protocol charges. Where a
+real bound is needed, the doc says the enforcement has to be the caller's.
+
+**No test.** This is the one item in the P4 sweep with none, and deliberately: there is no behavior
+to pin. The guard's arithmetic is already covered by `exceedsRateCap` in `math/fee.ts` and by the
+`MaxFeeExceeded` fork test in phase 5. A test asserting that a docstring contains a sentence would
+be theatre.
+
 ---
 
 ## MK-012 · Governable constants are cached for the client lifetime
@@ -398,6 +531,26 @@ process, a keeper for example, can act on a stale floor indefinitely.
 
 **Decision.** Fix now. Add a time to live and a way to invalidate.
 
+**Fixed, P4 wave.** `DEFAULT_CONSTANTS_TTL_MS` is 60 seconds, overridable per client with
+`constantsTtlMs`, and `MusdClient.invalidateConstants()` drops the cache without waiting the TTL
+out. `0` re-reads on every call.
+
+**Why 60 seconds**, since a default nobody can justify is a default nobody should trust. Stale is
+unbounded harm: a preview reports a floor the contract no longer enforces, so an open the SDK calls
+viable reverts, or one it rejects would have succeeded. Fresh costs two `eth_call`s a minute per
+client, less than a single `previewOpen` already makes. It is not lower because these are timelocked
+governance parameters rather than a price, so sub second freshness would buy nothing real and would
+add a round trip to every preview.
+
+An in-flight read is shared, so a burst of concurrent callers after an expiry issues one pair of
+reads rather than one pair each. `invalidateConstants` deliberately does NOT clear the deployment
+verification: a wiring pointer changing is a redeployment, not a governance action, which is the same
+reasoning already applied to the cached `governableVariables` pointer.
+
+**Pinned by** `packages/core/test/s2-constants-ttl.test.ts`, chain free with fake timers. There was
+no paired findings test. Three of its seven cases fail against the lifetime cache, verified by
+restoring it.
+
 ---
 
 ## MK-013 · Price is read outside the multicall
@@ -409,6 +562,34 @@ the price in a separate round trip, then run the multicall with it. Price and IC
 straddle blocks, which contradicts the one consistent price snapshot wording in the docstrings.
 
 **Decision.** Fix now, or correct the docstring where a single call is not achievable.
+
+**Fixed, P4 wave: fixed, not documented away.** Establishing WHY it could not be one call was the
+part that mattered. Every price dependent getter MUSD exposes takes the price as an ARGUMENT:
+`getTCR(uint256)`, `checkRecoveryMode(uint256)`, `getCurrentICR(address,uint256)`. Read from the
+generated ABI rather than assumed, there is no zero argument variant of any of them. So the price
+genuinely cannot be produced and consumed inside one `multicall`: its value must exist before the
+call that uses it is encoded.
+
+The answer is to PIN rather than to merge. `read/snapshot.ts` returns the price together with
+`Multicall3.getBlockNumber()` from a single `eth_call`, so the two cannot disagree, and the caller
+runs the dependent reads with `blockNumber` set to it. Two round trips, exactly as before, and now
+both evaluated against one block. The second call reads at most one block back, which every node
+serves; this is not archival access.
+
+Applied to `getSystemState`, `getTrove` and `isLiquidatable`. `isLiquidatable` was two sequential
+`readContract` calls, which for a predicate a keeper acts on is the difference between a liquidation
+that lands and one that reverts. `SystemState` and `Trove` now carry `blockNumber`, and `Trove` also
+carries the `price` its `icr` was measured against, so the snapshot is checkable by the caller
+rather than merely asserted by a docstring.
+
+**What is NOT changed, stated rather than left to be discovered.** `previewOpen`, `previewBorrow`,
+`previewRefinance` and `getBorrowingPower` still read the price in their own round trip. None of
+them claims a single block snapshot in its docstring, and moving them is a larger change to the
+math layer's shape than this finding calls for. They remain as they are, deliberately.
+
+**Pinned by** two fork tests in `phase2.fork.test.ts`. The second mines blocks after the read and
+then reconciles `icr` and `price` at the REPORTED block, which is the property that was previously
+untrue. There was no paired findings test before.
 
 ---
 
@@ -1218,6 +1399,42 @@ Matrixing is a scope decision about cost, and a decision that is not blocked on 
 Separately, the note on GitHub's Node 20 ACTION runtime deprecation in the same section is a
 different subject entirely, about the runtime GitHub uses to execute a JavaScript action, and must
 not be conflated with either.
+
+---
+
+## MK-030 · `zz-findings` MK-003 refinance fee assertion fails intermittently on a plain fork run
+
+**Class** S3, harness · **Status** open · **Found by us in the P4 wave, taking the baseline before
+touching anything**
+
+**Why it exists at all.** This wave's scope is MK-007 through MK-013, and the flake family belongs
+to the next one. It is registered anyway because the standing rule in `docs/08-conventions.md` §10
+is that every failure is attributed to an ID before it is called a flake, and this one matched none
+of MK-021 through MK-026. An unattributed red run is indistinguishable from a regression the next
+time it appears.
+
+**What happens.** `packages/core/test/zz-findings.fork.test.ts`, the case
+"MK-003 (fixed): previewRefinance reports the fee the contract actually charges", fails. Run 3 of
+ten `pnpm test:fork` runs on Node 24.19.0 at pinned block 15043414, on `main` at `af04519`, before
+any change in this wave.
+
+**Why it is NOT one of the existing entries.** MK-022, MK-023 and MK-024 are all inside
+`phase6.fork.test.ts`. MK-025 is `@musd-kit/react`. MK-026 is `phase5.fork.test.ts`, and although it
+is the closest in character, it is a different file and a different assertion. MK-021 is a warm up
+budget on a cold fork and the warm up succeeded.
+
+**What we do NOT have, stated rather than glossed.** The assertion text. That run's output was
+filtered to the summary lines while capturing a ten run baseline, and the failure did not recur in
+the five subsequent runs whose full output WAS captured. So this entry records that the case failed
+once in ten and nothing about why. Capturing the assertion is the first task when it is diagnosed;
+running the file alone will not reproduce the conditions, because the alphabetical sequencer puts
+`zz-findings` last, after every clock warp the earlier phases perform.
+
+**Observed rate.** 1 in 10 on the P4 baseline. The other two reds in that window were MK-022 (run 2)
+and MK-026 (run 7), leaving 7 green.
+
+**Decision.** Not diagnosed here, and not fixed. It joins MK-016 and MK-022 through MK-026 for the
+mitigation removal wave. Capture the assertion with full output before anything else.
 
 ---
 

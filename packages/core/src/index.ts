@@ -14,8 +14,11 @@ export { parseBtc, formatBtc, parseMusd, formatMusd, parseBps } from './units'
 export {
   getAddresses,
   isSupportedChainId,
+  hasAddressOverride,
   UnsupportedChain,
+  InvalidAddressOverride,
   SUPPORTED_CHAIN_IDS,
+  MUSD_CONTRACT_NAMES,
   DEPLOYMENTS,
   SOURCE_PACKAGE_VERSION,
   type MusdAddresses,
@@ -39,7 +42,9 @@ export {
 // The entry point.
 export {
   createMusdClient,
+  DEFAULT_CONSTANTS_TTL_MS,
   MismatchedDeployment,
+  DeploymentVerificationFailed,
   type MusdClient,
   type CreateMusdClientParams,
   type MusdConstants,

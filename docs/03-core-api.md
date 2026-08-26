@@ -27,9 +27,73 @@ const musd = createMusdClient({
 
 `createMusdClient` resolves all contract addresses for the chain, constructs typed
 clients, and **reads the governable constants on first use** (`minNetDebt()`, the
-borrowing rate, the global interest rate), caching them per session. The
-fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`, `PERCENT_DIVISOR`) are
-bundled.
+global interest rate). The fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`,
+`PERCENT_DIVISOR`) are bundled.
+
+### The governable constants are cached for 60 seconds, not forever
+
+`minNetDebt` and the interest rate can change under a running process, and they used to be
+held for the lifetime of the client object. A keeper or a server that builds one client at
+boot could therefore act on a debt floor that changed hours earlier, and nothing in the SDK
+would notice (MK-012).
+
+```ts
+createMusdClient({ chainId, publicClient, constantsTtlMs: 60_000 }); // DEFAULT_CONSTANTS_TTL_MS
+musd.invalidateConstants(); // drop it now, do not wait out the TTL
+```
+
+Sixty seconds is chosen against the cost of being wrong each way. Stale is unbounded harm: a
+preview reports a floor the contract no longer enforces, so an open the SDK calls fine
+reverts, or one it rejects would have succeeded. Fresh costs two `eth_call`s a minute per
+client, less than a single `previewOpen` already makes. It is not lower because these are
+timelocked governance parameters, not a price. `constantsTtlMs: 0` re-reads every call.
+
+The TTL is a **bound on staleness, not a promise of freshness**: inside the window you get
+the cached value, deliberately. `invalidateConstants()` is the escape hatch for when you know
+something changed, for example from a governance event you are already watching. It does not
+clear the deployment verification, which is memoized for the client's lifetime on purpose: a
+wiring pointer changing is a redeployment, not a governance action.
+
+### `verifyDeployment()`, and when it runs
+
+It asserts that the contracts at the resolved addresses really are a consistent MUSD
+deployment, in one `multicall`: code present at all seven bundled addresses, all fourteen
+cross wiring pointers resolving to that same map, `HintHelpers.priceFeed()` still unset (it
+is inherited and never assigned, so zero is correct), and `MCR`/`CCR` equal to the bundled
+fixed constants.
+
+**It runs automatically before the first write, on every path** (MK-008), memoized, so it
+costs one multicall for the life of the client and a resolved promise on every send after
+that. You only need to call it yourself to choose the moment, for example right after
+constructing a client against an overridden address map.
+
+It used to read two constant views on ONE of the seven addresses, and to run only from
+`getConstants()`. A fifteen line contract returning `MCR` and `CCR` passed it, and any write
+that did not happen to read a constant was unverified. Asserting the wiring is what makes
+identity mean something: a lookalike can return `MCR`, but it cannot make the real
+`TroveManager` point at it.
+
+`MismatchedDeployment` still means a bundled constant disagrees with the chain.
+`DeploymentVerificationFailed` is the new one, carrying `failures: string[]`, and it lists
+every check that failed rather than the first, because a wrong deployment is usually wrong in
+more than one place.
+
+### `addresses`, and what a partial override actually means
+
+Overrides are validated and checksummed, and three things throw `InvalidAddressOverride`
+(MK-009): an unknown contract key, a value that is not a valid EVM address, and the zero
+address. The unknown key matters most, because it used to fail silently: `pricefeed` was
+spread over a map that already had `priceFeed`, nothing changed, and nothing complained.
+Zero is called out separately because it is what a partially initialized config produces and
+it is the one wrong address that will not announce itself, since a call to an address with
+no code returns empty data rather than reverting with a reason.
+
+A **partial** override on a supported chain replaces one contract inside an otherwise
+trusted map, and address validation cannot tell whether the replacement belongs to the same
+deployment. What can is `verifyDeployment()`, which asserts the cross wiring pointers
+between the contracts and runs before the first write on every path (MK-008). Redirect
+`sortedTroves` to a foreign address and `TroveManager.sortedTroves()` will not equal it, so
+verification fails before anything is sent.
 
 ---
 
@@ -50,6 +114,8 @@ const trove = await musd.getTrove(address);
 //   isLiquidatable: boolean, // icr < MCR
 //   interestRate: bigint, // the rate locked at open (getTroveInterestRate)
 //   status: TroveStatus, // from getTroveStatus (enum)
+//   price: bigint, // fetchPrice() at blockNumber, the price icr was measured against
+//   blockNumber: bigint, // the block EVERY field above came from
 // }
 ```
 
@@ -60,8 +126,31 @@ and `healthFactor` are thin derivations of those authoritative values (see
 
 ```ts
 const sys = await musd.getSystemState();
-// { tcr: bigint, isRecoveryMode: boolean, price: bigint }   // getTCR, checkRecoveryMode, fetchPrice
+// { tcr, isRecoveryMode, price, blockNumber }   // getTCR, checkRecoveryMode, fetchPrice
 ```
+
+### One block, and why it takes two calls to get there
+
+`getTrove`, `getSystemState` and `isLiquidatable` are each evaluated against a **single
+block**, reported as `blockNumber` (MK-013). It used to be a claim in a docstring rather than
+a fact: the price was read in its own round trip, and the price dependent getters ran at
+whatever block came next.
+
+It cannot be one call, and the reason is in the ABI rather than in the SDK. Every price
+dependent getter takes the price as an **argument**, `getTCR(uint256)`,
+`checkRecoveryMode(uint256)`, `getCurrentICR(address,uint256)`, with no zero argument
+variant, so the value has to exist before the call that consumes it is encoded. The SDK
+therefore pins instead of merging: the first `multicall` returns the price together with
+`Multicall3.getBlockNumber()`, so those two cannot disagree, and the second runs the
+dependent getters at that block. Two round trips, the same as before, and the snapshot is now
+true.
+
+`blockNumber` and `price` are on the result so you can check it rather than take our word:
+re-read `getCurrentICR(address, trove.price)` at `trove.blockNumber` and you get `trove.icr`.
+
+The preview functions (`previewOpen`, `previewBorrow`, `previewRefinance`,
+`getBorrowingPower`) still read the price in their own round trip and make no single block
+claim.
 
 ---
 
@@ -94,11 +183,34 @@ musd.previewBorrow({ owner, amount });            // → verdict + binding const
 musd.previewRefinance(owner);                     // → fee, resulting principal/ICR, verdict
 
 musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw for an OPEN only
+                                                 //   throws InvalidAmount for collateral <= 0
 musd.computeICR({ collateral, entireDebt, price });        // → bigint
 musd.computeLiquidationPrice({ collateral, entireDebt });  // → bigint
 musd.computeEntireDebt({ draw, rate, elapsedSeconds });    // → bigint (preview accrual; see 05 §2)
 musd.getHealthFactor({ icr });                             // → number
 ```
+
+### `getBorrowingPower` costs four calls, not eighty
+
+It used to binary search the draw, calling the real `getBorrowingFee` on every step: about 77
+sequential round trips for one BTC, over a collateral amount nothing validated. A UI bound to
+a text input could aim that at its own RPC endpoint (MK-010).
+
+Now every read happens in one `multicall`, the answer is solved in closed form, and the chain
+is asked for a real `getBorrowingFee` only to **confirm** it. The closed form rests on the fee
+being linear in the draw, `getBorrowingFee(d) == borrowingRate() * d / DECIMAL_PRECISION()`,
+which was established by triggering it against the deployment rather than assumed, and holds
+exactly at the live rate (`1e15` against `1e18`, a flat 0.1%).
+
+It stays a premise rather than a fact, because `borrowingRate` is governable
+(`proposeBorrowingRate`, `approveBorrowingRate`). So the answer is confirmed against the chain
+and a mismatch falls back to the bounded binary search. A closed form that silently disagreed
+with the contract would be worse than the loop it replaced.
+
+`collateral <= 0` now throws `InvalidAmount`. `useBorrowingPower` is disabled for it rather
+than reporting an error, since an empty input parsing to `0n` is a calculator being typed
+into.
+
 
 `previewOpen` powers a "Borrowing Power Calculator": give it intended collateral and
 debt, get the resulting ICR, liquidation price, fee, total debt, and an explicit
@@ -184,10 +296,8 @@ The protocol's own naming is the trap: `redemptionRate()` is a rate
 (`BorrowerOperations.sol:129`), while `getRedemptionRate(collateralDrawn)` returns a fee
 **amount** (`:499-508`). At exactly one BTC drawn the two print the same digits.
 
-`maxFeePercentage` still caps the **rate** against the rate, which is unit consistent. It is
-**advisory only**: `redeemCollateral` takes no fee cap parameter at all
-(`TroveManager.sol:294-301`), so nothing on chain enforces it and governance can move the
-rate between the read and the mine (MK-011).
+`maxFeePercentage` still caps the **rate** against the rate, which is unit consistent. See
+the section below on what it does and does not give you.
 
 `borrow()` and the debt increase path of `adjustTrove()` precheck the same gate and
 throw `ExceedsBorrowingCapacity` **before** simulate, with capacity, entire debt,
@@ -205,7 +315,7 @@ internally (`hints/`).
 const { hash } = await musd.openTrove({
   collateral: parseBtc('0.05'), // BTC sent as msg.value
   debt: parseMusd('2500'), // requested draw (user receives this; owes draw + fee)
-  maxFeePercentage: parseBps(100), // OPTIONAL SDK-side guard, NOT an on-chain arg (C5). Throws MaxFeeExceeded.
+  maxFeePercentage: parseBps(100), // OPTIONAL SDK-side guard, NOT an on-chain arg. Throws MaxFeeExceeded.
 });
 // → openTrove(debt, upperHint, lowerHint) with value: collateral
 
@@ -219,9 +329,45 @@ await musd.claim();                                        // → claimCollatera
 await musd.refinance();                                    // → refinance(upper, lower)  (move to current global rate)
 ```
 
+### `maxFeePercentage` is a pre-flight check, not a protection
+
+Worth being blunt about, because the name reads like a guarantee and it is not one (MK-011).
+
+**No MUSD write path takes a fee cap parameter.** `openTrove`, `withdrawMUSD`, `adjustTrove`
+and `refinance` are all `(amount, upperHint, lowerHint)` shaped, verified from the full
+signatures in `01-ground-truth` §5.1, and `redeemCollateral` has none either
+(`TroveManager.sol:294-301`). There is nothing for the SDK to pass a cap to, so nothing on
+chain enforces one. The SDK cannot fix that; it can only be honest about it.
+
+What actually happens, in order:
+
+1. the SDK reads the fee, or the rate, from the chain;
+2. it compares that value against your cap, and may throw `MaxFeeExceeded`;
+3. it sends the transaction.
+
+**Between 1 and 3 the governable rate can change, and the transaction still mines at whatever
+rate is live then.** Nothing reverts. A passing check means the fee was within your cap *when
+it was read*, and nothing more. It is opt in and defaults to no cap, so the default behavior
+is to accept whatever the protocol charges.
+
+If you need a real bound, the enforcement has to be yours: read the fee again after the
+receipt (`redeem` documents the `Redemption` event's `collateralFee` as the authoritative
+number), or do not send while the rate is moving.
+
 **Single-axis vs combined:** route single-axis intents to the dedicated functions
 (`addColl`, `withdrawColl`, `withdrawMUSD`, `repayMUSD`); use `adjustTrove` only for
 combined collateral-and-debt changes.
+
+**`claim()` returns `{ claimed: false, hash: null }` for exactly one condition, and throws
+for every other.** `claimCollateral()` does not return zero when there is nothing to claim,
+it reverts with `CollSurplusPool: No collateral available to claim`, verified by triggering
+it on the fork. That one reason is matched and turned into the no-op. An RPC failure, a
+rejected signature, or any other revert now reaches you as a typed `MusdError` with the
+original error in `cause` (MK-007). Before this, every failure returned
+`{ claimed: false }`, so a user with real claimable surplus on a degraded endpoint was told,
+indistinguishably from the truth, that they had none. If you were branching on
+`claimed === false` alone, that branch no longer means "nothing to claim"; it means it, and
+an error means something went wrong.
 
 ---
 

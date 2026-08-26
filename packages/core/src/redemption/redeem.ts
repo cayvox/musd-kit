@@ -28,10 +28,19 @@ export interface RedeemParams {
    *
    * **This is advisory and is NOT an on-chain guarantee** (MK-011). `redeemCollateral` takes
    * no fee cap parameter at all (`TroveManager.sol:294-301`), so nothing on chain enforces
-   * this. The SDK reads the rate, compares it here, and then sends; the rate can be changed
-   * by governance between the read and the transaction, and the transaction will still go
-   * through at whatever rate is live when it mines. Treat it as a pre-flight sanity check,
-   * never as a protection.
+   * this, and no other MUSD write path takes one either: the full signatures in
+   * `docs/01-ground-truth.md` §5.1 are `(amount, upperHint, lowerHint)` shaped throughout.
+   * There is nothing to pass a cap to.
+   *
+   * The race, spelled out in the order it happens: the SDK reads the rate; it compares that
+   * value against your cap and may throw; it sends. Between the read and the mine the
+   * governable rate can change, and the transaction goes through at whatever is live then.
+   * Nothing reverts. **A passing check means the rate was within your cap when it was read,
+   * and nothing more.** It is opt in and defaults to no cap, so the DEFAULT behavior is to
+   * accept any rate the protocol charges.
+   *
+   * If you need a real bound, the enforcement has to be yours: compare the fee from the
+   * `Redemption` event after the receipt, or do not send while the rate is moving.
    */
   maxFeePercentage?: bigint
 }

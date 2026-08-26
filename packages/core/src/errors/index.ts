@@ -138,6 +138,27 @@ export class InvalidAmount extends MusdError {
   }
 }
 
+/**
+ * An `addresses` override entry that cannot be a contract address (MK-009).
+ *
+ * Thrown for an unknown contract key, a value that is not a valid EVM address, and for the
+ * zero address specifically. Zero is called out separately because it is the value a
+ * partially initialized config produces, and it is the one wrong address that will not
+ * announce itself: reads against it return empty data rather than reverting with a reason.
+ */
+export class InvalidAddressOverride extends MusdError {
+  readonly contractName: string
+  constructor(contractName: string, value: unknown, why: string) {
+    super(
+      Codes.INVALID_ADDRESS_OVERRIDE,
+      `Invalid \`addresses\` override for "${contractName}": ${why}. Received ${JSON.stringify(value)}.`,
+      { context: { contractName, value, why } },
+    )
+    this.name = 'InvalidAddressOverride'
+    this.contractName = contractName
+  }
+}
+
 /** `adjustTrove` was given a contradictory combination of deltas. */
 export class InvalidAdjustment extends MusdError {
   constructor(message: string) {
@@ -296,6 +317,28 @@ export class MismatchedDeployment extends MusdError {
 }
 
 /** An unexpected / unmapped revert, wraps the raw cause, never swallowed. */
+/**
+ * Deployment verification failed on something other than a constant (MK-008).
+ *
+ * `MismatchedDeployment` stays what it always was, a bundled numeric constant disagreeing
+ * with the chain, so that branch is unchanged for anyone already handling it. This one
+ * carries the assertions that are not numbers: missing contract code, and cross wiring
+ * pointers that do not resolve to the resolved address map. Every failure found in the pass
+ * is listed, because a deployment that is wrong is usually wrong in more than one place.
+ */
+export class DeploymentVerificationFailed extends MusdError {
+  readonly failures: readonly string[]
+  constructor(failures: readonly string[], cause?: unknown) {
+    super(
+      Codes.DEPLOYMENT_VERIFICATION_FAILED,
+      `The contracts at the resolved addresses are not a consistent MUSD deployment. Do not send transactions to them. ${failures.length} check(s) failed:\n  ${failures.join('\n  ')}`,
+      { context: { failures }, ...(cause !== undefined ? { cause } : {}) },
+    )
+    this.name = 'DeploymentVerificationFailed'
+    this.failures = failures
+  }
+}
+
 export class ContractCallFailed extends MusdError {
   constructor(message: string, cause: unknown) {
     super(Codes.CONTRACT_CALL_FAILED, message, { cause })

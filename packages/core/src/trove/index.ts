@@ -18,7 +18,7 @@ import {
   TroveNotFound,
   assertPositiveAmount,
 } from '../errors'
-import type { RevertContext } from '../errors/mapRevert'
+import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/mapRevert'
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 
@@ -142,12 +142,18 @@ function getBorrowingFee(deps: WriteDeps, debt: bigint): Promise<bigint> {
   })
 }
 
+/**
+ * The debt floor, from the client's cached governable constants rather than a direct read
+ * (MK-008, MK-012).
+ *
+ * This used to call `borrowerOperations.minNetDebt()` straight through, which is how the
+ * open path bypassed `verifyDeployment` entirely: verification hung off `getConstants()`,
+ * and this never called it. Routing it through the same accessor gives the pre-send floor
+ * check the same verified, TTL bounded value every other caller gets, and removes one round
+ * trip from every `openTrove`.
+ */
 function getMinNetDebt(deps: WriteDeps): Promise<bigint> {
-  return deps.publicClient.readContract({
-    address: deps.addresses.borrowerOperations,
-    abi: borrowerOperationsAbi,
-    functionName: 'minNetDebt',
-  })
+  return deps.getMinNetDebt()
 }
 
 function getMusdBalance(deps: WriteDeps, owner: Address): Promise<bigint> {
@@ -164,7 +170,31 @@ function assertTroveActive(entireDebt: bigint, owner: Address): void {
   if (entireDebt === 0n) throw new TroveNotFound(owner)
 }
 
-/** SDK-side fee guard (C5). `maxFeePercentage` is a 1e18-scaled fraction (1e16 = 1%). */
+/**
+ * SDK-side fee guard. `maxFeePercentage` is a 1e18-scaled fraction (1e16 = 1%).
+ *
+ * **This is a pre-flight sanity check, NOT a protection (MK-011).** The distinction is the
+ * whole point of this comment, so it is worth stating without hedging: MUSD's write paths
+ * take no fee cap parameter. `openTrove`, `withdrawMUSD`, `adjustTrove` and `refinance` are
+ * `(amount, upperHint, lowerHint)` shaped, verified from the full signatures in
+ * `docs/01-ground-truth.md` §5.1, and `redeemCollateral` has none either
+ * (`TroveManager.sol:294-301`). There is nothing for the SDK to pass a cap to, so there is
+ * nothing on chain enforcing one.
+ *
+ * What that means concretely, in the order it happens:
+ *
+ *   1. the SDK reads the fee, or the rate, from the chain;
+ *   2. it compares that value against your cap HERE, and may throw;
+ *   3. it sends the transaction.
+ *
+ * Between 1 and 3 the governable rate can change, and the transaction still goes through at
+ * whatever rate is live when it mines. Nothing reverts. So a passing check means the fee was
+ * within your cap when it was read, and nothing more. It is opt in and defaults to no cap,
+ * which means the DEFAULT behavior is to accept any fee the protocol charges.
+ *
+ * If you need a real bound, the enforcement has to be yours: check the fee again after the
+ * receipt, or do not send at all when the rate is moving.
+ */
 function assertFeeWithinCap(debtIncrease: bigint, fee: bigint, maxFeePercentage?: bigint): void {
   if (maxFeePercentage === undefined || debtIncrease === 0n) return
   const actualFeePercentage = (fee * ONE) / debtIncrease
@@ -237,7 +267,15 @@ const send = (
 export interface OpenTroveParams {
   collateral: bigint
   debt: bigint
-  /** SDK-side fee cap, 1e18-scaled fraction (e.g. `10n ** 16n` = 1%). Throws `MaxFeeExceeded`. */
+  /**
+   * SDK-side fee cap, 1e18-scaled fraction (e.g. `10n ** 16n` = 1%). Throws
+   * `MaxFeeExceeded`.
+   *
+   * **Advisory, never an on-chain guarantee (MK-011).** No MUSD write path takes a fee cap
+   * parameter, so nothing on chain enforces this. The SDK reads the fee, compares it here,
+   * then sends; the governable rate can move in between and the transaction still mines at
+   * whatever is live. A pre-flight sanity check, not a protection.
+   */
   maxFeePercentage?: bigint
 }
 
@@ -286,6 +324,11 @@ export async function addCollateral(
 /** Parameters for {@link MusdClient.borrow}: the MUSD to draw (+ optional fee cap). */
 export interface BorrowParams {
   amount: bigint
+  /**
+   * SDK-side fee cap, 1e18-scaled fraction. **Advisory, never an on-chain guarantee**: no
+   * MUSD write path takes a fee cap parameter, so the SDK reads, compares, then sends, and
+   * the governable rate can move in between (MK-011). See `docs/03-core-api.md` §4.
+   */
   maxFeePercentage?: bigint
 }
 
@@ -356,6 +399,11 @@ export interface AdjustTroveParams {
   withdrawCollateral?: bigint
   borrow?: bigint
   repay?: bigint
+  /**
+   * SDK-side fee cap, 1e18-scaled fraction. **Advisory, never an on-chain guarantee**: no
+   * MUSD write path takes a fee cap parameter, so the SDK reads, compares, then sends, and
+   * the governable rate can move in between (MK-011). See `docs/03-core-api.md` §4.
+   */
   maxFeePercentage?: bigint
 }
 
@@ -491,12 +539,43 @@ async function refinancingFee(
 }
 
 /**
- * Claim collateral surplus (after a redemption/liquidation left some). With no surplus
- * `claimCollateral` reverts, so this simulates first and returns a clean no-op instead
- * of throwing.
+ * The ONE revert `claim` is allowed to treat as a no-op (MK-007).
+ *
+ * Established by triggering it against the forked contracts rather than assumed:
+ * `claimCollateral()` from an account with no surplus does NOT return zero, it reverts,
+ * with the classic Liquity require string
+ *
+ *   CollSurplusPool: No collateral available to claim
+ *
+ * decoded by viem as `Error(string)` (`errorName: 'Error'`). Recorded in
+ * `docs/01-ground-truth.md` §11 with the rest of the verified corpus.
+ */
+const NO_SURPLUS_TO_CLAIM = /No collateral available to claim/i
+
+/**
+ * Claim collateral surplus (after a redemption or liquidation left some). With no surplus
+ * `claimCollateral` reverts, so this simulates first and returns a clean no-op for THAT
+ * revert and only that one.
+ *
+ * MK-007. This used to wrap simulate and send in a bare `catch {}` that returned
+ * `{ claimed: false }` for every failure. It was the single violation of the policy stated
+ * at the top of `errors/mapRevert.ts`, that a revert is never swallowed and that anything
+ * unrecognized surfaces as a typed error with the original cause attached. The intent was
+ * defensible; the blast radius was not. A user holding real claimable surplus on a degraded
+ * RPC was told, indistinguishably from the truth, that they had nothing, and a rejected
+ * wallet signature reported the same thing.
+ *
+ * Now the no surplus revert is matched BY REASON through {@link decodeRevertReason}, so it
+ * is the reason that decides, not the mere fact that something threw. Every other failure,
+ * an RPC error, a user rejection, a different revert, goes through {@link mapRevert} and is
+ * rethrown as a typed `MusdError` with the original error preserved in `cause`.
  */
 export async function claim(deps: WriteDeps): Promise<ClaimResult> {
   const wallet = requireWallet(deps)
+  // `claim` does its own simulate rather than going through `simulateAndSend`, because it
+  // has to inspect the revert. That means it also has to gate on verification itself; it is
+  // the one write path where forgetting this would be silent (MK-008).
+  await deps.ensureVerified()
   try {
     const { request } = await deps.publicClient.simulateContract({
       account: wallet.account,
@@ -506,7 +585,10 @@ export async function claim(deps: WriteDeps): Promise<ClaimResult> {
     })
     const hash = await wallet.walletClient.writeContract(request)
     return { claimed: true, hash }
-  } catch {
-    return { claimed: false, hash: null }
+  } catch (error) {
+    if (NO_SURPLUS_TO_CLAIM.test(decodeRevertReason(error) ?? '')) {
+      return { claimed: false, hash: null }
+    }
+    throw mapRevert(error, { operation: 'claim', address: wallet.account.address })
   }
 }

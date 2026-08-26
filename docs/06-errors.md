@@ -29,11 +29,12 @@ branch by `instanceof` or by `code` in a switch.
 | Error | When | Carries |
 |---|---|---|
 | `BelowMinimumDebt` | `draw + fee < minNetDebt` | `{ minNetDebt, netDebt }` |
-| `MaxFeeExceeded` | SDK-side fee guard tripped (C5, no on-chain maxFee) | `{ maxFeePercentage, actualFee }` |
+| `MaxFeeExceeded` | The SDK-side fee guard tripped. **Advisory**: no MUSD write path takes a fee cap, so a passing check means the fee was within your cap WHEN IT WAS READ, and the rate can move before the transaction mines (MK-011) | `{ maxFeePercentage, actualFee, actualFeePercentage }` |
 | `InsufficientCollateral` | resulting ICR would be < MCR | `{ icr, mcr }` |
 | `TroveNotFound` | operating on an address with no open Trove | `{ address }` |
 | `TroveAlreadyExists` | opening when one is already open | `{ address }` |
 | `InvalidAmount` | zero / negative / nonsensical input | `{ field, value }` |
+| `InvalidAddressOverride` | an `addresses` override with an unknown key, a non-address value, or the zero address (MK-009) | `{ contractName, value, why }` |
 
 ### 2.2 Protocol reverts (mapped from on-chain revert data)
 
@@ -53,6 +54,7 @@ branch by `instanceof` or by `code` in a switch.
 |---|---|
 | `UnsupportedChain` | `chainId` not 31611/31612 and no override given |
 | `MissingWalletClient` | a write attempted with no `walletClient` |
+| `DeploymentVerificationFailed` | the contracts at the resolved addresses are not a consistent MUSD deployment: missing code, or cross wiring that does not resolve (MK-008). Carries `failures: string[]`, all of them, not the first |
 | `ContractCallFailed` | an unexpected/unmapped revert, wraps the raw cause, never swallowed |
 
 ---
@@ -64,6 +66,14 @@ branch by `instanceof` or by `code` in a switch.
 - **Never swallow.** An unmapped revert becomes `ContractCallFailed` with the
   original error preserved in `cause`, it is never turned into a generic message
   that hides what happened.
+- **Exactly one revert is turned into data instead of an error, and it is matched by
+  reason.** `claim()` returns `{ claimed: false, hash: null }` when, and only when, the
+  revert reason is `CollSurplusPool: No collateral available to claim`. Everything else it
+  catches goes through the mapper and is rethrown. `claim()` was the one function violating
+  the rule above: it caught everything and reported it as nothing to claim, so an RPC
+  failure and an empty surplus were indistinguishable to the caller (MK-007). If you write
+  another function that converts a revert into a value, match the reason. A bare `catch` is
+  the defect, not the shape.
 - **Test each with a real revert.** `06`'s test gate: every mapped protocol
   error is triggered on the fork (e.g. open below `minNetDebt` → assert
   `BelowMinimumDebt`; redeem against a stale hint → assert `StaleHint`) and the
