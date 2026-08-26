@@ -64,6 +64,14 @@ branch by `instanceof` or by `code` in a switch.
 - **Never swallow.** An unmapped revert becomes `ContractCallFailed` with the
   original error preserved in `cause`, it is never turned into a generic message
   that hides what happened.
+- **Exactly one revert is turned into data instead of an error, and it is matched by
+  reason.** `claim()` returns `{ claimed: false, hash: null }` when, and only when, the
+  revert reason is `CollSurplusPool: No collateral available to claim`. Everything else it
+  catches goes through the mapper and is rethrown. `claim()` was the one function violating
+  the rule above: it caught everything and reported it as nothing to claim, so an RPC
+  failure and an empty surplus were indistinguishable to the caller (MK-007). If you write
+  another function that converts a revert into a value, match the reason. A bare `catch` is
+  the defect, not the shape.
 - **Test each with a real revert.** `06`'s test gate: every mapped protocol
   error is triggered on the fork (e.g. open below `minNetDebt` → assert
   `BelowMinimumDebt`; redeem against a stale hint → assert `StaleHint`) and the

@@ -435,6 +435,7 @@ viem's decoded `reason` (via `ContractFunctionRevertedError`):
 | `openTrove` when one is already open | `BorrowerOps: Trove is active` | require | `TroveAlreadyExists` |
 | `liquidate` a healthy Trove | `TroveManager: nothing to liquidate` | require | `NothingToLiquidate` |
 | `redeemCollateral` that can redeem nothing (incl. a stale/bad partial hint) | `TroveManager: Unable to redeem any amount` | require | `RedemptionFailed` |
+| `claimCollateral` from an account with no surplus | `CollSurplusPool: No collateral available to claim` | require | none, `claim()` returns `{ claimed: false }` (MK-007) |
 
 **Not reachable from the SDK surface (marked, not invented):**
 - **`StaleHint`**, there is **no distinct "stale hint" revert**. A stale/incorrect
@@ -448,6 +449,13 @@ viem's decoded `reason` (via `ContractFunctionRevertedError`):
 - **`InsufficientCollateral`**, the on-chain `ICR < MCR` revert maps to `ICRBelowMCR`
   (contract-authoritative). `InsufficientCollateral` is retained as the *preview-time*
   sibling (for the math/React layer); the write path surfaces `ICRBelowMCR`.
+
+**The claim row is the one reason that is matched but deliberately not mapped.** MUSD's
+`claimCollateral()` does not return zero when there is nothing to claim, it reverts, verified
+by triggering it on the fork from an account with no surplus. `claim()` turns that ONE reason
+into `{ claimed: false, hash: null }` and rethrows everything else through `mapRevert`
+(MK-007). Called directly through `client.contracts`, the same revert surfaces as
+`ContractCallFailed` with the reason preserved, like any other unmapped one.
 
 **Decoder discipline:** `mapRevert` matches on the distinctive substring of each reason
 (case-insensitive), maps the repay Panic via operation context, and sends anything

@@ -42,7 +42,7 @@ claim about it was not).
 | MK-004 | Recovery Mode borrowing fee skip is not modeled | S1 | fixed |
 | MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
 | MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | fixed |
-| MK-007 | `claim()` swallows every error | S2 | open |
+| MK-007 | `claim()` swallows every error | S2 | fixed |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
 | MK-009 | Address overrides accept any string | S2 | open |
 | MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
@@ -327,6 +327,21 @@ indistinguishably from the truth, that they have nothing.
 
 **Decision.** Fix now. Match only the no surplus revert, route everything else through `mapRevert`
 and rethrow.
+
+**Fixed, P4 wave.** The contract's behavior was established by triggering it rather than assumed,
+which mattered: `claimCollateral()` does NOT return zero when there is nothing to claim. Called
+from an account with no surplus on the fork it reverts with the classic Liquity require string
+`CollSurplusPool: No collateral available to claim`, decoded by viem as `Error(string)`. That is
+now a row in `docs/01-ground-truth.md` §11, marked as the one reason matched but deliberately not
+mapped to a typed error.
+
+`claim` matches that reason through a new `decodeRevertReason` export from
+`errors/mapRevert.ts`, so it reuses the one decoder's walk rather than re-implementing it, and
+rethrows everything else through `mapRevert`. Pinned chain free by
+`packages/core/test/s2-guards.test.ts`, which had no predecessor: there was no paired findings test
+for MK-007 before this wave. Three of its four cases fail against the old bare `catch {}`, verified
+by putting the old body back and running them; the fourth, the no surplus no-op, passes both ways,
+which is the point.
 
 ---
 

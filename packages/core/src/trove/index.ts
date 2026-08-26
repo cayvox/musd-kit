@@ -18,7 +18,7 @@ import {
   TroveNotFound,
   assertPositiveAmount,
 } from '../errors'
-import type { RevertContext } from '../errors/mapRevert'
+import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/mapRevert'
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 
@@ -491,9 +491,36 @@ async function refinancingFee(
 }
 
 /**
- * Claim collateral surplus (after a redemption/liquidation left some). With no surplus
- * `claimCollateral` reverts, so this simulates first and returns a clean no-op instead
- * of throwing.
+ * The ONE revert `claim` is allowed to treat as a no-op (MK-007).
+ *
+ * Established by triggering it against the forked contracts rather than assumed:
+ * `claimCollateral()` from an account with no surplus does NOT return zero, it reverts,
+ * with the classic Liquity require string
+ *
+ *   CollSurplusPool: No collateral available to claim
+ *
+ * decoded by viem as `Error(string)` (`errorName: 'Error'`). Recorded in
+ * `docs/01-ground-truth.md` §11 with the rest of the verified corpus.
+ */
+const NO_SURPLUS_TO_CLAIM = /No collateral available to claim/i
+
+/**
+ * Claim collateral surplus (after a redemption or liquidation left some). With no surplus
+ * `claimCollateral` reverts, so this simulates first and returns a clean no-op for THAT
+ * revert and only that one.
+ *
+ * MK-007. This used to wrap simulate and send in a bare `catch {}` that returned
+ * `{ claimed: false }` for every failure. It was the single violation of the policy stated
+ * at the top of `errors/mapRevert.ts`, that a revert is never swallowed and that anything
+ * unrecognized surfaces as a typed error with the original cause attached. The intent was
+ * defensible; the blast radius was not. A user holding real claimable surplus on a degraded
+ * RPC was told, indistinguishably from the truth, that they had nothing, and a rejected
+ * wallet signature reported the same thing.
+ *
+ * Now the no surplus revert is matched BY REASON through {@link decodeRevertReason}, so it
+ * is the reason that decides, not the mere fact that something threw. Every other failure,
+ * an RPC error, a user rejection, a different revert, goes through {@link mapRevert} and is
+ * rethrown as a typed `MusdError` with the original error preserved in `cause`.
  */
 export async function claim(deps: WriteDeps): Promise<ClaimResult> {
   const wallet = requireWallet(deps)
@@ -506,7 +533,10 @@ export async function claim(deps: WriteDeps): Promise<ClaimResult> {
     })
     const hash = await wallet.walletClient.writeContract(request)
     return { claimed: true, hash }
-  } catch {
-    return { claimed: false, hash: null }
+  } catch (error) {
+    if (NO_SURPLUS_TO_CLAIM.test(decodeRevertReason(error) ?? '')) {
+      return { claimed: false, hash: null }
+    }
+    throw mapRevert(error, { operation: 'claim', address: wallet.account.address })
   }
 }

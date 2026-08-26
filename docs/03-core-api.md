@@ -223,6 +223,17 @@ await musd.refinance();                                    // → refinance(uppe
 (`addColl`, `withdrawColl`, `withdrawMUSD`, `repayMUSD`); use `adjustTrove` only for
 combined collateral-and-debt changes.
 
+**`claim()` returns `{ claimed: false, hash: null }` for exactly one condition, and throws
+for every other.** `claimCollateral()` does not return zero when there is nothing to claim,
+it reverts with `CollSurplusPool: No collateral available to claim`, verified by triggering
+it on the fork. That one reason is matched and turned into the no-op. An RPC failure, a
+rejected signature, or any other revert now reaches you as a typed `MusdError` with the
+original error in `cause` (MK-007). Before this, every failure returned
+`{ claimed: false }`, so a user with real claimable surplus on a degraded endpoint was told,
+indistinguishably from the truth, that they had none. If you were branching on
+`claimed === false` alone, that branch no longer means "nothing to claim"; it means it, and
+an error means something went wrong.
+
 ---
 
 ## 5. Redemption and liquidation (permissionless)

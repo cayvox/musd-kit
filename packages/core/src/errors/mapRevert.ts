@@ -53,6 +53,18 @@ function decode(error: unknown): DecodedRevert {
 }
 
 /**
+ * The decoded require-string reason, or `undefined` when the error carries none.
+ *
+ * Exported for the one caller that has to MATCH a reason rather than map it: `claim`
+ * turns exactly one revert into a no-op and must rethrow every other failure (MK-007).
+ * It exists so that caller reuses this walk instead of re-implementing it, which is the
+ * same reason `mapRevert` is the only decoder in the first place.
+ */
+export function decodeRevertReason(error: unknown): string | undefined {
+  return decode(error).reason
+}
+
+/**
  * Map a contract/simulation revert to its typed `MusdError`. Matches on the distinctive
  * substring of each verified reason (ground-truth §11), case-insensitive. Unrecognized →
  * `ContractCallFailed` (raw reason + original error preserved; never swallowed).
