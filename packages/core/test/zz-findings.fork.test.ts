@@ -898,11 +898,24 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     await fork.fundAccount(account.address, 5n * BTC)
     const client = clientFor(account)
 
-    const { hash } = await client.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })
-    const [sent, receipt] = await Promise.all([
-      fork.publicClient.getTransaction({ hash }),
-      fork.publicClient.waitForTransactionReceipt({ hash }),
-    ])
+    // Snapshot and revert around the write. This test OPENS a Trove, which mutates the
+    // SortedTroves list every later file redeems and liquidates against, and this file runs
+    // before the react ones. Leaving that behind is precisely the fixture coupling MK-016 is
+    // about, and it was measured: adding this test without the snapshot took a ten run window
+    // from two red to five. Reverting restores the state exactly, so the test costs the suite
+    // nothing but the time it takes.
+    const snapshotId = await fork.testClient.snapshot()
+    let sent: Awaited<ReturnType<typeof fork.publicClient.getTransaction>>
+    let receipt: Awaited<ReturnType<typeof fork.publicClient.waitForTransactionReceipt>>
+    try {
+      const { hash } = await client.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD })
+      ;[sent, receipt] = await Promise.all([
+        fork.publicClient.getTransaction({ hash }),
+        fork.publicClient.waitForTransactionReceipt({ hash }),
+      ])
+    } finally {
+      await fork.testClient.revert({ id: snapshotId })
+    }
     const marginPercent = Number(((sent.gas - receipt.gasUsed) * 1000n) / receipt.gasUsed) / 10
     console.log(
       `[MK-035] sentGasLimit=${sent.gas} gasUsed=${receipt.gasUsed} margin=${marginPercent}%`,
