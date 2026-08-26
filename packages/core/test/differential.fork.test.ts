@@ -42,8 +42,7 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     // to be replayable, and a seed only visible on failure is a seed nobody has when they need
     // it.
     console.log(
-      `[differential] seed=${SEED} cases=${CASES} minNetDebt=${minNetDebt} price=${price}` +
-        (ONLY_CASE !== undefined ? ` ONLY_CASE=${ONLY_CASE}` : ''),
+      `[differential] seed=${SEED} cases=${CASES} minNetDebt=${minNetDebt} price=${price}${ONLY_CASE !== undefined ? ` ONLY_CASE=${ONLY_CASE}` : ''}`,
     )
 
     let cases: DiffCase[] = generateCases(SEED, CASES, { minNetDebt, price })
