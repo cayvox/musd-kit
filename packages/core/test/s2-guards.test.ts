@@ -45,6 +45,10 @@ function writeDeps(simulate: () => Promise<unknown>): WriteDeps {
       writeContract: async () => '0xhash',
     } as unknown as WalletClient,
     addresses: T,
+    // MK-008 makes verification a required dep on every write path, so it cannot be
+    // skipped by accident. These tests are about the revert handling, so it resolves.
+    ensureVerified: async () => {},
+    getMinNetDebt: async () => 1800n * 10n ** 18n,
   }
 }
 

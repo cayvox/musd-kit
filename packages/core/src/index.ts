@@ -43,6 +43,7 @@ export {
 export {
   createMusdClient,
   MismatchedDeployment,
+  DeploymentVerificationFailed,
   type MusdClient,
   type CreateMusdClientParams,
   type MusdConstants,

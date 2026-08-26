@@ -43,7 +43,7 @@ claim about it was not).
 | MK-005 | `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check | S1 | fixed |
 | MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | fixed |
 | MK-007 | `claim()` swallows every error | S2 | fixed |
-| MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
+| MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | fixed |
 | MK-009 | Address overrides accept any string | S2 | fixed |
 | MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
@@ -357,6 +357,46 @@ unverified, and `trove/index.ts` re reads `minNetDebt` directly, bypassing the h
 
 **Decision.** Fix now. Assert the cross wiring pointers, run it once before the first write, and
 route the direct `minNetDebt` read through the same path.
+
+**Fixed, P4 wave.** `packages/core/src/client/verifyDeployment.ts` asserts, in ONE `multicall`:
+
+- **Code at all seven bundled addresses.** Not as a separate sweep. Every one of the seven has at
+  least one read in the batch, and `allowFailure: false` means an address with no code fails the
+  whole call. Three of them, `priceFeed`, `musd` and `interestRateManager`, hold no wiring pointer,
+  so they carry a presence probe each; without those, an empty address at any of the three would
+  have satisfied every other assertion. The `eth_getCode` sweep runs only ON failure, to name which
+  address is empty instead of leaving an opaque decode error.
+- **All fourteen cross wiring pointers**, each against the resolved address map.
+- **`HintHelpers.priceFeed()` still unset**, the one pointer that is correctly zero.
+- **`MCR` and `CCR`**, as before, still throwing `MismatchedDeployment` so that branch is unchanged.
+
+The pointer set is the set `scripts/onchain-facts.ts` reads and `docs/09` §6 records as holding at
+a pinned block on BOTH chains, reused rather than re-derived. A pointer asserted but never observed
+would be a guess, and a guess that fails looks exactly like a compromised deployment. The presence
+probes assert PRESENCE only: no value has been established as invariant for them, and claiming more
+is how a verification step starts lying.
+
+**On the critical path.** `WriteDeps` gained a REQUIRED `ensureVerified`, awaited by
+`simulateAndSend` before simulate and by `claim`, which simulates itself. Required rather than
+optional on purpose: optional would let a future write path skip it silently, which is the shape of
+this very finding. The compiler found every construction site. `createMusdClient` memoizes it as a
+PROMISE, not a boolean, so concurrent first writes share one batch instead of racing into several,
+and clears it on failure so a transient transport error does not poison an otherwise healthy client.
+
+**The direct read is gone.** `trove/index.ts`'s `getMinNetDebt` called
+`borrowerOperations.minNetDebt()` straight through, which is precisely how `openTrove` bypassed
+verification. It now goes through the client's cached accessor, which also removes a round trip from
+every open.
+
+**Pinned by** `packages/core/test/s2-verify-deployment.test.ts`, chain free, and three fork tests in
+`phase1.fork.test.ts`. Four of the six chain free cases fail against the old two constant
+implementation, verified by putting it back. The one pre existing test, "verifyDeployment passes",
+passes against both implementations, which is exactly why it never caught this.
+
+**A limit worth stating.** The fork test for a wrong address asserts the NO CODE shape, because on a
+real chain a wrong address either has no code or lacks the function. The other shape, a substitute
+that has code and answers correctly but is not the one the deployment points at, is pinned chain
+free; constructing it on the fork would mean deploying a lookalike contract.
 
 ---
 

@@ -54,6 +54,7 @@ branch by `instanceof` or by `code` in a switch.
 |---|---|
 | `UnsupportedChain` | `chainId` not 31611/31612 and no override given |
 | `MissingWalletClient` | a write attempted with no `walletClient` |
+| `DeploymentVerificationFailed` | the contracts at the resolved addresses are not a consistent MUSD deployment: missing code, or cross wiring that does not resolve (MK-008). Carries `failures: string[]`, all of them, not the first |
 | `ContractCallFailed` | an unexpected/unmapped revert, wraps the raw cause, never swallowed |
 
 ---

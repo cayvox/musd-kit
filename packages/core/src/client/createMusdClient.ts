@@ -1,13 +1,7 @@
 import type { Address, PublicClient, WalletClient } from 'viem'
 import { type MusdAddresses, getAddresses } from '../addresses'
 import { type MusdContracts, createContracts, governableVariablesAbi } from '../clients'
-import {
-  CCR as BUNDLED_CCR,
-  MCR as BUNDLED_MCR,
-  FIXED_CONSTANTS,
-  type FixedConstants,
-} from '../constants'
-import { MismatchedDeployment } from '../errors'
+import { FIXED_CONSTANTS, type FixedConstants } from '../constants'
 import {
   type ComputeHintsParams,
   type ComputeNICRParams,
@@ -72,10 +66,11 @@ import {
   repay,
   withdrawCollateral,
 } from '../trove'
+import { verifyDeployment as runVerifyDeployment } from './verifyDeployment'
 
 // `MismatchedDeployment` now lives in the unified `errors/` taxonomy (a `MusdError`);
 // re-exported here so existing `from './client/createMusdClient'` imports keep working.
-export { MismatchedDeployment } from '../errors'
+export { MismatchedDeployment, DeploymentVerificationFailed } from '../errors'
 
 /** Governable values read live (never bundled). */
 export interface GovernableConstants {
@@ -113,9 +108,16 @@ export interface MusdClient {
   /** Passthrough to `borrowerOperations.getBorrowingFee(debt)` (parameterized, not cached). */
   getBorrowingFee(debt: bigint): Promise<bigint>
   /**
-   * Defense-in-depth: read `MCR`/`CCR` from the chain and assert they equal the
-   * bundled fixed constants. Cached after the first success.
-   * @throws {MismatchedDeployment}
+   * Assert the contracts at the resolved addresses really are a consistent MUSD deployment
+   * (MK-008): code present at all seven bundled addresses, all fourteen cross wiring
+   * pointers resolving to that same map, `HintHelpers.priceFeed()` still unset, and
+   * `MCR`/`CCR` equal to the bundled fixed constants. One `multicall`, memoized after the
+   * first success, and awaited automatically before the first write.
+   *
+   * Calling it yourself is only necessary if you want the check to happen at a moment you
+   * choose, for example right after constructing a client against an overridden address map.
+   * @throws {MismatchedDeployment} a bundled constant disagrees with the chain.
+   * @throws {DeploymentVerificationFailed} missing code, or wiring that does not resolve.
    */
   verifyDeployment(): Promise<void>
 
@@ -207,17 +209,24 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
   const contracts = createContracts(addresses, publicClient, walletClient)
 
   let cachedConstants: MusdConstants | undefined
-  let verified = false
 
-  async function verifyDeployment(): Promise<void> {
-    if (verified) return
-    const [onchainMcr, onchainCcr] = await Promise.all([
-      contracts.troveManager.read.MCR(),
-      contracts.troveManager.read.CCR(),
-    ])
-    if (onchainMcr !== BUNDLED_MCR) throw new MismatchedDeployment('MCR', BUNDLED_MCR, onchainMcr)
-    if (onchainCcr !== BUNDLED_CCR) throw new MismatchedDeployment('CCR', BUNDLED_CCR, onchainCcr)
-    verified = true
+  /**
+   * The in-flight or completed verification (MK-008).
+   *
+   * A promise rather than a boolean, so that concurrent first writes share ONE multicall
+   * instead of racing into several. It is cleared on failure so a transient transport error
+   * does not permanently poison a client that is otherwise fine.
+   */
+  let verification: Promise<void> | undefined
+
+  function verifyDeployment(): Promise<void> {
+    if (!verification) {
+      verification = runVerifyDeployment(publicClient, addresses).catch((error: unknown) => {
+        verification = undefined
+        throw error
+      })
+    }
+    return verification
   }
 
   async function getConstants(): Promise<MusdConstants> {
@@ -263,7 +272,13 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
     isAccountFeeExempt,
   }
-  const writeDeps: WriteDeps = { publicClient, walletClient, addresses }
+  const writeDeps: WriteDeps = {
+    publicClient,
+    walletClient,
+    addresses,
+    ensureVerified: verifyDeployment,
+    getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
+  }
 
   return {
     chainId,

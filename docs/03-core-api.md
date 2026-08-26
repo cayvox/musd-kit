@@ -31,6 +31,30 @@ borrowing rate, the global interest rate), caching them per session. The
 fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`, `PERCENT_DIVISOR`) are
 bundled.
 
+### `verifyDeployment()`, and when it runs
+
+It asserts that the contracts at the resolved addresses really are a consistent MUSD
+deployment, in one `multicall`: code present at all seven bundled addresses, all fourteen
+cross wiring pointers resolving to that same map, `HintHelpers.priceFeed()` still unset (it
+is inherited and never assigned, so zero is correct), and `MCR`/`CCR` equal to the bundled
+fixed constants.
+
+**It runs automatically before the first write, on every path** (MK-008), memoized, so it
+costs one multicall for the life of the client and a resolved promise on every send after
+that. You only need to call it yourself to choose the moment, for example right after
+constructing a client against an overridden address map.
+
+It used to read two constant views on ONE of the seven addresses, and to run only from
+`getConstants()`. A fifteen line contract returning `MCR` and `CCR` passed it, and any write
+that did not happen to read a constant was unverified. Asserting the wiring is what makes
+identity mean something: a lookalike can return `MCR`, but it cannot make the real
+`TroveManager` point at it.
+
+`MismatchedDeployment` still means a bundled constant disagrees with the chain.
+`DeploymentVerificationFailed` is the new one, carrying `failures: string[]`, and it lists
+every check that failed rather than the first, because a wrong deployment is usually wrong in
+more than one place.
+
 ### `addresses`, and what a partial override actually means
 
 Overrides are validated and checksummed, and three things throw `InvalidAddressOverride`

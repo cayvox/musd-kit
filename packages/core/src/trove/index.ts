@@ -142,12 +142,18 @@ function getBorrowingFee(deps: WriteDeps, debt: bigint): Promise<bigint> {
   })
 }
 
+/**
+ * The debt floor, from the client's cached governable constants rather than a direct read
+ * (MK-008, MK-012).
+ *
+ * This used to call `borrowerOperations.minNetDebt()` straight through, which is how the
+ * open path bypassed `verifyDeployment` entirely: verification hung off `getConstants()`,
+ * and this never called it. Routing it through the same accessor gives the pre-send floor
+ * check the same verified, TTL bounded value every other caller gets, and removes one round
+ * trip from every `openTrove`.
+ */
 function getMinNetDebt(deps: WriteDeps): Promise<bigint> {
-  return deps.publicClient.readContract({
-    address: deps.addresses.borrowerOperations,
-    abi: borrowerOperationsAbi,
-    functionName: 'minNetDebt',
-  })
+  return deps.getMinNetDebt()
 }
 
 function getMusdBalance(deps: WriteDeps, owner: Address): Promise<bigint> {
@@ -524,6 +530,10 @@ const NO_SURPLUS_TO_CLAIM = /No collateral available to claim/i
  */
 export async function claim(deps: WriteDeps): Promise<ClaimResult> {
   const wallet = requireWallet(deps)
+  // `claim` does its own simulate rather than going through `simulateAndSend`, because it
+  // has to inspect the revert. That means it also has to gate on verification itself; it is
+  // the one write path where forgetting this would be silent (MK-008).
+  await deps.ensureVerified()
   try {
     const { request } = await deps.publicClient.simulateContract({
       account: wallet.account,
