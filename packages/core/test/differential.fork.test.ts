@@ -51,7 +51,16 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     const results: CaseResult[] = []
     const started = Date.now()
     for (const c of cases) {
-      results.push(await runCase(fork, c))
+      const result = await runCase(fork, c)
+      results.push(result)
+      // Print a mismatch THE MOMENT it happens, not in a summary at the end. The first
+      // thousand case sweep hit the test timeout at case ~700 and every mismatch it had
+      // already found went with it, because they were only printed after the loop. A finding
+      // this harness produces has to survive the run that produced it.
+      if (result.mismatch !== undefined) console.log(reportFailure(result))
+      if (result.threw !== undefined) {
+        console.log(`[differential] THREW ${describeCase(result.case)} :: ${result.threw}`)
+      }
       // Progress on a long sweep, so a run that is working is distinguishable from one that
       // has hung. A thousand cases is twenty minutes of silence otherwise.
       if ((c.index + 1) % 100 === 0) {
@@ -86,15 +95,18 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     }
     // Thrown cases are reported IN FULL, never truncated: a preview is documented as
     // returning a verdict rather than throwing, so every one of these is a finding (MK-037).
-    for (const t of threw) {
-      console.log(`[differential] THREW ${describeCase(t.case)} :: ${t.threw}`)
-    }
     console.log(`[differential] threw=${threw.length}`)
+    // Repeated at the end as a digest; each one was already printed when it happened.
     for (const m of mismatches) console.log(reportFailure(m))
 
     expect(
       mismatches.map((m) => `${m.mismatch?.direction} @ case ${m.case.index}`),
       'every mismatch is a finding: register it with the seed and the tuple as its reproduction',
     ).toEqual([])
-  }, 3_000_000)
+    // The timeout is sized for the job rather than for a guess. Measured at roughly 4.3
+    // seconds per case, a thousand cases is about 72 minutes, and the first attempt at this
+    // sweep was killed at 3000s with 700 cases done. 90 minutes leaves room on a loaded
+    // machine. This is a long job by design, which is why it is opt in and not on the push
+    // path; see `docs/07-testing.md` §4a.
+  }, 5_400_000)
 })
