@@ -71,7 +71,7 @@ export async function explainTransaction(
       `  block: ${receipt.blockNumber}  gasUsed: ${receipt.gasUsed}  gasLimit: ${gasLimit ?? 'unknown'}`,
     )
     if (gasLimit !== undefined && receipt.gasUsed === gasLimit) {
-      lines.push('  OUT OF GAS: gasUsed equals the limit, so the estimate was too small')
+      lines.push('  OUT OF GAS at the TOP level: gasUsed equals the limit')
     }
     lines.push(`  logs emitted: ${receipt.logs.length}`)
     for (const log of receipt.logs) {
@@ -82,6 +82,16 @@ export async function explainTransaction(
       // from state that has since moved (MK-035).
       const traced = await traceRevert(rpcUrlOf(publicClient), hash)
       if (traced) {
+        // MK-035. The top level check above is NOT sufficient and saying so here is the
+        // point: the EVM forwards at most 63/64 of the remaining gas to a nested call, so an
+        // inner frame can exhaust its allowance while the outer frame still holds the last
+        // 1/64. The receipt then shows `gasUsed < gasLimit` and looks like an ordinary
+        // revert. That is exactly how out of gas was wrongly ruled out for this finding.
+        if (traced.outOfGas) {
+          lines.push(
+            `  OUT OF GAS in a NESTED call at depth ${traced.depth}. The receipt cannot show this: the outer frame keeps the last 1/64 of the gas, so gasUsed < gasLimit even though a callee ran out.`,
+          )
+        }
         lines.push(`  reverted in: ${traced.address ?? 'unknown'} at call depth ${traced.depth}`)
         lines.push(`  revert reason (from trace): ${traced.reason ?? '(no Error(string) data)'}`)
         if (traced.tree) lines.push(`  failing call path:\n${indent(traced.tree, 4)}`)
@@ -243,7 +253,9 @@ interface CallFrame {
 export async function traceRevert(
   rpcUrl: string,
   hash: Hash,
-): Promise<{ address?: string; reason?: string; depth: number; tree: string } | undefined> {
+): Promise<
+  { address?: string; reason?: string; depth: number; tree: string; outOfGas: boolean } | undefined
+> {
   let frame: CallFrame
   try {
     const response = await fetch(rpcUrl, {
@@ -274,8 +286,10 @@ export async function traceRevert(
   // the deepest frame alone reports "(no Error(string) data)" on a revert that plainly has
   // one, which it did the first time this was written.
   let reason: string | undefined
+  let outOfGas = false
   const walk = (f: CallFrame, depth: number): void => {
     if (f.error) {
+      if (/out of gas/i.test(f.error)) outOfGas = true
       lines.push(`${'  '.repeat(depth)}${f.to ?? '?'} ${f.input?.slice(0, 10) ?? ''} -> ${f.error}`)
       deepest = { frame: f, depth }
       const decoded = readReason(f)
@@ -292,6 +306,7 @@ export async function traceRevert(
     ...(reason !== undefined ? { reason } : {}),
     depth: deepest.depth,
     tree: lines.join('\n'),
+    outOfGas,
   }
 }
 

@@ -354,6 +354,29 @@ If you need a real bound, the enforcement has to be yours: read the fee again af
 receipt (`redeem` documents the `Redemption` event's `collateralFee` as the authoritative
 number), or do not send while the rate is moving.
 
+### What simulate before send does and does not guarantee
+
+Every write simulates first, and every condition that holds at simulate time comes back as a
+typed `MusdError` rather than as a reverted receipt you have to decode. That is most of them
+and it is worth having.
+
+**It is not a guarantee that the send succeeds, and MK-035 is the counterexample.** Two things
+it cannot catch:
+
+- a condition that becomes true AFTER the simulation, because the chain moved;
+- the transaction running out of gas, because the gas limit comes from an estimate taken
+  before the block the transaction mines in.
+
+Traced on a fork of live Mezo: the same `redeemCollateral` call, from byte identical state,
+varied from **610270 to 710023 gas** across 40 attempts, a 16% swing, against a limit carrying
+a **1.5%** margin. Two of the 40 reverted, and the trace named `ActivePool` running out of gas
+at call depth 4. The receipt showed `gasUsed < gasLimit`, so it did not even look like out of
+gas: the EVM forwards at most 63/64 of the remaining gas to a nested call, so an inner frame
+can exhaust its allowance while the outer frame keeps the last 1/64.
+
+**So check the receipt.** The SDK returns `{ hash }` without waiting, by design, and a
+reverted receipt is a real outcome you have to handle.
+
 **Single-axis vs combined:** route single-axis intents to the dedicated functions
 (`addColl`, `withdrawColl`, `withdrawMUSD`, `repayMUSD`); use `adjustTrove` only for
 combined collateral-and-debt changes.
