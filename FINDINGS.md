@@ -70,6 +70,7 @@ claim about it was not).
 | MK-032 | The flake mitigations document a mechanism the harness makes impossible | S3 | fixed |
 | MK-033 | A passing test logs an uncaught React error into the CI output | S3 | fixed |
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
+| MK-035 | A write can revert after a passing simulate because the gas estimate is a block stale, and only `openTroveRaw` guards it | S2 | open, DIAGNOSIS REACHES `packages/core/src` |
 
 ---
 
@@ -1707,6 +1708,11 @@ first failure is the one you read, and the two failures read completely differen
 One is a mined transaction that failed for a non-`require` reason. The other never left the client.
 They are not the same failure and folding them cost a wave of treating them as one.
 
+**The mined half now has a candidate cause, and it is not a flake.** See MK-035: the same signature,
+a revert with no logs whose replay does not revert, appeared in CI on the react `useRedeem` write,
+and it points at the gas estimate being a block stale rather than at anything in the test. That
+diagnosis reaches `packages/core/src`, so it was reported rather than fixed.
+
 **Also ruled out, with numbers.** The razor-thin-margin explanation carried in these tests is wrong.
 `reportRedemptionMargin` now logs the first redemption hint's ICR before every redemption, on
 passing runs too, and over ten runs the margin above MCR was 0.46e18 to 1.31e18, not a hair. The
@@ -1733,6 +1739,79 @@ stability is, which is MK-016's point.
 now much cheaper to diagnose than it was: MK-031 means the next occurrence arrives with the receipt
 status, the revert reason, the emitted logs and the fork conditions attached, instead of a
 `TypeError`.
+
+---
+
+## MK-035 · A write can revert after a passing simulate, and only the test harness guards it
+
+**Class** S2 · **Status** open, NOT fixed, and the reason it is not fixed is that the diagnosis
+reaches `packages/core/src` · **Found by us in the P5b wave, from the CI run on that branch**
+
+**Why this entry stops the wave rather than joining the flake family.** P5b's scope was the flake
+family with an explicit rule: if a diagnosis leads into `packages/*/src`, stop and report, because
+that would mean a flake was a real defect. It did, so this is reported and not fixed.
+
+**What was observed.** CI run
+[32983444134](https://github.com/cayvox/musd-kit/actions/runs/32983444134), `useRedeem` in
+`packages/react/test/hooks.fork.test.ts:307`. With the retry removed this wave, the first failure is
+the one you read, and it reads:
+
+```
+status: reverted
+block: 15043754  gasUsed: 582036
+logs emitted: 0
+revert reason: the replay did NOT revert, so the failure was state or gas dependent
+               rather than a require
+```
+
+Two facts make that unusual. **The replay at the mined block did not revert**, and a `require`
+failure always reproduces on replay. And `gasUsed` of `582036` sits just BELOW the `582707` and
+`588307` that successful `useRedeem` writes recorded in the same wave's mitigation log, rather than
+far below as a `require` revert would.
+
+The same signature appeared locally on the phase 6 no-loan redemption: `status: reverted`,
+`gasUsed: 710023`, zero logs, replay did not revert.
+
+**The mechanism, and it is already written down in this repository.** `openTroveRaw`
+(`packages/core/test/harness/openTroveRaw.ts:96-101`) carries a comment describing exactly this:
+
+> The estimate is taken one block before the tx mines; one block of accrued interest shifts the
+> SortedTroves insert traversal, so on a loaded CI runner the real insert can need more gas than
+> estimated and the tx reverts out-of-gas (re-simulating with a high cap then "passes", the
+> tell-tale of OOG, not a logic revert).
+
+"Re-simulating with a high cap then passes" is precisely what the explainer reports as "the replay
+did NOT revert". That comment was written about `openTrove` and the fix applied there was a fixed
+6,000,000 gas cap, in the TEST HARNESS. Nothing equivalent protects any other write, and
+`redeemCollateral` walks `SortedTroves` the same way.
+
+**Why it is an SDK question and not a test one.** `simulateAndSend`
+(`packages/core/src/internal/write.ts`) simulates and then sends viem's `request`, which carries the
+gas estimate from that simulation. Every SDK write goes through it. If that estimate can be too
+tight for a traversal whose cost depends on state that moves between estimate and mine, then a real
+consumer redeeming on a busy chain hits the same revert, with gas spent and nothing to show. The
+harness is not what makes this happen; it is only where it was noticed, because the harness is the
+only place that re-simulates afterwards and looks.
+
+**What is NOT established, stated plainly.** That it IS out of gas. `gasUsed === gasLimit` is the
+unambiguous signature and no captured occurrence has the limit recorded, because the explainer only
+started reporting it in this commit. An attempt to force a synthetic out of gas case for the pinned
+test could not be made to fire and was removed rather than shipped as an assertion about something
+unreproduced. So: strong circumstantial evidence, no proof.
+
+**What the next occurrence will settle by itself.** `explainTransaction` now reports `gasLimit`
+alongside `gasUsed` and prints `OUT OF GAS: gasUsed equals the limit, so the estimate was too small`
+when they match. The next time this fires, in CI or locally, the report answers the question without
+anyone having to reason about it.
+
+**What it costs to carry.** MK-034's two halves and this entry are plausibly one thing. Until it is
+settled, every redemption failure in this suite has two candidate explanations, and a consumer
+facing it has none, because nothing in the SDK's error surface distinguishes an out of gas revert
+from a protocol one.
+
+**Decision.** Report, do not fix. A change to `simulateAndSend`'s gas handling is an SDK behavior
+change affecting every write path, and it needs its own wave with its own acceptance rather than
+being slipped into a harness cleanup.
 
 ---
 

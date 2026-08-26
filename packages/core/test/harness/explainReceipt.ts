@@ -42,7 +42,21 @@ export async function explainTransaction(
 
   if (receipt) {
     lines.push(`  status: ${receipt.status}`)
-    lines.push(`  block: ${receipt.blockNumber}  gasUsed: ${receipt.gasUsed}`)
+    // The gas LIMIT, not just what was used. `gasUsed === gas` is the unambiguous signature
+    // of out of gas, and it is the difference between "the contract refused" and "the
+    // estimate was too small", which read identically in a receipt (MK-035).
+    let gasLimit: bigint | undefined
+    try {
+      gasLimit = (await publicClient.getTransaction({ hash })).gas
+    } catch {
+      gasLimit = undefined
+    }
+    lines.push(
+      `  block: ${receipt.blockNumber}  gasUsed: ${receipt.gasUsed}  gasLimit: ${gasLimit ?? 'unknown'}`,
+    )
+    if (gasLimit !== undefined && receipt.gasUsed === gasLimit) {
+      lines.push('  OUT OF GAS: gasUsed equals the limit, so the estimate was too small')
+    }
     lines.push(`  logs emitted: ${receipt.logs.length}`)
     for (const log of receipt.logs) {
       lines.push(`    from ${log.address} topic0 ${log.topics[0] ?? '(anonymous)'}`)
