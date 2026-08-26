@@ -9,6 +9,7 @@ import {
   computeHints,
   computeNICR,
 } from '../hints'
+import { DEFAULT_GAS_MARGIN_PERCENT } from '../internal/write'
 import {
   type BorrowPreview,
   type BorrowingCapacity,
@@ -120,6 +121,20 @@ export interface CreateMusdClientParams {
    * (MK-012).
    */
   constantsTtlMs?: number
+  /**
+   * Percent added to the gas estimate on every write, over 100. Defaults to
+   * {@link DEFAULT_GAS_MARGIN_PERCENT} (25), which is a measured number, not a convention:
+   * see its docstring for the per path spread it was sized against (MK-035).
+   *
+   * `0` sends the bare estimate, which is what the SDK did before and is what produced the
+   * reverts MK-035 records. Raise it if you send during periods where the chain moves fast
+   * between your estimate and your inclusion.
+   *
+   * Unused gas is refunded, so a larger margin costs no fees. What it does cost is the
+   * native balance that must be AVAILABLE: the account must hold `gasLimit * gasPrice +
+   * value` or the send is rejected before it reaches the chain.
+   */
+  gasMarginPercent?: number
 }
 
 /** The `createMusdClient` surface: live reads, preview math, hints, lifecycle writes, and the redemption/keeper functions, all bound to one chain + clients. */
@@ -346,6 +361,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     addresses,
     ensureVerified: verifyDeployment,
     getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
+    gasMarginPercent: params.gasMarginPercent ?? DEFAULT_GAS_MARGIN_PERCENT,
   }
 
   return {
