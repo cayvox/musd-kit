@@ -101,7 +101,7 @@ async function redeemFresh(
 ): Promise<RedeemResult> {
   let last: unknown
   for (let i = 0; i < 4; i++) {
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     try {
       const result = await client.redeem(params)
       recordMitigation({ name: 'redeemFresh', attempts: i + 1, outcome: 'ok' })
@@ -179,7 +179,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
     const origPrice = await musdR.getOraclePrice()
     try {
       await fork.setPrice((origPrice * 3n) / 2n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
       expect((await musdR.getSystemState()).isRecoveryMode).toBe(false) // redemption needs TCR ≥ MCR
 
       // Redeem 5,000: enough to fully close the lowest one or two Troves (each ~2,200 debt)
@@ -231,7 +231,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       await wait(resT.hash)
     } finally {
       await fork.setPrice(origPrice)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 600_000)
 

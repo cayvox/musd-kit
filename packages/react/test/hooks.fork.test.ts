@@ -91,9 +91,8 @@ interface MutationSlice {
  * place because removing mitigations is its own wave (MK-016); what changed here is that it
  * now reports what it caught (MK-031) instead of discarding it.
  *
- * MK-032: the `refreshOracle` call in the loop does NOT keep the oracle fresh. The shim
- * cannot go stale (`OracleShim.sol:24-29` returns `timestamp()` for `updatedAt`), so its one
- * real effect is mining a block.
+ * MK-032: the call in the loop is now `mineBlocks(1)`, which is what it always did. It was
+ * `refreshOracle()`, a name for something the shim makes impossible.
  *
  * MK-031: what it throws now says what happened. Both branches used to discard their cause,
  * the revert branch keeping only a hash and the error branch keeping nothing at all, so a
@@ -102,7 +101,7 @@ interface MutationSlice {
 async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Promise<void> {
   let last: unknown
   for (let attempt = 0; attempt < 4; attempt++) {
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     act(() => fire())
     await waitFor(() => expect(mut().isSuccess || mut().isError).toBe(true), { timeout: 60_000 })
     const hash = mut().hash
@@ -145,7 +144,7 @@ async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Pro
 beforeAll(async () => {
   const fork = connectFork()
   rpcUrl = fork.rpcUrl
-  await fork.refreshOracle()
+  await fork.mineBlocks(1)
 
   // reader: a real Trove to read (signed with its own key); also our MUSD funder.
   const readerAccount = testAccount(800)
@@ -215,7 +214,7 @@ describe('@musd-kit/react, read hooks (fork)', () => {
     const fork = connectFork()
     const rdebt = (await coreClient.getTrove(reader)).entireDebt
     await coreClient.computeHints({ collateral: before + BTC / 10n, entireDebt: rdebt })
-    await fork.refreshOracle()
+    await fork.mineBlocks(1)
     const rc = await waitTx(
       (await coreClientFor(testAccount(800)).addCollateral({ amount: BTC / 10n })).hash,
     )
@@ -294,7 +293,7 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
     const high = (orig * 3n) / 2n
     try {
       await fork.setPrice(high)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
       // MK-032. Report the redeemable margin BEFORE attempting the redeem, on every run,
       // passing or failing. `getRedemptionHints` returns the truncated amount actually
       // reachable, so this is the quantity that decides whether `redeemCollateral` can do
@@ -328,14 +327,14 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
       expect(result.current.redeem.data?.estimatedCollateralDrawn).toBeGreaterThan(0n)
     } finally {
       await fork.setPrice(orig)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 150_000)
 
   it('useCloseTrove sends and the Trove is gone', async () => {
     const wrapper = await connectedWrapper()
     const fork = connectFork()
-    await fork.refreshOracle()
+    await fork.mineBlocks(1)
     const pos = await coreClient.getTrove(holder.address)
     // Fund holder the net debt (+ margin) from reader's MUSD pile so the close can burn it.
     const funder = testAccount(800)
@@ -358,7 +357,7 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
     const origPrice = await coreClient.getOraclePrice()
     try {
       await fork.setPrice((origPrice * 12n) / 10n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
       const { result } = renderHook(
         () => ({
           close: useCloseTrove(),
@@ -378,7 +377,7 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
       })
     } finally {
       await fork.setPrice(origPrice)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 150_000)
 })
@@ -390,7 +389,7 @@ describe('@musd-kit/react, typed errors + provider guard', () => {
     const config = makeConfig(rpcUrl, [holder.address])
     const wrapper = makeWrapper(config, newQueryClient())
     await connect(config, { connector: config.connectors[0]! })
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     const { result } = renderHook(() => ({ open: useOpenTrove(), wallet: useWalletClient() }), {
       wrapper,
     })

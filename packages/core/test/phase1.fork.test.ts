@@ -16,7 +16,7 @@ import { mezoTestnet } from './harness/constants'
 // The pure address cross-check vs ground-truth §4 lives in `addresses.test.ts`.
 
 describe('Phase 1, createMusdClient on the fork (31611)', () => {
-  beforeEach(() => connectFork().refreshOracle())
+  beforeEach(() => connectFork().mineBlocks(1))
 
   it('resolves every dev-facing address', () => {
     const { publicClient } = connectFork()

@@ -83,7 +83,7 @@ export async function openTroveRaw(
 
   // Refresh the oracle RIGHT BEFORE the tx, the hint ritual above can take many
   // seconds on a fork (lazy state loading), and openTrove reverts on a stale price.
-  await fork.refreshOracle()
+  await fork.mineBlocks(1)
 
   // Simulate first so any revert surfaces with its reason (a reverted tx otherwise
   // produces a receipt with status:'reverted' and no throw).
@@ -100,7 +100,7 @@ export async function openTroveRaw(
   // where it simulated. The (slow, cold-fork) simulateContract above can open a gap large
   // enough to trip "oracle is stale" on a loaded CI runner even though the simulate
   // passed. This second bump closes that gap to ~one block. (Verified flake fix: phase3.)
-  await fork.refreshOracle()
+  await fork.mineBlocks(1)
   // Send with a generous FIXED gas limit rather than the simulate's estimate. The estimate
   // is taken one block before the tx mines; one block of accrued interest shifts the
   // SortedTroves insert traversal, so on a loaded CI runner the real insert can need more

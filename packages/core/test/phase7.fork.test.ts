@@ -232,7 +232,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   beforeAll(async () => {
     funder = testAccount(720)
     const fork = connectFork()
-    await fork.refreshOracle()
+    await fork.mineBlocks(1)
     await openTroveRaw(fork, {
       collateralBtc: 5n * BTC,
       debtMusd: 200_000n * MUSD,
@@ -243,7 +243,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   it('BelowMinimumDebt, guard, with real minNetDebt context', async () => {
     const a = testAccount(721)
     await connectFork().fundAccount(a.address, 5n * BTC)
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     try {
       await clientFor(a).openTrove({ collateral: BTC, debt: 100n * MUSD })
       throw new Error('expected BelowMinimumDebt')
@@ -257,7 +257,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   }, 120_000)
 
   it('TroveAlreadyExists, guard, opening when one is already open', async () => {
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     try {
       await clientFor(funder).openTrove({ collateral: BTC, debt: 5_000n * MUSD })
       throw new Error('expected TroveAlreadyExists')
@@ -270,7 +270,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   it('ICRBelowMCR, decoder, open below the 110% ratio (passes guards, reverts on simulate)', async () => {
     const a = testAccount(722)
     await connectFork().fundAccount(a.address, 5n * BTC)
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     // 0.05 BTC collateral, 50k draw → ICR well under MCR; debt clears minNetDebt so the
     // guards pass and the contract revert is what surfaces.
     await expect(
@@ -290,7 +290,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   }, 120_000)
 
   it('RepayExceedsDebt, guard, repaying more than owed', async () => {
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     try {
       await clientFor(funder).repay({ amount: 10_000_000n * MUSD })
       throw new Error('expected RepayExceedsDebt')
@@ -303,14 +303,14 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   it('InsufficientMusdBalance, guard, repay with no MUSD held', async () => {
     const a = testAccount(724)
     await connectFork().fundAccount(a.address, 10n * BTC)
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     await openTroveRaw(connectFork(), {
       collateralBtc: 2n * BTC,
       debtMusd: 5_000n * MUSD,
       account: a,
     })
     await drainMusd(a, funder.address)
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     try {
       await clientFor(a).repay({ amount: 1_000n * MUSD })
       throw new Error('expected InsufficientMusdBalance')
@@ -321,7 +321,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
   }, 180_000)
 
   it('NothingToLiquidate, decoder, liquidating a healthy Trove', async () => {
-    await connectFork().refreshOracle()
+    await connectFork().mineBlocks(1)
     const a = testAccount(725)
     await connectFork().fundAccount(a.address, 1n * BTC)
     try {
@@ -343,7 +343,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
     const original = await readOnly().getOraclePrice()
     try {
       await fork.setPrice(20_000n * MUSD) // crash price → system-wide TCR < CCR
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
       expect((await readOnly().getSystemState()).isRecoveryMode).toBe(true)
       const a = testAccount(727)
       await fork.fundAccount(a.address, 10n * BTC)
@@ -354,7 +354,7 @@ describe('Phase 7, every mapped error proven by a real fork revert', () => {
     } finally {
       // Restore the shared fork's price so later files (smoke) are unaffected.
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 180_000)
 

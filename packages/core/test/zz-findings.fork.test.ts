@@ -195,7 +195,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // this Trove lands in the band MCR <= ICR < CCR.
       await openAtIcr(victim, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const state = await reader().getSystemState()
       expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
@@ -218,7 +218,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe(false)
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -245,7 +245,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       for (const mode of ['normal', 'recovery'] as const) {
         if (mode === 'recovery') {
           await fork.setPrice((original * 50n) / 100n)
-          await fork.refreshOracle()
+          await fork.mineBlocks(1)
         }
         const inRecovery = (await client.getSystemState()).isRecoveryMode
         expect(inRecovery, `fixture: expected ${mode} mode`).toBe(mode === 'recovery')
@@ -263,7 +263,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       }
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 300_000)
 
@@ -289,7 +289,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       )
 
       await fork.setPrice(original * 2n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const capacityAfterRise = await connectFork().publicClient.readContract({
         address: T.troveManager,
@@ -342,7 +342,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).rejects.toMatchObject({ code: 'EXCEEDS_BORROWING_CAPACITY' })
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -423,7 +423,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     try {
       await openAtIcr(borrower, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const client = clientFor(borrower)
       expect(
@@ -459,7 +459,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe('RECOVERY_MODE')
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -471,7 +471,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     try {
       await openAtIcr(anchor, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const client = reader()
       const state = await client.getSystemState()
@@ -489,7 +489,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe(0n)
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -500,7 +500,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     try {
       await openAtIcr(anchor, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const client = reader()
       expect(
@@ -539,7 +539,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       expect(preview.reasons).toContain('BELOW_MINIMUM_DEBT')
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -733,7 +733,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       let consumed = 0
       for (let attempt = 0; attempt < 4 && !result; attempt++) {
         consumed = attempt + 1
-        await fork.refreshOracle()
+        await fork.mineBlocks(1)
         try {
           result = await client.redeem({ amount: 100n * MUSD })
         } catch (error) {
@@ -780,7 +780,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).not.toBe(result.redemptionRate)
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 300_000)
 

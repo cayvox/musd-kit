@@ -42,7 +42,7 @@ async function readTrove(addr: Address, p: bigint) {
 }
 
 describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
-  beforeEach(() => connectFork().refreshOracle())
+  beforeEach(() => connectFork().mineBlocks(1))
 
   it('previewOpen ↔ actual parity to the wei (grid)', async () => {
     const c = client()

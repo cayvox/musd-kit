@@ -66,7 +66,7 @@ let nearAddr: Address
 
 describe('Phase 2, read/ live position via contract getters', () => {
   // Keep the oracle fresh before every test (anvil advances block time by wall-clock).
-  beforeEach(() => connectFork().refreshOracle())
+  beforeEach(() => connectFork().mineBlocks(1))
 
   beforeAll(async () => {
     const fork = connectFork()
