@@ -53,7 +53,12 @@ describe('Obligations owed to the differential harness', () => {
     try {
       // Open at the live price. Capacity is fixed here, from THIS price
       // (`BorrowerOperations.sol:692-698` calling `:1323-1328`).
-      await client.openTrove({ collateral: 2n * BTC, debt: 20_000n * MUSD })
+      // AWAIT THE RECEIPT. The SDK returns `{ hash }` without waiting, by design, so a read
+      // taken straight after sees no Trove. I made this exact mistake twice in one wave: the
+      // differential harness's seeding did it, and so did this file, and standalone runs hid
+      // both because the timing happened to work. In the full suite it reverted three runs out
+      // of four.
+      await wait((await client.openTrove({ collateral: 2n * BTC, debt: 20_000n * MUSD })).hash)
       const opened = await client.getBorrowingCapacity(account.address)
       expect(
         opened.capacity,
@@ -148,7 +153,8 @@ describe('Obligations owed to the differential harness', () => {
       ).toBe(true)
 
       const client = clientFor(exempt)
-      await client.openTrove({ collateral: 3n * BTC, debt: 10_000n * MUSD })
+      // Same reason as above: read only after the receipt exists.
+      await wait((await client.openTrove({ collateral: 3n * BTC, debt: 10_000n * MUSD })).hash)
 
       // THE OBLIGATION: the debt increase branch, not the open branch.
       const before = await fork.publicClient.readContract({
