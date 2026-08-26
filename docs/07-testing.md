@@ -185,7 +185,34 @@ seed nobody has when they need it.
 
 ### Placement, decided from the measured cost
 
-MEASURED_COST_PLACEHOLDER
+Measured on the declared Node at the pinned block, not estimated:
+
+| | |
+|---|---|
+| per case, fresh anvil | **about 3 seconds** |
+| per case, late in a long run | **about 20 seconds** |
+| 1000 cases | **about 96 minutes**, across two slices |
+
+**The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
+seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
+cases against a fresh anvil came back to 3 seconds each. So the cost grows with the LIFE of the
+anvil process, not with the case index, which is why `MK_DIFF_FROM` exists: it slices the same
+generated set across runs rather than generating a different set.
+
+**The split, and the reasoning.**
+
+- **On every push: 24 cases**, the default, about 90 seconds on a fresh fork. It is deterministic
+  from a fixed seed, so it is a gate rather than a lottery, and it is small enough to sit beside
+  a fork suite that already takes about 50 seconds.
+- **The full 1000 case sweep: on demand and on a schedule, never on push.** A ninety minute job
+  on the push path would make every merge wait for it, and people would start skipping it.
+- **It is not hidden either**, which is the other failure mode. `docs/08-conventions.md` §10 is
+  where a wave's obligations live, and the sweep belongs in a wave's acceptance when preview or
+  math code changed, with the seed reported.
+
+**The fork state cache applies**, verified rather than assumed: these runs used
+`~/.foundry/cache/rpc/31611/15043414` like every other fork test, and the harness warm up
+reported the usual `fork state warmed in 5xms (230 sorted Troves)` rather than a cold refetch.
 
 ## 5. Determinism & CI matrix
 

@@ -64,10 +64,12 @@ export async function runCase(fork: ForkConnection, c: DiffCase): Promise<CaseRe
   try {
     return await runCaseInner(fork, c)
   } catch (error) {
-    // A case that throws is RECORDED, never fatal. The first sweep of a thousand died on case
-    // N when `previewRefinance` propagated a chain `Panic(0x11)`, and twelve minutes of work
-    // went with it. A harness whose whole value is a large sample cannot let one sample end
-    // the run, and a thrown case is itself a result worth counting (MK-037).
+    // A case that throws is RECORDED, never fatal. The first sweep of a thousand died when
+    // `previewRefinance` propagated a chain `Panic(0x11)`, and twelve minutes of work went
+    // with it. A harness whose whole value is a large sample cannot let one sample end the
+    // run. That particular throw turned out to be this file's own seeding bug, fixed below,
+    // and the full sweep threw nothing afterwards; the catch stays because the next one might
+    // be real.
     const e = error as Error
     return {
       case: c,

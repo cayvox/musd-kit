@@ -25,6 +25,16 @@ const CASES = Number(process.env.MK_DIFF_CASES ?? 24)
 const SEED = Number(process.env.MK_DIFF_SEED ?? 20260826)
 const ONLY_CASE =
   process.env.MK_DIFF_CASE !== undefined ? Number(process.env.MK_DIFF_CASE) : undefined
+/**
+ * Run only cases at or after this index, from the SAME generated set.
+ *
+ * A thousand cases does not fit one run. Per case cost degrades late in a long sweep, measured
+ * at roughly 3 to 4 seconds each for the first 800 and about 20 seconds each after that, so the
+ * run reaches its own timeout with the last hundred unswept. Slicing covers the full tuple set
+ * from one seed across two runs, which is NOT the same as generating two different sets, and is
+ * why this is an index into the same generation rather than a second seed.
+ */
+const FROM_CASE = Number(process.env.MK_DIFF_FROM ?? 0)
 
 describe('Differential harness, preview verdict against chain outcome', () => {
   it(`sweeps ${CASES} generated cases`, async () => {
@@ -42,10 +52,11 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     // to be replayable, and a seed only visible on failure is a seed nobody has when they need
     // it.
     console.log(
-      `[differential] seed=${SEED} cases=${CASES} minNetDebt=${minNetDebt} price=${price}${ONLY_CASE !== undefined ? ` ONLY_CASE=${ONLY_CASE}` : ''}`,
+      `[differential] seed=${SEED} cases=${CASES} minNetDebt=${minNetDebt} price=${price}${FROM_CASE > 0 ? ` FROM_CASE=${FROM_CASE}` : ''}${ONLY_CASE !== undefined ? ` ONLY_CASE=${ONLY_CASE}` : ''}`,
     )
 
     let cases: DiffCase[] = generateCases(SEED, CASES, { minNetDebt, price })
+    if (FROM_CASE > 0) cases = cases.filter((c) => c.index >= FROM_CASE)
     if (ONLY_CASE !== undefined) cases = cases.filter((c) => c.index === ONLY_CASE)
 
     const results: CaseResult[] = []
@@ -53,10 +64,10 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     for (const c of cases) {
       const result = await runCase(fork, c)
       results.push(result)
-      // Print a mismatch THE MOMENT it happens, not in a summary at the end. The first
-      // thousand case sweep hit the test timeout at case ~700 and every mismatch it had
-      // already found went with it, because they were only printed after the loop. A finding
-      // this harness produces has to survive the run that produced it.
+      // Print a mismatch THE MOMENT it happens, not in a summary at the end. A thousand case
+      // sweep hit the test timeout at case ~700 and every mismatch it had already found went
+      // with it, because they were only printed after the loop. A finding this harness
+      // produces has to survive the run that produced it.
       if (result.mismatch !== undefined) console.log(reportFailure(result))
       if (result.threw !== undefined) {
         console.log(`[differential] THREW ${describeCase(result.case)} :: ${result.threw}`)
@@ -94,7 +105,7 @@ describe('Differential harness, preview verdict against chain outcome', () => {
       console.log(`[differential] skipped ${describeCase(s.case)} :: ${s.skipped}`)
     }
     // Thrown cases are reported IN FULL, never truncated: a preview is documented as
-    // returning a verdict rather than throwing, so every one of these is a finding (MK-037).
+    // returning a verdict rather than throwing, so every one of these is worth a finding.
     console.log(`[differential] threw=${threw.length}`)
     // Repeated at the end as a digest; each one was already printed when it happened.
     for (const m of mismatches) console.log(reportFailure(m))

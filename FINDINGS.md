@@ -170,7 +170,17 @@ every normal mode open and which it previously ignored. The precheck compares ag
 entire debt, not the stored `getTroveDebt`, because `_adjustTrove` updates interest first
 (`BorrowerOperations.sol:769`) and the gate therefore sees accrued interest.
 
-**Not witnessed, and therefore owed.** The downward ratchet is reasoned from
+**Discharged, P8 wave: the ratchet was watched taking its lower branch.**
+`packages/core/test/obligations.fork.test.ts` opens a position, confirms capacity does not rise
+when the price doubles, then withdraws half the collateral and reads it again:
+
+    capacity opened          140092922400000000000000
+    after the price doubled  140092922400000000000000   unchanged
+    after withdrawing half    70046461200000000000000   exactly half
+
+That is `min(current, recalculated)` taking the LOWER branch on chain, which no test had done.
+
+**Previously not witnessed, which is why it was owed.** The downward ratchet is reasoned from
 `BorrowerOperations.sol:879-897` and is NOT observed executing on chain: no test performs a
 collateral withdrawal and watches `min(current, recalculated)` take the lower branch. The tests pin
 only that capacity does not RISE with price, which is the half the reported defect turned on.
@@ -734,6 +744,21 @@ at the mined block that did NOT revert, which is the signature of a gas or state
 than a protocol rule. Removing a gas cap blind, at the end of a wave, while that is live and
 unexplained, is the wrong order to do things in.
 
+**Landed in the P8 wave: the differential harness exists.** `docs/09` §3 has carried a row saying
+"the differential harness, see below: being built" since P0. It is built:
+`packages/core/test/differential.fork.test.ts`, seeded, boundary weighted 60/20/20, every case
+snapshot isolated, both failure directions reported separately. A 1000 case sweep from seed
+`20260826` found **nothing**, which is a fact about the sweep rather than proof of correctness,
+and `docs/09` states what it does not cover.
+
+**What it did find is three false findings of its own**, all from one bug in its fixture, and
+that is the part worth remembering. `seedPosition` did not await the seed open's receipt, so the
+preview ran before the Trove existed. It produced two `FALSE_BLOCKED` mismatches, the direction
+this harness exists to find and therefore the one nobody would have questioned, plus two thrown
+cases. All four disappeared when the receipt was awaited. A harness that manufactures the
+findings it was built to detect is worse than no harness, and the only thing that caught it was
+reading `TROVE_NOT_ACTIVE` in the reasons and asking why a freshly opened Trove was not active.
+
 **What remains open, and why this stays `open`.** The suite is still one stateful sequence: the
 `fork` project shares one anvil instance, the cumulative EVM clock warps couple the phases, and the
 alphabetical sequencer orders that coupling without decoupling it. That was always going to outlive
@@ -828,8 +853,22 @@ silent. The same rule is applied on the debt increase path, where the fee is lik
 
 **Not witnessed, and therefore owed.** The exempt branch on the DEBT INCREASE path,
 `effectiveBorrowingFee` in `packages/core/src/trove/index.ts` mirroring
-`BorrowerOperations.sol:810-818`, is reasoned from source and NOT observed: the fork test grants
-exemption and exercises the OPEN path only. Reaching the exempt debt increase is on the
+`BorrowerOperations.sol:810-818`.
+
+**Discharged, P8 wave: the exempt DEBT INCREASE branch was watched executing.**
+`packages/core/test/obligations.fork.test.ts` grants exemption by impersonating the council,
+opens a position, then BORROWS against it:
+
+    draw            2000000000000000000000
+    quotedFee       2000000000000000000      what a non exempt account would pay
+    preview.fee     0                        previewBorrow reports the waiver
+    principalAdded  2000000000000000000000   exactly the draw, no fee
+
+Principal rather than entire debt, so accrued interest between the two reads cannot be mistaken
+for a fee.
+
+**Previously reasoned from source and NOT observed:** the fork test granted
+exemption and exercised the OPEN path only. Reaching the exempt debt increase is on the
 differential harness coverage list in `docs/09-review-and-validated-surface.md` §3.
 ---
 
