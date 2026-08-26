@@ -34,7 +34,8 @@ import { type RevertContext, mapRevert } from '../errors/mapRevert'
  *   - **A higher number in the wallet's confirmation screen**, which is the maximum, not the
  *     charge.
  *   - **Latency: none added.** viem skips its own estimation when `gas` is set, so this is
- *     the same count of `eth_estimateGas` calls as before.
+ *     the same count of `eth_estimateGas` calls as before, and the estimate runs in parallel
+ *     with the simulation rather than after it.
  *
  * **What it does NOT do.** It does not close the window. The estimate is still taken before
  * the block the transaction mines in, so a large enough jump still exhausts it. See
@@ -148,21 +149,33 @@ export async function simulateAndSend(
     // biome-ignore lint/suspicious/noExplicitAny: dynamic write dispatch (ABI typed at call sites).
     const sim: any = { account: wallet.account, address, abi, functionName, args }
     if (opts?.value !== undefined) sim.value = opts.value
-    const { request } = await deps.publicClient.simulateContract(sim)
-
     // MK-035. `simulateContract` returns a request with NO `gas` field, verified rather than
-    // assumed, so without this `writeContract` estimates internally and sends whatever came
-    // back. That estimate is taken before the block the transaction mines in, and the work
-    // can grow in between. Estimating here and adding a margin is the same number of
-    // `eth_estimateGas` calls, because viem skips its own when `gas` is set.
+    // assumed, so without an explicit limit `writeContract` estimates internally and sends
+    // whatever came back. That estimate is taken before the block the transaction mines in,
+    // and the work can grow in between.
     //
+    // The two calls run in PARALLEL, and that is not a micro optimisation. Running the
+    // estimate after the simulation adds a second state dependent round trip, so the state
+    // can move between them and the estimate reverts where the simulation passed. That was
+    // measured, not imagined: sequencing them cost three red runs in a ten run window, with
+    // `docsPath: '/docs/contract/estimateContractGas'` on the error. In parallel they see
+    // the same head, and the write costs no more latency than it did before.
+    const [{ request }, estimate] = await Promise.all([
+      deps.publicClient.simulateContract(sim),
+      // A failed estimate must NOT fail the write. If the state really has moved,
+      // `writeContract` estimates internally and surfaces it exactly as it did before this
+      // change; falling back is never worse than the behavior being replaced.
+      deps.publicClient
+        .estimateContractGas(sim)
+        .catch(() => undefined),
+    ])
+
     // A caller supplied `gas` wins outright: an explicit limit is a decision, not a default.
     // biome-ignore lint/suspicious/noExplicitAny: same dynamic dispatch as above.
     const req: any = { ...(request as any) }
     if (opts?.gas !== undefined) {
       req.gas = opts.gas
-    } else {
-      const estimate = await deps.publicClient.estimateContractGas(sim)
+    } else if (estimate !== undefined) {
       req.gas = withGasMargin(estimate, deps.gasMarginPercent)
     }
 
