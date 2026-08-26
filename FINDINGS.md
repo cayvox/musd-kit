@@ -1109,6 +1109,7 @@ file, all of them a write that did not take effect:
 | `phase5.fork.test.ts:191` `adjustTrove combined` | `No open Trove for 0xEB41...`, the `openTrove` that starts the test did not take effect at all |
 | `phase5.fork.test.ts:114` `full lifecycle via the SDK` | `expected 500000000000000000n to be 600000000000000000n`, likewise a collateral step |
 | `phase5.fork.test.ts` `simulate-before-send surfaces reverts` | `expected false to be true`, the Trove the test opened does not exist at the end |
+| `phase5.fork.test.ts:176` `full lifecycle` | `expected 'reverted' to be 'success'`, the `close()` receipt came back reverted. Added in the P5a wave, the first symptom in this family where a receipt STATUS is the assertion that fails rather than a downstream read |
 
 **It is NOT ours, and that was proven rather than argued.** This first appeared while landing the
 P3a changes, in `adjustTrove`, code that wave modified, so it had every appearance of a regression.
@@ -1126,6 +1127,13 @@ Two checks settled it:
 red in two on `main`. Against that, ZERO red in twenty `pnpm test:fork` runs on the same branch at
 the same block, where the four failures that did occur were MK-022, MK-023, MK-024 and MK-025, none
 of them in phase 5. That asymmetry is the finding.
+
+**Rate under coverage, P5a wave.** Five `pnpm test:coverage` runs on the P5a branch, Node 24.19.0,
+pinned block 15043414: three green, two red, both in this test. Run 1 was
+`expected false to be true` at `:123`, the opening write not taking effect, which is the second row
+of the table above. Run 2 was the new `:176` row. Two in five is the worst rate observed for this
+entry so far, against two in three on the P3a branch and one in two on `main`, so the spread across
+windows remains wide and no stable rate can be quoted.
 
 **Correction, P3b wave: the asymmetry is not absolute.** This entry originally said phase 5 fails
 under coverage and "so far never under a plain fork run". That is now falsified. One of five plain
