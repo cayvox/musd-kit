@@ -27,9 +27,32 @@ const musd = createMusdClient({
 
 `createMusdClient` resolves all contract addresses for the chain, constructs typed
 clients, and **reads the governable constants on first use** (`minNetDebt()`, the
-borrowing rate, the global interest rate), caching them per session. The
-fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`, `PERCENT_DIVISOR`) are
-bundled.
+global interest rate). The fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`,
+`PERCENT_DIVISOR`) are bundled.
+
+### The governable constants are cached for 60 seconds, not forever
+
+`minNetDebt` and the interest rate can change under a running process, and they used to be
+held for the lifetime of the client object. A keeper or a server that builds one client at
+boot could therefore act on a debt floor that changed hours earlier, and nothing in the SDK
+would notice (MK-012).
+
+```ts
+createMusdClient({ chainId, publicClient, constantsTtlMs: 60_000 }); // DEFAULT_CONSTANTS_TTL_MS
+musd.invalidateConstants(); // drop it now, do not wait out the TTL
+```
+
+Sixty seconds is chosen against the cost of being wrong each way. Stale is unbounded harm: a
+preview reports a floor the contract no longer enforces, so an open the SDK calls fine
+reverts, or one it rejects would have succeeded. Fresh costs two `eth_call`s a minute per
+client, less than a single `previewOpen` already makes. It is not lower because these are
+timelocked governance parameters, not a price. `constantsTtlMs: 0` re-reads every call.
+
+The TTL is a **bound on staleness, not a promise of freshness**: inside the window you get
+the cached value, deliberately. `invalidateConstants()` is the escape hatch for when you know
+something changed, for example from a governance event you are already watching. It does not
+clear the deployment verification, which is memoized for the client's lifetime on purpose: a
+wiring pointer changing is a redeployment, not a governance action.
 
 ### `verifyDeployment()`, and when it runs
 

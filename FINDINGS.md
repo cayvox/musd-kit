@@ -47,7 +47,7 @@ claim about it was not).
 | MK-009 | Address overrides accept any string | S2 | fixed |
 | MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
-| MK-012 | Governable constants are cached for the client lifetime | S2 | open |
+| MK-012 | Governable constants are cached for the client lifetime | S2 | fixed |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
 | MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
@@ -474,6 +474,26 @@ interest rate are governable, and are cached for as long as the client object li
 process, a keeper for example, can act on a stale floor indefinitely.
 
 **Decision.** Fix now. Add a time to live and a way to invalidate.
+
+**Fixed, P4 wave.** `DEFAULT_CONSTANTS_TTL_MS` is 60 seconds, overridable per client with
+`constantsTtlMs`, and `MusdClient.invalidateConstants()` drops the cache without waiting the TTL
+out. `0` re-reads on every call.
+
+**Why 60 seconds**, since a default nobody can justify is a default nobody should trust. Stale is
+unbounded harm: a preview reports a floor the contract no longer enforces, so an open the SDK calls
+viable reverts, or one it rejects would have succeeded. Fresh costs two `eth_call`s a minute per
+client, less than a single `previewOpen` already makes. It is not lower because these are timelocked
+governance parameters rather than a price, so sub second freshness would buy nothing real and would
+add a round trip to every preview.
+
+An in-flight read is shared, so a burst of concurrent callers after an expiry issues one pair of
+reads rather than one pair each. `invalidateConstants` deliberately does NOT clear the deployment
+verification: a wiring pointer changing is a redeployment, not a governance action, which is the same
+reasoning already applied to the cached `governableVariables` pointer.
+
+**Pinned by** `packages/core/test/s2-constants-ttl.test.ts`, chain free with fake timers. There was
+no paired findings test. Three of its seven cases fail against the lifetime cache, verified by
+restoring it.
 
 ---
 

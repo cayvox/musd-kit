@@ -42,6 +42,7 @@ export {
 // The entry point.
 export {
   createMusdClient,
+  DEFAULT_CONSTANTS_TTL_MS,
   MismatchedDeployment,
   DeploymentVerificationFailed,
   type MusdClient,
