@@ -27,6 +27,18 @@ const T = getAddresses(31611)
  * `gasLimit` beside `gasUsed` is the one unambiguous discriminator here. Equal means out of
  * gas. Unequal rules it out, which is exactly what it did the first time it fired (MK-035).
  */
+/** The RPC URL a viem client is bound to, for the raw `debug_` call viem does not expose. */
+function rpcUrlOf(publicClient: PublicClient): string {
+  const url = (publicClient as unknown as { transport?: { url?: string } }).transport?.url
+  return url ?? (process.env.MUSD_FORK_RPC_URL as string)
+}
+
+const indent = (text: string, spaces: number): string =>
+  text
+    .split('\n')
+    .map((line) => `${' '.repeat(spaces)}${line}`)
+    .join('\n')
+
 export async function explainTransaction(
   publicClient: PublicClient,
   hash: Hash,
@@ -66,7 +78,17 @@ export async function explainTransaction(
       lines.push(`    from ${log.address} topic0 ${log.topics[0] ?? '(anonymous)'}`)
     }
     if (receipt.status === 'reverted') {
-      lines.push(`  revert reason: ${await replayForReason(publicClient, hash, receipt)}`)
+      // The trace FIRST, because it is a record of what executed rather than an inference
+      // from state that has since moved (MK-035).
+      const traced = await traceRevert(rpcUrlOf(publicClient), hash)
+      if (traced) {
+        lines.push(`  reverted in: ${traced.address ?? 'unknown'} at call depth ${traced.depth}`)
+        lines.push(`  revert reason (from trace): ${traced.reason ?? '(no Error(string) data)'}`)
+        if (traced.tree) lines.push(`  failing call path:\n${indent(traced.tree, 4)}`)
+      } else {
+        lines.push('  trace: debug_traceTransaction returned nothing for this hash')
+      }
+      lines.push(`  replay at end of block: ${await replayForReason(publicClient, hash, receipt)}`)
     }
   }
 
@@ -188,5 +210,121 @@ export async function reportRedemptionMargin(
     )
   } catch (error) {
     console.log(`[margin] ${label} could not be read (${(error as Error).message.split('\n')[0]})`)
+  }
+}
+
+/**
+ * One frame of a `callTracer` trace. Only the fields this harness reads are declared.
+ */
+interface CallFrame {
+  from?: string
+  to?: string
+  input?: string
+  output?: string
+  error?: string
+  revertReason?: string
+  calls?: CallFrame[]
+}
+
+/**
+ * The innermost call that reverted, and the reason string it carried (MK-035).
+ *
+ * A receipt says `reverted` and nothing else, and the `eth_call` replay this file already
+ * does runs against END of block state, so it cannot see a condition that was false mid
+ * block. A transaction level trace can, because it is a record of what actually executed.
+ *
+ * Tracing support was established against the harness's own anvil (1.5.1) rather than
+ * assumed: `debug_traceTransaction` works both with default struct logs and with
+ * `tracer: 'callTracer'`, `trace_transaction` works, and `trace_replayTransaction` returns
+ * "Method not found". `callTracer` is used because it gives the call TREE, so the deepest
+ * frame carrying an `error` names the contract that actually reverted rather than the one
+ * the transaction was addressed to.
+ */
+export async function traceRevert(
+  rpcUrl: string,
+  hash: Hash,
+): Promise<{ address?: string; reason?: string; depth: number; tree: string } | undefined> {
+  let frame: CallFrame
+  try {
+    const response = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'debug_traceTransaction',
+        params: [hash, { tracer: 'callTracer' }],
+      }),
+    })
+    const body = (await response.json()) as { result?: CallFrame; error?: { message: string } }
+    if (!body.result) return undefined
+    frame = body.result
+  } catch {
+    return undefined
+  }
+
+  // Walk to the DEEPEST frame that failed. The outer frames all report an error too, since a
+  // revert propagates, so the outermost one names the entry point rather than the culprit.
+  const lines: string[] = []
+  let deepest: { frame: CallFrame; depth: number } | undefined
+  // The reason and the deepest frame are tracked SEPARATELY, and that is not fussiness. These
+  // contracts are proxies: `BorrowerOperations` at the bundled address delegates, so the
+  // deepest failing frame is the implementation, and `callTracer` leaves the `Error(string)`
+  // data on whichever frame carries it, not necessarily the innermost. Taking the reason from
+  // the deepest frame alone reports "(no Error(string) data)" on a revert that plainly has
+  // one, which it did the first time this was written.
+  let reason: string | undefined
+  const walk = (f: CallFrame, depth: number): void => {
+    if (f.error) {
+      lines.push(`${'  '.repeat(depth)}${f.to ?? '?'} ${f.input?.slice(0, 10) ?? ''} -> ${f.error}`)
+      deepest = { frame: f, depth }
+      const decoded = readReason(f)
+      if (decoded !== undefined && decoded !== '(empty revert, no reason data)') reason = decoded
+      else if (decoded !== undefined && reason === undefined) reason = decoded
+    }
+    for (const child of f.calls ?? []) walk(child, depth + 1)
+  }
+  walk(frame, 0)
+  if (!deepest) return undefined
+
+  return {
+    ...(deepest.frame.to !== undefined ? { address: deepest.frame.to } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+    depth: deepest.depth,
+    tree: lines.join('\n'),
+  }
+}
+
+/**
+ * The reason a frame carries, from either shape anvil uses.
+ *
+ * `callTracer` populates `revertReason` as a PLAIN STRING and `output` as the ABI encoded
+ * `Error(string)`. Feeding the plain string to the hex decoder returns nothing, which is what
+ * made the first version of this report say "(no Error(string) data)" about a revert that
+ * plainly had one. Both shapes are read.
+ */
+function readReason(frame: CallFrame): string | undefined {
+  const direct = frame.revertReason
+  if (typeof direct === 'string' && direct.length > 0 && !direct.startsWith('0x')) return direct
+  return decodeErrorString(direct ?? frame.output)
+}
+
+/**
+ * Decode `Error(string)` returndata. Selector `0x08c379a0`, then an ABI encoded string.
+ * Anything else, including an empty revert or a custom error, comes back undefined rather
+ * than as a guess.
+ */
+function decodeErrorString(data: string | undefined): string | undefined {
+  if (!data) return undefined
+  if (!data.startsWith('0x08c379a0')) {
+    return data === '0x' ? '(empty revert, no reason data)' : undefined
+  }
+  try {
+    const hex = data.slice(10)
+    const length = Number(BigInt(`0x${hex.slice(64, 128)}`))
+    const bytes = hex.slice(128, 128 + length * 2)
+    return Buffer.from(bytes, 'hex').toString('utf8')
+  } catch {
+    return undefined
   }
 }

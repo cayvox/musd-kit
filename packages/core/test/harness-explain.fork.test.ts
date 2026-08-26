@@ -72,5 +72,10 @@ describe('MK-031, the diagnostic that replaces a bare TypeError', () => {
     // require, so the two must NOT be equal and no out of gas verdict may appear.
     expect(report).toContain('gasLimit:')
     expect(report).not.toContain('OUT OF GAS')
+    // MK-035: the trace is the evidence that survives, so it is pinned. It must name the
+    // contract that actually reverted and the condition, from a record of what executed
+    // rather than from an inference about state that has since moved.
+    expect(report).toContain('reverted in:')
+    expect(report).toContain('revert reason (from trace): BorrowerOps: Trove does not exist')
   }, 120_000)
 })
