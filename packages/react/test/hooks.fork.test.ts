@@ -79,66 +79,55 @@ interface MutationSlice {
 }
 
 /**
- * Fire a write-hook action and confirm its tx actually MINED (receipt status `success`),
- * retrying on a silent revert. The core returns `{ hash }` without awaiting the receipt
- * (caller waits), so a revert that happens AFTER a passing simulate slips through as
- * `isSuccess`. We check the receipt and, on a failure, re-fire.
+ * Fire a write-hook action and assert its tx actually MINED (receipt status `success`).
  *
- * **This is a mitigation, and it has now failed to do its job twice**: at `:157` in the P3a
- * wave (MK-025) and at `:261` in the run that reddened `main` after PR 10 (MK-034). Four
- * attempts that all fail is not a flake being smoothed over, it is a condition the retry
- * cannot reach, and the retry's cost is that the ordinary case is invisible. It is left in
- * place because removing mitigations is its own wave (MK-016); what changed here is that it
- * now reports what it caught (MK-031) instead of discarding it.
+ * **The four attempt refire is gone (MK-016).** It was measured before it was removed: over
+ * ten `pnpm test:coverage` runs it was invoked 40 times and consumed `attempts=1` on all 40,
+ * so it never once retried in a passing run. In the two runs where it DID fire it ran to
+ * exhaustion and failed anyway, at `:157` (MK-025) and at `:261` (MK-034). A loop that never
+ * helps when things are fine and never saves them when they are not is not protecting this
+ * suite; it is making its stability unmeasurable, which is MK-016's whole complaint.
  *
- * MK-032: the call in the loop is now `mineBlocks(1)`, which is what it always did. It was
- * `refreshOracle()`, a name for something the shim makes impossible.
+ * What is KEPT is the receipt check, and that is not a mitigation. The core returns `{ hash }`
+ * without awaiting the receipt, by design, so a revert that happens AFTER a passing simulate
+ * would otherwise slip through as `isSuccess`. Asserting the receipt is the test doing its
+ * job. What is gone is re-firing when that assertion fails.
  *
- * MK-031: what it throws now says what happened. Both branches used to discard their cause,
- * the revert branch keeping only a hash and the error branch keeping nothing at all, so a
- * failure here cost a diagnosis from scratch. Nothing about the retry policy changed.
+ * The failure report from MK-031 stays, and matters more now: with no retry, the first
+ * failure is the one you read.
  */
 async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Promise<void> {
-  let last: unknown
-  for (let attempt = 0; attempt < 4; attempt++) {
-    await connectFork().mineBlocks(1)
-    act(() => fire())
-    await waitFor(() => expect(mut().isSuccess || mut().isError).toBe(true), { timeout: 60_000 })
-    const hash = mut().hash
-    if (hash) {
-      const receipt = await connectFork().publicClient.waitForTransactionReceipt({ hash })
-      if (receipt.status === 'success') {
-        recordMitigation({
-          name: 'ensureWriteMined',
-          attempts: attempt + 1,
-          outcome: 'ok',
-          extra: { gasUsed: receipt.gasUsed },
-        })
-        return
-      }
-      last = new Error(
-        `attempt ${attempt + 1}: tx mined but REVERTED\n${await explainTransaction(
-          connectFork().publicClient,
-          hash,
-          'a successful receipt',
-        )}`,
-      )
-    } else {
-      // MK-031. This used to be a bare `new Error('mutation errored without a tx hash')`,
-      // which threw away the one thing worth knowing: the mutation's own typed error. Four
-      // attempts each discarding a `RedemptionFailed` reads identically to four attempts
-      // discarding an `InsufficientMusdBalance`, and the two mean opposite things.
-      const err = mut().error
-      last = new Error(
-        `attempt ${attempt + 1}: the mutation errored before sending, no tx hash. ` +
-          `${err ? `${err.name}: ${err.message}` : 'and the hook exposed no error either'}`,
-        err ? { cause: err } : undefined,
-      )
-    }
-    act(() => mut().reset())
+  await connectFork().mineBlocks(1)
+  act(() => fire())
+  await waitFor(() => expect(mut().isSuccess || mut().isError).toBe(true), { timeout: 60_000 })
+
+  const hash = mut().hash
+  if (!hash) {
+    const err = mut().error
+    throw new Error(
+      `the mutation errored before sending, no tx hash. ${
+        err ? `${err.name}: ${err.message}` : 'and the hook exposed no error either'
+      }`,
+      err ? { cause: err } : undefined,
+    )
   }
-  recordMitigation({ name: 'ensureWriteMined', attempts: 4, outcome: 'exhausted' })
-  throw last ?? new Error('write did not mine after retries')
+
+  const receipt = await connectFork().publicClient.waitForTransactionReceipt({ hash })
+  if (receipt.status !== 'success') {
+    throw new Error(
+      `tx mined but REVERTED\n${await explainTransaction(
+        connectFork().publicClient,
+        hash,
+        'a successful receipt',
+      )}`,
+    )
+  }
+  recordMitigation({
+    name: 'ensureWriteMined',
+    attempts: 1,
+    outcome: 'ok',
+    extra: { gasUsed: receipt.gasUsed },
+  })
 }
 
 beforeAll(async () => {
