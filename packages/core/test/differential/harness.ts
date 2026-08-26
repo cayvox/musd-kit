@@ -27,6 +27,8 @@ export interface CaseResult {
   mismatch?: { direction: MismatchDirection; detail: string }
   /** Set when the case could not be run at all, which is not a mismatch. */
   skipped?: string
+  /** Set when the case threw where nothing should throw. Counted, never fatal. */
+  threw?: string
 }
 
 export function clientFor(fork: ForkConnection, account: PrivateKeyAccount): MusdClient {
@@ -61,6 +63,18 @@ export async function runCase(fork: ForkConnection, c: DiffCase): Promise<CaseRe
   const snapshotId = await fork.testClient.snapshot()
   try {
     return await runCaseInner(fork, c)
+  } catch (error) {
+    // A case that throws is RECORDED, never fatal. The first sweep of a thousand died on case
+    // N when `previewRefinance` propagated a chain `Panic(0x11)`, and twelve minutes of work
+    // went with it. A harness whose whole value is a large sample cannot let one sample end
+    // the run, and a thrown case is itself a result worth counting (MK-037).
+    const e = error as Error
+    return {
+      case: c,
+      previewViable: false,
+      chainSucceeded: false,
+      threw: `${e.name}: ${e.message.split('\n')[0]}`,
+    }
   } finally {
     await fork.testClient.revert({ id: snapshotId })
   }

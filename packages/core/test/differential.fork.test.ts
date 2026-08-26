@@ -53,6 +53,14 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     const started = Date.now()
     for (const c of cases) {
       results.push(await runCase(fork, c))
+      // Progress on a long sweep, so a run that is working is distinguishable from one that
+      // has hung. A thousand cases is twenty minutes of silence otherwise.
+      if ((c.index + 1) % 100 === 0) {
+        const so_far = results.filter((r) => r.mismatch !== undefined).length
+        console.log(
+          `[differential] ${c.index + 1}/${cases.length} done, ${Math.round((Date.now() - started) / 1000)}s elapsed, mismatches so far=${so_far}`,
+        )
+      }
     }
     const elapsedMs = Date.now() - started
 
@@ -61,6 +69,7 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     const falseBlocked = mismatches.filter((r) => r.mismatch?.direction === 'FALSE_BLOCKED')
     const numbers = mismatches.filter((r) => r.mismatch?.direction === 'NUMBERS')
     const skipped = results.filter((r) => r.skipped !== undefined)
+    const threw = results.filter((r) => r.threw !== undefined)
     const byBand = (band: string) => results.filter((r) => r.case.band === band).length
 
     // Reported by DIRECTION, always, because a preview that says go when the chain refuses and
@@ -76,6 +85,12 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     for (const s of skipped.slice(0, 5)) {
       console.log(`[differential] skipped ${describeCase(s.case)} :: ${s.skipped}`)
     }
+    // Thrown cases are reported IN FULL, never truncated: a preview is documented as
+    // returning a verdict rather than throwing, so every one of these is a finding (MK-037).
+    for (const t of threw) {
+      console.log(`[differential] THREW ${describeCase(t.case)} :: ${t.threw}`)
+    }
+    console.log(`[differential] threw=${threw.length}`)
     for (const m of mismatches) console.log(reportFailure(m))
 
     expect(

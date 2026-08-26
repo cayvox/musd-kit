@@ -146,6 +146,47 @@ cases:
 
 ---
 
+## 4a. The differential harness (verdict against chain outcome)
+
+`packages/core/test/differential.fork.test.ts`. For each generated case it runs the SDK
+preview, then **actually attempts the operation on the fork**, then asserts the verdict matches
+whether the transaction succeeded.
+
+**Why it exists, and why it is not more formula checks.** The formula level cross checks against
+the contract's own `pure` helpers already exist and are green (`09-review-and-validated-surface`
+§3). They could not have caught MK-004, MK-005 or MK-006, because all three were preview
+**verdicts** that disagreed with the chain while every formula agreed.
+
+**Two failure directions, always reported separately**, because they are not equally bad:
+
+| Direction | What it means | What it costs a user |
+|---|---|---|
+| `FALSE_VIABLE` | the preview said go, the chain refused | a failed transaction, gas spent |
+| `FALSE_BLOCKED` | the preview said no, the chain would have accepted | access to their own position, silently |
+| `NUMBERS` | verdicts agreed, a predicted number missed | a wrong figure in the UI |
+
+**Generation is seeded and boundary weighted**, 60% boundary / 20% extreme / 20% middle, stated
+in `BAND_WEIGHTS` rather than tuned quietly. A uniform sweep spends its budget in the middle of
+the space where nothing has ever been wrong; every S1 in this repository lived at a boundary.
+The boundary band targets the debt floor, the MCR and CCR thresholds and zero, each jittered one
+wei either side.
+
+**Every case runs in its own `evm_snapshot` and reverts.** Cases must not see each other, or a
+failure becomes a function of everything before it and the seed stops reproducing it.
+
+```sh
+pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
+MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep
+MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
+```
+
+**The seed is printed on every run, passing or failing.** A seed only visible on failure is a
+seed nobody has when they need it.
+
+### Placement, decided from the measured cost
+
+MEASURED_COST_PLACEHOLDER
+
 ## 5. Determinism & CI matrix
 
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in
