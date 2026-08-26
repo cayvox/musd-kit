@@ -69,7 +69,7 @@ claim about it was not).
 | MK-031 | Fork failures destroy their own cause: a missing event surfaces as a bare `TypeError` | S3 | fixed |
 | MK-032 | The flake mitigations document a mechanism the harness makes impossible | S3 | fixed |
 | MK-033 | A passing test logs an uncaught React error into the CI output | S3 | fixed |
-| MK-034 | The redemption path failed twice in one CI run, reddening `main` after PR 10 | S3 | open |
+| MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
 
 ---
 
@@ -704,13 +704,44 @@ independent; the clock coupling is a separate structural limit.
 - The fork block is pinned in CI via `MEZO_FORK_BLOCK`, with a comment stating how to bump it.
 - The coverage gate is configured and enforced, at the honest measured floor.
 
-**What remains open, and why this stays `open`.** Two of the three problems in this finding's
-title are untouched. The flake mitigations are all still in place, deliberately: they come out one
-at a time in a later wave, with the block pinned, and whatever then fails becomes its own finding.
-And the suite is still one stateful sequence: the `fork` project shares one anvil instance and the
-cumulative EVM clock warps couple the phases, which the alphabetical sequencer orders but does not
-decouple. That coupling is now stated as a known structural limit in `docs/07-testing.md` §1
-rather than left implied, but stating a limit is not removing it.
+**Landed in the P5b wave: the mitigations were measured, then three of four came out.**
+
+Measured first, because nobody knew whether they fired. Ten `pnpm test:coverage` runs, Node
+24.19.0, pinned block 15043414, all ten green:
+
+| Mitigation | Invocations | `attempts=1` | Ever retried |
+|---|---|---|---|
+| `ensureWriteMined` (react writes) | 40 | 40 | **no** |
+| `redeemFresh` (phase 6) | 30 | 30 | **no** |
+| `zzFindingsRedeemRetry` | 10 | 10 | **no** |
+| `openTroveRawFixedGas` | 670 opens | n/a | gasUsed 576469 to 605443 against a 6000000 cap |
+
+**Not one retry fired in 80 retry-loop invocations.** In the two runs where `ensureWriteMined`
+ever did fire it ran to exhaustion and failed anyway (MK-025, MK-034). They were not protecting the
+suite, they were making its stability unmeasurable.
+
+Removed, one per commit with a window after each: the react write refire, then both redemption
+retries. `refreshOracle` went too, as MK-032 rather than as a mitigation, and its 50 call sites now
+say `mineBlocks(1)`, which is what it always did.
+
+**The fixed 6M gas cap in `openTroveRaw` is DEFERRED, not removed**, and the reason is evidence
+gathered later in the same wave. 670 opens used 576469 to 605443 gas against a 6000000 cap, roughly
+a tenfold headroom never approached, which argues the cap does nothing. Against that, the phase 6
+redemption failure this wave finally read reverted with `gasUsed: 710023`, zero logs, and a replay
+at the mined block that did NOT revert, which is the signature of a gas or state dependence rather
+than a protocol rule. Removing a gas cap blind, at the end of a wave, while that is live and
+unexplained, is the wrong order to do things in.
+
+**What remains open, and why this stays `open`.** The suite is still one stateful sequence: the
+`fork` project shares one anvil instance, the cumulative EVM clock warps couple the phases, and the
+alphabetical sequencer orders that coupling without decoupling it. That was always going to outlive
+the pin. `docs/07-testing.md` §1 states it as a known structural limit.
+
+**The observed red rate after this wave is not zero, and pretending otherwise would defeat the
+point of measuring.** Two red in eighteen `pnpm test:coverage` runs after the retries came out,
+against zero in eighteen before, at counts where that difference is not distinguishable and where
+the retries provably never fired in the eighteen runs that had them. The honest reading is that the
+suite is not stable either way and the retries were never the variable.
 
 **The pin alone did not resolve this finding**, because the oracle shim seeded itself from a
 `latest` read rather than from the forked block, so the fork block determined the chain state but
@@ -1002,8 +1033,18 @@ evidence about the sixth, and this one sits next to a finding we already know is
 liquidation rules. It should be diagnosed before anyone reads the phase 6 file as confirmation of
 liquidation behavior.
 
-**Decision.** Diagnose in the mitigation removal wave, alongside MK-016. Do not raise a timeout or
-add a retry: nothing here timed out, and a retry would hide exactly the signal worth keeping.
+**P5b wave: not reproduced once in 46 coverage runs.** Across this wave's four windows,
+`batchLiquidate` did not fail. It last fired in the P4 baseline, one run in ten. That is not
+evidence it is fixed, nothing in this wave touched it, and the entry stays open at the same rate it
+always had: the windows are simply too small to distinguish a one-in-ten event from a one-in-forty
+one.
+
+What did change around it is MK-031: the sibling liquidation event lookup in this same file no
+longer crashes on a missing event, so if this test's liquidation ever fails by not emitting, the
+report will say what the transaction did.
+
+**Decision.** Diagnose alongside MK-016. Do not raise a timeout or add a retry: nothing here timed
+out, and a retry would hide exactly the signal worth keeping.
 
 ---
 
@@ -1031,8 +1072,19 @@ opens, liquidates or redeems, so how much of it survives to this test is a funct
 before it, which is the MK-016 ordering coupling. Whether that alone explains it, or whether the
 truncation arithmetic in `getRedemptionHints` is also involved, is unestablished.
 
-**Decision.** Diagnose in the mitigation removal wave alongside MK-016 and MK-022. Do not add a
-retry: the assertion is about a redemption completing, and a retry would hide precisely the signal.
+**P5b wave: reproduced twice with the margin now measured, and the tail is NOT the cause.** This
+test's redemption target sits `1016833685396814` above MCR, and that number is BYTE IDENTICAL across
+all ten runs of the measurement window, failing runs included. So whatever decides this, it is not
+how much margin the marginal Trove has when the redemption starts. The redeemable amount reported
+immediately before is also the full requested amount every time.
+
+That removes the ordering hypothesis this entry has carried since P3a, at least in the form
+"how much of the tail survives to this test". Something else decides whether the redemption
+consumes the Trove it was sized to consume.
+
+**Decision.** Still open, still not retried: the assertion is about a redemption completing and a
+retry would hide precisely the signal. What has changed is that the next occurrence arrives with the
+margin, the redeemable amount and the block timestamp already logged.
 
 ---
 
@@ -1055,6 +1107,13 @@ liquidated nothing, or emitted a different event, and the crash hides which. Fol
 entry it would read as the same symptom as an assertion failure, which it is not. The test should
 be made to fail with the on-chain reason rather than a property access on `undefined`; until it
 does, every occurrence of this costs a diagnosis from scratch.
+
+**P5b wave: the failure MODE this entry complained about is fixed, the finding is not.** MK-024's
+central request was that "the test should be made to fail with the on-chain reason rather than a
+property access on `undefined`". MK-031 did that, at this exact line among others. The liquidation
+event lookup now throws the receipt status, the emitted logs, the replayed revert reason and the
+fork conditions. This entry stays open because the underlying intermittency is undiagnosed, but it
+no longer costs a diagnosis from scratch.
 
 **What we do NOT claim.** No root cause, and deliberately no guess about which of the three
 possibilities above it is, because the crash removed the evidence that would have told us.
@@ -1161,10 +1220,25 @@ actually reddens the pipeline, and it is the one least visible to anyone running
 locally. It also means the coverage number itself is only obtainable on a green run, which cost
 three attempts in the P3a wave.
 
-**Decision.** Not fixed here. Diagnose in the mitigation removal wave alongside MK-016: capture the
-revert reason first, then measure whether the simulate to mine window is really the variable. Do
-not paper over it by disabling coverage in CI, which would trade a visible flake for an invisible
-gap.
+**P5b wave: not reproduced once in 46 coverage runs, which is itself the news.** Across the four
+windows this wave ran, ten before any change, five after the oracle helper went, eight after the
+write refire went and eighteen after the redemption retries went, `phase5.fork.test.ts` did not fail
+once. It failed two in five in the P5a window on the immediately preceding commit.
+
+Nothing in this wave touched phase 5, so this is not a fix and must not be read as one. What
+changed around it: `refreshOracle` became `mineBlocks(1)` at four sites in that file, which is the
+same operation under an honest name, and the write refire it never used came out. The most likely
+reading is that the rate genuinely varies this widely between windows, which is what this entry
+already says about its own numbers.
+
+**On its two symptoms sharing a cause**, which P5b was asked to establish: not established, because
+neither symptom appeared. Both rows describe a write that did not take effect, one inferred from a
+later read and one from a receipt status, and that is a shared shape rather than a shared cause.
+
+**Decision.** Not fixed here. Diagnose alongside MK-016: capture the revert reason first, which
+MK-031 now does automatically, then measure whether the simulate to mine window is really the
+variable. Do not paper over it by disabling coverage in CI, which would trade a visible flake for an
+invisible gap.
 
 ---
 
@@ -1227,6 +1301,31 @@ is not installed.
 produces exactly the failure the register exists to prevent: a green signal that means less than a
 reader assumes. Someone reading "typecheck: Done" reasonably concludes the TypeScript in this
 repository compiles. For eight files and an entire site, it does not say that.
+
+**P5b wave: eight uncovered files down to TWO, and the gap was hiding a real error.**
+`packages/core/tsconfig.test.json` brings the excluded fork test in, and `tsconfig.tools.json`
+brings both vitest configs, both `tsup.config.ts` files and the example's `vite.config.ts`. Both are
+wired into `pnpm typecheck`, so they cannot rot.
+
+The exclusion of `phase9-keeper.fork.test.ts` had a real reason and a false claim attached. Commit
+`6ae5058` said it "imports examples/ across the package rootDir, so it is excluded from core's tsc
+and type-checked via vitest". The first half still holds. The second half was never true: vitest
+transpiles with esbuild and does not typecheck, so that file had been checked by nothing. It passes
+once included, so the exclusion was costing coverage without hiding an error.
+
+`vitest.config.mts` did NOT pass, which is the point of doing this:
+
+    vitest.config.mts(1,15): error TS2305: Module '"vitest/config.js"' has no exported member
+    'TestSpecification'.
+
+`TestSpecification` is exported from `vitest/node`, and `BaseSequencer.sort` is declared over
+`WorkspaceSpec`. The sequencer that orders the entire fork suite, whose order MK-016 makes load
+bearing, had an override typed against a name that did not resolve. Fixed to the real type, and the
+`?? ''` fallback removed rather than kept: returning an empty path for every spec would sort them all
+equal and silently destroy the ordering, so it throws with the reason instead.
+
+Still uncovered: `docs/.vitepress/config.ts` and `docs/.vitepress/theme/index.ts`, both in the
+`docs` workspace, which has no `typecheck` script at all.
 
 **Decision.** The hole that caused both observed consequences is closed. The eight files and the
 landing site are recorded here and NOT fixed in this wave, because closing them means touching build
@@ -1559,7 +1658,7 @@ it means.
 
 ---
 
-## MK-034 · The redemption path failed twice in one CI run, reddening `main` after PR 10
+## MK-034 · Two different redemption failures, wrongly folded into one entry
 
 **Class** S3, harness · **Status** open, not fixed in this wave · **Found by us in the P5a wave**
 
@@ -1593,13 +1692,26 @@ react block WATCHING test at `hooks:157`, a write that mined and reverted; this 
 `:261`, erroring before any send. MK-023 is the phase 6 CLAIM fixture at `:400` asserting status 4.
 Different tests, different operations, different failure modes.
 
-**Why the two are ONE entry rather than two siblings.** They co-occurred in a single run, they are
-both redemption, and a later local run reproduced the same PAIRING shape in different tests: run 10
-of twelve failed at both the phase 6 claim fixture (a redemption that under-consumed) AND
-`zz-findings` MK-014 (`RedemptionFailed: Unable to redeem any amount`). Two redemptions
-under-performing in the same run, twice observed, is weak evidence for a common cause and strong
-evidence against treating them as independent. It is one entry with the caveat attached rather than
-two entries that will be diagnosed twice.
+**Why the two were made ONE entry, and why that was wrong.** The P5a wave put them together on
+co-occurrence: they fired in a single run, both are redemption, and a later run reproduced the
+pairing in different tests. That reasoning was reasonable and the conclusion was not.
+
+**Corrected, P5b wave, on evidence the retry removal finally exposed.** With no retry in the way the
+first failure is the one you read, and the two failures read completely differently:
+
+| | What it actually is |
+|---|---|
+| phase 6 no-loan redemption | `status: reverted`, `gasUsed: 710023`, `logs emitted: 0`, and **the replay at the mined block did NOT revert**. A `require` reproduces on replay; this did not. That is a gas or state dependence, not a protocol rule |
+| `zz-findings` MK-014 | `RedemptionFailed` raised at SIMULATE time, `TroveManager: Unable to redeem any amount`, so **it never sent a transaction at all** |
+
+One is a mined transaction that failed for a non-`require` reason. The other never left the client.
+They are not the same failure and folding them cost a wave of treating them as one.
+
+**Also ruled out, with numbers.** The razor-thin-margin explanation carried in these tests is wrong.
+`reportRedemptionMargin` now logs the first redemption hint's ICR before every redemption, on
+passing runs too, and over ten runs the margin above MCR was 0.46e18 to 1.31e18, not a hair. The
+only genuinely thin site is the claim fixture at 1.016e15, and that value is byte identical across
+all ten runs, so it is not the variable either.
 
 **What was ruled OUT, with numbers.** The redeemable tail is not exhausted and is not the variable.
 Both redemption sites now log the margin before every attempt, and across all twelve runs it was
