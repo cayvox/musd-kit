@@ -48,7 +48,7 @@ claim about it was not).
 | MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | fixed |
-| MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | open |
+| MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | fixed |
 | MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
 | MK-015 | Documentation claims that overstate reality | S3 | open |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
@@ -506,6 +506,34 @@ the price in a separate round trip, then run the multicall with it. Price and IC
 straddle blocks, which contradicts the one consistent price snapshot wording in the docstrings.
 
 **Decision.** Fix now, or correct the docstring where a single call is not achievable.
+
+**Fixed, P4 wave: fixed, not documented away.** Establishing WHY it could not be one call was the
+part that mattered. Every price dependent getter MUSD exposes takes the price as an ARGUMENT:
+`getTCR(uint256)`, `checkRecoveryMode(uint256)`, `getCurrentICR(address,uint256)`. Read from the
+generated ABI rather than assumed, there is no zero argument variant of any of them. So the price
+genuinely cannot be produced and consumed inside one `multicall`: its value must exist before the
+call that uses it is encoded.
+
+The answer is to PIN rather than to merge. `read/snapshot.ts` returns the price together with
+`Multicall3.getBlockNumber()` from a single `eth_call`, so the two cannot disagree, and the caller
+runs the dependent reads with `blockNumber` set to it. Two round trips, exactly as before, and now
+both evaluated against one block. The second call reads at most one block back, which every node
+serves; this is not archival access.
+
+Applied to `getSystemState`, `getTrove` and `isLiquidatable`. `isLiquidatable` was two sequential
+`readContract` calls, which for a predicate a keeper acts on is the difference between a liquidation
+that lands and one that reverts. `SystemState` and `Trove` now carry `blockNumber`, and `Trove` also
+carries the `price` its `icr` was measured against, so the snapshot is checkable by the caller
+rather than merely asserted by a docstring.
+
+**What is NOT changed, stated rather than left to be discovered.** `previewOpen`, `previewBorrow`,
+`previewRefinance` and `getBorrowingPower` still read the price in their own round trip. None of
+them claims a single block snapshot in its docstring, and moving them is a larger change to the
+math layer's shape than this finding calls for. They remain as they are, deliberately.
+
+**Pinned by** two fork tests in `phase2.fork.test.ts`. The second mines blocks after the read and
+then reconciles `icr` and `price` at the REPORTED block, which is the property that was previously
+untrue. There was no paired findings test before.
 
 ---
 

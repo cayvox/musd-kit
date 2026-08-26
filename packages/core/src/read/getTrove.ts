@@ -1,11 +1,14 @@
-import type { Address } from 'viem'
-import { priceFeedAbi, troveManagerAbi } from '../clients'
-import { MCR, MULTICALL3_ADDRESS } from '../constants'
+import type { Abi, Address } from 'viem'
+import { troveManagerAbi } from '../clients'
+import { MCR } from '../constants'
 import type { ReadDeps } from './deps'
+import { readAtSnapshot, readPriceSnapshot } from './snapshot'
 import { type Trove, TroveStatus } from './types'
 
-const zeroTrove = (status: TroveStatus): Trove => ({
+const zeroTrove = (status: TroveStatus, price: bigint, blockNumber: bigint): Trove => ({
   exists: false,
+  price,
+  blockNumber,
   collateral: 0n,
   principal: 0n,
   interestOwed: 0n,
@@ -20,33 +23,39 @@ const zeroTrove = (status: TroveStatus): Trove => ({
 })
 
 /**
- * Read a live Trove, contract-authoritative. Fetches the price ONCE and
- * passes that same snapshot to every price-dependent getter; batches the rest into
- * a single same-block `multicall` (Multicall3 is present on Mezo, see
- * {@link MULTICALL3_ADDRESS}). Never recomputes live debt/interest client-side.
+ * Read a live Trove, contract-authoritative, from ONE block (MK-013).
+ *
+ * The price cannot join the batch that consumes it: `getCurrentICR(address, uint256)` takes
+ * the price as an argument, so its value has to exist before the call is encoded, and MUSD
+ * exposes no zero argument variant. This used to mean a separate price read followed by a
+ * multicall at whatever block came next, while the docstring claimed one snapshot.
+ *
+ * So the price is pinned rather than merged. The first `multicall` returns the price, the
+ * block it executed at, and every price INDEPENDENT getter; the second runs `getCurrentICR`
+ * with `blockNumber` set to that block. Two round trips, the same as before, and now
+ * genuinely one state. Never recomputes live debt or interest client-side.
  */
-export async function getTrove(
-  { publicClient, addresses }: ReadDeps,
-  address: Address,
-): Promise<Trove> {
-  const price = await publicClient.readContract({
-    address: addresses.priceFeed,
-    abi: priceFeedAbi,
-    functionName: 'fetchPrice',
-  })
-
-  const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
-  const [edc, icr, nominalICR, rate, statusRaw] = await publicClient.multicall({
-    allowFailure: false,
-    multicallAddress: MULTICALL3_ADDRESS,
-    contracts: [
-      { ...tm, functionName: 'getEntireDebtAndColl', args: [address] },
-      { ...tm, functionName: 'getCurrentICR', args: [address, price] },
-      { ...tm, functionName: 'getNominalICR', args: [address] },
-      { ...tm, functionName: 'getTroveInterestRate', args: [address] },
-      { ...tm, functionName: 'getTroveStatus', args: [address] },
-    ],
-  })
+export async function getTrove(deps: ReadDeps, address: Address): Promise<Trove> {
+  const { publicClient, addresses } = deps
+  const tm = { address: addresses.troveManager, abi: troveManagerAbi as Abi } as const
+  const snapshot = await readPriceSnapshot(deps, [
+    { ...tm, functionName: 'getEntireDebtAndColl', args: [address] },
+    { ...tm, functionName: 'getNominalICR', args: [address] },
+    { ...tm, functionName: 'getTroveInterestRate', args: [address] },
+    { ...tm, functionName: 'getTroveStatus', args: [address] },
+  ])
+  const { price, blockNumber } = snapshot
+  // `multicall` with `allowFailure: false` returns results positionally; the tuple shape
+  // comes from the `contracts` array above, which is why the cast is narrow and local.
+  const [edc, nominalICR, rate, statusRaw] = snapshot.extra as [
+    readonly [bigint, bigint, bigint, bigint, bigint, bigint],
+    bigint,
+    number,
+    number,
+  ]
+  const [icr] = (await readAtSnapshot(publicClient, blockNumber, [
+    { ...tm, functionName: 'getCurrentICR', args: [address, price] },
+  ])) as [bigint]
 
   // getEntireDebtAndColl → (coll, principal, interest, pendingColl, pendingPrincipal, pendingInterest).
   // Everything here is computed TO NOW (C3): we deliberately do NOT use
@@ -59,7 +68,7 @@ export async function getTrove(
   const status = statusRaw as TroveStatus
 
   if (status !== TroveStatus.active || entireDebt === 0n) {
-    return zeroTrove(status)
+    return zeroTrove(status, price, blockNumber)
   }
 
   const liquidationPrice = (MCR * entireDebt) / coll
@@ -68,6 +77,8 @@ export async function getTrove(
 
   return {
     exists: true,
+    price,
+    blockNumber,
     collateral: coll,
     principal,
     interestOwed,

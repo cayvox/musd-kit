@@ -114,6 +114,8 @@ const trove = await musd.getTrove(address);
 //   isLiquidatable: boolean, // icr < MCR
 //   interestRate: bigint, // the rate locked at open (getTroveInterestRate)
 //   status: TroveStatus, // from getTroveStatus (enum)
+//   price: bigint, // fetchPrice() at blockNumber, the price icr was measured against
+//   blockNumber: bigint, // the block EVERY field above came from
 // }
 ```
 
@@ -124,8 +126,31 @@ and `healthFactor` are thin derivations of those authoritative values (see
 
 ```ts
 const sys = await musd.getSystemState();
-// { tcr: bigint, isRecoveryMode: boolean, price: bigint }   // getTCR, checkRecoveryMode, fetchPrice
+// { tcr, isRecoveryMode, price, blockNumber }   // getTCR, checkRecoveryMode, fetchPrice
 ```
+
+### One block, and why it takes two calls to get there
+
+`getTrove`, `getSystemState` and `isLiquidatable` are each evaluated against a **single
+block**, reported as `blockNumber` (MK-013). It used to be a claim in a docstring rather than
+a fact: the price was read in its own round trip, and the price dependent getters ran at
+whatever block came next.
+
+It cannot be one call, and the reason is in the ABI rather than in the SDK. Every price
+dependent getter takes the price as an **argument**, `getTCR(uint256)`,
+`checkRecoveryMode(uint256)`, `getCurrentICR(address,uint256)`, with no zero argument
+variant, so the value has to exist before the call that consumes it is encoded. The SDK
+therefore pins instead of merging: the first `multicall` returns the price together with
+`Multicall3.getBlockNumber()`, so those two cannot disagree, and the second runs the
+dependent getters at that block. Two round trips, the same as before, and the snapshot is now
+true.
+
+`blockNumber` and `price` are on the result so you can check it rather than take our word:
+re-read `getCurrentICR(address, trove.price)` at `trove.blockNumber` and you get `trove.icr`.
+
+The preview functions (`previewOpen`, `previewBorrow`, `previewRefinance`,
+`getBorrowingPower`) still read the price in their own round trip and make no single block
+claim.
 
 ---
 

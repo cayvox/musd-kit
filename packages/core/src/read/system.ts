@@ -1,26 +1,27 @@
-import type { Address } from 'viem'
+import type { Abi, Address } from 'viem'
 import { musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { MCR, MULTICALL3_ADDRESS } from '../constants'
+import { MCR } from '../constants'
 import type { ReadDeps } from './deps'
+import { readAtSnapshot, readPriceSnapshot } from './snapshot'
 import type { SystemState } from './types'
 
-/** Protocol-wide live state from one price snapshot. */
-export async function getSystemState({ publicClient, addresses }: ReadDeps): Promise<SystemState> {
-  const price = await publicClient.readContract({
-    address: addresses.priceFeed,
-    abi: priceFeedAbi,
-    functionName: 'fetchPrice',
-  })
-  const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
-  const [tcr, isRecoveryMode] = await publicClient.multicall({
-    allowFailure: false,
-    multicallAddress: MULTICALL3_ADDRESS,
-    contracts: [
-      { ...tm, functionName: 'getTCR', args: [price] },
-      { ...tm, functionName: 'checkRecoveryMode', args: [price] },
-    ],
-  })
-  return { tcr, isRecoveryMode, price }
+/**
+ * Protocol-wide live state, from ONE block (MK-013).
+ *
+ * `getTCR` and `checkRecoveryMode` both take the price as an argument, so it cannot be
+ * produced inside the batch that consumes it. It is pinned instead: the first call returns
+ * the price and the block it executed at, the second runs both dependent getters at that
+ * block. Two round trips either way, but the snapshot is now a fact rather than a claim.
+ */
+export async function getSystemState(deps: ReadDeps): Promise<SystemState> {
+  const { publicClient, addresses } = deps
+  const { price, blockNumber } = await readPriceSnapshot(deps)
+  const tm = { address: addresses.troveManager, abi: troveManagerAbi as Abi } as const
+  const [tcr, isRecoveryMode] = (await readAtSnapshot(publicClient, blockNumber, [
+    { ...tm, functionName: 'getTCR', args: [price] },
+    { ...tm, functionName: 'checkRecoveryMode', args: [price] },
+  ])) as [bigint, boolean]
+  return { tcr, isRecoveryMode, price, blockNumber }
 }
 
 /**
@@ -43,21 +44,20 @@ export async function getSystemState({ publicClient, addresses }: ReadDeps): Pro
  * answering one question differently was the underlying defect; a fork test pins that they
  * agree so they cannot drift apart again.
  */
-export async function isLiquidatable(
-  { publicClient, addresses }: ReadDeps,
-  address: Address,
-): Promise<boolean> {
-  const price = await publicClient.readContract({
-    address: addresses.priceFeed,
-    abi: priceFeedAbi,
-    functionName: 'fetchPrice',
-  })
-  const icr = await publicClient.readContract({
-    address: addresses.troveManager,
-    abi: troveManagerAbi,
-    functionName: 'getCurrentICR',
-    args: [address, price],
-  })
+export async function isLiquidatable(deps: ReadDeps, address: Address): Promise<boolean> {
+  const { publicClient, addresses } = deps
+  // Two sequential reads before MK-013, so the ICR could be measured against a price from an
+  // earlier block. For a predicate a keeper acts on, that is the difference between a
+  // liquidation that lands and one that reverts.
+  const { price, blockNumber } = await readPriceSnapshot(deps)
+  const [icr] = (await readAtSnapshot(publicClient, blockNumber, [
+    {
+      address: addresses.troveManager,
+      abi: troveManagerAbi as Abi,
+      functionName: 'getCurrentICR',
+      args: [address, price],
+    },
+  ])) as [bigint]
   return icr < MCR
 }
 

@@ -23,6 +23,13 @@ export type TroveStatus = (typeof TroveStatus)[keyof typeof TroveStatus]
 export interface Trove {
   /** True only for an active position with debt. */
   exists: boolean
+  /**
+   * The block every field here was read at. Both multicalls are pinned to it, so `icr` and
+   * `price` cannot come from different states (MK-013).
+   */
+  blockNumber: bigint
+  /** `fetchPrice()` at {@link blockNumber}, the price `icr` was measured against. */
+  price: bigint
   /** Entire collateral incl. pending redistribution, `getEntireDebtAndColl.coll` (BTC wei). */
   collateral: bigint
   /** Principal component of the debt (draw + fee + 200 gas reserve, + any pending), excl. interest, `getEntireDebtAndColl.principal`. */
@@ -51,7 +58,13 @@ export interface Trove {
   status: TroveStatus
 }
 
-/** Protocol-wide live state, one consistent price snapshot. */
+/**
+ * Protocol-wide live state, from one block.
+ *
+ * "One consistent price snapshot" used to be a claim rather than a fact: the price was read
+ * in its own round trip and the dependent calls ran at whatever block came next (MK-013).
+ * Both reads are now pinned to {@link blockNumber}.
+ */
 export interface SystemState {
   /** `getTCR(price)`, total collateral ratio, 1e18 fixed point. */
   tcr: bigint
@@ -59,4 +72,6 @@ export interface SystemState {
   isRecoveryMode: boolean
   /** `fetchPrice()`, BTC/USD, 1e18-scaled. */
   price: bigint
+  /** The block `price`, `tcr` and `isRecoveryMode` were all read at. */
+  blockNumber: bigint
 }

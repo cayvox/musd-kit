@@ -2,6 +2,7 @@ import { type Address, zeroAddress } from 'viem'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   MCR,
+  MULTICALL3_ADDRESS,
   MUSD_GAS_COMPENSATION,
   TroveStatus,
   createMusdClient,
@@ -142,6 +143,93 @@ describe('Phase 2, read/ live position via contract getters', () => {
     expect(trove.entireDebt).toBe(0n)
     expect(trove.liquidationPrice).toBe(0n)
     expect(trove.isLiquidatable).toBe(false)
+  })
+
+  /**
+   * MK-013. The price used to be read in its own round trip, then the dependent getters ran
+   * at whatever block came next, while the docstrings promised "one consistent price
+   * snapshot". These pin that the snapshot is now a fact.
+   *
+   * The price cannot simply join the batch that consumes it, and that is the reason this
+   * shape exists rather than a simpler one: `getTCR(uint256)`, `checkRecoveryMode(uint256)`
+   * and `getCurrentICR(address,uint256)` all take the price as an ARGUMENT, verified from
+   * the ABI, with no zero argument variant. So the value has to exist before the call using
+   * it is encoded. Pinning the second call to the first one's block is what makes the two
+   * agree.
+   */
+  it('MK-013: getSystemState reports the block, and every field is from it', async () => {
+    const fork = connectFork()
+    const sys = await client().getSystemState()
+    const head = await fork.publicClient.getBlockNumber()
+    expect(sys.blockNumber).toBeGreaterThan(0n)
+    expect(sys.blockNumber).toBeLessThanOrEqual(head)
+
+    // Re-read both dependent getters AT the reported block. If the SDK had taken them at a
+    // different block from the price, these would not have to agree.
+    const [tcr, rm] = await fork.publicClient.multicall({
+      allowFailure: false,
+      multicallAddress: MULTICALL3_ADDRESS,
+      blockNumber: sys.blockNumber,
+      contracts: [
+        {
+          address: T.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'getTCR',
+          args: [sys.price],
+        },
+        {
+          address: T.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'checkRecoveryMode',
+          args: [sys.price],
+        },
+      ],
+    })
+    expect(sys.tcr).toBe(tcr)
+    expect(sys.isRecoveryMode).toBe(rm)
+
+    // And the price really is that block's price.
+    const priceAtBlock = await fork.publicClient.readContract({
+      address: T.priceFeed,
+      abi: priceFeedAbi,
+      functionName: 'fetchPrice',
+      blockNumber: sys.blockNumber,
+    })
+    expect(sys.price).toBe(priceAtBlock)
+  })
+
+  it('MK-013: getTrove pins icr and price to the same block, across a block boundary', async () => {
+    const fork = connectFork()
+    const first = await fork.publicClient.readContract({
+      address: T.sortedTroves,
+      abi: sortedTrovesAbi,
+      functionName: 'getFirst',
+    })
+    const trove = await client().getTrove(first)
+    expect(trove.exists).toBe(true)
+
+    // Mine, so "latest" is now a different block from the one the read used. The values
+    // must still reconcile at the REPORTED block, which is the property being pinned.
+    await fork.mineBlocks(2)
+    expect(await fork.publicClient.getBlockNumber()).toBeGreaterThan(trove.blockNumber)
+
+    const [icrAtBlock, priceAtBlock] = await Promise.all([
+      fork.publicClient.readContract({
+        address: T.troveManager,
+        abi: troveManagerAbi,
+        functionName: 'getCurrentICR',
+        args: [first, trove.price],
+        blockNumber: trove.blockNumber,
+      }),
+      fork.publicClient.readContract({
+        address: T.priceFeed,
+        abi: priceFeedAbi,
+        functionName: 'fetchPrice',
+        blockNumber: trove.blockNumber,
+      }),
+    ])
+    expect(trove.icr).toBe(icrAtBlock)
+    expect(trove.price).toBe(priceAtBlock)
   })
 
   it('getSystemState matches getTCR/checkRecoveryMode at one price snapshot', async () => {

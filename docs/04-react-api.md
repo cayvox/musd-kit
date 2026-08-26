@@ -30,7 +30,10 @@ function Position({ address }: { address: `0x${string}` }) {
 ```
 
 `useTrove` returns the same contract-authoritative object as `core.getTrove`
-(`03-core-api` §2), refetched on new blocks.
+(`03-core-api` §2), refetched on new blocks. That object now carries `blockNumber` and
+`price`, and every field in it comes from that one block (MK-013), so a component rendering
+`icr` next to `price` is showing two numbers from the same state rather than two that
+happened to arrive together.
 
 ```tsx
 // A borrowing-power calculator, no live position needed (preview math)
@@ -108,7 +111,7 @@ We ship the **dedicated single-axis hooks** (`useAddCollateral` → `addColl`, `
 better in a form-per-action UI and each maps to exactly one core method. Each write hook is
 a `useMutation` returning the wagmi-style shape `{ <action>, isPending, isSuccess, error,
 hash, data }` where `error` is the core's typed `MusdError`; `useRedeem`'s `data` carries
-`{ hash, truncatedAmount, fee }`. After a successful write the caller's `useTrove` /
+`{ hash, truncatedAmount, redemptionRate, estimatedFeeCollateral, estimatedCollateralDrawn }`. After a successful write the caller's `useTrove` /
 `useMusdBalance` queries are invalidated so the UI refreshes. Receipt-waiting is left to the
 consumer (`useWaitForTransactionReceipt({ hash })`); v1 does not block the mutation on
 confirmation.
