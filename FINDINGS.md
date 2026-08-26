@@ -65,6 +65,7 @@ claim about it was not).
 | MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
 | MK-028 | The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`, which Node 24 rejects | S2 | fixed |
 | MK-029 | Local evidence and CI evidence were both true, because they ran different runtimes | S2 | fixed |
+| MK-030 | `zz-findings` MK-003 refinance fee assertion fails intermittently on a plain fork run | S3 | open |
 
 ---
 
@@ -1398,6 +1399,42 @@ Matrixing is a scope decision about cost, and a decision that is not blocked on 
 Separately, the note on GitHub's Node 20 ACTION runtime deprecation in the same section is a
 different subject entirely, about the runtime GitHub uses to execute a JavaScript action, and must
 not be conflated with either.
+
+---
+
+## MK-030 · `zz-findings` MK-003 refinance fee assertion fails intermittently on a plain fork run
+
+**Class** S3, harness · **Status** open · **Found by us in the P4 wave, taking the baseline before
+touching anything**
+
+**Why it exists at all.** This wave's scope is MK-007 through MK-013, and the flake family belongs
+to the next one. It is registered anyway because the standing rule in `docs/08-conventions.md` §10
+is that every failure is attributed to an ID before it is called a flake, and this one matched none
+of MK-021 through MK-026. An unattributed red run is indistinguishable from a regression the next
+time it appears.
+
+**What happens.** `packages/core/test/zz-findings.fork.test.ts`, the case
+"MK-003 (fixed): previewRefinance reports the fee the contract actually charges", fails. Run 3 of
+ten `pnpm test:fork` runs on Node 24.19.0 at pinned block 15043414, on `main` at `af04519`, before
+any change in this wave.
+
+**Why it is NOT one of the existing entries.** MK-022, MK-023 and MK-024 are all inside
+`phase6.fork.test.ts`. MK-025 is `@musd-kit/react`. MK-026 is `phase5.fork.test.ts`, and although it
+is the closest in character, it is a different file and a different assertion. MK-021 is a warm up
+budget on a cold fork and the warm up succeeded.
+
+**What we do NOT have, stated rather than glossed.** The assertion text. That run's output was
+filtered to the summary lines while capturing a ten run baseline, and the failure did not recur in
+the five subsequent runs whose full output WAS captured. So this entry records that the case failed
+once in ten and nothing about why. Capturing the assertion is the first task when it is diagnosed;
+running the file alone will not reproduce the conditions, because the alphabetical sequencer puts
+`zz-findings` last, after every clock warp the earlier phases perform.
+
+**Observed rate.** 1 in 10 on the P4 baseline. The other two reds in that window were MK-022 (run 2)
+and MK-026 (run 7), leaving 7 green.
+
+**Decision.** Not diagnosed here, and not fixed. It joins MK-016 and MK-022 through MK-026 for the
+mitigation removal wave. Capture the assertion with full output before anything else.
 
 ---
 
