@@ -1,0 +1,123 @@
+import type { Address, Hash, PublicClient, TransactionReceipt } from 'viem'
+import { getAddresses, priceFeedAbi, troveManagerAbi } from '../../src'
+
+const T = getAddresses(31611)
+
+/**
+ * Say what a transaction actually did, when something expected of it is missing (MK-031).
+ *
+ * Three times in this programme a fork failure has erased its own cause. `redemptionEv` in
+ * `phase6.fork.test.ts` looked up an event with `parseEventLogs(...)[0]!` and read `.args`
+ * off it, so a transaction that reverted, or that mined without emitting, surfaced as
+ * `TypeError: Cannot read properties of undefined (reading 'args')` and nothing else. That
+ * is MK-024's complaint about a sibling test, written down and then not acted on, and it
+ * cost a diagnosis from scratch every time.
+ *
+ * This does not retry, does not soften an assertion and does not change what passes. It only
+ * turns "undefined" into the state a reader needs: what the receipt says, what the chain says
+ * when the call is replayed, what was emitted instead, and the fork conditions that the
+ * suite's own findings say are the usual suspects.
+ *
+ * `eth_call` at the mined block is what recovers a revert reason: a receipt carries the
+ * status but not the reason, and replaying the same call at the same block reproduces the
+ * revert with its data. It is best effort, since a transaction can also fail for reasons a
+ * replay will not reproduce, and the report says which it got.
+ */
+export async function explainTransaction(
+  publicClient: PublicClient,
+  hash: Hash,
+  what: string,
+): Promise<string> {
+  const lines: string[] = [`MISSING ${what} for tx ${hash}`]
+
+  let receipt: TransactionReceipt | undefined
+  try {
+    // WAIT rather than fetch: a caller that reaches here has usually already waited, but one
+    // that has not would otherwise get "receipt could not be found" and learn nothing, which
+    // is the failure mode this whole helper exists to remove.
+    receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 30_000 })
+  } catch (error) {
+    lines.push(`  receipt: could not be read (${(error as Error).message.split('\n')[0]})`)
+  }
+
+  if (receipt) {
+    lines.push(`  status: ${receipt.status}`)
+    lines.push(`  block: ${receipt.blockNumber}  gasUsed: ${receipt.gasUsed}`)
+    lines.push(`  logs emitted: ${receipt.logs.length}`)
+    for (const log of receipt.logs) {
+      lines.push(`    from ${log.address} topic0 ${log.topics[0] ?? '(anonymous)'}`)
+    }
+    if (receipt.status === 'reverted') {
+      lines.push(`  revert reason: ${await replayForReason(publicClient, hash, receipt)}`)
+    }
+  }
+
+  lines.push(await forkConditions(publicClient))
+  return lines.join('\n')
+}
+
+/**
+ * Replay the transaction as an `eth_call` at the block it mined in, to recover the revert
+ * reason the receipt does not carry.
+ */
+async function replayForReason(
+  publicClient: PublicClient,
+  hash: Hash,
+  receipt: TransactionReceipt,
+): Promise<string> {
+  try {
+    const tx = await publicClient.getTransaction({ hash })
+    await publicClient.call({
+      account: tx.from,
+      to: tx.to as Address,
+      data: tx.input,
+      value: tx.value,
+      blockNumber: receipt.blockNumber,
+    })
+    return 'the replay did NOT revert, so the failure was state or gas dependent rather than a require'
+  } catch (error) {
+    const e = error as { shortMessage?: string; message?: string }
+    return e.shortMessage ?? e.message ?? String(error)
+  }
+}
+
+/**
+ * The fork conditions this suite's own findings keep pointing at: the seeded oracle answer
+ * and its age, the block, and whether the system is in Recovery Mode. MK-016 and MK-020
+ * between them establish that ordering and oracle staleness are the two variables that move.
+ */
+async function forkConditions(publicClient: PublicClient): Promise<string> {
+  const out: string[] = ['  fork conditions:']
+  try {
+    const blockNumber = await publicClient.getBlockNumber()
+    const [price, isRecoveryMode] = await Promise.all([
+      publicClient.readContract({
+        address: T.priceFeed,
+        abi: priceFeedAbi,
+        functionName: 'fetchPrice',
+      }),
+      publicClient
+        .readContract({
+          address: T.priceFeed,
+          abi: priceFeedAbi,
+          functionName: 'fetchPrice',
+        })
+        .then((p) =>
+          publicClient.readContract({
+            address: T.troveManager,
+            abi: troveManagerAbi,
+            functionName: 'checkRecoveryMode',
+            args: [p],
+          }),
+        ),
+    ])
+    const block = await publicClient.getBlock({ blockNumber })
+    out.push(`    head block: ${blockNumber}  timestamp: ${block.timestamp}`)
+    out.push(`    fetchPrice(): ${price}`)
+    out.push(`    recovery mode: ${isRecoveryMode}`)
+    out.push(`    MEZO_FORK_BLOCK: ${process.env.MEZO_FORK_BLOCK ?? '(unset)'}`)
+  } catch (error) {
+    out.push(`    could not be read (${(error as Error).message})`)
+  }
+  return out.join('\n')
+}

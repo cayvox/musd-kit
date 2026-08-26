@@ -23,6 +23,7 @@ import {
 } from '../src'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
+import { explainTransaction } from './harness/explainReceipt'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
 
 const T = getAddresses(31611)
@@ -75,12 +76,23 @@ async function walletWrite(
 }
 
 /**
- * Redeem with a refresh-and-retry. `getRedemptionHints` is slow the first time it
- * traverses a not-yet-warm sorted tail on the cold fork; that latency lets the oracle go
- * stale before `redeemCollateral` mines, so the marginal lowest-ICR Trove reads under MCR
- * and the contract reverts "Unable to redeem any amount" (→ RedemptionFailed). The first
- * attempt warms the traversal; the retry refreshes the oracle and runs fast, so it mines
- * against a fresh price. Genuine non-staleness failures still surface after the retries.
+ * Redeem with a retry, four attempts, on `RedemptionFailed` only.
+ *
+ * **MK-032: the stated reason for this is false and is corrected here rather than left in
+ * place.** It used to say that `getRedemptionHints` is slow enough to let the oracle go
+ * stale before `redeemCollateral` mines. The oracle cannot go stale: `OracleShim.sol:24-29`
+ * returns `timestamp()` for `updatedAt`, so the freshness guard never trips, verified by
+ * warping 30 days with no refresh and watching `fetchPrice()` return normally. Whatever
+ * makes a redemption redeem nothing here, it is not oracle staleness.
+ *
+ * Nor is it interest drift on the marginal Trove, at least not at the point it was measured:
+ * the first redemption hint sits at ICR 1.1184 against an MCR of 1.1, and 30 seconds of
+ * accrued interest moves it by about 1.06e10 wei, roughly one fifty thousandth of the margin.
+ *
+ * So this retry is a mitigation with no established mechanism, which is what MK-016 says
+ * about the whole family. It is left in place, and NOT removed, because removing mitigations
+ * is its own wave and doing it one at a time would make the next failure harder to attribute.
+ * What has changed is that it no longer claims to know why it is here.
  */
 async function redeemFresh(
   client: { redeem(p: RedeemParams): Promise<RedeemResult> },
@@ -134,19 +146,32 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
         abi: troveManagerAbi,
         logs: (await wait(hash)).logs,
         eventName: 'Redemption',
-      })[0]!
+      })[0]
+      // MK-031. This used to be `[0]!` followed by `.args`, so a redeem that reverted, or
+      // mined without emitting, surfaced as `TypeError: Cannot read properties of undefined
+      // (reading 'args')` and destroyed its own cause. That is exactly MK-024's complaint
+      // about the sibling liquidation test. Failing with what the chain did is not a softer
+      // assertion: the test still fails, it just says why.
+      if (!ev) {
+        throw new Error(
+          await explainTransaction(connectFork().publicClient, hash, 'Redemption event'),
+        )
+      }
       return ev.args
     }
 
     // The fork's lowest ~12 Troves are underwater (ICR 0.89-1.03 < MCR) and the first
-    // redeemable Trove sits at ICR ≈ 1.1005, a razor-thin 0.05% margin above MCR. A cold
-    // getRedemptionHints traversal is slow enough that the oracle goes stale before the
-    // redeem mines, so redeemCollateral re-reads a lower price and that marginal Trove is
-    // under MCR → "Unable to redeem any amount". Fix: redeem at a +50% price so the lowest
-    // redeemable Trove has comfortable margin (≈1.35), and redeemFresh warms the traversal
-    // then retries with a fresh oracle. The redemption fee is a price-INDEPENDENT fraction
-    // (collateralFee / collateralSent = redemptionRate), so every rate assertion holds.
-    // Price is restored in `finally` so later tests/files are unaffected.
+    // redeemable Trove sits at a thin margin above MCR, so this redeems at a +50% price to
+    // give it comfortable headroom (≈1.35). The redemption fee is a price-INDEPENDENT
+    // fraction (collateralFee / collateralSent = redemptionRate), so every rate assertion
+    // still holds, and the price is restored in `finally` so later files are unaffected.
+    //
+    // MK-032: this comment used to explain the +50% as a defence against the oracle going
+    // stale between the hint and the mine. It cannot: `OracleShim.sol:24-29` reports
+    // `timestamp()` as `updatedAt`, so the staleness guard never trips, verified by warping
+    // 30 days with no refresh. The manoeuvre still works, and the honest description of why
+    // is simply that a higher price lifts every ICR away from MCR, which makes the marginal
+    // Trove robust to whatever the real variable turns out to be.
     const origPrice = await musdR.getOraclePrice()
     try {
       await fork.setPrice((origPrice * 3n) / 2n)
@@ -171,6 +196,17 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       const N = testAccount(1001)
       await fork.fundAccount(N.address, 5n * BTC)
       await walletWrite(R, T.musd, musdAbi, 'transfer', [N.address, 8_000n * MUSD])
+      // MK-032. Same reasoning as the hooks file: report the redeemable margin before each
+      // redeem, on every run. The loan holder redeem above has just consumed part of the
+      // tail, so this is the quantity that decides whether the no-loan redeem can do
+      // anything, and it is the number missing from every past diagnosis of this test.
+      const [, , redeemableN] = await fork.publicClient.readContract({
+        address: T.hintHelpers,
+        abi: hintHelpersAbi,
+        functionName: 'getRedemptionHints',
+        args: [5_000n * MUSD, await price(), 100n],
+      })
+      console.log(`[phase6] NO-LOAN pre-redeem margin: requested=5000e18 redeemable=${redeemableN}`)
       const resN = await redeemFresh(clientFor(N), { amount: 5_000n * MUSD })
       const evN = await redemptionEv(resN.hash)
       const feeFracN = Number(evN._collateralFee) / Number(evN._collateralSent + evN._collateralFee)
@@ -223,11 +259,18 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       expect(await musdLQ.isLiquidatable(B.address)).toBe(true)
 
       const lq = await musdLQ.liquidate(B.address)
-      const liqEv = parseEventLogs({
+      const liqEvent = parseEventLogs({
         abi: troveManagerAbi,
         logs: (await wait(lq.hash)).logs,
         eventName: 'Liquidation',
-      })[0]!.args
+      })[0]
+      // MK-031, the same repair as `redemptionEv` above and the one MK-024 asked for by
+      // name: this is the exact line whose `[0]!.args` produced a bare TypeError and hid
+      // whether the liquidation reverted, liquidated nothing, or emitted something else.
+      if (!liqEvent) {
+        throw new Error(await explainTransaction(fork.publicClient, lq.hash, 'Liquidation event'))
+      }
+      const liqEv = liqEvent.args
       console.log(
         `[phase6] liquidation reward: gasComp=${liqEv._gasCompensation} collGasComp=${liqEv._collGasCompensation} (coll=${liqEv._liquidatedColl})`,
       )
