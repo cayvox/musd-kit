@@ -1,10 +1,32 @@
-import { type TestSpecification, defineConfig } from 'vitest/config'
-import { BaseSequencer } from 'vitest/node'
+import { defineConfig } from 'vitest/config'
+import { BaseSequencer, type WorkspaceSpec } from 'vitest/node'
 
-/** Path of a spec across vitest versions (object `.moduleId` or `[project, file]` tuple). */
-function specPath(spec: TestSpecification): string {
-  const s = spec as unknown as { moduleId?: string } & [unknown, string?]
-  return s.moduleId ?? (Array.isArray(spec) ? (s[1] ?? '') : '')
+/**
+ * Path of a spec.
+ *
+ * MK-027. This file had never been typechecked by anything, and the first thing typechecking
+ * it found was that `TestSpecification` is not exported from `vitest/config` at all: it lives
+ * in `vitest/node`, and `BaseSequencer.sort` is declared over `WorkspaceSpec`, not over it.
+ * The override below was typed against a name that did not resolve, so it degraded to `any`
+ * and every shape passed silently.
+ *
+ * With the real type the dual handling is explained rather than guessed at:
+ * `type WorkspaceSpec = TestSpecification & [...]` is an INTERSECTION of the object and the
+ * tuple, so both accesses were always valid. The defensive code was right; nothing had ever
+ * confirmed it.
+ *
+ * The `??` fallback is deliberately NOT kept. Returning `''` for every spec would sort them
+ * all equal and silently destroy the ordering this suite depends on (MK-016), which is the
+ * worst possible failure for a sequencer. If a future vitest changes the shape, this throws.
+ */
+function specPath(spec: WorkspaceSpec): string {
+  const path = spec.moduleId
+  if (typeof path !== 'string' || path === '') {
+    throw new Error(
+      `AlphabeticalSequencer: a spec has no moduleId (${JSON.stringify(spec)}). The fork project shares one anvil instance and depends on a stable file order, so guessing here would reorder it silently.`,
+    )
+  }
+  return path
 }
 
 /**
@@ -21,7 +43,7 @@ function specPath(spec: TestSpecification): string {
  * harmless for `unit`, which is chain-free and finishes in well under a second.
  */
 class AlphabeticalSequencer extends BaseSequencer {
-  override async sort(files: TestSpecification[]): Promise<TestSpecification[]> {
+  override async sort(files: WorkspaceSpec[]): Promise<WorkspaceSpec[]> {
     return [...files].sort((a, b) => specPath(a).localeCompare(specPath(b)))
   }
 }

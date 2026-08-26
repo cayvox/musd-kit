@@ -67,7 +67,7 @@ describe('Phase 3, hints/ insertion-hint module', () => {
   // rather than raised: it was sized below the cold path's real cost, so a slow network
   // skipped all six of these tests and reported a latency event as an untested hint
   // module. These tests now run under the normal `testTimeout`.
-  beforeEach(() => connectFork().refreshOracle())
+  beforeEach(() => connectFork().mineBlocks(1))
 
   it('computeNICR == HintHelpers.computeNominalCR exactly (grid)', async () => {
     const grid: [bigint, bigint][] = [

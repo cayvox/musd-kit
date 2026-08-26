@@ -1,5 +1,5 @@
 import type { Address, Hash, PublicClient, TransactionReceipt } from 'viem'
-import { getAddresses, priceFeedAbi, troveManagerAbi } from '../../src'
+import { MCR, getAddresses, hintHelpersAbi, priceFeedAbi, troveManagerAbi } from '../../src'
 
 const T = getAddresses(31611)
 
@@ -19,9 +19,13 @@ const T = getAddresses(31611)
  * suite's own findings say are the usual suspects.
  *
  * `eth_call` at the mined block is what recovers a revert reason: a receipt carries the
- * status but not the reason, and replaying the same call at the same block reproduces the
- * revert with its data. It is best effort, since a transaction can also fail for reasons a
- * replay will not reproduce, and the report says which it got.
+ * status but not the reason. It is best effort and its limits are stated in the output rather
+ * than assumed away, because getting them wrong costs a wave: the replay runs against END of
+ * block state, which is after the failing transaction, so a non-reverting replay does NOT
+ * prove the failure was not a `require`.
+ *
+ * `gasLimit` beside `gasUsed` is the one unambiguous discriminator here. Equal means out of
+ * gas. Unequal rules it out, which is exactly what it did the first time it fired (MK-035).
  */
 export async function explainTransaction(
   publicClient: PublicClient,
@@ -42,7 +46,21 @@ export async function explainTransaction(
 
   if (receipt) {
     lines.push(`  status: ${receipt.status}`)
-    lines.push(`  block: ${receipt.blockNumber}  gasUsed: ${receipt.gasUsed}`)
+    // The gas LIMIT, not just what was used. `gasUsed === gas` is the unambiguous signature
+    // of out of gas, and it is the difference between "the contract refused" and "the
+    // estimate was too small", which read identically in a receipt (MK-035).
+    let gasLimit: bigint | undefined
+    try {
+      gasLimit = (await publicClient.getTransaction({ hash })).gas
+    } catch {
+      gasLimit = undefined
+    }
+    lines.push(
+      `  block: ${receipt.blockNumber}  gasUsed: ${receipt.gasUsed}  gasLimit: ${gasLimit ?? 'unknown'}`,
+    )
+    if (gasLimit !== undefined && receipt.gasUsed === gasLimit) {
+      lines.push('  OUT OF GAS: gasUsed equals the limit, so the estimate was too small')
+    }
     lines.push(`  logs emitted: ${receipt.logs.length}`)
     for (const log of receipt.logs) {
       lines.push(`    from ${log.address} topic0 ${log.topics[0] ?? '(anonymous)'}`)
@@ -74,7 +92,13 @@ async function replayForReason(
       value: tx.value,
       blockNumber: receipt.blockNumber,
     })
-    return 'the replay did NOT revert, so the failure was state or gas dependent rather than a require'
+    return (
+      'the replay did NOT revert. Read this carefully: `eth_call` at a block number executes ' +
+      'against the state at the END of that block, which is AFTER the failing transaction and ' +
+      'everything else in it. So this is not a faithful reproduction, and it is weaker evidence ' +
+      'than it looks. It rules out a condition that is still true at end of block; it does not ' +
+      'rule out a require that was true mid block.'
+    )
   } catch (error) {
     const e = error as { shortMessage?: string; message?: string }
     return e.shortMessage ?? e.message ?? String(error)
@@ -120,4 +144,49 @@ async function forkConditions(publicClient: PublicClient): Promise<string> {
     out.push(`    could not be read (${(error as Error).message})`)
   }
   return out.join('\n')
+}
+
+/**
+ * The redemption tail's margin above MCR, at this instant (MK-016).
+ *
+ * `redeemCollateral` walks `SortedTroves` from the lowest NICR and skips anything under MCR,
+ * so the FIRST redemption hint's ICR is the number that decides whether a redemption can do
+ * anything at all. When it drops below MCR the contract reverts
+ * `TroveManager: Unable to redeem any amount`, whatever the requested size.
+ *
+ * Logged before every redemption in the suite, on passing runs too, because a margin that is
+ * only ever printed when a test fails cannot show you it was already thin on the runs that
+ * passed.
+ */
+export async function reportRedemptionMargin(
+  publicClient: PublicClient,
+  label: string,
+  amount: bigint,
+): Promise<void> {
+  try {
+    const price = await publicClient.readContract({
+      address: T.priceFeed,
+      abi: priceFeedAbi,
+      functionName: 'fetchPrice',
+    })
+    const [firstHint, , truncated] = await publicClient.readContract({
+      address: T.hintHelpers,
+      abi: hintHelpersAbi,
+      functionName: 'getRedemptionHints',
+      args: [amount, price, 100n],
+    })
+    const icr = await publicClient.readContract({
+      address: T.troveManager,
+      abi: troveManagerAbi,
+      functionName: 'getCurrentICR',
+      args: [firstHint, price],
+    })
+    const block = await publicClient.getBlock({ blockTag: 'latest' })
+    console.log(
+      `[margin] ${label} requested=${amount} redeemable=${truncated} firstHint=${firstHint} ` +
+        `icr=${icr} mcr=${MCR} marginAboveMcr=${icr - MCR} timestamp=${block.timestamp}`,
+    )
+  } catch (error) {
+    console.log(`[margin] ${label} could not be read (${(error as Error).message.split('\n')[0]})`)
+  }
 }

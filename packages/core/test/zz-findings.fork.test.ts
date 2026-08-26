@@ -85,6 +85,8 @@ import {
 import { principalReductionForRepay } from '../src/trove'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
+import { reportRedemptionMargin } from './harness/explainReceipt'
+import { recordMitigation } from './harness/mitigationLog'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
 
 const T = getAddresses(31611)
@@ -194,7 +196,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // this Trove lands in the band MCR <= ICR < CCR.
       await openAtIcr(victim, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const state = await reader().getSystemState()
       expect(state.isRecoveryMode, 'fixture: system must be in Recovery Mode').toBe(true)
@@ -217,7 +219,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe(false)
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -244,7 +246,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       for (const mode of ['normal', 'recovery'] as const) {
         if (mode === 'recovery') {
           await fork.setPrice((original * 50n) / 100n)
-          await fork.refreshOracle()
+          await fork.mineBlocks(1)
         }
         const inRecovery = (await client.getSystemState()).isRecoveryMode
         expect(inRecovery, `fixture: expected ${mode} mode`).toBe(mode === 'recovery')
@@ -262,7 +264,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       }
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 300_000)
 
@@ -288,7 +290,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       )
 
       await fork.setPrice(original * 2n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const capacityAfterRise = await connectFork().publicClient.readContract({
         address: T.troveManager,
@@ -341,7 +343,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).rejects.toMatchObject({ code: 'EXCEEDS_BORROWING_CAPACITY' })
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -422,7 +424,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     try {
       await openAtIcr(borrower, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const client = clientFor(borrower)
       expect(
@@ -458,7 +460,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe('RECOVERY_MODE')
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -470,7 +472,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     try {
       await openAtIcr(anchor, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const client = reader()
       const state = await client.getSystemState()
@@ -488,7 +490,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe(0n)
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -499,7 +501,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     try {
       await openAtIcr(anchor, 2_600_000_000_000_000_000n)
       await fork.setPrice((original * 50n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       const client = reader()
       expect(
@@ -538,7 +540,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       expect(preview.reasons).toContain('BELOW_MINIMUM_DEBT')
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 240_000)
 
@@ -727,18 +729,14 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate
       // this test compares against is unaffected by the shim.
       await fork.setPrice(original * 2n)
-      let result: Awaited<ReturnType<typeof client.redeem>> | undefined
-      let lastError: unknown
-      for (let attempt = 0; attempt < 4 && !result; attempt++) {
-        await fork.refreshOracle()
-        try {
-          result = await client.redeem({ amount: 100n * MUSD })
-        } catch (error) {
-          lastError = error
-        }
-      }
-      expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
-      if (!result) throw new Error('unreachable')
+      // MK-016: the four attempt retry is gone. Measured before removal, 10 invocations over
+      // ten coverage runs, `attempts=1` on all 10, and its stated reason (oracle staleness)
+      // is impossible per MK-032. The `mineBlocks(1)` stays: it puts the redeem on a fresh
+      // block, which is a real dependency, and it was previously spelled `refreshOracle()`.
+      await fork.mineBlocks(1)
+      await reportRedemptionMargin(fork.publicClient, 'zz-findings/MK-014', 100n * MUSD)
+      const result = await client.redeem({ amount: 100n * MUSD })
+      recordMitigation({ name: 'zzFindingsRedeemRetry', attempts: 1, outcome: 'ok' })
       await wait(result.hash)
 
       // FIXED. There is no field named `fee` any more. The rate is named as a rate, and
@@ -772,7 +770,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).not.toBe(result.redemptionRate)
     } finally {
       await fork.setPrice(original)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 300_000)
 

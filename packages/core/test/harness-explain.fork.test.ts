@@ -66,5 +66,11 @@ describe('MK-031, the diagnostic that replaces a bare TypeError', () => {
     expect(report).toContain('status: reverted')
     // The whole point: the reason, recovered by replaying the call at the mined block.
     expect(report).toContain('Trove does not exist or is closed')
+    // And the gas limit alongside what was used (MK-035). A `require` failure and an out of
+    // gas failure produce the same `status: reverted` with no reason; `gasUsed === gasLimit`
+    // is what separates them, so the report always carries both. This case is a genuine
+    // require, so the two must NOT be equal and no out of gas verdict may appear.
+    expect(report).toContain('gasLimit:')
+    expect(report).not.toContain('OUT OF GAS')
   }, 120_000)
 })

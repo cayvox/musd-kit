@@ -40,7 +40,7 @@ const fundBtc = (a: Address, v: bigint) => connectFork().fundAccount(a, v)
  * doesn't change). Refreshing immediately before each write keeps the price fresh.
  */
 const sent = async (call: () => Promise<{ hash: Address }>) => {
-  await connectFork().refreshOracle()
+  await connectFork().mineBlocks(1)
   return wait((await call()).hash)
 }
 
@@ -99,7 +99,7 @@ async function fundMusd(to: Address, amount: bigint) {
 }
 
 describe('Phase 5, trove/ lifecycle writes (the SDK sends txs)', () => {
-  beforeEach(() => connectFork().refreshOracle())
+  beforeEach(() => connectFork().mineBlocks(1))
 
   beforeAll(async () => {
     funder = testAccount(401)
@@ -164,7 +164,7 @@ describe('Phase 5, trove/ lifecycle writes (the SDK sends txs)', () => {
     const origPrice = await musd.getOraclePrice()
     try {
       await connectFork().setPrice((origPrice * 12n) / 10n)
-      await connectFork().refreshOracle()
+      await connectFork().mineBlocks(1)
       const pre = await musd.getTrove(L.address)
       const required = pre.entireDebt - GAS
       await fundMusd(L.address, required + 50n * MUSD)
@@ -184,7 +184,7 @@ describe('Phase 5, trove/ lifecycle writes (the SDK sends txs)', () => {
       expect(btcDelta).toBeGreaterThan(collAtClose - BTC / 100n) // ~collateral back, minus gas
     } finally {
       await connectFork().setPrice(origPrice)
-      await connectFork().refreshOracle()
+      await connectFork().mineBlocks(1)
     }
   }, 300_000)
 

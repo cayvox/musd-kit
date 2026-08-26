@@ -13,7 +13,6 @@ import {
   NothingToLiquidate,
   type RedeemParams,
   type RedeemResult,
-  RedemptionFailed,
   createMusdClient,
   getAddresses,
   hintHelpersAbi,
@@ -23,7 +22,8 @@ import {
 } from '../src'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
-import { explainTransaction } from './harness/explainReceipt'
+import { explainTransaction, reportRedemptionMargin } from './harness/explainReceipt'
+import { recordMitigation } from './harness/mitigationLog'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
 
 const T = getAddresses(31611)
@@ -76,39 +76,26 @@ async function walletWrite(
 }
 
 /**
- * Redeem with a retry, four attempts, on `RedemptionFailed` only.
+ * Redeem once, at a fresh block.
  *
- * **MK-032: the stated reason for this is false and is corrected here rather than left in
- * place.** It used to say that `getRedemptionHints` is slow enough to let the oracle go
- * stale before `redeemCollateral` mines. The oracle cannot go stale: `OracleShim.sol:24-29`
- * returns `timestamp()` for `updatedAt`, so the freshness guard never trips, verified by
- * warping 30 days with no refresh and watching `fetchPrice()` return normally. Whatever
- * makes a redemption redeem nothing here, it is not oracle staleness.
+ * **The four attempt retry is gone (MK-016).** Measured before removal: 30 invocations over
+ * ten `pnpm test:coverage` runs, `attempts=1` on all 30. It never retried in a passing run.
+ * Its stated reason was oracle staleness, which MK-032 established the shim makes
+ * impossible, so it was a loop with no mechanism, no observed benefit, and the cost that a
+ * redemption failing three times before succeeding looked identical to one that worked.
  *
- * Nor is it interest drift on the marginal Trove, at least not at the point it was measured:
- * the first redemption hint sits at ICR 1.1184 against an MCR of 1.1, and 30 seconds of
- * accrued interest moves it by about 1.06e10 wei, roughly one fifty thousandth of the margin.
- *
- * So this retry is a mitigation with no established mechanism, which is what MK-016 says
- * about the whole family. It is left in place, and NOT removed, because removing mitigations
- * is its own wave and doing it one at a time would make the next failure harder to attribute.
- * What has changed is that it no longer claims to know why it is here.
+ * The `mineBlocks(1)` is kept and is NOT a retry: it puts the redeem on a fresh block, which
+ * is what the call sites around it depend on. It was previously spelled `refreshOracle()`.
  */
 async function redeemFresh(
   client: { redeem(p: RedeemParams): Promise<RedeemResult> },
   params: RedeemParams,
 ): Promise<RedeemResult> {
-  let last: unknown
-  for (let i = 0; i < 4; i++) {
-    await connectFork().refreshOracle()
-    try {
-      return await client.redeem(params)
-    } catch (e) {
-      if (!(e instanceof RedemptionFailed)) throw e
-      last = e
-    }
-  }
-  throw last
+  await connectFork().mineBlocks(1)
+  await reportRedemptionMargin(connectFork().publicClient, 'phase6/redeemFresh', params.amount)
+  const result = await client.redeem(params)
+  recordMitigation({ name: 'redeemFresh', attempts: 1, outcome: 'ok' })
+  return result
 }
 
 describe('Phase 6, redemption + liquidation keeper surface', () => {
@@ -175,7 +162,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
     const origPrice = await musdR.getOraclePrice()
     try {
       await fork.setPrice((origPrice * 3n) / 2n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
       expect((await musdR.getSystemState()).isRecoveryMode).toBe(false) // redemption needs TCR ≥ MCR
 
       // Redeem 5,000: enough to fully close the lowest one or two Troves (each ~2,200 debt)
@@ -227,7 +214,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       await wait(resT.hash)
     } finally {
       await fork.setPrice(origPrice)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
   }, 600_000)
 
@@ -410,6 +397,11 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       numTrials: 15,
     })
     // Redeem past M so M is FULLY redeemed (the partial falls on a later Trove, not M).
+    await reportRedemptionMargin(
+      fork.publicClient,
+      'phase6/claimFixture',
+      mEntireDebt + 30_000n * MUSD,
+    )
     await wait((await clientFor(G).redeem({ amount: mEntireDebt + 30_000n * MUSD })).hash)
     expect(await statusOf(M.address)).toBe(4) // closedByRedemption
 

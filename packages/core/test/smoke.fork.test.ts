@@ -34,7 +34,7 @@ const priceFeedAbi = [
  * harness is real.
  */
 describe('Phase 0 smoke gate (forked Mezo)', () => {
-  beforeEach(() => connectFork().refreshOracle())
+  beforeEach(() => connectFork().mineBlocks(1))
 
   it('reads MCR == 1.1e18 from TroveManager on the fork', async () => {
     const { publicClient } = connectFork()

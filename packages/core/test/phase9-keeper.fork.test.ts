@@ -36,7 +36,7 @@ describe('Phase 9, examples/keeper (core-only)', () => {
 
   it('scans SortedTroves and liquidates an under-MCR Trove on the fork, receiving the reward', async () => {
     const fork = connectFork()
-    await fork.refreshOracle()
+    await fork.mineBlocks(1)
 
     // A funded keeper account, it holds NO MUSD until it earns liquidation rewards.
     const keeper: PrivateKeyAccount = testAccount(900)
@@ -80,7 +80,7 @@ describe('Phase 9, examples/keeper (core-only)', () => {
       // position in SortedTroves has a lower NICR, so the tail the keeper walks from is
       // liquidatable too. The drop is restored in `finally`, as phases 5, 6 and 7 do.
       await fork.setPrice((origPrice * 75n) / 100n)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
 
       // The ONLY liquidation gate in the protocol is `ICR < MCR`: `TroveManager.sol:1148`,
       // inside the `batchLiquidateTroves` loop that `liquidate(address)` funnels into
@@ -115,7 +115,7 @@ describe('Phase 9, examples/keeper (core-only)', () => {
       )
     } finally {
       await fork.setPrice(origPrice)
-      await fork.refreshOracle()
+      await fork.mineBlocks(1)
     }
     // Generous, because building the fixture means a real `openTrove`, and the insertion
     // hint ritual is the single most latency-bound thing in the suite on a cold fork: run
