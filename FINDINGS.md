@@ -45,7 +45,7 @@ claim about it was not).
 | MK-007 | `claim()` swallows every error | S2 | fixed |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | fixed |
 | MK-009 | Address overrides accept any string | S2 | fixed |
-| MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
+| MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | fixed |
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | fixed |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | fixed |
@@ -447,6 +447,38 @@ inflict this on its own RPC endpoint.
 
 **Decision.** Fix now. Validate the input, bound the iteration count, and cut the per iteration
 round trips.
+
+**Fixed, P4 wave.** Three things, and the third depended on establishing a fact first.
+
+1. **The input is validated.** A non-positive collateral throws `InvalidAmount` rather than being
+   searched over. The React `useBorrowingPower` hook is now `enabled` only for a positive
+   collateral, because an empty text input parsing to `0n` is a calculator being typed into, not an
+   error to render.
+2. **The search is bounded**, `MAX_BORROWING_POWER_ITERATIONS = 256`. That is the number of halvings
+   a 256 bit range can survive, so a search that has not converged by then cannot: it is a backstop
+   against a bug, not a budget.
+3. **The search is no longer the primary path.** Every chain read happens in one `multicall`, the
+   answer is solved in closed form, and the chain is asked for a real `getBorrowingFee` only to
+   CONFIRM it. Roughly 77 sequential calls becomes about four.
+
+**The fee shape was established, not assumed.** Probed against the forked deployment at the pinned
+block, `getBorrowingFee(d)` equals `borrowingRate() * d / DECIMAL_PRECISION()` EXACTLY, at
+`d` = 1, 7, 1000, 1e18, 1.234...e18, 5000e18 and 1e30. 1000 matters: at the live rate it is the
+smallest sample where the floor division is visible. Live values are `borrowingRate() = 1e15`
+against `DECIMAL_PRECISION() = 1e18`, a flat 0.1% with no intercept, no tier and no minimum.
+
+**And it is still only a premise, which is why the fallback stays.** `borrowingRate` is governable:
+`proposeBorrowingRate` and `approveBorrowingRate` are both on the ABI. Linearity is a property of
+today's implementation, not a guarantee. So the closed form's answer is confirmed against a real
+`getBorrowingFee` call, and a mismatch falls back to the bounded search. A closed form that silently
+disagreed with the chain would be worse than the slow loop it replaced.
+
+**Pinned by** four chain-free cases in `packages/core/test/s2-guards.test.ts` (validation, the call
+count, the exact boundary, and the dust case) and two fork tests in `phase4.fork.test.ts`: linearity
+asserted directly against the contract, and the closed form compared to a locally reimplemented
+binary search, to the wei, at four collateral sizes. The reference search is written out in the test
+rather than shared with `src`, so the comparison is against the implementation that was replaced
+rather than against a helper that could drift with it. There was no paired findings test before.
 
 ---
 

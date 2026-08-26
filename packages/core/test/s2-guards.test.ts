@@ -6,7 +6,8 @@ import {
   type WalletClient,
 } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { ContractCallFailed, getAddresses } from '../src'
+import { ContractCallFailed, InvalidAmount, MCR, getAddresses } from '../src'
+import { getBorrowingPower } from '../src/math'
 // `claim` is reached through `createMusdClient` on the public surface; imported directly
 // here because these are white box tests of the guard inside it, not of the wiring.
 import { type WriteDeps, claim } from '../src/trove'
@@ -97,5 +98,86 @@ describe('MK-007, claim() swallows exactly one revert and nothing else', () => {
     const err = await claim(deps).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ContractCallFailed)
     expect((err as Error).cause).toBe(original)
+  })
+})
+
+/**
+ * MK-010. `getBorrowingPower` binary searched over a caller supplied, unvalidated
+ * collateral, issuing one `getBorrowingFee` call per step. Roughly 77 sequential calls for
+ * one BTC, more for adversarial inputs, and a UI bound to a text input could point it at
+ * any number.
+ *
+ * The chain-free half is here: input validation and the round trip count. The half that
+ * needs a real deployment, that the fee really is linear and that the closed form agrees
+ * with the search to the wei, is in `phase4.fork.test.ts`, because a claim about the
+ * contract belongs against the contract.
+ */
+describe('MK-010, getBorrowingPower validates its input and stops iterating', () => {
+  const PRICE = 77_051_107_320_000_000_000_000n
+  const RATE = 10n ** 15n
+  const PRECISION = 10n ** 18n
+
+  function mathDeps() {
+    let feeCalls = 0
+    let multicalls = 0
+    const publicClient = {
+      multicall: async () => {
+        multicalls += 1
+        return [RATE, PRECISION, 5_000n * 10n ** 18n, 100_000n * 10n ** 18n]
+      },
+      readContract: async ({ functionName, args }: { functionName: string; args?: unknown[] }) => {
+        if (functionName === 'fetchPrice') return PRICE
+        if (functionName === 'checkRecoveryMode') return false
+        if (functionName === 'getBorrowingFee') {
+          feeCalls += 1
+          return (RATE * (args?.[0] as bigint)) / PRECISION
+        }
+        throw new Error(`unexpected read: ${functionName}`)
+      },
+    } as unknown as PublicClient
+    return {
+      deps: {
+        publicClient,
+        addresses: T,
+        getMinNetDebt: async () => 1_800n * 10n ** 18n,
+        isAccountFeeExempt: async () => false,
+      },
+      feeCalls: () => feeCalls,
+      multicalls: () => multicalls,
+    }
+  }
+
+  it('rejects a non-positive collateral instead of searching over it', async () => {
+    const { deps } = mathDeps()
+    await expect(getBorrowingPower(deps, { collateral: 0n })).rejects.toBeInstanceOf(InvalidAmount)
+    await expect(getBorrowingPower(deps, { collateral: -1n })).rejects.toBeInstanceOf(InvalidAmount)
+  })
+
+  it('costs a handful of calls, not one per binary search step', async () => {
+    const { deps, feeCalls, multicalls } = mathDeps()
+    const answer = await getBorrowingPower(deps, { collateral: 10n ** 18n })
+    expect(answer).toBeGreaterThan(0n)
+    // The old implementation needed roughly 77 getBorrowingFee calls for one BTC. Two here:
+    // one to confirm the closed form's premise, one for the minNetDebt floor check.
+    expect(feeCalls()).toBeLessThanOrEqual(4)
+    expect(multicalls()).toBe(1)
+  })
+
+  it('the answer is exactly the boundary: feasible, and one wei more is not', async () => {
+    const { deps } = mathDeps()
+    const coll = 10n ** 18n
+    const d = await getBorrowingPower(deps, { collateral: coll })
+    const icr = (draw: bigint) => {
+      const entireDebt = draw + (RATE * draw) / PRECISION + 200n * 10n ** 18n
+      return (coll * PRICE) / entireDebt
+    }
+    expect(icr(d)).toBeGreaterThanOrEqual(MCR)
+    expect(icr(d + 1n)).toBeLessThan(MCR)
+  })
+
+  it('returns 0 when the collateral cannot reach the debt floor at all', async () => {
+    const { deps } = mathDeps()
+    // Dust: the ICR cap is below the 200 gas reserve, so no open exists.
+    await expect(getBorrowingPower(deps, { collateral: 1n })).resolves.toBe(0n)
   })
 })

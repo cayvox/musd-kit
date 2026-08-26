@@ -183,11 +183,34 @@ musd.previewBorrow({ owner, amount });            // → verdict + binding const
 musd.previewRefinance(owner);                     // → fee, resulting principal/ICR, verdict
 
 musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw for an OPEN only
+                                                 //   throws InvalidAmount for collateral <= 0
 musd.computeICR({ collateral, entireDebt, price });        // → bigint
 musd.computeLiquidationPrice({ collateral, entireDebt });  // → bigint
 musd.computeEntireDebt({ draw, rate, elapsedSeconds });    // → bigint (preview accrual; see 05 §2)
 musd.getHealthFactor({ icr });                             // → number
 ```
+
+### `getBorrowingPower` costs four calls, not eighty
+
+It used to binary search the draw, calling the real `getBorrowingFee` on every step: about 77
+sequential round trips for one BTC, over a collateral amount nothing validated. A UI bound to
+a text input could aim that at its own RPC endpoint (MK-010).
+
+Now every read happens in one `multicall`, the answer is solved in closed form, and the chain
+is asked for a real `getBorrowingFee` only to **confirm** it. The closed form rests on the fee
+being linear in the draw, `getBorrowingFee(d) == borrowingRate() * d / DECIMAL_PRECISION()`,
+which was established by triggering it against the deployment rather than assumed, and holds
+exactly at the live rate (`1e15` against `1e18`, a flat 0.1%).
+
+It stays a premise rather than a fact, because `borrowingRate` is governable
+(`proposeBorrowingRate`, `approveBorrowingRate`). So the answer is confirmed against the chain
+and a mismatch falls back to the bounded binary search. A closed form that silently disagreed
+with the contract would be worse than the loop it replaced.
+
+`collateral <= 0` now throws `InvalidAmount`. `useBorrowingPower` is disabled for it rather
+than reporting an error, since an empty input parsing to `0n` is a calculator being typed
+into.
+
 
 `previewOpen` powers a "Borrowing Power Calculator": give it intended collateral and
 debt, get the resulting ICR, liquidation price, fee, total debt, and an explicit

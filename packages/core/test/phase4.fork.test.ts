@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   CCR,
   MCR,
+  borrowerOperationsAbi,
   computeEntireDebt,
   computeICR,
   createMusdClient,
@@ -119,6 +120,100 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       }),
     ).resolves.toMatchObject({ owner: testAccount(321).address })
   }, 120_000)
+
+  /**
+   * MK-010. The claim the closed form rests on, stated against the contract rather than in a
+   * comment: `getBorrowingFee(d) == borrowingRate() * d / DECIMAL_PRECISION()`, exactly.
+   *
+   * This test exists because that is a property of the CURRENT implementation and not a
+   * guarantee: `borrowingRate` is governable, `proposeBorrowingRate` and
+   * `approveBorrowingRate` are both on the ABI. If governance ever makes the fee non linear,
+   * this fails, which is the signal to check that the fallback search is doing the work.
+   */
+  it('MK-010: the borrowing fee is linear in the draw AT THE CURRENT RATE', async () => {
+    const { publicClient } = connectFork()
+    const bo = { address: T.borrowerOperations, abi: borrowerOperationsAbi } as const
+    const [rate, precision] = await Promise.all([
+      publicClient.readContract({ ...bo, functionName: 'borrowingRate' }),
+      publicClient.readContract({ ...bo, functionName: 'DECIMAL_PRECISION' }),
+    ])
+    // 1000 is included on purpose: at the live rate it is the smallest sample where the
+    // floor division is visible, so a formula that rounded differently would show here.
+    const samples = [1n, 7n, 1000n, 10n ** 18n, 1_234_567_890_123_456_789n, 5000n * 10n ** 18n]
+    for (const d of samples) {
+      const fee = await publicClient.readContract({
+        ...bo,
+        functionName: 'getBorrowingFee',
+        args: [d],
+      })
+      expect(fee, `getBorrowingFee(${d})`).toBe((rate * d) / precision)
+    }
+    console.log(`[phase4] borrowingRate=${rate} DECIMAL_PRECISION=${precision} (linear, floored)`)
+  })
+
+  it('MK-010: the closed form equals the binary search, to the wei', async () => {
+    const { publicClient } = connectFork()
+    const musd = client()
+    const price = await musd.getOraclePrice()
+
+    for (const collateral of [10n ** 17n, 5n * 10n ** 16n, 10n ** 18n, 3n * 10n ** 18n]) {
+      // The reference: the ORIGINAL algorithm, monotonic binary search calling the real
+      // getBorrowingFee every step. Kept here rather than in src so the comparison is
+      // against the implementation this replaced, not against a shared helper that could
+      // drift with it.
+      const [isRecoveryMode, systemColl, systemDebt, minNetDebt] = await Promise.all([
+        publicClient.readContract({
+          address: T.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'checkRecoveryMode',
+          args: [price],
+        }),
+        publicClient.readContract({
+          address: T.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'getEntireSystemColl',
+        }),
+        publicClient.readContract({
+          address: T.troveManager,
+          abi: troveManagerAbi,
+          functionName: 'getEntireSystemDebt',
+        }),
+        musd.getConstants().then((c) => c.minNetDebt),
+      ])
+      const target = isRecoveryMode ? CCR : MCR
+      const feeOf = (draw: bigint) =>
+        publicClient.readContract({
+          address: T.borrowerOperations,
+          abi: borrowerOperationsAbi,
+          functionName: 'getBorrowingFee',
+          args: [draw],
+        })
+      const feasible = async (draw: bigint) => {
+        const entireDebt = draw + (await feeOf(draw)) + GAS
+        if (computeICR({ collateral, entireDebt, price }) < target) return false
+        if (isRecoveryMode) return true
+        return (
+          computeICR({
+            collateral: systemColl + collateral,
+            entireDebt: systemDebt + entireDebt,
+            price,
+          }) >= CCR
+        )
+      }
+      let lo = 0n
+      let hi = (collateral * price) / target - GAS
+      while (lo < hi) {
+        const mid = (lo + hi + 1n) / 2n
+        if (await feasible(mid)) lo = mid
+        else hi = mid - 1n
+      }
+      const searched = lo + (await feeOf(lo)) < minNetDebt ? 0n : lo
+
+      expect(await musd.getBorrowingPower({ collateral, price }), `collateral=${collateral}`).toBe(
+        searched,
+      )
+    }
+  })
 
   it('getBorrowingPower boundary: max opens (ICR ≥ MCR), max+1 MUSD breaches', async () => {
     const c = client()
