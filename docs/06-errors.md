@@ -34,6 +34,7 @@ branch by `instanceof` or by `code` in a switch.
 | `TroveNotFound` | operating on an address with no open Trove | `{ address }` |
 | `TroveAlreadyExists` | opening when one is already open | `{ address }` |
 | `InvalidAmount` | zero / negative / nonsensical input | `{ field, value }` |
+| `InvalidAddressOverride` | an `addresses` override with an unknown key, a non-address value, or the zero address (MK-009) | `{ contractName, value, why }` |
 
 ### 2.2 Protocol reverts (mapped from on-chain revert data)
 

@@ -138,6 +138,27 @@ export class InvalidAmount extends MusdError {
   }
 }
 
+/**
+ * An `addresses` override entry that cannot be a contract address (MK-009).
+ *
+ * Thrown for an unknown contract key, a value that is not a valid EVM address, and for the
+ * zero address specifically. Zero is called out separately because it is the value a
+ * partially initialized config produces, and it is the one wrong address that will not
+ * announce itself: reads against it return empty data rather than reverting with a reason.
+ */
+export class InvalidAddressOverride extends MusdError {
+  readonly contractName: string
+  constructor(contractName: string, value: unknown, why: string) {
+    super(
+      Codes.INVALID_ADDRESS_OVERRIDE,
+      `Invalid \`addresses\` override for "${contractName}": ${why}. Received ${JSON.stringify(value)}.`,
+      { context: { contractName, value, why } },
+    )
+    this.name = 'InvalidAddressOverride'
+    this.contractName = contractName
+  }
+}
+
 /** `adjustTrove` was given a contradictory combination of deltas. */
 export class InvalidAdjustment extends MusdError {
   constructor(message: string) {

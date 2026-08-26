@@ -1,5 +1,13 @@
+import { zeroAddress } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { DEPLOYMENTS, UnsupportedChain, getAddresses } from '../src'
+import {
+  DEPLOYMENTS,
+  InvalidAddressOverride,
+  MUSD_CONTRACT_NAMES,
+  UnsupportedChain,
+  getAddresses,
+  hasAddressOverride,
+} from '../src'
 
 /**
  * Ground truth from `docs/01-ground-truth.md` §4, transcribed by hand HERE (and only
@@ -50,5 +58,79 @@ describe('addresses, cross-check vs ground-truth §4 (zero-assumption gate)', ()
 
   it('throws UnsupportedChain for an unknown chain without a full override', () => {
     expect(() => getAddresses(1)).toThrow(UnsupportedChain)
+  })
+})
+
+/**
+ * MK-009. The entire validation was `typeof o[k] === 'string'`, and it ran ONLY on the
+ * unsupported-chain path. `isAddress`, `getAddress` and `zeroAddress` appeared nowhere in
+ * the source. There was no paired findings test; this is it, and every case below passes
+ * against the old implementation, which is what makes them worth having.
+ */
+describe('MK-009, address overrides are validated, checksummed and bounded', () => {
+  const VALID = '0x000000000000000000000000000000000000dEaD' as const
+
+  it('rejects a value that is not an address, on a SUPPORTED chain', () => {
+    // The old code took the `isSupportedChainId` branch and spread this straight in, so it
+    // failed much later as an opaque viem encoding error at some unrelated call site.
+    expect(() => getAddresses(31611, { priceFeed: 'not an address' as `0x${string}` })).toThrow(
+      InvalidAddressOverride,
+    )
+  })
+
+  it('rejects the zero address specifically', () => {
+    const err = (() => {
+      try {
+        getAddresses(31611, { troveManager: zeroAddress })
+      } catch (e) {
+        return e as InvalidAddressOverride
+      }
+      return undefined
+    })()
+    expect(err).toBeInstanceOf(InvalidAddressOverride)
+    expect(err?.contractName).toBe('troveManager')
+    // Zero is the one wrong address that does not announce itself: a call to an address
+    // with no code returns empty data rather than reverting with a reason.
+    expect(err?.message).toContain('never a contract')
+  })
+
+  it('rejects an unknown contract key rather than silently ignoring it', () => {
+    // This is the worst of the three failure modes, because nothing failed before: the
+    // bundled `priceFeed` survived and the caller believed they had redirected it.
+    expect(() => getAddresses(31611, { pricefeed: VALID } as never)).toThrow(InvalidAddressOverride)
+  })
+
+  it('checksums the value it returns, whatever case the caller typed', () => {
+    const lower = VALID.toLowerCase() as `0x${string}`
+    expect(getAddresses(31611, { priceFeed: lower }).priceFeed).toBe(VALID)
+  })
+
+  it('an explicitly undefined entry is absent, not invalid', () => {
+    // TypeScript already rejects this shape under `exactOptionalPropertyTypes`, so the cast
+    // is honest about who this guard is for: a JavaScript caller, or a config object built
+    // by spreading something optional. The runtime must not treat it as an invalid address.
+    expect(getAddresses(31611, { priceFeed: undefined } as never).priceFeed).toBe(
+      DEPLOYMENTS[31611].priceFeed,
+    )
+  })
+
+  it('validates the unsupported-chain path too, before the completeness check', () => {
+    const full = Object.fromEntries(MUSD_CONTRACT_NAMES.map((k) => [k, VALID]))
+    expect(() => getAddresses(1, { ...full, musd: zeroAddress } as never)).toThrow(
+      InvalidAddressOverride,
+    )
+    // A complete, valid map still resolves, which is the escape hatch this path exists for.
+    expect(getAddresses(1, full as never).musd).toBe(VALID)
+  })
+
+  it('hasAddressOverride reports whether the bundled map was redirected at all', () => {
+    expect(hasAddressOverride(undefined)).toBe(false)
+    expect(hasAddressOverride({})).toBe(false)
+    expect(hasAddressOverride({ priceFeed: undefined } as never)).toBe(false)
+    expect(hasAddressOverride({ priceFeed: VALID })).toBe(true)
+  })
+
+  it('MUSD_CONTRACT_NAMES is the one list, so completeness and unknown-key cannot drift', () => {
+    expect([...MUSD_CONTRACT_NAMES].sort()).toEqual(Object.keys(DEPLOYMENTS[31611]).sort())
   })
 })

@@ -31,6 +31,23 @@ borrowing rate, the global interest rate), caching them per session. The
 fixed constants (`MCR`, `CCR`, `MUSD_GAS_COMPENSATION`, `PERCENT_DIVISOR`) are
 bundled.
 
+### `addresses`, and what a partial override actually means
+
+Overrides are validated and checksummed, and three things throw `InvalidAddressOverride`
+(MK-009): an unknown contract key, a value that is not a valid EVM address, and the zero
+address. The unknown key matters most, because it used to fail silently: `pricefeed` was
+spread over a map that already had `priceFeed`, nothing changed, and nothing complained.
+Zero is called out separately because it is what a partially initialized config produces and
+it is the one wrong address that will not announce itself, since a call to an address with
+no code returns empty data rather than reverting with a reason.
+
+A **partial** override on a supported chain replaces one contract inside an otherwise
+trusted map, and address validation cannot tell whether the replacement belongs to the same
+deployment. What can is `verifyDeployment()`, which asserts the cross wiring pointers
+between the contracts and runs before the first write on every path (MK-008). Redirect
+`sortedTroves` to a foreign address and `TroveManager.sortedTroves()` will not equal it, so
+verification fails before anything is sent.
+
 ---
 
 ## 2. Reading a live position (contract-authoritative)

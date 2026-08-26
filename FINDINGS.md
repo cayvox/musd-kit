@@ -44,7 +44,7 @@ claim about it was not).
 | MK-006 | Hint NICR is fed entire debt, and repay ignores interest first ordering | S2 | fixed |
 | MK-007 | `claim()` swallows every error | S2 | fixed |
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | open |
-| MK-009 | Address overrides accept any string | S2 | open |
+| MK-009 | Address overrides accept any string | S2 | fixed |
 | MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | open |
 | MK-011 | `maxFeePercentage` is advisory only | S2 | open |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | open |
@@ -371,6 +371,28 @@ inside an otherwise trusted map, with no verification before a value bearing sen
 
 **Decision.** Fix now. Validate and checksum every override, reject the zero address, and require
 deployment verification when any override is present.
+
+**Fixed, P4 wave.** `validateOverride` rejects an unknown contract key, a value that is not a valid
+EVM address, and the zero address, and returns every value through `getAddress` so the resolved map
+is canonical. Validation now runs on BOTH paths; before, the little that existed ran only on the
+unsupported-chain branch, so a bad value on a supported chain was spread straight into the map.
+
+The unknown-key case is the one that had no failure at all: `pricefeed` was spread over a map that
+already had `priceFeed`, so the bundled address survived and the caller believed they had redirected
+it. `MUSD_CONTRACT_NAMES` is now the single list behind both the completeness check and the
+unknown-key rejection, so the two cannot drift.
+
+**On requiring verification when an override is present:** it is required, but not conditionally.
+MK-008 makes `verifyDeployment` run before the first write on every path, which is strictly
+stronger than making it conditional on an override, and a conditional rule invites someone to narrow
+the condition later. The reasoning is in the pull request body. What makes it an answer to this
+finding rather than a coincidence is WHICH assertions verification now makes: the cross wiring
+pointers. Address validation cannot tell whether a replacement belongs to the same deployment;
+`TroveManager.sortedTroves()` can.
+
+**Pinned by** the MK-009 block in `packages/core/test/addresses.test.ts`, chain free. There was no
+paired findings test before. Six of its cases fail with the validation removed, verified by removing
+it.
 
 ---
 
