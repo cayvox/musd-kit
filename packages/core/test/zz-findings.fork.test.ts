@@ -85,6 +85,7 @@ import {
 import { principalReductionForRepay } from '../src/trove'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
+import { recordMitigation } from './harness/mitigationLog'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
 
 const T = getAddresses(31611)
@@ -729,7 +730,9 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       await fork.setPrice(original * 2n)
       let result: Awaited<ReturnType<typeof client.redeem>> | undefined
       let lastError: unknown
+      let consumed = 0
       for (let attempt = 0; attempt < 4 && !result; attempt++) {
+        consumed = attempt + 1
         await fork.refreshOracle()
         try {
           result = await client.redeem({ amount: 100n * MUSD })
@@ -737,6 +740,11 @@ describe('Open findings, pinned by failing tests (P2)', () => {
           lastError = error
         }
       }
+      recordMitigation({
+        name: 'zzFindingsRedeemRetry',
+        attempts: consumed,
+        outcome: result ? 'ok' : 'exhausted',
+      })
       expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
       if (!result) throw new Error('unreachable')
       await wait(result.hash)

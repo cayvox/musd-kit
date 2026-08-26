@@ -24,6 +24,7 @@ import {
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
 import { explainTransaction } from './harness/explainReceipt'
+import { recordMitigation } from './harness/mitigationLog'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
 
 const T = getAddresses(31611)
@@ -102,12 +103,15 @@ async function redeemFresh(
   for (let i = 0; i < 4; i++) {
     await connectFork().refreshOracle()
     try {
-      return await client.redeem(params)
+      const result = await client.redeem(params)
+      recordMitigation({ name: 'redeemFresh', attempts: i + 1, outcome: 'ok' })
+      return result
     } catch (e) {
       if (!(e instanceof RedemptionFailed)) throw e
       last = e
     }
   }
+  recordMitigation({ name: 'redeemFresh', attempts: 4, outcome: 'exhausted' })
   throw last
 }
 

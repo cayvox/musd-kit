@@ -15,6 +15,7 @@ import { WagmiProviderNotFoundError, useWalletClient } from 'wagmi'
 import { connectFork } from '../../core/test/harness'
 import { mezoTestnet } from '../../core/test/harness/constants'
 import { explainTransaction } from '../../core/test/harness/explainReceipt'
+import { recordMitigation } from '../../core/test/harness/mitigationLog'
 import { openTroveRaw, testAccount } from '../../core/test/harness/openTroveRaw'
 import {
   useBorrowingPower,
@@ -107,7 +108,15 @@ async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Pro
     const hash = mut().hash
     if (hash) {
       const receipt = await connectFork().publicClient.waitForTransactionReceipt({ hash })
-      if (receipt.status === 'success') return
+      if (receipt.status === 'success') {
+        recordMitigation({
+          name: 'ensureWriteMined',
+          attempts: attempt + 1,
+          outcome: 'ok',
+          extra: { gasUsed: receipt.gasUsed },
+        })
+        return
+      }
       last = new Error(
         `attempt ${attempt + 1}: tx mined but REVERTED\n${await explainTransaction(
           connectFork().publicClient,
@@ -129,6 +138,7 @@ async function ensureWriteMined(fire: () => void, mut: () => MutationSlice): Pro
     }
     act(() => mut().reset())
   }
+  recordMitigation({ name: 'ensureWriteMined', attempts: 4, outcome: 'exhausted' })
   throw last ?? new Error('write did not mine after retries')
 }
 

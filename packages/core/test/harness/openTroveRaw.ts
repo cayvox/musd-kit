@@ -7,8 +7,16 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { MUSD_GAS_COMPENSATION, borrowerOperationsAbi, computeHints, getAddresses } from '../../src'
 import { mezoTestnet } from './constants'
 import type { ForkConnection } from './index'
+import { recordMitigation } from './mitigationLog'
 
 const TESTNET = getAddresses(31611)
+
+/**
+ * The fixed gas cap this helper sends opens with, instead of the simulate's estimate
+ * (MK-016). Named rather than inline so the mitigation log can report the headroom against
+ * it, which is the number that says whether the cap is doing anything.
+ */
+const FIXED_OPEN_GAS = 6_000_000n
 
 /** Deterministic, distinct test accounts (one Trove per address). */
 export function testAccount(index: number): PrivateKeyAccount {
@@ -107,9 +115,23 @@ export async function openTroveRaw(
     functionName: 'openTrove',
     args: [debtMusd, upperHint, lowerHint],
     value: collateralBtc,
-    gas: 6_000_000n,
+    gas: FIXED_OPEN_GAS,
   })
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+  // MK-016. The fixed cap is a mitigation and it never reported anything, so nobody knew
+  // whether it was saving opens or simply sitting there. `headroom` is what settles it: the
+  // cap minus what the transaction actually used. A headroom that never gets small means the
+  // cap is not the thing keeping these opens alive.
+  recordMitigation({
+    name: 'openTroveRawFixedGas',
+    attempts: 1,
+    outcome: receipt.status === 'success' ? 'ok' : 'exhausted',
+    extra: {
+      gasUsed: receipt.gasUsed,
+      cap: FIXED_OPEN_GAS,
+      headroom: FIXED_OPEN_GAS - receipt.gasUsed,
+    },
+  })
   if (receipt.status !== 'success') {
     // Reverted AFTER a passing simulate (shared-fork state drift). Re-simulate at the
     // post-mine state to surface the on-chain reason instead of an opaque "reverted".
