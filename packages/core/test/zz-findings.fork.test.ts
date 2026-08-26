@@ -85,6 +85,7 @@ import {
 import { principalReductionForRepay } from '../src/trove'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
+import { reportRedemptionMargin } from './harness/explainReceipt'
 import { recordMitigation } from './harness/mitigationLog'
 import { openTroveRaw, testAccount } from './harness/openTroveRaw'
 
@@ -728,25 +729,14 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // fraction of the collateral drawn (BorrowerOperations.sol:499-509), so the rate
       // this test compares against is unaffected by the shim.
       await fork.setPrice(original * 2n)
-      let result: Awaited<ReturnType<typeof client.redeem>> | undefined
-      let lastError: unknown
-      let consumed = 0
-      for (let attempt = 0; attempt < 4 && !result; attempt++) {
-        consumed = attempt + 1
-        await fork.mineBlocks(1)
-        try {
-          result = await client.redeem({ amount: 100n * MUSD })
-        } catch (error) {
-          lastError = error
-        }
-      }
-      recordMitigation({
-        name: 'zzFindingsRedeemRetry',
-        attempts: consumed,
-        outcome: result ? 'ok' : 'exhausted',
-      })
-      expect(result, `fixture: redemption did not mine: ${String(lastError)}`).toBeDefined()
-      if (!result) throw new Error('unreachable')
+      // MK-016: the four attempt retry is gone. Measured before removal, 10 invocations over
+      // ten coverage runs, `attempts=1` on all 10, and its stated reason (oracle staleness)
+      // is impossible per MK-032. The `mineBlocks(1)` stays: it puts the redeem on a fresh
+      // block, which is a real dependency, and it was previously spelled `refreshOracle()`.
+      await fork.mineBlocks(1)
+      await reportRedemptionMargin(fork.publicClient, 'zz-findings/MK-014', 100n * MUSD)
+      const result = await client.redeem({ amount: 100n * MUSD })
+      recordMitigation({ name: 'zzFindingsRedeemRetry', attempts: 1, outcome: 'ok' })
       await wait(result.hash)
 
       // FIXED. There is no field named `fee` any more. The rate is named as a rate, and

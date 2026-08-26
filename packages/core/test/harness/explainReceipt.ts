@@ -1,5 +1,5 @@
 import type { Address, Hash, PublicClient, TransactionReceipt } from 'viem'
-import { getAddresses, priceFeedAbi, troveManagerAbi } from '../../src'
+import { MCR, getAddresses, hintHelpersAbi, priceFeedAbi, troveManagerAbi } from '../../src'
 
 const T = getAddresses(31611)
 
@@ -120,4 +120,49 @@ async function forkConditions(publicClient: PublicClient): Promise<string> {
     out.push(`    could not be read (${(error as Error).message})`)
   }
   return out.join('\n')
+}
+
+/**
+ * The redemption tail's margin above MCR, at this instant (MK-016).
+ *
+ * `redeemCollateral` walks `SortedTroves` from the lowest NICR and skips anything under MCR,
+ * so the FIRST redemption hint's ICR is the number that decides whether a redemption can do
+ * anything at all. When it drops below MCR the contract reverts
+ * `TroveManager: Unable to redeem any amount`, whatever the requested size.
+ *
+ * Logged before every redemption in the suite, on passing runs too, because a margin that is
+ * only ever printed when a test fails cannot show you it was already thin on the runs that
+ * passed.
+ */
+export async function reportRedemptionMargin(
+  publicClient: PublicClient,
+  label: string,
+  amount: bigint,
+): Promise<void> {
+  try {
+    const price = await publicClient.readContract({
+      address: T.priceFeed,
+      abi: priceFeedAbi,
+      functionName: 'fetchPrice',
+    })
+    const [firstHint, , truncated] = await publicClient.readContract({
+      address: T.hintHelpers,
+      abi: hintHelpersAbi,
+      functionName: 'getRedemptionHints',
+      args: [amount, price, 100n],
+    })
+    const icr = await publicClient.readContract({
+      address: T.troveManager,
+      abi: troveManagerAbi,
+      functionName: 'getCurrentICR',
+      args: [firstHint, price],
+    })
+    const block = await publicClient.getBlock({ blockTag: 'latest' })
+    console.log(
+      `[margin] ${label} requested=${amount} redeemable=${truncated} firstHint=${firstHint} ` +
+        `icr=${icr} mcr=${MCR} marginAboveMcr=${icr - MCR} timestamp=${block.timestamp}`,
+    )
+  } catch (error) {
+    console.log(`[margin] ${label} could not be read (${(error as Error).message.split('\n')[0]})`)
+  }
 }
