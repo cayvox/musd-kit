@@ -70,7 +70,7 @@ claim about it was not).
 | MK-032 | The flake mitigations document a mechanism the harness makes impossible | S3 | fixed |
 | MK-033 | A passing test logs an uncaught React error into the CI output | S3 | fixed |
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
-| MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | open, DIAGNOSED, fix is its own wave |
+| MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
 
 ---
 
@@ -1815,6 +1815,75 @@ tight for a traversal whose cost depends on state that moves between estimate an
 consumer redeeming on a busy chain hits the same revert, with gas spent and nothing to show. The
 harness is not what makes this happen; it is only where it was noticed, because the harness is the
 only place that re-simulates afterwards and looks.
+
+## Fixed, P7 wave
+
+**The measurement that sized the fix.** Every write path the SDK exposes, 12 attempts each from a
+byte identical `evm_snapshot` so nothing but the block timestamp differed:
+
+| Path | gas used, min to max | spread | margin viem's estimate left |
+|---|---|---|---|
+| `openTrove` | 605419 to 605419 | 0% | 1.51% |
+| `addCollateral` | 331872 to 365602 | **10.16%** | 5.35 to 5.73% |
+| `withdrawCollateral` | 342631 to 376361 | **9.84%** | 5.93 to 6.36% |
+| `borrow` | 355043 to 383343 | 7.97% | 5.17 to 5.46% |
+| `refinance` | 358701 to 387001 | 7.88% | 5.14 to 5.42% |
+| `adjustTrove` | 369112 to 397412 | 7.66% | 5.04 to 5.31% |
+| `repay` | 334293 to 345493 | 3.35% | 5.7 to 11.42% |
+| `liquidate` | 407850 to 419050 | 2.74% | 9.26 to 13.88% |
+| `redeem` | 610270 to 610270 | 0% | 18.14% |
+| `claim` | not measured | | no transaction is sent without a surplus |
+
+**Two things this settles, and one it corrects.** The variance is NOT confined to the traversal
+paths where it was found: `addCollateral` and `withdrawCollateral` have the widest spreads of all
+nine, wider than `redeem` or `liquidate`. And in **five of the nine**, the spread exceeds the margin
+viem's own estimate happened to leave. What it corrects is the shape of the fix: a per path
+multiplier keyed to "the sorted list paths" would have missed the two worst.
+
+The 0% rows are the window being small, not the path being safe. `redeem` showed 0% across these 12
+and 16.4% across the 40 that produced the traced failure. **The spread here is a lower bound.**
+
+**The default: 25%, and it is not a round number chosen because buffers are round.** It is roughly
+1.5 times the worst growth ever traced (16.4%) and 2.5 times the worst typical spread (10.16%).
+`DEFAULT_GAS_MARGIN_PERCENT` carries that derivation, and `createMusdClient({ gasMarginPercent })`
+overrides it. `0` restores the old behavior.
+
+**What it costs the caller, established on the fork rather than assumed:**
+
+- **No fees.** Unused gas is refunded exactly: a send with a 5000000 limit that used 351910 was
+  charged `gasUsed * effectiveGasPrice` to the wei.
+- **A higher balance requirement**, which is the real cost. The account must hold
+  `gasLimit * gasPrice + value` up front or the send is rejected before reaching the chain, verified
+  by funding an account to half the limit and watching it refuse: "The total cost (gas * gas fee +
+  value) of executing this transaction exceeds the balance of the account."
+- **A larger number on the wallet's confirmation screen**, which is the maximum, not the charge.
+- **No added latency.** `simulateContract`'s request carries no `gas` field, verified, so viem was
+  already estimating internally; doing it here and multiplying is the same count of
+  `eth_estimateGas` calls.
+
+**The result, same lab and same attempt count as the diagnosis.**
+
+| | Mined reverts | Simulate failures |
+|---|---|---|
+| before, 40 attempts | **2** | 0 |
+| after, 40 + 40 attempts | **0** | 2 |
+
+The two simulate failures never send, so no gas is spent and the caller gets a typed error, which is
+the SDK working. They are `ContractCallFailed` and are **unexplained**: they appeared in the first
+run of 40 and not in the second, and the run that had them did not capture the message.
+
+**It does not close the window, and the docs now say so.** The estimate is still taken before the
+block the transaction mines in.
+
+**For the case that remains, `diagnoseRevertedWrite`** classifies a mined revert from evidence a
+consumer has without a tracing endpoint: `OUT_OF_GAS` when `gasUsed === gasLimit`, `REVERTED` with
+the reason when re-executing at the mined block still reverts, and **`INDETERMINATE`** otherwise.
+The third is the honest boundary rather than a hedge: a nested exhaustion leaves gas at the top
+level, and `eth_call` at a block number runs against end of block state, so those two cases are not
+separable without `debug_traceTransaction`, which most public endpoints do not expose. The advice
+string says exactly that.
+
+---
 
 ## Diagnosed, P6 wave, with a trace
 

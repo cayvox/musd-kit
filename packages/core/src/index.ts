@@ -39,6 +39,14 @@ export {
   musdAbi,
 } from './clients'
 
+// Gas margin on every write, and diagnosing a write that reverted anyway (MK-035).
+export { DEFAULT_GAS_MARGIN_PERCENT, withGasMargin } from './internal/write'
+export {
+  diagnoseRevertedWrite,
+  type WriteDiagnosis,
+  type WriteFailureKind,
+} from './diagnose'
+
 // The entry point.
 export {
   createMusdClient,

@@ -377,6 +377,45 @@ can exhaust its allowance while the outer frame keeps the last 1/64.
 **So check the receipt.** The SDK returns `{ hash }` without waiting, by design, and a
 reverted receipt is a real outcome you have to handle.
 
+### The gas margin, and what it costs you
+
+Every write is sent with **25% over the estimate** (`DEFAULT_GAS_MARGIN_PERCENT`), because the
+estimate is taken before the block the transaction mines in and the work can grow in between.
+That number is measured, not conventional: across all nine measurable write paths, 12 attempts
+each from byte-identical state, the same call's gas varied by up to **10.16%**
+(`addCollateral`), and one traced `redeem` grew **16.4%** and reverted. 25 is about 1.5 times
+the worst growth observed.
+
+```ts
+createMusdClient({ chainId, publicClient, gasMarginPercent: 25 }); // the default
+```
+
+What it costs you, measured on a fork rather than assumed:
+
+| | |
+|---|---|
+| **Fees** | nothing. Unused gas is refunded exactly |
+| **Balance** | the real cost. Your account must hold `gasLimit * gasPrice + value` **up front**, or the send is rejected before it reaches the chain |
+| **Wallet display** | a larger maximum, which is not the charge |
+| **Latency** | none added. `simulateContract` returns no `gas`, so viem was already estimating internally |
+
+`gasMarginPercent: 0` restores the old behavior, which is what produced the reverts.
+
+### When a write reverts anyway
+
+```ts
+const d = await diagnoseRevertedWrite(publicClient, hash);
+// d.kind: 'SUCCEEDED' | 'OUT_OF_GAS' | 'REVERTED' | 'INDETERMINATE'
+// d.advice: a sentence naming what to do next
+```
+
+`OUT_OF_GAS` and `REVERTED` call for opposite responses: resend with more gas, or fix the
+condition in `d.reason`. **`INDETERMINATE` is not a hedge**, it is the boundary of what is
+knowable without a tracing endpoint. A nested call can exhaust its gas while the outer frame
+keeps the last 1/64, so `gasUsed < gasLimit`; and `eth_call` at a block number runs against
+end-of-block state, so a condition that was true mid-block is invisible to it. Those two cases
+are only separable with `debug_traceTransaction`, which most public endpoints do not expose.
+
 **Single-axis vs combined:** route single-axis intents to the dedicated functions
 (`addColl`, `withdrawColl`, `withdrawMUSD`, `repayMUSD`); use `adjustTrove` only for
 combined collateral-and-debt changes.

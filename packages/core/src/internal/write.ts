@@ -3,6 +3,52 @@ import type { MusdAddresses } from '../addresses'
 import { MissingWalletClient } from '../errors'
 import { type RevertContext, mapRevert } from '../errors/mapRevert'
 
+/**
+ * Percent ADDED to the gas estimate on every write, over 100. `25` means the limit sent is
+ * 1.25 times the estimate (MK-035).
+ *
+ * **Measured, not conventional.** Every write path the SDK exposes was run 12 times from a
+ * byte identical `evm_snapshot`, so nothing but the block timestamp differed between
+ * attempts. The gas the SAME call consumed varied by:
+ *
+ *   addCollateral 10.16%, withdrawCollateral 9.84%, borrow 7.97%, refinance 7.88%,
+ *   adjustTrove 7.66%, repay 3.35%, liquidate 2.74%, openTrove and redeem 0% in that window
+ *
+ * against margins viem's own estimate happened to leave of 1.51% (openTrove) to 18.14%
+ * (redeem), with five of the nine measured paths having a SMALLER margin than their own
+ * spread. Separately, one `redeemCollateral` tail case grew from 610270 to 710023 gas, 16.4%,
+ * and that is the one that reverted.
+ *
+ * 25 is roughly 1.5 times the worst growth observed (16.4%) and 2.5 times the worst typical
+ * spread (10.16%). It is not a round number chosen because buffers are usually round; it is
+ * the worst measurement with a factor on top, and if the measurements move it should move.
+ *
+ * **What it costs the caller**, established on the fork rather than assumed:
+ *
+ *   - **Nothing in fees.** Unused gas is refunded exactly: a send with a 5000000 limit that
+ *     used 351910 charged `gasUsed * effectiveGasPrice` to the wei.
+ *   - **A higher balance requirement.** The account must hold `gasLimit * gasPrice + value`
+ *     up front or the send is rejected outright ("The total cost (gas * gas fee + value) ...
+ *     exceeds the balance of the account"). A 25% larger limit means 25% more native balance
+ *     must be sitting there, unspent.
+ *   - **A higher number in the wallet's confirmation screen**, which is the maximum, not the
+ *     charge.
+ *   - **Latency: none added.** viem skips its own estimation when `gas` is set, so this is
+ *     the same count of `eth_estimateGas` calls as before, and the estimate runs in parallel
+ *     with the simulation rather than after it.
+ *
+ * **What it does NOT do.** It does not close the window. The estimate is still taken before
+ * the block the transaction mines in, so a large enough jump still exhausts it. See
+ * `diagnoseRevertedWrite` for what a caller can learn when that happens.
+ */
+export const DEFAULT_GAS_MARGIN_PERCENT = 25
+
+/** Apply a percentage margin to a gas estimate. Rounds down; a zero margin is the estimate. */
+export function withGasMargin(estimate: bigint, marginPercent: number): bigint {
+  if (!Number.isFinite(marginPercent) || marginPercent <= 0) return estimate
+  return (estimate * BigInt(Math.round(100 + marginPercent))) / 100n
+}
+
 /** Deps every write needs (a `walletClient` is required to send). */
 export interface WriteDeps {
   publicClient: PublicClient
@@ -19,6 +65,12 @@ export interface WriteDeps {
    * memoized implementation, so this costs one multicall per client, not one per send.
    */
   ensureVerified: () => Promise<void>
+  /**
+   * Percent added to the gas estimate before sending, over 100 (MK-035). Supplied by
+   * `createMusdClient`; see {@link DEFAULT_GAS_MARGIN_PERCENT} for the measurement behind
+   * the default.
+   */
+  gasMarginPercent: number
   /**
    * The live, cached `minNetDebt()` floor, from the same accessor every other caller uses
    * (MK-008, MK-012). The open path used to read it directly, which is precisely how it
@@ -45,6 +97,8 @@ export function requireWallet(deps: WriteDeps): Wallet {
 
 export interface SimulateSendOptions {
   value?: bigint
+  /** An explicit gas limit, bypassing the estimate and the margin entirely (MK-035). */
+  gas?: bigint
   /**
    * Context handed to the revert decoder ({@link mapRevert}) so a simulation revert maps
    * to the precise typed error (operation disambiguates the Panic case; address/borrowers
@@ -95,9 +149,37 @@ export async function simulateAndSend(
     // biome-ignore lint/suspicious/noExplicitAny: dynamic write dispatch (ABI typed at call sites).
     const sim: any = { account: wallet.account, address, abi, functionName, args }
     if (opts?.value !== undefined) sim.value = opts.value
-    const { request } = await deps.publicClient.simulateContract(sim)
-    // biome-ignore lint/suspicious/noExplicitAny: request type follows the dynamic dispatch above.
-    const hash = await wallet.walletClient.writeContract(request as any)
+    // MK-035. `simulateContract` returns a request with NO `gas` field, verified rather than
+    // assumed, so without an explicit limit `writeContract` estimates internally and sends
+    // whatever came back. That estimate is taken before the block the transaction mines in,
+    // and the work can grow in between.
+    //
+    // The two calls run in PARALLEL, and that is not a micro optimisation. Running the
+    // estimate after the simulation adds a second state dependent round trip, so the state
+    // can move between them and the estimate reverts where the simulation passed. That was
+    // measured, not imagined: sequencing them cost three red runs in a ten run window, with
+    // `docsPath: '/docs/contract/estimateContractGas'` on the error. In parallel they see
+    // the same head, and the write costs no more latency than it did before.
+    const [{ request }, estimate] = await Promise.all([
+      deps.publicClient.simulateContract(sim),
+      // A failed estimate must NOT fail the write. If the state really has moved,
+      // `writeContract` estimates internally and surfaces it exactly as it did before this
+      // change; falling back is never worse than the behavior being replaced.
+      deps.publicClient
+        .estimateContractGas(sim)
+        .catch(() => undefined),
+    ])
+
+    // A caller supplied `gas` wins outright: an explicit limit is a decision, not a default.
+    // biome-ignore lint/suspicious/noExplicitAny: same dynamic dispatch as above.
+    const req: any = { ...(request as any) }
+    if (opts?.gas !== undefined) {
+      req.gas = opts.gas
+    } else if (estimate !== undefined) {
+      req.gas = withGasMargin(estimate, deps.gasMarginPercent)
+    }
+
+    const hash = await wallet.walletClient.writeContract(req)
     return { hash }
   } catch (error) {
     throw mapRevert(error, { operation: functionName, ...opts?.revert })

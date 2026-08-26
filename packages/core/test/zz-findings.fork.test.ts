@@ -892,7 +892,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
    * assert on. It pins the CAUSE instead, which is deterministic. When the SDK adds headroom
    * over the estimate, this flips, and that is the signal the finding is addressed.
    */
-  it('MK-035 (open): a write ships a gas margin thinner than the work varies', async () => {
+  it('MK-035 (fixed): a write ships a gas margin sized to the measured variance', async () => {
     const fork = connectFork()
     const account = testAccount(2035)
     await fork.fundAccount(account.address, 5n * BTC)
@@ -900,10 +900,9 @@ describe('Open findings, pinned by failing tests (P2)', () => {
 
     // Snapshot and revert around the write. This test OPENS a Trove, which mutates the
     // SortedTroves list every later file redeems and liquidates against, and this file runs
-    // before the react ones. Leaving that behind is precisely the fixture coupling MK-016 is
-    // about, and it was measured: adding this test without the snapshot took a ten run window
-    // from two red to five. Reverting restores the state exactly, so the test costs the suite
-    // nothing but the time it takes.
+    // before the react ones. Leaving that behind is the fixture coupling MK-016 is about, and
+    // it was measured: adding this test without the snapshot took a ten run window from two
+    // red to five.
     const snapshotId = await fork.testClient.snapshot()
     let sent: Awaited<ReturnType<typeof fork.publicClient.getTransaction>>
     let receipt: Awaited<ReturnType<typeof fork.publicClient.waitForTransactionReceipt>>
@@ -921,18 +920,20 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       `[MK-035] sentGasLimit=${sent.gas} gasUsed=${receipt.gasUsed} margin=${marginPercent}%`,
     )
 
-    // The finding as an assertion. The margin the SDK ships is whatever the node's estimate
-    // happened to include; the SDK itself adds nothing. Measured against that: the SAME
-    // redemption call, from byte identical snapshot state, varied from 610270 to 710023 gas
-    // across 40 attempts, a 16% swing, and two of those 40 reverted with ActivePool out of
-    // gas at call depth 4. A margin in this range does not cover that.
+    // This assertion was the INVERSE of itself until the fix landed: it asserted the margin
+    // was under 25%, and it was 1.5%. It is kept pointing the same way round so the flip is
+    // visible in the history rather than described in a comment.
     //
-    // This does NOT assert the revert: a 5% event is not something to assert on. It pins the
-    // cause, which is deterministic. A fix that sizes the limit for a moving target makes
-    // this fail, which is the signal the finding is addressed.
+    // The bar is the measurement that sized the default. Worst typical spread across all nine
+    // measurable write paths was 10.16% (addCollateral); the worst tail growth traced was
+    // 16.4% (a redeem that grew 610270 to 710023 and reverted). The margin must clear both.
     expect(
       marginPercent,
-      'MK-035: the shipped gas margin is thinner than the measured work variance (16%)',
-    ).toBeLessThan(25)
+      'MK-035: the shipped margin must exceed the worst tail growth measured (16.4%)',
+    ).toBeGreaterThan(16.4)
+
+    // And it must not be extravagant: the caller has to hold gasLimit * gasPrice up front,
+    // so an unbounded buffer is a real cost even though unused gas is refunded.
+    expect(marginPercent, 'MK-035: the margin is bounded, not a blank cheque').toBeLessThan(40)
   }, 300_000)
 })
