@@ -97,7 +97,7 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
   // `borrow` and `refinance` need a position first. Opening one is a fixture step, not the
   // case: if it fails, the case is skipped rather than counted as a mismatch, because the
   // thing under test never ran.
-  const seeded = await seedPosition(client, c)
+  const seeded = await seedPosition(fork, client, c)
   if (seeded !== undefined)
     return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
   return c.op === 'borrow'
@@ -106,12 +106,23 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
 }
 
 /** Open a modest, always-viable position so borrow and refinance have something to act on. */
-async function seedPosition(client: MusdClient, c: DiffCase): Promise<string | undefined> {
+async function seedPosition(
+  fork: ForkConnection,
+  client: MusdClient,
+  c: DiffCase,
+): Promise<string | undefined> {
   try {
     const collateral = c.collateral > 10n ** 17n ? c.collateral : 10n ** 17n
     const preview = await client.previewOpen({ collateral, debt: 5_000n * MUSD })
     if (!preview.viable) return `fixture: seed open not viable (${preview.reasons.join(',')})`
-    await client.openTrove({ collateral, debt: 5_000n * MUSD })
+    const { hash } = await client.openTrove({ collateral, debt: 5_000n * MUSD })
+    // AWAIT THE RECEIPT. The SDK returns `{ hash }` without waiting, by design, and the first
+    // sweep to get this far reported two FALSE_BLOCKED mismatches that were entirely this bug:
+    // the preview ran before the seed open had mined, reported TROVE_NOT_ACTIVE, and the write
+    // then succeeded because by then it had. Registering those as SDK findings would have been
+    // inventing two defects out of a harness mistake.
+    const receipt = await fork.publicClient.waitForTransactionReceipt({ hash })
+    if (receipt.status !== 'success') return 'fixture: seed open mined but reverted'
     return undefined
   } catch (error) {
     return `fixture: seed open threw ${(error as Error).name}`
