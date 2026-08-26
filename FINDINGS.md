@@ -1109,12 +1109,25 @@ entry it would read as the same symptom as an assertion failure, which it is not
 be made to fail with the on-chain reason rather than a property access on `undefined`; until it
 does, every occurrence of this costs a diagnosis from scratch.
 
-**P5b wave: the failure MODE this entry complained about is fixed, the finding is not.** MK-024's
-central request was that "the test should be made to fail with the on-chain reason rather than a
-property access on `undefined`". MK-031 did that, at this exact line among others. The liquidation
-event lookup now throws the receipt status, the emitted logs, the replayed revert reason and the
-fork conditions. This entry stays open because the underlying intermittency is undiagnosed, but it
-no longer costs a diagnosis from scratch.
+**P5b wave: the failure MODE this entry complained about is fixed, and it immediately answered the
+entry's own open question.** MK-024 asked that "the test should be made to fail with the on-chain
+reason rather than a property access on `undefined`", and listed three possibilities it could not
+distinguish: the liquidation may have reverted, liquidated nothing, or emitted a different event.
+
+MK-031 did that, and this test then reproduced with the answer attached:
+
+```
+status: reverted
+block: 15043617  gasUsed: 455529
+logs emitted: 0
+revert reason: the replay did NOT revert, so the failure was state or gas dependent
+               rather than a require
+```
+
+**It reverted.** Not "liquidated nothing", not "emitted something else". And it reverted for a
+non-`require` reason, which is the same signature as two redemption failures in the same wave. That
+moves this entry out of the phase 6 flake family and into **MK-035**, which is an SDK write path
+question rather than a test one. This stays open pending that.
 
 **What we do NOT claim.** No root cause, and deliberately no guess about which of the three
 possibilities above it is, because the crash removed the evidence that would have told us.
@@ -1769,8 +1782,18 @@ failure always reproduces on replay. And `gasUsed` of `582036` sits just BELOW t
 `588307` that successful `useRedeem` writes recorded in the same wave's mitigation log, rather than
 far below as a `require` revert would.
 
-The same signature appeared locally on the phase 6 no-loan redemption: `status: reverted`,
-`gasUsed: 710023`, zero logs, replay did not revert.
+**Three different tests, one signature, and it is NOT redemption specific.** All three are
+`status: reverted`, zero logs, and a replay at the mined block that does not revert:
+
+| Where | Operation | gasUsed |
+|---|---|---|
+| `hooks.fork.test.ts:307` `useRedeem` (CI) | `redeemCollateral` | 582036 |
+| `phase6.fork.test.ts:174` no-loan redemption | `redeemCollateral` | 710023 |
+| `phase6.fork.test.ts:258` normal-mode liquidation | `liquidate` | 455529 |
+
+The third is what widens this from a redemption problem to a write path problem. `liquidate` and
+`redeemCollateral` share only one thing: both go through `simulateAndSend`, and both traverse
+`SortedTroves` by an amount that depends on state at mine time.
 
 **The mechanism, and it is already written down in this repository.** `openTroveRaw`
 (`packages/core/test/harness/openTroveRaw.ts:96-101`) carries a comment describing exactly this:
