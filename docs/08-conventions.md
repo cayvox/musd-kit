@@ -153,7 +153,7 @@ selected window.
 | 6 | `pnpm lint` | Clean |
 | 7 | `pnpm build:site` | Clean, which includes `pnpm check:links` |
 | 8 | **Read the CI run for the branch.** `gh run list --branch <branch> --workflow CI` then `gh run view --job <id> --log` for every job that is not green | The run link, its conclusion, and the first real failure in any red job. Local green does not stand in for this |
-| 9 | **Read the CI run on `main` after the merge.** `gh run list --branch main --workflow CI --limit 1` | The run link and its conclusion. **A red `main` blocks the next wave**: repair it first, and register the cause before fixing it |
+| 9 | **Read the CI run on `main` after the merge, WAITING for it to exist.** `gh run list --branch main --workflow CI --limit 5 --json conclusion,headSha` and match the `headSha` against `git rev-parse HEAD`. An absent run means **not yet**, not never: poll until it appears, and only report absence as a finding if it persists | The run link, its conclusion, and that its `headSha` is the tip rather than an ancestor. **A red `main` blocks the next wave**: repair it first, and register the cause before fixing it |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
@@ -179,6 +179,13 @@ Each of the three closes one specific absence that produced MK-029.
 - **Step 9** exists because a branch being green does not make `main` green, and because five
   red merges accumulated with no rule anywhere that treated the second one as a reason to
   stop. A red trunk is not a backlog item; it is the next wave.
+
+  It was then executed wrongly twice, which is MK-036. The wording said "read the CI run" and
+  had no answer for "the run does not exist yet", so two reports read an empty listing seconds
+  after a merge and concluded that merges were not triggering CI. One of those merges was RED.
+  A check whose failure mode is indistinguishable from its not-yet mode is not a check, which
+  is why the step now says to wait, and to match the run's `headSha` against the tip so the
+  answer cannot come from an ancestor.
 
 **Local green is evidence about your machine, not about the build.** The `Checks` jobs run a
 Node matrix; the fork gate runs the single Node its workflow declares, and that is not

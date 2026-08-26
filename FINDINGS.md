@@ -71,6 +71,7 @@ claim about it was not).
 | MK-033 | A passing test logs an uncaught React error into the CI output | S3 | fixed |
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
 | MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
+| MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
 
 ---
 
@@ -1993,6 +1994,44 @@ from a protocol one.
 **Decision.** Report, do not fix. A change to `simulateAndSend`'s gas handling is an SDK behavior
 change affecting every write path, and it needs its own wave with its own acceptance rather than
 being slipped into a harness cleanup.
+
+---
+
+## MK-036 · The checklist's CI step was executed before the run existed
+
+**Class** S3, process · **Status** fixed · **Found by us in the P8 wave, checking a claim we had
+made twice**
+
+**What happened.** `docs/08-conventions.md` §10 step 9 says to read the CI run on `main` after a
+merge, and treats a red trunk as blocking. The P6 and P7 reports both executed it, found no run at
+the tip, and reported "current `main` has no CI run" as a finding about merges not triggering CI.
+
+**Both reports were wrong.** Every merge commit on `main` does have a run:
+
+| Commit | Run | Result |
+|---|---|---|
+| `bed0dda` | 32967009339 | success |
+| `6596640` | 32987085286 | success |
+| `3aca53b` | 32990919057 | **failure** |
+| `03d5aae` | 33004697927 | success |
+
+The run for `3aca53b` was created at `16:52:44Z`, within seconds of the merge. The check simply ran
+before it appeared in the listing. Nothing is wrong with the workflow triggers.
+
+**What it cost, which is the reason this is a finding rather than a note.** `3aca53b` was RED, with
+MK-035's nested out of gas signature, and two consecutive reports said it had no run instead of
+saying the trunk was red. The standing rule is that a red trunk blocks the next wave. It did not
+block anything, because the check reported the wrong thing and nobody went back to look.
+
+**The defect is in the rule's wording, not in anyone's diligence.** "Read the CI run" has no answer
+for "there is no run yet", and the natural reading of an empty listing is that no run is coming. A
+check whose failure mode is indistinguishable from its not-yet mode is not a check.
+
+**Fix.** §10 step 9 now says to WAIT for the run to exist, and that an absent run means not yet
+rather than never: it is only a finding if it persists. It also names the command with the commit
+pinned, so the answer cannot come from an ancestor.
+
+---
 
 ---
 
