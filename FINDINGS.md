@@ -1816,16 +1816,31 @@ consumer redeeming on a busy chain hits the same revert, with gas spent and noth
 harness is not what makes this happen; it is only where it was noticed, because the harness is the
 only place that re-simulates afterwards and looks.
 
-**What is NOT established, stated plainly.** That it IS out of gas. `gasUsed === gasLimit` is the
-unambiguous signature and no captured occurrence has the limit recorded, because the explainer only
-started reporting it in this commit. An attempt to force a synthetic out of gas case for the pinned
-test could not be made to fire and was removed rather than shipped as an assertion about something
-unreproduced. So: strong circumstantial evidence, no proof.
+**IT IS NOT OUT OF GAS, and this entry's own first hypothesis is the thing that got falsified.**
+The `gasLimit` field was added to the explainer precisely so the next occurrence would settle it
+without anyone reasoning. It fired on the very next CI run
+([32985118789](https://github.com/cayvox/musd-kit/actions/runs/32985118789)) and said:
 
-**What the next occurrence will settle by itself.** `explainTransaction` now reports `gasLimit`
-alongside `gasUsed` and prints `OUT OF GAS: gasUsed equals the limit, so the estimate was too small`
-when they match. The next time this fires, in CI or locally, the report answers the question without
-anyone having to reason about it.
+```
+status: reverted
+block: 15043607  gasUsed: 710023  gasLimit: 720980
+logs emitted: 0
+```
+
+`710023` against a limit of `720980`. The transaction had **10957 gas left** and reverted anyway.
+Out of gas requires `gasUsed === gasLimit`. So the mechanism borrowed from `openTroveRaw`'s comment,
+which is what this entry was originally built on, does NOT explain it.
+
+**And the replay evidence is weaker than it was first written.** `eth_call` at a block number
+executes against the state at the END of that block, which is AFTER the failing transaction and
+everything else in it. So "the replay did not revert" rules out a condition still true at end of
+block; it does NOT rule out a `require` that was true mid block. The explainer's own wording is
+corrected to say so, because a diagnostic that overstates its evidence is worse than one that says
+less.
+
+**What is actually established, after both corrections.** The transaction reverted, emitted nothing,
+was not out of gas, and did not reproduce at end of block state. Three different tests across two
+operations show it. That is a real and narrow fact, and it is not a cause.
 
 **What it costs to carry.** MK-034's two halves and this entry are plausibly one thing. Until it is
 settled, every redemption failure in this suite has two candidate explanations, and a consumer

@@ -19,9 +19,13 @@ const T = getAddresses(31611)
  * suite's own findings say are the usual suspects.
  *
  * `eth_call` at the mined block is what recovers a revert reason: a receipt carries the
- * status but not the reason, and replaying the same call at the same block reproduces the
- * revert with its data. It is best effort, since a transaction can also fail for reasons a
- * replay will not reproduce, and the report says which it got.
+ * status but not the reason. It is best effort and its limits are stated in the output rather
+ * than assumed away, because getting them wrong costs a wave: the replay runs against END of
+ * block state, which is after the failing transaction, so a non-reverting replay does NOT
+ * prove the failure was not a `require`.
+ *
+ * `gasLimit` beside `gasUsed` is the one unambiguous discriminator here. Equal means out of
+ * gas. Unequal rules it out, which is exactly what it did the first time it fired (MK-035).
  */
 export async function explainTransaction(
   publicClient: PublicClient,
@@ -88,7 +92,13 @@ async function replayForReason(
       value: tx.value,
       blockNumber: receipt.blockNumber,
     })
-    return 'the replay did NOT revert, so the failure was state or gas dependent rather than a require'
+    return (
+      'the replay did NOT revert. Read this carefully: `eth_call` at a block number executes ' +
+      'against the state at the END of that block, which is AFTER the failing transaction and ' +
+      'everything else in it. So this is not a faithful reproduction, and it is weaker evidence ' +
+      'than it looks. It rules out a condition that is still true at end of block; it does not ' +
+      'rule out a require that was true mid block.'
+    )
   } catch (error) {
     const e = error as { shortMessage?: string; message?: string }
     return e.shortMessage ?? e.message ?? String(error)
