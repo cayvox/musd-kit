@@ -29,7 +29,7 @@ branch by `instanceof` or by `code` in a switch.
 | Error | When | Carries |
 |---|---|---|
 | `BelowMinimumDebt` | `draw + fee < minNetDebt` | `{ minNetDebt, netDebt }` |
-| `MaxFeeExceeded` | SDK-side fee guard tripped (C5, no on-chain maxFee) | `{ maxFeePercentage, actualFee }` |
+| `MaxFeeExceeded` | The SDK-side fee guard tripped. **Advisory**: no MUSD write path takes a fee cap, so a passing check means the fee was within your cap WHEN IT WAS READ, and the rate can move before the transaction mines (MK-011) | `{ maxFeePercentage, actualFee, actualFeePercentage }` |
 | `InsufficientCollateral` | resulting ICR would be < MCR | `{ icr, mcr }` |
 | `TroveNotFound` | operating on an address with no open Trove | `{ address }` |
 | `TroveAlreadyExists` | opening when one is already open | `{ address }` |

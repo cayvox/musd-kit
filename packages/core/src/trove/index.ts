@@ -170,7 +170,31 @@ function assertTroveActive(entireDebt: bigint, owner: Address): void {
   if (entireDebt === 0n) throw new TroveNotFound(owner)
 }
 
-/** SDK-side fee guard (C5). `maxFeePercentage` is a 1e18-scaled fraction (1e16 = 1%). */
+/**
+ * SDK-side fee guard. `maxFeePercentage` is a 1e18-scaled fraction (1e16 = 1%).
+ *
+ * **This is a pre-flight sanity check, NOT a protection (MK-011).** The distinction is the
+ * whole point of this comment, so it is worth stating without hedging: MUSD's write paths
+ * take no fee cap parameter. `openTrove`, `withdrawMUSD`, `adjustTrove` and `refinance` are
+ * `(amount, upperHint, lowerHint)` shaped, verified from the full signatures in
+ * `docs/01-ground-truth.md` §5.1, and `redeemCollateral` has none either
+ * (`TroveManager.sol:294-301`). There is nothing for the SDK to pass a cap to, so there is
+ * nothing on chain enforcing one.
+ *
+ * What that means concretely, in the order it happens:
+ *
+ *   1. the SDK reads the fee, or the rate, from the chain;
+ *   2. it compares that value against your cap HERE, and may throw;
+ *   3. it sends the transaction.
+ *
+ * Between 1 and 3 the governable rate can change, and the transaction still goes through at
+ * whatever rate is live when it mines. Nothing reverts. So a passing check means the fee was
+ * within your cap when it was read, and nothing more. It is opt in and defaults to no cap,
+ * which means the DEFAULT behavior is to accept any fee the protocol charges.
+ *
+ * If you need a real bound, the enforcement has to be yours: check the fee again after the
+ * receipt, or do not send at all when the rate is moving.
+ */
 function assertFeeWithinCap(debtIncrease: bigint, fee: bigint, maxFeePercentage?: bigint): void {
   if (maxFeePercentage === undefined || debtIncrease === 0n) return
   const actualFeePercentage = (fee * ONE) / debtIncrease
@@ -243,7 +267,15 @@ const send = (
 export interface OpenTroveParams {
   collateral: bigint
   debt: bigint
-  /** SDK-side fee cap, 1e18-scaled fraction (e.g. `10n ** 16n` = 1%). Throws `MaxFeeExceeded`. */
+  /**
+   * SDK-side fee cap, 1e18-scaled fraction (e.g. `10n ** 16n` = 1%). Throws
+   * `MaxFeeExceeded`.
+   *
+   * **Advisory, never an on-chain guarantee (MK-011).** No MUSD write path takes a fee cap
+   * parameter, so nothing on chain enforces this. The SDK reads the fee, compares it here,
+   * then sends; the governable rate can move in between and the transaction still mines at
+   * whatever is live. A pre-flight sanity check, not a protection.
+   */
   maxFeePercentage?: bigint
 }
 
@@ -292,6 +324,11 @@ export async function addCollateral(
 /** Parameters for {@link MusdClient.borrow}: the MUSD to draw (+ optional fee cap). */
 export interface BorrowParams {
   amount: bigint
+  /**
+   * SDK-side fee cap, 1e18-scaled fraction. **Advisory, never an on-chain guarantee**: no
+   * MUSD write path takes a fee cap parameter, so the SDK reads, compares, then sends, and
+   * the governable rate can move in between (MK-011). See `docs/03-core-api.md` §4.
+   */
   maxFeePercentage?: bigint
 }
 
@@ -362,6 +399,11 @@ export interface AdjustTroveParams {
   withdrawCollateral?: bigint
   borrow?: bigint
   repay?: bigint
+  /**
+   * SDK-side fee cap, 1e18-scaled fraction. **Advisory, never an on-chain guarantee**: no
+   * MUSD write path takes a fee cap parameter, so the SDK reads, compares, then sends, and
+   * the governable rate can move in between (MK-011). See `docs/03-core-api.md` §4.
+   */
   maxFeePercentage?: bigint
 }
 

@@ -46,7 +46,7 @@ claim about it was not).
 | MK-008 | `verifyDeployment()` is weak and off the critical path | S2 | fixed |
 | MK-009 | Address overrides accept any string | S2 | fixed |
 | MK-010 | `getBorrowingPower` performs unbounded RPC iteration | S2 | fixed |
-| MK-011 | `maxFeePercentage` is advisory only | S2 | open |
+| MK-011 | `maxFeePercentage` is advisory only | S2 | documented |
 | MK-012 | Governable constants are cached for the client lifetime | S2 | fixed |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | fixed |
 | MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
@@ -494,6 +494,29 @@ can move between the check and the transaction.
 
 **Decision.** Documented limit, with the wording strengthened so no integrator reads it as an on
 chain guarantee.
+
+**Done, P4 wave. No code change, by design: there is nothing to change.** The scope was widened
+after checking: it is not only `redeemCollateral` that takes no fee cap. The full signatures in
+`docs/01-ground-truth.md` §5.1 show `openTrove`, `withdrawMUSD`, `adjustTrove` and `refinance` are
+all `(amount, upperHint, lowerHint)` shaped, so NO MUSD write path takes one. There is nothing for
+the SDK to pass a cap to.
+
+The existing honest note in `redemption/redeem.ts` is kept and extended rather than replaced. The
+same statement now also sits on `assertFeeWithinCap`, on all three `maxFeePercentage` fields in
+`trove/index.ts`, in `docs/03-core-api.md` under its own heading, and on the `MaxFeeExceeded` row in
+`docs/06-errors.md`.
+
+The read then send race is stated as a sequence rather than as an adjective, because "advisory" is
+easy to skim past: the SDK reads the fee, compares it, then sends, and between the read and the mine
+the governable rate can change while the transaction goes through anyway. Nothing reverts. **A
+passing check means the fee was within the cap when it was read, and nothing more.** It is opt in
+and defaults to no cap, so the default behavior is to accept whatever the protocol charges. Where a
+real bound is needed, the doc says the enforcement has to be the caller's.
+
+**No test.** This is the one item in the P4 sweep with none, and deliberately: there is no behavior
+to pin. The guard's arithmetic is already covered by `exceedsRateCap` in `math/fee.ts` and by the
+`MaxFeeExceeded` fork test in phase 5. A test asserting that a docstring contains a sentence would
+be theatre.
 
 ---
 

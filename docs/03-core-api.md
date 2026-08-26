@@ -296,10 +296,8 @@ The protocol's own naming is the trap: `redemptionRate()` is a rate
 (`BorrowerOperations.sol:129`), while `getRedemptionRate(collateralDrawn)` returns a fee
 **amount** (`:499-508`). At exactly one BTC drawn the two print the same digits.
 
-`maxFeePercentage` still caps the **rate** against the rate, which is unit consistent. It is
-**advisory only**: `redeemCollateral` takes no fee cap parameter at all
-(`TroveManager.sol:294-301`), so nothing on chain enforces it and governance can move the
-rate between the read and the mine (MK-011).
+`maxFeePercentage` still caps the **rate** against the rate, which is unit consistent. See
+the section below on what it does and does not give you.
 
 `borrow()` and the debt increase path of `adjustTrove()` precheck the same gate and
 throw `ExceedsBorrowingCapacity` **before** simulate, with capacity, entire debt,
@@ -317,7 +315,7 @@ internally (`hints/`).
 const { hash } = await musd.openTrove({
   collateral: parseBtc('0.05'), // BTC sent as msg.value
   debt: parseMusd('2500'), // requested draw (user receives this; owes draw + fee)
-  maxFeePercentage: parseBps(100), // OPTIONAL SDK-side guard, NOT an on-chain arg (C5). Throws MaxFeeExceeded.
+  maxFeePercentage: parseBps(100), // OPTIONAL SDK-side guard, NOT an on-chain arg. Throws MaxFeeExceeded.
 });
 // → openTrove(debt, upperHint, lowerHint) with value: collateral
 
@@ -330,6 +328,31 @@ await musd.close();                                        // → closeTrove()  
 await musd.claim();                                        // → claimCollateral()
 await musd.refinance();                                    // → refinance(upper, lower)  (move to current global rate)
 ```
+
+### `maxFeePercentage` is a pre-flight check, not a protection
+
+Worth being blunt about, because the name reads like a guarantee and it is not one (MK-011).
+
+**No MUSD write path takes a fee cap parameter.** `openTrove`, `withdrawMUSD`, `adjustTrove`
+and `refinance` are all `(amount, upperHint, lowerHint)` shaped, verified from the full
+signatures in `01-ground-truth` §5.1, and `redeemCollateral` has none either
+(`TroveManager.sol:294-301`). There is nothing for the SDK to pass a cap to, so nothing on
+chain enforces one. The SDK cannot fix that; it can only be honest about it.
+
+What actually happens, in order:
+
+1. the SDK reads the fee, or the rate, from the chain;
+2. it compares that value against your cap, and may throw `MaxFeeExceeded`;
+3. it sends the transaction.
+
+**Between 1 and 3 the governable rate can change, and the transaction still mines at whatever
+rate is live then.** Nothing reverts. A passing check means the fee was within your cap *when
+it was read*, and nothing more. It is opt in and defaults to no cap, so the default behavior
+is to accept whatever the protocol charges.
+
+If you need a real bound, the enforcement has to be yours: read the fee again after the
+receipt (`redeem` documents the `Redemption` event's `collateralFee` as the authoritative
+number), or do not send while the rate is moving.
 
 **Single-axis vs combined:** route single-axis intents to the dedicated functions
 (`addColl`, `withdrawColl`, `withdrawMUSD`, `repayMUSD`); use `adjustTrove` only for
