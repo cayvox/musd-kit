@@ -115,6 +115,7 @@ export type {
   OpenTroveParams,
   BorrowParams,
   AdjustTroveParams,
+  GasDecision,
   WriteResult,
   ClaimResult,
 } from './trove'
