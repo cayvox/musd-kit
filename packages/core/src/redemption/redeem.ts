@@ -8,7 +8,7 @@ import {
 } from '../clients'
 import { InsufficientMusdBalance, MaxFeeExceeded, assertPositiveAmount } from '../errors'
 import { findHintsForNICR } from '../hints'
-import { type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
+import { type GasDecision, type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
 import { estimateCollateralDrawn, exceedsRateCap } from '../math/fee'
 
 const TM_ABI: Abi = troveManagerAbi
@@ -82,6 +82,17 @@ export interface RedeemResult {
    * what the estimate assumed rather than having to reconstruct it.
    */
   estimatedCollateralDrawn: bigint
+  /**
+   * How the gas limit on this send was chosen (MK-037), the same field every other write
+   * result carries.
+   *
+   * It matters most here. `redeemCollateral` is the write MK-035 was found on: the same call
+   * from byte identical state varied from 610270 to 710023 gas, and the one that reverted grew
+   * 16.4%. If any send in this SDK is going to lose its margin and run out of gas, it is this
+   * one, so `gas.source === 'fallback'` is worth checking on a redemption even if you ignore it
+   * everywhere else.
+   */
+  gas: GasDecision
 }
 
 /**
@@ -137,7 +148,7 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
     partialNICR,
   )
 
-  const { hash } = await simulateAndSend(
+  const { hash, gas } = await simulateAndSend(
     deps,
     wallet,
     deps.addresses.troveManager,
@@ -167,5 +178,6 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
     redemptionRate,
     estimatedFeeCollateral,
     estimatedCollateralDrawn,
+    gas,
   }
 }

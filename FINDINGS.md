@@ -72,7 +72,9 @@ claim about it was not).
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
 | MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
 | MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
-| MK-037 | `estimateContractGas` balance checks, so the MK-035 gas margin is silently dropped whenever the account is thinly funded | S2 | open |
+| MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
+| MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
+| MK-039 | The measurement that sized the default gas margin was never committed, so it could not be re-run, and its description cannot be right | S3 | fixed |
 
 ---
 
@@ -2169,10 +2171,10 @@ pinned, so the answer cannot come from an ancestor.
 
 ---
 
-## MK-037 · The gas margin is silently dropped when the estimate balance checks
+## MK-037 · The gas margin is silently dropped, because the estimate caps itself
 
-**Class** S2 · **Status** open, NOT fixed here · **Found by us in the P9 wave, by the warning added
-in the same wave**
+**Class** S2 · **Status** fixed · **Found by us in the P9 wave, by the warning added in the same
+wave**
 
 **What happens.** `simulateAndSend` estimates gas and multiplies by
 `DEFAULT_GAS_MARGIN_PERCENT` (MK-035). When that estimate throws, it falls back to sending with no
@@ -2188,14 +2190,61 @@ gas estimation failed for refinance ... Transaction creation failed.
 gas estimation failed for withdrawMUSD ... Transaction creation failed.
 ```
 
-**The mechanism, as far as it is established.** `eth_estimateGas` checks the sender's balance
-against `gas * gasPrice + value`, and with no `gas` supplied the node assumes something large,
-plausibly the block gas limit. An account funded for the transaction it is about to send can
-therefore fail ESTIMATION while the transaction itself would succeed, which is exactly what happens:
-these writes go through, at the old 1.5% margin, having silently lost the fix.
+**The mechanism. Established, and it is not what this entry first said.**
 
-**What is NOT established:** which gas figure the node assumes, and whether the "Transaction creation
-failed" cases share the cause or are a second thing. Both need reading anvil rather than guessing.
+This entry originally recorded the cause as a balance check: `eth_estimateGas` comparing the
+sender's balance against `gas * gasPrice + value` with the node assuming a large `gas`. **That was a
+hypothesis and it is wrong.** It was tested directly, by funding an account both below and above the
+computed `blockGasLimit * maxFeePerGas + value` threshold and probing each side: both sides reported
+`estimateOk=true` and `writeOk=true`. The hypothesis is not merely unproven, it is refuted.
+
+The second hypothesis, that the CI failures were all balance errors, is also wrong. Correlating the
+CI log line by line, the warning immediately preceding `[MK-035] margin=1.5%` was
+`The contract function "openTrove" reverted.`, not a balance error. The balance errors in that log
+came from the differential harness's extreme band, which generates collateral up to 5000 BTC against
+a funded balance far below it, and are expected there.
+
+The actual cause was found by diffing the raw JSON-RPC payloads of our estimate against the one viem
+sends internally during `writeContract`:
+
+```
+ours    {"data":"0x2f3a6d98...","gas":"0xa1c58","nonce":"0x0","to":"0xCdF7028c...",...}
+viem's  {"data":"0x2f3a6d98...","to":"0xCdF7028c...",...}            no gas, no nonce
+```
+
+`simulateAndSend` passed the `Account` OBJECT to `estimateContractGas`. viem responds to an account
+object by running `prepareTransactionRequest` first, which fills in a nonce and a gas figure, and
+then sends `eth_estimateGas` **with that gas field set**. A node treats a supplied gas field as the
+upper bound of its search, so the estimate fails as soon as the real work exceeds a cap the estimate
+itself invented. `writeContract`, which sends no gas field, is uncapped and succeeds. Measured both
+ways against the same call:
+
+```
+Account object: estimateGasRequests=2  gasFieldSent="0xa1c58"  nonceSent="0x0"  result=662616
+address only:   estimateGasRequests=1  gasFieldSent=undefined  nonceSent=undefined  result=662616
+```
+
+Identical answer, one fewer round trip, and no self imposed cap. **This is MK-035's own mechanism, a
+gas limit set too low from a stale estimate, reappearing one level up inside the fix for MK-035.**
+
+**How far this generalises.** The two halves generalise differently and the distinction matters.
+The node half is standard: `eth_estimateGas` bounding its search by a supplied `gas` field is
+ordinary behavior, not an anvil quirk. The client half is viem specific: whether handing a library
+an account object makes it prepare and cap the request is that library's choice, and nothing here
+establishes what ethers, web3.py or a raw JSON-RPC caller would do. A consumer on another client
+should assume nothing from this entry beyond the node half, which is why the fix pins the REQUEST
+shape rather than the outcome.
+
+**The fix.** Pass `wallet.account.address` to the estimate and keep the `Account` object on the
+simulation. `packages/core/src/internal/write.ts`. Cost to a consumer: none. Same estimate, one
+fewer `eth_estimateGas` round trip, no change to fees, latency, or any typed error.
+
+**And the fallback is no longer trace free.** Even fixed, the estimate can still fail for real
+reasons, and losing the margin then would still be invisible. `WriteResult` now carries a
+`GasDecision`: `{source:'estimate'}` with the estimate and margin used, `{source:'explicit'}`, or
+`{source:'fallback'}` carrying the typed error from `mapRevert`. The `console.warn` stays, but it is
+no longer the only trace. A library consumer cannot assert on a console line, cannot route it to
+their own telemetry, and does not see it in a console they have filtered.
 
 **How it was found, which is the part worth keeping.** The fallback was added in P7 with
 `.catch(() => undefined)` and no logging. It was invisible for a wave. The MK-035 pin caught it in
@@ -2203,16 +2252,160 @@ CI as `margin=1.5%` with no explanation anywhere, and the warning added in P9 na
 run. A fallback that restores the behavior a finding was raised about must never be silent, and this
 is the second time in this programme that a silent catch cost a diagnosis (see MK-007).
 
-**Why it is not fixed here.** P9's scope is MK-015, MK-017 and MK-027. This changes gas handling in
-the one function every write goes through, which is what MK-035's own entry says needs its own wave
-with its own acceptance. The obvious candidates, estimating without the account or supplying a gas
-cap to the estimate, both change what the estimate MEANS, and picking one without measuring is how
-MK-035 got its first two hypotheses wrong.
+**Its cost while it was carried.** The MK-035 pin failed whenever this fired, so the fork gate was
+red in those runs. That was the pin working: it asserts the margin is applied, and the margin was
+not applied. **It was deliberately not weakened to make CI green**, because an assertion that passes
+when the thing it asserts is untrue is worth less than a red build. It now passes for the right
+reason.
 
-**Its cost while carried.** The MK-035 pin fails whenever this fires, so the fork gate is red in
-those runs. That is the pin working: it asserts the margin is applied, and the margin is not applied.
-**It has deliberately not been weakened to make CI green**, because an assertion that passes when
-the thing it asserts is untrue is worth less than a red build.
+**Was the P7 window running without the margin?** The wave that fixed this was asked to re-measure
+the isolation rate P7 reported, 2 in 40 before and 0 in 80 after, on the suspicion that part of that
+window had silently lost the margin. It cannot be answered for that window and it never will be:
+nothing recorded, at the time, which sends carried a margin and which did not. That is the finding.
+Going forward it is answerable from the SDK itself, on every send, without a lab: `gas.source`. In
+52 redemptions across three fixtures on the rebuilt lab, every one reported `source: 'estimate'` and
+none reported `source: 'fallback'`. Separately, the rebuilt lab does not reproduce P7's variance at
+all, which is MK-039.
+
+**Pinned by** `packages/core/test/write-gas-fallback.test.ts`, two independent assertions that fail
+for different reasons: one on the SHAPE of the estimate request, so the mechanism cannot return, and
+one on the RESULT, so a future fallback cannot go trace free again. Both proved by mutation: putting
+the `Account` object back fails the first, and restoring `return undefined` with a bare `{ hash }`
+fails the second.
+
+---
+
+## MK-038 · `addCollateral` and `repay` ARE ratio gated, and a sinking position cannot be partly rescued
+
+**Class** S2 · **Status** open, documented · **Found by reading the contract to check a claim this
+repository had made from reasoning**
+
+**What the claim was.** `docs/03-core-api.md` justified shipping no preview for `addCollateral` and
+`repay` like this: they "need no ratio gate, and that is a property of the operation rather than an
+omission: adding collateral raises ICR and repaying lowers debt, so neither can move a valid
+position below MCR."
+
+Every sentence of that is true. The conclusion drawn from it is false, and the word carrying the
+weight is **valid**.
+
+**Ground truth.** `mezo-org/musd`, `solidity/contracts/BorrowerOperations.sol`, main branch.
+
+Both writes reach the same gate. `addColl` (`:189-203`) calls
+`_adjustTrove(_collWithdrawal = 0, _mUSDChange = 0, _isDebtIncrease = false)`; `repayMUSD`
+(`:261-276`) calls `_adjustTrove(_collWithdrawal = 0, _mUSDChange = _amount,
+_isDebtIncrease = false)`, against the signature at `:752-761`. `_adjustTrove` calls
+`_requireValidAdjustmentInCurrentMode` unconditionally at `:840-845`, which branches on mode at
+`:1212-1227`.
+
+**Normal mode, `:1197-1210`.** Every adjustment, in either direction, runs:
+
+```solidity
+1201:        _requireICRisAboveMCR(_vars.newICR);
+1209:        _requireNewTCRisAboveCCR(_vars.newTCR);
+```
+
+There is no `if (_isDebtIncrease)` around either one. `_requireICRisAboveMCR` (`:1330-1335`) is
+`require(_newICR >= MCR, "BorrowerOps: An operation that would result in ICR < MCR is not
+permitted")`. It is an **absolute** test on the resulting ICR, not a test that the operation did not
+make things worse.
+
+So for a position already **below** MCR, a partial top-up or a partial repayment raises the ICR and
+still reverts, because the raised ICR is still under the floor. The exact case a user hits after a
+price drop, doing the exactly correct thing, is refused, and this SDK gives them no verdict before
+they spend the gas and no number telling them how much would be enough.
+
+`_requireNewTCRisAboveCCR` (`:1344-1349`) cannot bite for these two: both raise TCR, and being in
+normal mode means TCR was already at or above CCR.
+
+**Recovery Mode, `:1265-1275`.** Here the original claim holds exactly:
+
+```solidity
+1270:        _requireNoCollWithdrawal(_collWithdrawal);
+1271:        if (_isDebtIncrease) {
+1272:            _requireICRisAboveCCR(_vars.newICR);
+1273:            _requireNewICRisAboveOldICR(_vars.newICR, _vars.oldICR);
+1274:        }
+```
+
+`_requireNoCollWithdrawal` passes trivially, both paths send zero, and both ICR requirements sit
+behind `if (_isDebtIncrease)`, which is false for both. A pure top-up and a pure repayment really
+are ungated in Recovery Mode.
+
+**Which is the opposite of what the claim predicted.** The documentation said Recovery Mode "adds
+restrictions to other operations, not to these two", and treated normal mode as the safe case. The
+contract does the reverse: Recovery Mode is where these two are ungated, and normal mode is where
+they are gated.
+
+**Why the reasoning failed, which is the part worth keeping.** The claim reasoned about the
+DIRECTION of the operation and the contract tests the RESULTING LEVEL. Monotone improvement and
+"passes an absolute floor" are different properties, and no amount of reasoning about the first
+tells you anything about the second. This is the third time in this programme that a claim reasoned
+from an operation's semantics disagreed with the line of Solidity that enforces it (MK-004, MK-005,
+MK-006 were all of this shape), and the standing rule that produced this entry, read the contract
+rather than reason about it, is the only thing that caught it.
+
+**Blast radius.** Any consumer holding an under-MCR position. `addCollateral` and `repay` revert
+with `ICRBelowMCR`, which the SDK maps correctly, so nothing is silently wrong; what is missing is
+anything that lets a caller know BEFORE sending, or that tells them the minimum that would work.
+
+**Reproduction.** `packages/core/test/zz-findings.fork.test.ts`, the MK-038 case: open a Trove, drop
+the oracle price until ICR is under MCR, then `addCollateral` a small amount and watch it revert.
+
+**Decision.** Documented now, not fixed now. The fix is a preview, and it is the same missing preview
+`withdrawCollateral` and `adjustTrove` need; building four of them is its own wave with its own
+acceptance, and grafting one onto a wave scoped to MK-037 is how scope creep enters this programme.
+What changes now is the false claim: `docs/03-core-api.md` is corrected to say these two ARE gated in
+normal mode, with the citations above, and the scope limit is restated to cover four writes rather
+than two.
+
+---
+
+## MK-039 · The measurement behind the gas margin was not reproducible
+
+**Class** S3 · **Status** fixed · **Found by being asked to re-run it**
+
+**What happened.** `DEFAULT_GAS_MARGIN_PERCENT` is 25 because of a measurement: the same
+`redeemCollateral` call varying from 610270 to 710023 gas across 40 attempts, 2 of which reverted,
+against a limit carrying a 1.5% margin. That number decided a default every write in this SDK
+carries. The script that produced it was never committed. When the next wave was asked to re-run
+it, there was nothing to re-run, and it had to be rebuilt from a prose description.
+
+**And the description cannot be right.** Rebuilt, the lab is now committed as
+`packages/core/test/gas-variance.fork.test.ts`, and across three fixtures on a fork of testnet at
+block 15043414, every attempt restored from the same `evm_snapshot`:
+
+| redeem | attempts | gas limit | gas used | realised margin | reverts | fallbacks |
+|---|---|---|---|---|---|---|
+| 100 MUSD | 40 | 442640 | 408178 | 8.4% | 0 | 0 |
+| 5000 MUSD | 6 | 726657 | 615858 | 17.9% | 0 | 0 |
+| 20000 MUSD | 6 | 2087949 | 1642624 | 27.1% | 0 | 0 |
+
+**The gas used was identical to the unit within every fixture.** The last two ran with an extra
+hour warped onto the clock per attempt, out to five hours, and the figure still did not move.
+
+That is not a surprising result, it is the only possible one. **EVM execution is deterministic.**
+From byte identical state at a given timestamp the same call consumes the same gas, necessarily.
+So a 16% spread across 40 attempts proves that something was varying which the description did not
+name, and the description said the state was byte identical. Hours of accrued interest are ruled
+out by the two fixtures above. What is NOT ruled out, and what this entry does not claim to have
+established: a deeper traversal in which a partial redemption flips between troves, a fixture
+mutated by other tests in the same run, or attempts that were not snapshot isolated at all.
+
+**What this does not overturn.** The 610270 to 710023 growth was observed on a real transaction and
+the revert it ended in was traced to `ActivePool` running out of gas at call depth 4. That happened.
+The margin is still justified: at the 100 MUSD fixture the node's own estimate leaves only 8.4%
+headroom, well under the 16.4% growth traced, which is exactly the gap the margin closes. What is
+not established is the "2 in 40" RATE, because the lab that produced it cannot be reproduced and
+the rebuilt one produces no variance at all.
+
+**Why it is S3 rather than S2.** No consumer is affected. The default is defensible on the traced
+growth alone. What was lost is the ability to check a number that decided a default, which is a
+process defect, and the kind that compounds: the P7 window also ran with the margin silently
+dropped on an unknown fraction of its sends (MK-037), and there is now no way to find out which.
+
+**Fixed by** committing the lab, opt in behind `MK_GAS_LAB=1` so it costs CI nothing, with its
+runtime, its knobs and the reconstruction's numbers written at the top of the file so the next run
+has something to disagree with.
 
 ---
 
