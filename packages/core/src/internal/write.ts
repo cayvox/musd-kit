@@ -1,4 +1,14 @@
-import type { Abi, Account, Address, Hex, PublicClient, WalletClient } from 'viem'
+import type {
+  Abi,
+  Account,
+  Address,
+  EstimateContractGasParameters,
+  Hex,
+  PublicClient,
+  SimulateContractParameters,
+  WalletClient,
+  WriteContractParameters,
+} from 'viem'
 import type { MusdAddresses } from '../addresses'
 import { MissingWalletClient } from '../errors'
 import { type RevertContext, mapRevert } from '../errors/mapRevert'
@@ -79,9 +89,55 @@ export interface WriteDeps {
   getMinNetDebt: () => Promise<bigint>
 }
 
+/**
+ * How the gas limit on a send was chosen (MK-037).
+ *
+ * **Why this is on the result and not only in a log line.** MK-035 added a measured margin to
+ * every write. MK-037 was that the margin could vanish on any send, for any reason, and the
+ * only trace was a `console.warn`: a consumer cannot assert on it, cannot route it to their own
+ * telemetry, and does not see it in a console they have filtered. The degradation is real (the
+ * send goes out with the pre-MK-035 behavior, which is the behavior that produced the reverts),
+ * so it has to be legible through the surface the SDK actually returns.
+ *
+ * Branch on `source` when you care. Ignore the field entirely when you do not; it is additive.
+ */
+export type GasDecision =
+  /** The caller passed an explicit `gas`. Neither the estimate nor the margin was consulted. */
+  | { source: 'explicit'; limit: bigint }
+  /** The estimate succeeded and the margin was applied to it. The normal case. */
+  | { source: 'estimate'; limit: bigint; estimate: bigint; marginPercent: number }
+  /**
+   * The estimate failed, so the send carried NO `gas` field and the wallet client estimated
+   * internally: the pre-MK-035 behavior, with no margin at all.
+   *
+   * `error` is what {@link mapRevert} made of the failure, so it is the same typed `MusdError`
+   * taxonomy every other error on this path already uses, not a raw transport object.
+   */
+  | { source: 'fallback'; limit: undefined; error: Error }
+
 /** Result of a write, wagmi-idiomatic; the caller waits for the receipt. */
 export interface WriteResult {
   hash: Hex
+  /**
+   * How the gas limit on this send was chosen (MK-037). `source: 'fallback'` means this
+   * particular send went out WITHOUT the margin; see {@link GasDecision}.
+   */
+  gas: GasDecision
+}
+
+/**
+ * The shape every dynamic write builds, checked with `satisfies` at the construction site
+ * (MK-017). viem's own parameter types are generic over the ABI and the function name, both of
+ * which are runtime values on this path, so they cannot be used directly; this is what the
+ * object genuinely is, and the boundary casts are documented where they occur.
+ */
+interface DynamicWriteParams {
+  account: Account
+  address: Address
+  abi: Abi
+  functionName: string
+  args: readonly unknown[]
+  value?: bigint
 }
 
 export interface Wallet {
@@ -144,11 +200,27 @@ export async function simulateAndSend(
   // life of the client and a resolved promise on every send after that.
   await deps.ensureVerified()
   try {
-    // Dynamic dispatch over a write set; viem's per-function typing can't be expressed
-    // generically here, so the params object is untyped.
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic write dispatch (ABI typed at call sites).
-    const sim: any = { account: wallet.account, address, abi, functionName, args }
-    if (opts?.value !== undefined) sim.value = opts.value
+    // MK-017. This used to be `const sim: any`, which switched off checking for the whole
+    // object including a misspelled field. `satisfies` checks the literal against a real shape
+    // WITHOUT widening it, so a typo here is a compile error again.
+    //
+    // The casts at the two call sites below are kept, and the reason is specific rather than
+    // "viem is generic": `simulateContract`, `estimateContractGas` and `writeContract` each
+    // take a DIFFERENT parameter type, all three generic over the ABI and the function name,
+    // and both of those are runtime values here. Typing `sim` as
+    // `SimulateContractParameters<Abi, string, readonly unknown[]>` compiles but then fails at
+    // all three call sites with, respectively: `Type 'Account' is not assignable to type
+    // 'null | undefined'`; not assignable to `EstimateContractGasParameters`; and
+    // `WriteContractParameters<readonly [never], ...>`. That was tried and reverted rather
+    // than assumed.
+    const sim = {
+      account: wallet.account,
+      address,
+      abi,
+      functionName,
+      args,
+      ...(opts?.value !== undefined ? { value: opts.value } : {}),
+    } satisfies DynamicWriteParams
     // MK-035. `simulateContract` returns a request with NO `gas` field, verified rather than
     // assumed, so without an explicit limit `writeContract` estimates internally and sends
     // whatever came back. That estimate is taken before the block the transaction mines in,
@@ -160,27 +232,65 @@ export async function simulateAndSend(
     // measured, not imagined: sequencing them cost three red runs in a ten run window, with
     // `docsPath: '/docs/contract/estimateContractGas'` on the error. In parallel they see
     // the same head, and the write costs no more latency than it did before.
-    const [{ request }, estimate] = await Promise.all([
-      deps.publicClient.simulateContract(sim),
+    // MK-037. The ESTIMATE takes the account as an address where the simulation takes the
+    // `Account` object, and that difference is the entire finding rather than a style choice.
+    //
+    // Handing viem an `Account` object makes `estimateContractGas` run
+    // `prepareTransactionRequest` first, which fills in a nonce AND a gas field, and then sends
+    // `eth_estimateGas` with that gas field set. A node treats a supplied gas field as the
+    // upper bound of its search, so the estimate fails the moment the real work exceeds a cap
+    // the estimate itself invented, while `writeContract` sails through because viem's internal
+    // estimate sends no gas field at all. That is MK-035's own mechanism reappearing one level
+    // up, inside the fix for MK-035.
+    //
+    // Captured on the fork by diffing the raw JSON-RPC payloads of the two calls:
+    //
+    //   ours    {"data":"0x2f3a6d98...","gas":"0xa1c58","nonce":"0x0","to":"0xCdF7028c...",...}
+    //   viem's  {"data":"0x2f3a6d98...","to":"0xCdF7028c...",...}          no gas, no nonce
+    //
+    //   Account object: 2 eth_estimateGas calls, the second capped at 0xa1c58, result 662616
+    //   address only:   1 eth_estimateGas call,  no gas field sent,        result 662616
+    //
+    // Identical answer, one fewer round trip, and no self imposed cap left to trip over.
+    const estimateParams = { ...sim, account: wallet.account.address }
+
+    const [{ request }, estimated] = await Promise.all([
+      deps.publicClient.simulateContract(sim as unknown as SimulateContractParameters),
       // A failed estimate must NOT fail the write. If the state really has moved,
       // `writeContract` estimates internally and surfaces it exactly as it did before this
       // change; falling back is never worse than the behavior being replaced.
       deps.publicClient
-        .estimateContractGas(sim)
-        .catch(() => undefined),
+        .estimateContractGas(estimateParams as unknown as EstimateContractGasParameters)
+        .catch((error: unknown): Error => {
+          // Warned AND returned (MK-037). The warning stays, because a degradation should be
+          // loud in a console too, but it is no longer the only trace: this error reaches the
+          // caller on `result.gas.error`, so a consumer can retry, alert, or refuse to proceed.
+          // It was trace-free for exactly one wave and the MK-035 pin caught it in CI with
+          // `margin=1.5%`, the pre-fix number, and no explanation anywhere.
+          const e = error as Error
+          console.warn(
+            `[musd-kit] gas estimation failed for ${functionName}, sending without a margin (MK-035, MK-037). ${e.name}: ${e.message.split('\n')[0]}`,
+          )
+          return mapRevert(error, { operation: functionName, ...opts?.revert })
+        }),
     ])
 
     // A caller supplied `gas` wins outright: an explicit limit is a decision, not a default.
-    // biome-ignore lint/suspicious/noExplicitAny: same dynamic dispatch as above.
-    const req: any = { ...(request as any) }
-    if (opts?.gas !== undefined) {
-      req.gas = opts.gas
-    } else if (estimate !== undefined) {
-      req.gas = withGasMargin(estimate, deps.gasMarginPercent)
-    }
+    const decision: GasDecision =
+      opts?.gas !== undefined
+        ? { source: 'explicit', limit: opts.gas }
+        : typeof estimated === 'bigint'
+          ? {
+              source: 'estimate',
+              limit: withGasMargin(estimated, deps.gasMarginPercent),
+              estimate: estimated,
+              marginPercent: deps.gasMarginPercent,
+            }
+          : { source: 'fallback', limit: undefined, error: estimated }
+    const req = { ...request, ...(decision.limit !== undefined ? { gas: decision.limit } : {}) }
 
-    const hash = await wallet.walletClient.writeContract(req)
-    return { hash }
+    const hash = await wallet.walletClient.writeContract(req as unknown as WriteContractParameters)
+    return { hash, gas: decision }
   } catch (error) {
     throw mapRevert(error, { operation: functionName, ...opts?.revert })
   }

@@ -1,6 +1,7 @@
 import type { Abi, Address } from 'viem'
 import { troveManagerAbi } from '../clients'
 import { MCR } from '../constants'
+import { computeLiquidationPrice, getHealthFactor } from '../math/compute'
 import type { ReadDeps } from './deps'
 import { readAtSnapshot, readPriceSnapshot } from './snapshot'
 import { type Trove, TroveStatus } from './types'
@@ -71,9 +72,12 @@ export async function getTrove(deps: ReadDeps, address: Address): Promise<Trove>
     return zeroTrove(status, price, blockNumber)
   }
 
-  const liquidationPrice = (MCR * entireDebt) / coll
-  // Fixed-point first, then to number, so huge ICRs don't lose precision.
-  const healthFactor = Number((icr * 1_000_000n) / MCR) / 1_000_000
+  // MK-017: single sourced. These two derivations used to be written out again here, so the
+  // same formula lived in `math/compute.ts` and in this file, and a correction to one would
+  // have silently missed the other. They feed numbers a user acts on, which is why the pure
+  // functions are the only copy now.
+  const liquidationPrice = computeLiquidationPrice({ collateral: coll, entireDebt })
+  const healthFactor = getHealthFactor({ icr })
 
   return {
     exists: true,

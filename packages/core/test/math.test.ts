@@ -237,16 +237,20 @@ describe('getHealthFactor', () => {
     expect(getHealthFactor({ icr: 0n })).toBe(0)
   })
 
-  it('loses its meaning on the zero-debt sentinel (MK-017, known limit)', () => {
-    // computeICR returns type(uint256).max for a zero-debt position. Pushed through the
-    // 1e6 fixed-point scale it does NOT overflow to Infinity, which would at least be a
-    // legible "no debt" signal; it converts to a finite float of roughly
-    // 2^256 / 1.1e18 = 1.05e59, past Number.MAX_SAFE_INTEGER by 44 orders of magnitude
-    // and renderable by no UI. Pinned as current behavior, NOT endorsed: MK-017 is open
-    // and this assertion is expected to change when the sentinel is handled.
+  it('reports the zero-debt sentinel as infinite (MK-017, fixed)', () => {
+    // This assertion is the INVERSE of what it was, and the comment it replaced said so:
+    // "Pinned as current behavior, NOT endorsed: MK-017 is open and this assertion is
+    // expected to change when the sentinel is handled." It has been handled.
+    //
+    // computeICR returns type(uint256).max for a zero-debt position. Pushed through the 1e6
+    // fixed-point scale that used to convert to a finite float of roughly
+    // 2^256 / 1.1e18 = 1.05e59, past Number.MAX_SAFE_INTEGER by 44 orders of magnitude and
+    // renderable by no UI. A position with no debt is infinitely far from liquidation, so
+    // that is what it returns.
     const healthFactor = getHealthFactor({ icr: UINT256_MAX })
-    expect(Number.isFinite(healthFactor)).toBe(true)
-    expect(healthFactor).toBeGreaterThan(1e58)
-    expect(healthFactor).toBeGreaterThan(Number.MAX_SAFE_INTEGER)
+    expect(healthFactor).toBe(Number.POSITIVE_INFINITY)
+    expect(Number.isFinite(healthFactor)).toBe(false)
+    // The old value, so the change is visible in the test rather than only in the history.
+    expect(healthFactor).not.toBe(1.0526553567028745e59)
   })
 })

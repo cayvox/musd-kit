@@ -74,6 +74,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import {
   CCR,
+  ICRBelowMCR,
   MCR,
   MUSD_GAS_COMPENSATION,
   borrowerOperationsAbi,
@@ -936,4 +937,87 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     // so an unbounded buffer is a real cost even though unused gas is refunded.
     expect(marginPercent, 'MK-035: the margin is bounded, not a blank cheque').toBeLessThan(40)
   }, 300_000)
+
+  /**
+   * MK-038, OPEN and documented. Pins the CONTRACT's behavior, which this repository had
+   * described from reasoning and got backwards.
+   *
+   * `docs/03-core-api.md` justified shipping no preview for `addCollateral` and `repay` on the
+   * grounds that they "need no ratio gate, as a property of the operation": adding collateral
+   * raises ICR, so it cannot push a valid position under MCR. Every word of that is true and the
+   * conclusion is false, because the contract does not test the DIRECTION of the change. It tests
+   * the RESULTING LEVEL, absolutely.
+   *
+   * `mezo-org/musd`, `solidity/contracts/BorrowerOperations.sol`: `addColl` (`:189-203`) reaches
+   * `_adjustTrove` (`:752-761`), which calls `_requireValidAdjustmentInCurrentMode` unconditionally
+   * at `:840-845`. The normal mode branch (`:1197-1210`) runs `_requireICRisAboveMCR(newICR)` at
+   * `:1201` with no direction condition around it, and that is `require(_newICR >= MCR, ...)` at
+   * `:1330-1335`.
+   *
+   * So this test does the thing the documentation said was impossible: it makes an ICR RAISING
+   * operation revert.
+   *
+   * The position is put under MCR by INTEREST rather than by moving the oracle, and that choice is
+   * the whole fixture. Dropping the price far enough to sink one Trove also drags TCR under CCR,
+   * which flips the system into Recovery Mode, where `:1265-1275` puts both ICR requirements
+   * behind `if (_isDebtIncrease)` and a pure top-up really is ungated. Testing there would have
+   * proved the opposite of the point. Interest sinks the most levered Trove first and leaves TCR
+   * alone: measured here at TCR 278% with this Trove at 109.6%, `isRecoveryMode` false.
+   */
+  it('MK-038: a top-up that RAISES ICR still reverts under MCR, in normal mode', async () => {
+    const fork = connectFork()
+    const account = testAccount(2038)
+    await fork.fundAccount(account.address, 50n * BTC)
+    const client = clientFor(account)
+
+    const snapshotId = await fork.testClient.snapshot()
+    try {
+      // Open just above MCR: `_openTrove` requires `ICR >= MCR` in normal mode (`:654-666`), so
+      // this is as close to the floor as the contract will let a position start.
+      const price = await client.getOraclePrice()
+      const target = (((2n * BTC * price) / BTC) * 1000n) / 1106n
+      const { hash } = await client.openTrove({
+        collateral: 2n * BTC,
+        debt: target - 200n * MUSD - target / 100n,
+      })
+      await wait(hash)
+      const opened = await client.getTrove(account.address)
+      expect(opened.icr, 'fixture: the position must start above MCR').toBeGreaterThan(MCR)
+
+      // Interest, not price. See the note above on why this cannot be an oracle move.
+      await fork.warpTime(700 * 86_400)
+      await fork.mineBlocks(1)
+
+      const sunk = await client.getTrove(account.address)
+      const system = await client.getSystemState()
+      console.log(
+        `[MK-038] icr=${sunk.icr} MCR=${MCR} tcr=${system.tcr} isRecoveryMode=${system.isRecoveryMode}`,
+      )
+      expect(sunk.icr, 'fixture: interest must have taken the position under MCR').toBeLessThan(MCR)
+      expect(
+        system.isRecoveryMode,
+        'fixture: this must be the NORMAL mode branch; Recovery Mode does not gate a top-up',
+      ).toBe(false)
+
+      // THE FINDING. A strictly ICR RAISING operation, refused.
+      await expect(
+        client.addCollateral({ amount: BTC / 1000n }),
+        'MK-038: `_requireICRisAboveMCR` is an absolute floor, not a direction check',
+      ).rejects.toBeInstanceOf(ICRBelowMCR)
+
+      // And the same operation, larger, is accepted. This is what makes the point precise: the
+      // gate is not against topping up, it is against ENDING below MCR. Which is also why the
+      // missing preview costs a caller something real: there is a number that works and the SDK
+      // has nothing that tells them what it is.
+      const rescue = await client.addCollateral({ amount: 5n * BTC })
+      const receipt = await wait(rescue.hash)
+      expect(receipt.status, 'MK-038: a large enough top-up is accepted at the same block').toBe(
+        'success',
+      )
+      const rescued = await client.getTrove(account.address)
+      expect(rescued.icr, 'MK-038: and it clears the floor it was refused for').toBeGreaterThan(MCR)
+    } finally {
+      await fork.testClient.revert({ id: snapshotId })
+    }
+  }, 600_000)
 })

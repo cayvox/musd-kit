@@ -22,7 +22,7 @@ import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/map
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 
-export type { WriteDeps, WriteResult } from '../internal/write'
+export type { GasDecision, WriteDeps, WriteResult } from '../internal/write'
 
 /** `claim()` is a no-op when there is no surplus → `hash` may be `null`. */
 export interface ClaimResult {
@@ -31,7 +31,7 @@ export interface ClaimResult {
 }
 
 const ONE = 10n ** 18n
-const BO_ABI = borrowerOperationsAbi as unknown as Abi
+const BO_ABI: Abi = borrowerOperationsAbi
 
 /** Current (collateral, entireDebt) of `owner`, to-now, from the contract. */
 /**

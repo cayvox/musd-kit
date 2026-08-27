@@ -38,11 +38,33 @@ export class MusdError extends Error {
 
 /** `draw + borrowingFee` is below the (governable) `minNetDebt` floor. */
 export class BelowMinimumDebt extends MusdError {
-  constructor(minNetDebt: bigint, netDebt: bigint, cause?: unknown) {
+  /**
+   * MK-017. Both numbers are OPTIONAL, and that is the fix rather than a weakening.
+   *
+   * The pre-send guard knows them and passes them. `mapRevert` does not: it decodes a revert
+   * string and has no access to the floor or the net debt, so it used to construct this with
+   * `0n, 0n`. A user who tried to draw 1700 against a floor of 1800 was then told their net
+   * debt was 0 and the minimum was 0, which is not a rounding of the truth, it is two invented
+   * numbers. This programme has spent nine waves closing exactly that defect class in larger
+   * form; leaving a small one in the error surface would be inconsistent.
+   *
+   * Absent now means absent: the message says the values are unavailable rather than printing
+   * a zero the user never encountered.
+   */
+  constructor(minNetDebt?: bigint, netDebt?: bigint, cause?: unknown) {
+    const known = minNetDebt !== undefined && netDebt !== undefined
     super(
       Codes.BELOW_MINIMUM_DEBT,
-      `Net debt (${netDebt}) is below the minimum (${minNetDebt}). The floor applies to draw + borrowing fee.`,
-      { context: { minNetDebt, netDebt }, ...(cause !== undefined ? { cause } : {}) },
+      known
+        ? `Net debt (${netDebt}) is below the minimum (${minNetDebt}). The floor applies to draw + borrowing fee.`
+        : 'Net debt is below the minimum. The floor applies to draw + borrowing fee. The exact figures are not available here: this was decoded from a contract revert rather than caught by the pre-send guard, which is the path that carries them.',
+      {
+        context: {
+          ...(minNetDebt !== undefined ? { minNetDebt } : {}),
+          ...(netDebt !== undefined ? { netDebt } : {}),
+        },
+        ...(cause !== undefined ? { cause } : {}),
+      },
     )
     this.name = 'BelowMinimumDebt'
   }
@@ -233,11 +255,23 @@ export class RedemptionFailed extends MusdError {
 
 /** Not enough MUSD held to repay/close/redeem. */
 export class InsufficientMusdBalance extends MusdError {
-  constructor(required: bigint, balance: bigint, cause?: unknown) {
+  /** MK-017. Optional for the same reason as {@link BelowMinimumDebt}: the decoder does not
+   * know the required amount or the balance, and reporting `0` for both told the user their
+   * account holds nothing and the operation needs nothing. */
+  constructor(required?: bigint, balance?: bigint, cause?: unknown) {
+    const known = required !== undefined && balance !== undefined
     super(
       Codes.INSUFFICIENT_MUSD_BALANCE,
-      `Operation needs ${required} MUSD but the account holds ${balance}.`,
-      { context: { required, balance }, ...(cause !== undefined ? { cause } : {}) },
+      known
+        ? `Operation needs ${required} MUSD but the account holds ${balance}.`
+        : 'The account does not hold enough MUSD for this operation. The exact figures are not available here: this was decoded from a contract revert rather than caught by the pre-send guard, which is the path that carries them.',
+      {
+        context: {
+          ...(required !== undefined ? { required } : {}),
+          ...(balance !== undefined ? { balance } : {}),
+        },
+        ...(cause !== undefined ? { cause } : {}),
+      },
     )
     this.name = 'InsufficientMusdBalance'
   }

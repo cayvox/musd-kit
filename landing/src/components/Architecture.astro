@@ -41,7 +41,7 @@ const trove = await musd.getTrove(address)`,
     key: 'math',
     name: 'Hint + Math engine',
     sub: 'insertion hints · ICR · liquidation price · interest',
-    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR, liquidation price, borrowing power, and interest projection, dual-validated against a fork and the contracts’ own pure helpers.',
+    desc: 'The correctness-critical layer: insertion hints computed for every write, ICR, liquidation price, borrowing power, and interest projection, validated against a fork, the contracts’ own pure helpers, and actual transaction outcomes; coverage is stated per surface in the validated surface table.',
     code: `const icr = computeICR({ collateral, entireDebt, price })
 const liq = computeLiquidationPrice({ collateral, entireDebt })`,
     lang: 'ts',

@@ -2,7 +2,7 @@ import type { Abi, Address } from 'viem'
 import { troveManagerAbi } from '../clients'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 
-const TM_ABI = troveManagerAbi as unknown as Abi
+const TM_ABI: Abi = troveManagerAbi
 
 /**
  * Liquidate an under-collateralized Trove (permissionless keeper surface). Simulates

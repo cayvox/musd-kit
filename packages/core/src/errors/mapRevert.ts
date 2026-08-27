@@ -79,11 +79,15 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
   if (has(/ICR >= CCR/i) || has(/recovery mode/i)) return new RecoveryModeRestriction(error)
   if (has(/ICR < MCR is not permitted/i)) return new ICRBelowMCR(error)
 
-  if (has(/net debt must be greater than minimum/i)) return new BelowMinimumDebt(0n, 0n, error)
+  // MK-017: no placeholder zeros. The decoder does not know the floor or the net debt, so it
+  // says so rather than inventing two numbers the user never encountered.
+  if (has(/net debt must be greater than minimum/i)) {
+    return new BelowMinimumDebt(undefined, undefined, error)
+  }
   if (has(/Trove does not exist or is closed/i)) return new TroveNotFound(at, error)
   if (has(/Trove is active/i)) return new TroveAlreadyExists(at, error)
   if (has(/enough mUSD to make repayment/i) || errorName === 'ERC20InsufficientBalance') {
-    return new InsufficientMusdBalance(0n, 0n, error)
+    return new InsufficientMusdBalance(undefined, undefined, error)
   }
   if (has(/nothing to liquidate/i)) return new NothingToLiquidate(context?.borrowers ?? [], error)
   if (has(/Unable to redeem any amount/i)) {

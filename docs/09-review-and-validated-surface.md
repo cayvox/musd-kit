@@ -32,14 +32,20 @@ Stated plainly, and kept current.
 | Use | Verdict |
 |---|---|
 | Reading positions and system state on testnet | Suitable |
-| Previews and calculators for a position that does not exist yet | Suitable once the S1 findings are closed, see the register for current status |
-| Managing an existing trove: borrow, repay, adjust, refinance | Not yet. The existing trove paths are the ones the open only validation gate never covered |
-| Liquidation keepers | Not yet. See MK-001 |
-| Real money on mainnet | No. Single author, unaudited, pre 1.0. Use it to evaluate, read, and prototype |
+| Previews and calculators for a position that does not exist yet | **Suitable.** Every S1 this verdict was waiting on is closed: MK-001, MK-002, MK-003, MK-004, MK-005, MK-006, MK-018, MK-019. A 1000 case differential sweep of the three previews against real transaction outcomes found no disagreement |
+| Managing an existing trove: borrow, repay, adjust, refinance | **Suitable with a stated limit.** The paths the open only gate never covered are now covered: hints come from principal (MK-006), `previewBorrow` and `previewRefinance` exist, and the capacity gate is prechecked. The limit is that `addCollateral`, `repay`, `withdrawCollateral` and `adjustTrove` have **no preview**: they are protected by simulate before send, not by a verdict you can render first. That list was two writes until MK-038 read the Solidity behind the claim that the first two need no gate; in normal mode they do. §3 and `docs/03-core-api.md` state it exactly |
+| Liquidation keepers | **Suitable on testnet.** MK-001 is closed: `isLiquidatable` is `ICR < MCR` with no Recovery Mode widening, which is what the protocol does |
+| Real money on mainnet | **No.** Single author, unaudited, pre 1.0. Use it to evaluate, read, and prototype |
 
 What limits the blast radius, and is true today: the SDK has no approval flows at all, never
-handles a key, simulates every write before sending, and sends the simulation's own request object
-so the calldata sent is exactly the calldata simulated.
+handles a key, and simulates every write before sending.
+
+**What simulate before send does NOT limit, measured rather than assumed (MK-035):** it cannot
+catch a condition that becomes true after the simulation, and it cannot catch the transaction
+running out of gas, because the limit comes from an estimate taken before the mining block. The
+same call's gas varied 16% from identical state. Writes now ship a 25% margin and
+`diagnoseRevertedWrite` classifies what still fails. The SDK no longer sends the simulation's own
+request object unchanged: it sets an explicit gas limit on it, and nothing else.
 
 ## 3. Validated surface
 
@@ -51,7 +57,7 @@ evidence for what it actually exercises.
 | `computeICR`, `computeNICR` | Cross checked to the wei against the contract's own pure helpers on a fork of live Mezo | Full |
 | `computeEntireDebt` | Cross checked against the contract's interest form | Full |
 | `previewOpen`, `getBorrowingPower` | Dual validated: against a fork of the real contracts, and against the contracts' pure helpers | **Open path only** |
-| `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `refinance` | Fork exercised, not dual validated | **No preview validation** |
+| `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `refinance` | Fork exercised, not dual validated | **No preview validation.** For `addCollateral` and `repay`, MK-038 pins the gate they were documented as not having |
 | `previewBorrow`, `previewRefinance` | Fork exercised end to end against the contract's own gates, plus exhaustive chain-free tests of the verdict as a pure function | **Verdict and fee validated; not yet compared against a reverting write for every reason** |
 | Insertion hints on every existing-trove write path | Pinned on a fork against `getNominalICR` after the write, including a repay at, below and above interest owed | Full for the paths exercised |
 | Preview verdict against actual transaction outcome, swept | 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** It covers `previewOpen`, `previewBorrow` and `previewRefinance` against open, borrow and refinance. It does NOT cover repay, collateral changes, `adjustTrove`, redemption, liquidation or claim, none of which have a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
@@ -102,25 +108,36 @@ honestly, including the cases that are exculpatory for us.
 | MK-001 Recovery Mode liquidatability | Only `ICR < MCR` liquidates | Correct | Adds a rule the protocol does not have | SDK uniquely wrong |
 | MK-002 Borrowing capacity | Hard on chain gate | Models it as load bearing | Absent | SDK uniquely wrong |
 | MK-003 Refinancing fee | Charged and capitalized | Modeled | Absent | SDK uniquely wrong |
-| MK-004 Recovery Mode fee skip | Fee skipped | Same gap | Same gap | Shared gap, protocol divergence |
-| MK-018 Fee exemption | Zeroes the fee | Same gap | Same gap | Shared gap, and **S1**: the exempt set is non empty on mainnet, see §6 |
-| MK-005 Open time TCR constraint | Enforced | Enforced in practice by the contract | Not previewed | SDK gap |
+| MK-004 Recovery Mode fee skip | Fee skipped | Gap **as reported to us**, see the caveat below | **Modeled.** `previewOpen` charges no fee in Recovery Mode, pinned on a fork | **No longer shared.** We model it |
+| MK-018 Fee exemption | Zeroes the fee | Gap **as reported to us**, see the caveat below | **Modeled** on open AND on the debt increase branch, both observed executing | **No longer shared.** We model it |
+| MK-005 Open time TCR constraint | Enforced | Enforced in practice by the contract | **Previewed.** `previewOpen` returns `resultingTcr` and a `TCR_BELOW_CCR` reason | Closed |
+
+**A caveat on the middle column, and it matters.** Everything this table says about Mezo's own dApp
+comes from the external review, not from us reading their code. We have never opened it. The two
+rows above changed from "shared gap" to "no longer shared" because **our** side changed and is
+verified on a fork; whether their side has since changed we do not know and cannot claim. Read that
+column as "as reported to us at review time", not as a current statement about their software.
 
 ## 5. Claims and reality
 
 Every claim this project makes about itself, with its status. A row moves to "true" only when a
 check in CI makes it true.
 
+Every row ends at **true** or **corrected**. None points at an open finding: the point of this
+table is that a reader can trust it without cross referencing the register.
+
 | Claim | Status |
 |---|---|
-| Coverage floor enforced in CI | See MK-015 |
-| Fork pinned to a block for determinism | See MK-016 and MK-020 |
-| Fork price pinned with the block | See MK-020 |
-| CI matrix across Node versions | See MK-015 |
-| Post publish install verification | See MK-015 |
-| Unit layer runs with no chain | See MK-015 |
-| Live data never re-derived | See MK-015 |
-| Validated twice | Replaced by section 3 |
+| Coverage floor enforced in CI | **True.** `vitest.config.mts` `coverage.thresholds`, enforced on every push by the fork gate. Floors 98 / 91 / 99 / 98, and they only ever move up |
+| Fork pinned to a block for determinism | **True.** `MEZO_FORK_BLOCK` in `.github/workflows/ci.yml`, read by the harness. **With a stated limit:** pinning is not order independence, and the fork project is still one stateful sequence (MK-016) |
+| Fork price pinned with the block | **True.** The oracle shim is seeded from the pinned block, and the seeded answer is byte identical across runs |
+| CI matrix across Node versions | **True.** 20, 22 and 24, resolving to v20.20.2, v22.23.2 and v24.19.0, measured from a run rather than assumed |
+| Post publish install verification | **Corrected: not verified.** `release.yml` `verify-published` exists and has never run, because publishing is out of bounds for this programme. It is verified by reading, not by execution |
+| Unit layer runs with no chain | **True**, and proven in process on every wave: `anvil` off `PATH` and `MEZO_TESTNET_RPC_URL` unset, 8 files passing |
+| Live data never re-derived | **Corrected.** Five of `getTrove`'s fourteen fields are derived in TypeScript from contract getters: `entireDebt`, `isLiquidatable`, `exists`, `liquidationPrice`, `healthFactor`. Nine are read. The README lists both sides. None re-implements protocol logic, and the SDK never recomputes debt or interest itself (MK-015) |
+| Validated twice | **Corrected.** Replaced by §3, which states coverage per surface including what it does not cover |
+| Simulate before send prevents failed writes | **Corrected.** It prevents every failure whose condition holds at simulate time, and neither a race nor gas exhaustion (MK-035). §2 states the limit with the measurement |
+| Previews cover the trove lifecycle | **Corrected twice.** Three of eleven writes have a preview. The first correction named `withdrawCollateral` and `adjustTrove` as the gap; MK-038 showed the gap is four writes, because `addCollateral` and `repay` are ratio gated in normal mode after all (`BorrowerOperations.sol:1197-1210`). `docs/03-core-api.md` names all four |
 
 ## 6. On chain facts
 
