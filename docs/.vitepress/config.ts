@@ -68,6 +68,7 @@ export default defineConfig({
           { text: 'Conventions', link: '/08-conventions' },
           { text: 'Review and validated surface', link: '/09-review-and-validated-surface' },
           { text: 'Migration, 0.1 to 0.2', link: '/11-migration-0.1-to-0.2' },
+          { text: 'Release runbook', link: '/12-release-runbook' },
           { text: 'Glossary', link: '/10-glossary' },
         ],
       },

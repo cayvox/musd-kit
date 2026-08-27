@@ -3,7 +3,7 @@
 **The typed SDK for MUSD on Mezo**, the framework-agnostic core. The layer between
 *connected* (handled by [`@mezo-org/passport`](https://www.npmjs.com/package/@mezo-org/passport))
 and *working*: the Trove lifecycle, the insertion-hint dance, and the MUSD math, made
-correct, typed, and reusable.
+typed, reusable, and checked against the contracts rather than against intuition.
 
 > ⚠️ **Community tooling, not official.** Independent, open-source, **not affiliated with or
 > endorsed by Mezo**. An unofficial community **Mezo MUSD SDK**. **Status: pre-1.0 (`0.x`),

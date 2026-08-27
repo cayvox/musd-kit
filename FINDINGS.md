@@ -79,6 +79,7 @@ claim about it was not).
 | MK-041 | The Foundry toolchain version was never pinned, so a new anvil stable turned the fork gate red on a docs only commit | S2 | fixed |
 | MK-042 | Five exposed writes had no preview, so a caller could only discover the contract's answer by sending | S2 | fixed |
 | MK-043 | Two contract reverts mapped to no typed error, and three Recovery Mode reverts shared one wrong message | S2 | fixed |
+| MK-044 | Two runtime versions CI executes were still resolved by a moving label, one of them end of life | S3 | fixed |
 
 ---
 
@@ -2781,6 +2782,45 @@ them conditions the SDK's own prechecks catch first (`Cannot withdraw and add co
 debtChange`, `Amount must be greater than zero`, `Calldata address array must not be empty`,
 `Cannot redeem when TCR < MCR`, `Only one trove in the system`). They are reachable only by racing
 the precheck, and mapping them is a separate, smaller wave.
+
+---
+
+## MK-044 · Two runtimes were still on moving labels, one of them end of life
+
+**Class** S3 · **Status** fixed · **Found by auditing every workflow rather than assuming MK-041's
+fix had covered the class**
+
+**What MK-041 fixed and what it did not.** MK-041 pinned Foundry after a new anvil stable turned the
+fork gate red on a commit that changed one markdown file. It fixed the instance. This is the sweep,
+and it found two more:
+
+| Where | Was | Problem |
+|---|---|---|
+| `ci.yml`, the checks matrix | `node: ['20', '22', '24']` | **Three moving labels.** Run 32706407738 resolved them to v20.20.2, v22.23.2 and v24.19.0; the day a patch ships, CI silently moves |
+| `deploy-site.yml` | `node-version: 20` | **Moving, AND end of life.** Node 20 reached EOL on 2026-04-30. An earlier wave flagged both in a comment and deliberately left the decision open |
+
+**Fixed.** The matrix is pinned to exactly the versions the run above resolved, so the pin changes
+nothing today and stops the change happening tomorrow without a commit. `deploy-site.yml` moves to
+24.19.0, the version the fork gate declares, so the site is built on the runtime the tests ran on
+rather than on an unsupported one. `actions/checkout` and `actions/setup-node` were on v4 in some
+workflows and v5 in others, and are normalised.
+
+**What is deliberately left floating, and why**, because a pin audit that pins everything is not a
+judgment, it is a reflex:
+
+**The `uses:` action majors stay floating.** The line drawn is **what executes the project's code**.
+Node, pnpm and Foundry are pinned because a change to any of them changes what the suite measures,
+which is exactly how MK-029 and MK-041 happened. Action majors are workflow infrastructure: a float
+can break a run loudly, and it cannot silently change a test result, which is the failure mode the
+pins exist to stop. Pinning them means commit SHAs. That is a real supply chain protection against a
+tag being re-pointed, and a real ongoing cost: every action needs a manual bump forever, in a single
+maintainer repository, and a stale action is its own failure. Revisit if this repository grows more
+maintainers, or the first time an action does change a result.
+
+**The cost of pinning, stated because it is not free.** Pins go stale. A pinned runtime stops
+receiving fixes until someone bumps it, and nothing here will remind you. That is the trade, taken
+deliberately: **a stale pin fails visibly when you bump it; a floating label fails invisibly under a
+commit that changed nothing.** Recorded in the checklist beside the runtime rule.
 
 ---
 

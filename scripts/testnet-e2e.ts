@@ -1,37 +1,44 @@
 /**
- * Task E, LIVE LIFECYCLE on REAL Mezo testnet (chainId 31611), through the shipped SDK.
+ * LIVE LIFECYCLE on REAL Mezo testnet (chainId 31611), through the shipped SDK.
  *
- * This is the go-live verification that the *internal fork suite cannot* prove: a real
- * signed open → on-chain getter parity (to the wei) → repay → close, against the real
- * deployment, the real native-precompile oracle, and real gas, no anvil, no shim, no mock.
+ * The go-live verification the internal fork suite cannot give: real signed transactions
+ * against the real deployment, the real native-precompile oracle, and real gas. No anvil, no
+ * shim, no mock.
  *
- * It is intentionally NOT wired into CI: it spends real testnet BTC and requires a funded
- * key, so it is a MANUAL gate Anıl runs once before publishing. It is written to be safe to
- * re-run (it closes any pre-existing Trove first) and to abort loudly rather than do anything
- * destructive on bad input.
+ * **What it asserts, per step, is what the differential harness asserts:** the preview's
+ * VERDICT against what the chain actually did, and the preview's NUMBERS against what the
+ * chain actually recorded. A run that only sends transactions and watches them mine would
+ * confirm the chain works, not that this SDK describes it correctly.
+ *
+ * It is intentionally NOT wired into CI: it spends real testnet BTC and needs a funded key,
+ * so it is a MANUAL gate before publishing. It is safe to re-run (it closes any pre-existing
+ * Trove first) and aborts loudly rather than doing anything destructive on bad input.
  *
  *   Prerequisites
  *   -------------
- *   1. A testnet account with a little BTC. Fund it from the Mezo testnet faucet.
- *      ~0.05 BTC covers the default open (collateral) + gas; the draw is returned to you.
- *   2. Export the key + (optionally) an RPC URL:
- *        export MEZO_TESTNET_PRIVATE_KEY=0x<64-hex>
+ *   1. A testnet account with BTC. Run `pnpm tsx scripts/testnet-e2e.ts --plan` first: it
+ *      reads the live price, floor, rate and gas price and PRINTS the exact figure to fund,
+ *      with the arithmetic. Do not guess it from this comment; the inputs are governable.
+ *   2. Export the key. It is read from the ENVIRONMENT, never from a path in this file:
+ *        source .secrets/testnet-e2e.env        # or however you keep it
  *        export MEZO_TESTNET_RPC_URL=https://rpc.test.mezo.org   # default if unset
  *      Optional overrides (defaults shown):
- *        export E2E_COLLATERAL_BTC=0.05     # collateral to deposit
- *        export E2E_DEBT_MUSD=2500          # MUSD to draw (must clear minNetDebt: 1,800 net)
+ *        export E2E_COLLATERAL_BTC=0.05
+ *        export E2E_DEBT_MUSD=2500
+ *        export E2E_ALLOW_REDEEM=0   # see the redeem step for why this is off by default
  *
  *   Run
  *   ---
- *     pnpm tsx scripts/testnet-e2e.ts
+ *     pnpm tsx scripts/testnet-e2e.ts --plan    # funding arithmetic only, no key needed
+ *     pnpm tsx scripts/testnet-e2e.ts           # the run
  *
- *   A clean run prints "GO, live lifecycle verified on Mezo testnet." and exits 0.
- *   Any parity mismatch or unexpected revert exits non-zero with the detail.
+ *   A clean run prints "GO, live lifecycle verified on Mezo testnet." and exits 0. Any parity
+ *   mismatch, wrong verdict or unexpected revert exits non-zero with the detail.
  */
 
 import { mezoTestnet } from '@mezo-org/chains'
 import {
-  BelowMinimumDebt,
+  type MusdClient,
   MusdError,
   createMusdClient,
   formatBtc,
@@ -39,32 +46,129 @@ import {
   parseBtc,
   parseMusd,
 } from '@musd-kit/core'
-import { http, createPublicClient, createWalletClient, formatEther } from 'viem'
+import { http, type Address, createPublicClient, createWalletClient, formatEther } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 const RPC = process.env.MEZO_TESTNET_RPC_URL ?? 'https://rpc.test.mezo.org'
 const COLLATERAL = parseBtc(process.env.E2E_COLLATERAL_BTC ?? '0.05')
 const DEBT = parseMusd(process.env.E2E_DEBT_MUSD ?? '2500')
+const ALLOW_REDEEM = process.env.E2E_ALLOW_REDEEM === '1'
+const PLAN_ONLY = process.argv.includes('--plan')
+
+/** What each surface did. Printed as one table at the end, so nothing is silently absent. */
+type Outcome = 'exercised' | 'skipped'
+const ledger: { surface: string; outcome: Outcome; note: string }[] = []
+const record = (surface: string, outcome: Outcome, note: string) =>
+  ledger.push({ surface, outcome, note })
 
 function die(msg: string): never {
   console.error(`\n✗ ${msg}`)
   process.exit(1)
 }
 
+function assertEq(label: string, actual: bigint, expected: bigint): void {
+  if (actual !== expected) die(`${label}: chain says ${actual}, the preview said ${expected}`)
+  console.log(`  ${label}: ${actual} ✓ matches the preview to the wei`)
+}
+
+function assertViable(label: string, viable: boolean, reasons: readonly string[]): void {
+  if (!viable) die(`${label}: the preview says NOT viable [${reasons.join(',')}], so it stops here`)
+  console.log(`  ${label}: preview viable ✓`)
+}
+
+/**
+ * The funding figure, COMPUTED from live chain values rather than estimated.
+ *
+ * Every input is governable, so a number written into a comment would be a guess with a
+ * timestamp. This reads them and shows the arithmetic. It needs no key, which is the point:
+ * run it before funding anything.
+ */
+async function plan(musd: MusdClient, publicClient: ReturnType<typeof createPublicClient>) {
+  const [price, constants, gasPrice] = await Promise.all([
+    musd.getOraclePrice(),
+    musd.getConstants(),
+    publicClient.getGasPrice(),
+  ])
+  const fee = await musd.getBorrowingFee(DEBT)
+
+  // Collateral locked: the open, plus the top-up step, minus what the withdraw step returns.
+  // The adjust step adds and the close returns everything, so the peak is what matters.
+  const topUp = COLLATERAL / 10n
+  const adjustAdd = COLLATERAL / 20n
+  const peakCollateral = COLLATERAL + topUp + adjustAdd
+
+  // Gas. Eleven sends at the SDK's own margin, and the account must hold
+  // `gasLimit * gasPrice` UP FRONT for each, not just the amount actually burned (MK-035).
+  const SENDS = 11n
+  const PER_SEND_GAS = 800_000n // the largest limit observed on this SDK's writes, openTrove
+  const MARGIN_NUM = 125n
+  const MARGIN_DEN = 100n
+  const gasBudget = (SENDS * PER_SEND_GAS * MARGIN_NUM * gasPrice) / MARGIN_DEN
+
+  const subtotal = peakCollateral + gasBudget
+  // A margin, justified rather than round: the faucet is rate limited, so a run that dies
+  // halfway leaves an open position AND no quick way to top up. 50% covers a doubling of the
+  // gas price between planning and running, which is the input most likely to move.
+  const total = (subtotal * 150n) / 100n
+
+  console.log('\n=== funding plan, computed from live chain values ===')
+  console.log(`  price                 ${formatMusd(price)} USD/BTC`)
+  console.log(`  minNetDebt            ${formatMusd(constants.minNetDebt)} MUSD`)
+  console.log(`  borrowing fee on draw ${formatMusd(fee)} MUSD (draw ${formatMusd(DEBT)})`)
+  console.log(`  gasPrice              ${gasPrice} wei`)
+  console.log('  ---')
+  console.log(`  collateral, open      ${formatBtc(COLLATERAL)} BTC`)
+  console.log(`  collateral, top-up    ${formatBtc(topUp)} BTC`)
+  console.log(`  collateral, adjust    ${formatBtc(adjustAdd)} BTC`)
+  console.log(`  peak collateral       ${formatBtc(peakCollateral)} BTC   (returned by close)`)
+  console.log(
+    `  gas budget            ${formatBtc(gasBudget)} BTC   = ${SENDS} sends * ${PER_SEND_GAS} gas * 1.25 * ${gasPrice} wei`,
+  )
+  console.log(`  subtotal              ${formatBtc(subtotal)} BTC`)
+  console.log(`  + 50% margin          ${formatBtc(total)} BTC   <- FUND AT LEAST THIS`)
+  console.log(
+    '\n  The collateral comes back on close; the gas does not. The margin is for the gas\n' +
+      '  price moving between planning and running, because the faucet is rate limited and a\n' +
+      '  half-finished run leaves an open position with no quick way to top up.',
+  )
+  // The debt floor, checked here so an unrunnable configuration is caught before funding.
+  if (DEBT + fee < constants.minNetDebt) {
+    die(
+      `E2E_DEBT_MUSD is unrunnable: draw ${formatMusd(DEBT)} plus fee ${formatMusd(fee)} is below the ${formatMusd(constants.minNetDebt)} floor.`,
+    )
+  }
+  return total
+}
+
 async function main(): Promise<void> {
+  const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(RPC) })
+
+  if (PLAN_ONLY) {
+    // No key, no wallet: planning is a read-only operation and must not require one.
+    await plan(createMusdClient({ chainId: 31611, publicClient }), publicClient)
+    return
+  }
+
   const pk = process.env.MEZO_TESTNET_PRIVATE_KEY
   if (!pk) {
     die(
-      'MEZO_TESTNET_PRIVATE_KEY is not set. This script spends real testnet BTC; export a\n  funded testnet key first (see the header of this file). Refusing to run without one.',
+      'MEZO_TESTNET_PRIVATE_KEY is not set. This script spends real testnet BTC; export a\n' +
+        '  funded testnet key first (see the header of this file). Refusing to run without one.\n' +
+        '  Run with --plan to compute the funding figure without a key.',
     )
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) {
+    // The value is NEVER echoed, here or anywhere else in this file, including on the error
+    // path: an error message that prints the key to a terminal or a CI log is the same leak
+    // as committing it.
+    die('MEZO_TESTNET_PRIVATE_KEY is not a 0x-prefixed 32 byte hex key. Value not shown.')
   }
 
   const account = privateKeyToAccount(pk as `0x${string}`)
-  const publicClient = createPublicClient({ chain: mezoTestnet, transport: http(RPC) })
   const walletClient = createWalletClient({ account, chain: mezoTestnet, transport: http(RPC) })
   const musd = createMusdClient({ chainId: 31611, publicClient, walletClient })
+  const owner: Address = account.address
 
-  // Wait for a receipt and assert it mined successfully (the SDK returns {hash} without awaiting).
   const waitOk = async (hash: `0x${string}`, label: string): Promise<void> => {
     console.log(`  ${label}: ${hash}`)
     const receipt = await publicClient.waitForTransactionReceipt({ hash })
@@ -72,96 +176,227 @@ async function main(): Promise<void> {
     console.log(`  ${label}: mined ✓ (block ${receipt.blockNumber})`)
   }
 
-  console.log(`account     ${account.address}`)
-  const balance = await publicClient.getBalance({ address: account.address })
-  console.log(`balance     ${formatEther(balance)} BTC`)
-  if (balance < COLLATERAL) {
+  console.log(`account     ${owner}`)
+  const required = await plan(musd, publicClient)
+  const balance = await publicClient.getBalance({ address: owner })
+  console.log(`\nbalance     ${formatEther(balance)} BTC`)
+  if (balance < required) {
     die(
-      `balance ${formatEther(balance)} BTC < collateral ${formatBtc(COLLATERAL)} BTC. Fund the account from the Mezo testnet faucet and retry.`,
+      `balance ${formatEther(balance)} BTC is below the computed requirement ${formatBtc(required)} BTC.
+  Fund the account from the Mezo testnet faucet and retry. Refusing to start a run that
+  cannot finish, because a half-finished run leaves an open position.`,
     )
   }
 
   // Safe re-run: close any pre-existing Trove so the open below is a clean first open.
-  const existing = await musd.getTrove(account.address)
+  const existing = await musd.getTrove(owner)
   if (existing.exists) {
-    console.log(
-      `\nexisting Trove found (debt ${formatMusd(existing.entireDebt)} MUSD), closing first…`,
-    )
-    const { hash } = await musd.close()
-    await waitOk(hash, 'close (pre-existing)')
+    console.log(`\nexisting Trove (debt ${formatMusd(existing.entireDebt)} MUSD), closing first`)
+    await waitOk((await musd.close()).hash, 'close (pre-existing)')
   }
 
-  // 1) Preview (client math), capture what we PROMISE the position will be.
-  const preview = await musd.previewOpen({ collateral: COLLATERAL, debt: DEBT })
-  console.log('\n--- previewOpen ---')
-  console.log(`  entireDebt   ${formatMusd(preview.entireDebt)} MUSD`)
-  console.log(`  icr          ${(Number(formatEther(preview.icr)) * 100).toFixed(2)}%`)
-  console.log(`  liqPrice     $${Number(formatEther(preview.liquidationPrice)).toFixed(2)}`)
-  console.log(`  meetsMinimum ${preview.meetsMinimum}`)
-  if (!preview.meetsMinimum) {
-    die(
-      `preview.meetsMinimum is false for a ${formatMusd(DEBT)} MUSD draw, raise E2E_DEBT_MUSD above the minNetDebt floor.`,
-    )
-  }
+  // ---- 1. previewOpen -> openTrove -> getTrove parity
+  console.log('\n--- previewOpen + openTrove ---')
+  const open = await musd.previewOpen({ collateral: COLLATERAL, debt: DEBT })
+  assertViable('previewOpen', open.viable, open.reasons)
+  console.log(`  predicted entireDebt ${formatMusd(open.entireDebt)} MUSD, icr ${open.icr}`)
+  await waitOk((await musd.openTrove({ collateral: COLLATERAL, debt: DEBT })).hash, 'openTrove')
+  const opened = await musd.getTrove(owner)
+  assertEq('entireDebt after open', opened.entireDebt, open.entireDebt)
+  record('previewOpen', 'exercised', 'verdict and entireDebt matched the chain to the wei')
+  record('openTrove', 'exercised', 'mined, position created')
+  record('getTrove', 'exercised', 'used as the parity oracle for every step')
 
-  // 2) Open for real.
-  console.log('\n--- openTrove (signing) ---')
-  let openHash: `0x${string}`
-  try {
-    const res = await musd.openTrove({ collateral: COLLATERAL, debt: DEBT })
-    openHash = res.hash
-  } catch (e) {
-    if (e instanceof BelowMinimumDebt)
-      die(`BelowMinimumDebt: min ${formatMusd(e.context?.minNetDebt as bigint)} net`)
-    throw e
-  }
-  await waitOk(openHash, 'openTrove')
-
-  // 3) Parity, the live getter must match the preview to the wei. This is the whole point.
-  const live = await musd.getTrove(account.address)
-  console.log('\n--- getTrove (live getter) ---')
-  console.log(`  exists       ${live.exists}`)
-  console.log(`  collateral   ${formatBtc(live.collateral)} BTC`)
-  console.log(`  entireDebt   ${formatMusd(live.entireDebt)} MUSD`)
-  console.log(`  icr          ${(Number(formatEther(live.icr)) * 100).toFixed(2)}%`)
-
-  if (!live.exists) die('post-open getTrove says the Trove does not exist')
-  if (live.collateral !== COLLATERAL) {
-    die(`collateral mismatch: live ${live.collateral} !== sent ${COLLATERAL}`)
-  }
-  // entireDebt is read at a later timestamp than the preview, so a few seconds of interest may
-  // have accrued. Require the live debt to be >= preview and within a tight band (1 bps).
-  if (live.entireDebt < preview.entireDebt) {
-    die(`live entireDebt ${live.entireDebt} < preview ${preview.entireDebt} (should never shrink)`)
-  }
-  const drift = live.entireDebt - preview.entireDebt
-  const band = preview.entireDebt / 10_000n // 1 bps
-  if (drift > band) {
-    die(
-      `entireDebt drift ${formatMusd(drift)} MUSD exceeds 1 bps band, preview math is off, not interest accrual`,
-    )
-  }
+  // ---- 2. getBorrowingCapacity + getBorrowingPower, the two calculators
+  console.log('\n--- capacity and power ---')
+  const capacity = await musd.getBorrowingCapacity(owner)
   console.log(
-    `\n  parity OK, live entireDebt within ${formatMusd(drift)} MUSD of preview (interest accrual).`,
+    `  capacity ${formatMusd(capacity.capacity)}, remaining ${formatMusd(capacity.remaining)}`,
+  )
+  const power = await musd.getBorrowingPower({ collateral: COLLATERAL })
+  console.log(`  borrowingPower at open collateral ${formatMusd(power)} MUSD`)
+  record('getBorrowingCapacity', 'exercised', `capacity ${capacity.capacity}`)
+  record('getBorrowingPower', 'exercised', `power ${power}`)
+
+  // ---- 3. previewAdjustTrove + addCollateral
+  console.log('\n--- previewAdjustTrove + addCollateral ---')
+  const topUp = COLLATERAL / 10n
+  const addPreview = await musd.previewAdjustTrove({ owner, addCollateral: topUp })
+  assertViable('previewAdjustTrove (add)', addPreview.viable, addPreview.reasons)
+  await waitOk((await musd.addCollateral({ amount: topUp })).hash, 'addCollateral')
+  const afterAdd = await musd.getTrove(owner)
+  assertEq('collateral after add', afterAdd.collateral, addPreview.resultingCollateral)
+  record('previewAdjustTrove', 'exercised', 'add leg, resultingCollateral matched to the wei')
+  record('addCollateral', 'exercised', 'mined')
+
+  // ---- 4. previewBorrow + borrow
+  console.log('\n--- previewBorrow + borrow ---')
+  const draw = parseMusd('100')
+  const borrowPreview = await musd.previewBorrow({ owner, amount: draw })
+  assertViable('previewBorrow', borrowPreview.viable, borrowPreview.reasons)
+  await waitOk((await musd.borrow({ amount: draw })).hash, 'borrow')
+  const afterBorrow = await musd.getTrove(owner)
+  assertEq('entireDebt after borrow', afterBorrow.entireDebt, borrowPreview.resultingEntireDebt)
+  record('previewBorrow', 'exercised', 'resultingEntireDebt matched to the wei')
+  record('borrow', 'exercised', `drew ${formatMusd(draw)} MUSD`)
+
+  // ---- 5. previewAdjustTrove (repay leg) + repay
+  console.log('\n--- previewAdjustTrove (repay) + repay ---')
+  const repayAmount = parseMusd('50')
+  const repayPreview = await musd.previewAdjustTrove({ owner, repayDebt: repayAmount })
+  assertViable('previewAdjustTrove (repay)', repayPreview.viable, repayPreview.reasons)
+  await waitOk((await musd.repay({ amount: repayAmount })).hash, 'repay')
+  record('previewAdjustTrove (repay leg)', 'exercised', 'verdict held on chain')
+  record('repay', 'exercised', `repaid ${formatMusd(repayAmount)} MUSD`)
+
+  // ---- 6. maxWithdrawableCollateral + previewWithdrawCollateral + withdrawCollateral
+  //
+  // The strongest single assertion in this script: the maximum the SDK reports must be
+  // ACCEPTED and one wei more must be REFUSED, on the real chain. That is the closed form and
+  // the evaluator agreeing about where the gate is, checked against the contract rather than
+  // against each other.
+  console.log('\n--- maxWithdrawableCollateral + withdrawCollateral ---')
+  const max = await musd.maxWithdrawableCollateral(owner)
+  console.log(`  max ${formatBtc(max.amount)} BTC, limitedBy ${max.limitedBy}`)
+  const atMax = await musd.previewWithdrawCollateral({ owner, amount: max.amount })
+  const pastMax = await musd.previewWithdrawCollateral({ owner, amount: max.amount + 1n })
+  if (!atMax.viable) die('maxWithdrawableCollateral reported an amount its own preview refuses')
+  if (pastMax.viable) die('maxWithdrawableCollateral is not the maximum: one wei more is viable')
+  console.log('  the reported max is viable and one wei more is not ✓')
+  // Withdraw a safe fraction rather than the max, so the position survives for the steps below.
+  const withdrawAmount = max.amount / 4n
+  if (withdrawAmount > 0n) {
+    const wPreview = await musd.previewWithdrawCollateral({ owner, amount: withdrawAmount })
+    assertViable('previewWithdrawCollateral', wPreview.viable, wPreview.reasons)
+    await waitOk(
+      (await musd.withdrawCollateral({ amount: withdrawAmount })).hash,
+      'withdrawCollateral',
+    )
+    const afterW = await musd.getTrove(owner)
+    assertEq('collateral after withdraw', afterW.collateral, wPreview.resultingCollateral)
+    record('previewWithdrawCollateral', 'exercised', 'resultingCollateral matched to the wei')
+    record('withdrawCollateral', 'exercised', `withdrew ${formatBtc(withdrawAmount)} BTC`)
+  } else {
+    record('withdrawCollateral', 'skipped', 'the position had no withdrawable headroom')
+  }
+  record('maxWithdrawableCollateral', 'exercised', 'max accepted, max+1 refused, on chain')
+
+  // ---- 7. adjustTrove, both legs at once
+  console.log('\n--- previewAdjustTrove (combined) + adjustTrove ---')
+  const adjustAdd = COLLATERAL / 20n
+  const adjustDraw = parseMusd('25')
+  const combined = await musd.previewAdjustTrove({
+    owner,
+    addCollateral: adjustAdd,
+    increaseDebt: adjustDraw,
+  })
+  if (combined.viable) {
+    await waitOk(
+      (await musd.adjustTrove({ addCollateral: adjustAdd, borrow: adjustDraw })).hash,
+      'adjustTrove',
+    )
+    const afterAdjust = await musd.getTrove(owner)
+    assertEq('entireDebt after adjust', afterAdjust.entireDebt, combined.resultingEntireDebt)
+    record('adjustTrove', 'exercised', 'combined add + borrow, entireDebt matched to the wei')
+  } else {
+    record('adjustTrove', 'skipped', `preview refused: ${combined.reasons.join(',')}`)
+  }
+
+  // ---- 8. previewRefinance + refinance
+  console.log('\n--- previewRefinance + refinance ---')
+  const refi = await musd.previewRefinance(owner)
+  if (refi.viable) {
+    await waitOk((await musd.refinance()).hash, 'refinance')
+    record('previewRefinance', 'exercised', 'verdict held on chain')
+    record('refinance', 'exercised', 'moved to the current global rate')
+  } else {
+    // Refinance reverts outright in Recovery Mode (`BorrowerOperations.sol:1023`), which is a
+    // system state this script cannot create or clear. Skipped, with the reason.
+    record('previewRefinance', 'exercised', `verdict: not viable [${refi.reasons.join(',')}]`)
+    record('refinance', 'skipped', `preview refused: ${refi.reasons.join(',')}`)
+  }
+
+  // ---- 9. redeem, opt in only
+  //
+  // Redemption acts on the LOWEST ICR Trove in the system, which belongs to someone else. On
+  // a shared testnet that is a real side effect on a third party's position, so it is off by
+  // default and the reason is stated rather than the step quietly omitted.
+  console.log('\n--- redeem ---')
+  if (ALLOW_REDEEM) {
+    const musdBalance = await musd.balanceOf(owner)
+    const amount = musdBalance / 10n
+    if (amount > 0n) {
+      const result = await musd.redeem({ amount })
+      await waitOk(result.hash, 'redeem')
+      record('redeem', 'exercised', `redeemed ${formatMusd(amount)} MUSD`)
+    } else {
+      record('redeem', 'skipped', 'no MUSD balance to redeem')
+    }
+  } else {
+    record('redeem', 'skipped', 'E2E_ALLOW_REDEEM is not 1: redemption hits another account')
+  }
+
+  // ---- 10. liquidate and batchLiquidate
+  //
+  // Both need a Trove below MCR to exist, which this script cannot create: it would have to
+  // move the oracle, and on live testnet it cannot. Reported as unreachable rather than
+  // pretended.
+  record('liquidate', 'skipped', 'needs a Trove below MCR; cannot be created on live testnet')
+  record('batchLiquidate', 'skipped', 'same as liquidate')
+
+  // ---- 11. claim
+  //
+  // `claimCollateral` pays out a surplus that only exists after this account has been
+  // liquidated or fully redeemed against. Unreachable in a self-contained run, and the SDK
+  // reports it honestly rather than throwing, so the call itself is safe to make.
+  console.log('\n--- claim ---')
+  const claim = await musd.claim()
+  record(
+    'claim',
+    claim.claimed ? 'exercised' : 'skipped',
+    claim.claimed ? 'a surplus existed and was claimed' : 'no surplus to claim, which is expected',
   )
 
-  // 4) Repay a slice, then 5) close (which repays the remainder + returns collateral to claim).
-  console.log('\n--- repay 100 MUSD ---')
-  const { hash: repayHash } = await musd.repay({ amount: parseMusd('100') })
-  await waitOk(repayHash, 'repay')
+  // ---- 12. previewClose + close
+  console.log('\n--- previewClose + close ---')
+  const closePreview = await musd.previewClose(owner)
+  console.log(
+    `  requires ${formatMusd(closePreview.musdRequired)} MUSD, shortfall ${formatMusd(closePreview.musdShortfall)}, canMint ${closePreview.canMint}`,
+  )
+  const beforeClose = await musd.getTrove(owner)
+  assertEq(
+    'previewClose.musdRequired',
+    closePreview.musdRequired,
+    beforeClose.entireDebt - parseMusd('200'),
+  )
+  if (!closePreview.viable) {
+    die(
+      `previewClose says the position cannot be closed [${closePreview.reasons.join(',')}]. The
+  account is LEFT OPEN; resolve the reason and re-run, which will close it first.`,
+    )
+  }
+  await waitOk((await musd.close()).hash, 'close')
+  const closed = await musd.getTrove(owner)
+  if (closed.exists) die('close mined but getTrove still reports the Trove as existing')
+  console.log('  closed, getTrove.exists is false ✓')
+  record('previewClose', 'exercised', 'musdRequired matched entireDebt minus the gas reserve')
+  record('close', 'exercised', 'position closed, account left with no Trove')
 
-  console.log('\n--- close ---')
-  const { hash: closeHash } = await musd.close()
-  await waitOk(closeHash, 'close')
-
-  const after = await musd.getTrove(account.address)
-  if (after.exists) die('Trove still exists after close()')
-  console.log('\n  closed, getTrove.exists is false.')
-
+  // ---- the ledger
+  console.log('\n=== what this run exercised ===')
+  for (const row of ledger) {
+    console.log(
+      `  ${row.outcome === 'exercised' ? '✓' : '-'} ${row.surface.padEnd(30)} ${row.note}`,
+    )
+  }
+  const skipped = ledger.filter((r) => r.outcome === 'skipped')
+  console.log(
+    `\n  ${ledger.length - skipped.length} exercised, ${skipped.length} skipped, and every skip has a reason above.`,
+  )
   console.log('\n✓ GO, live lifecycle verified on Mezo testnet.')
 }
 
 main().catch((e) => {
   if (e instanceof MusdError) die(`${e.name} [${e.code}]: ${e.message}`)
-  die(e instanceof Error ? (e.stack ?? e.message) : String(e))
+  die(String(e instanceof Error ? e.message : e))
 })

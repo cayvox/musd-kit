@@ -26,6 +26,7 @@ community (interaction).
 | [Conventions](/08-conventions) | TS config, naming, units, viem patterns, release hygiene |
 | [Review and validated surface](/09-review-and-validated-surface) | What has been independently reviewed, what is actually validated and how, and where the SDK diverges from the protocol |
 | [Migration, 0.1 to 0.2](/11-migration-0.1-to-0.2) | **Read this if you have 0.1.0 in production.** Every breaking change with before and after code, plus which 0.1.0 behaviours return wrong numbers and which fail transactions |
+| [Release runbook](/12-release-runbook) | The ordered steps to publish, verify, deprecate and deploy, and what npm does and does not allow when a release is wrong |
 | [Glossary](/10-glossary) | MUSD and Liquity-fork vocabulary, used precisely |
 
 **Reading order for a fresh start:** this overview, then [Ground truth](/01-ground-truth)

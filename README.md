@@ -40,7 +40,8 @@ threshold. Mezo's own developer guide hands you ~15 lines of raw hint computatio
 and points you to a test file; a real Mezo dApp (`pikolo`) hand-built a borrowing-
 power calculator and a collateral-health monitor. That work is duplicated,
 correctness-sensitive, and shipped by no one as a reusable package. `musd-kit`
-writes it once, correctly, validated against the real contracts.
+writes it once, against the real contracts, with the evidence for each surface
+stated rather than asserted.
 
 **Correctness is the product.** Live position data comes from the contract's own
 authoritative getters, and `getTrove` says exactly which of its fourteen fields are

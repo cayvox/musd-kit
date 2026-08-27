@@ -171,11 +171,23 @@ the fix is more lines, not a stronger adjective on the ones already there.
 Each of the three closes one specific absence that produced MK-029.
 
 - **Every version the build depends on is PINNED in the workflow, not floated** (MK-029 for Node,
-  MK-041 for Foundry). `stable` and `latest` are not versions, they are subscriptions to someone
-  else's release schedule. MK-041 is what that costs: `foundry-rs/foundry-toolchain` was set to
-  `version: stable`, Foundry shipped anvil 1.8.0 mid afternoon, and the fork gate went from green to
-  red about two hours later on a commit that changed one markdown file. Bumping a pinned version is
-  a deliberate act, in its own commit, with the run read afterwards.
+  MK-041 for Foundry, MK-044 for the rest). `stable`, `latest` and a bare major like `20` are not
+  versions, they are subscriptions to someone else's release schedule. MK-041 is what that costs:
+  `foundry-rs/foundry-toolchain` was set to `version: stable`, Foundry shipped anvil 1.8.0 mid
+  afternoon, and the fork gate went from green to red about two hours later on a commit that changed
+  one markdown file. Bumping a pinned version is a deliberate act, in its own commit, with the run
+  read afterwards.
+
+  **The line is what EXECUTES the project's code.** Node, pnpm and Foundry are pinned to exact
+  versions because a change to any of them changes what the suite measures. Workflow action majors
+  (`actions/checkout@v5`) are left floating, because a major float can break a run loudly but cannot
+  silently change a test result, and pinning them means commit SHAs that a single maintainer has to
+  bump forever. That judgment is written into `ci.yml` beside the pins so it can be argued with.
+
+  **And the cost, because pinning is not free: pins go stale.** A pinned runtime stops receiving
+  fixes until someone bumps it, and nothing will remind you. That is the trade, taken deliberately:
+  a stale pin fails visibly when you bump it, a floating label fails invisibly under a commit that
+  changed nothing.
 - **Step 2's Node requirement** exists because local and CI evidence cannot be compared unless
   they ran the same runtime. Five green local runs on Node 20.20.1 and four red fork gate runs
   on 24.19.0 were all reporting honestly and were never in contradiction. Running the fork

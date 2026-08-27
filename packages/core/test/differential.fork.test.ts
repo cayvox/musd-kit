@@ -35,6 +35,17 @@ const ONLY_CASE =
  * why this is an index into the same generation rather than a second seed.
  */
 const FROM_CASE = Number(process.env.MK_DIFF_FROM ?? 0)
+/**
+ * Run only cases BELOW this index, from the same generated set. The upper half of a slice.
+ *
+ * `MK_DIFF_FROM` alone could only ever cut a tail, so a thousand cases had to be either one
+ * run or a series of overlapping ones. Measured on the 0.2.0 release sweep: cases 1 to 100
+ * took 582s (5.8s each) and cases 101 to 200 took 882s (8.8s each), because the cost grows
+ * with the LIFE of the anvil process rather than with the case index. A single thousand case
+ * run therefore reaches this test's own timeout part way through, and the fix is a fresh
+ * anvil per slice, which needs a bound at both ends.
+ */
+const TO_CASE = process.env.MK_DIFF_TO !== undefined ? Number(process.env.MK_DIFF_TO) : undefined
 
 describe('Differential harness, preview verdict against chain outcome', () => {
   it(`sweeps ${CASES} generated cases`, async () => {
@@ -52,11 +63,12 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     // to be replayable, and a seed only visible on failure is a seed nobody has when they need
     // it.
     console.log(
-      `[differential] seed=${SEED} cases=${CASES} minNetDebt=${minNetDebt} price=${price}${FROM_CASE > 0 ? ` FROM_CASE=${FROM_CASE}` : ''}${ONLY_CASE !== undefined ? ` ONLY_CASE=${ONLY_CASE}` : ''}`,
+      `[differential] seed=${SEED} cases=${CASES} minNetDebt=${minNetDebt} price=${price}${FROM_CASE > 0 ? ` FROM_CASE=${FROM_CASE}` : ''}${TO_CASE !== undefined ? ` TO_CASE=${TO_CASE}` : ''}${ONLY_CASE !== undefined ? ` ONLY_CASE=${ONLY_CASE}` : ''}`,
     )
 
     let cases: DiffCase[] = generateCases(SEED, CASES, { minNetDebt, price })
     if (FROM_CASE > 0) cases = cases.filter((c) => c.index >= FROM_CASE)
+    if (TO_CASE !== undefined) cases = cases.filter((c) => c.index < TO_CASE)
     if (ONLY_CASE !== undefined) cases = cases.filter((c) => c.index === ONLY_CASE)
 
     const results: CaseResult[] = []
