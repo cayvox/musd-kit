@@ -75,6 +75,7 @@ claim about it was not).
 | MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
 | MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
 | MK-039 | The measurement that sized the default gas margin was never committed, so it could not be re-run, and its description cannot be right | S3 | fixed |
+| MK-040 | The published export map never points at the CommonJS type declarations it ships, so a CJS consumer on node16 resolution cannot typecheck | S2 | fixed |
 
 ---
 
@@ -2534,6 +2535,72 @@ dropped on an unknown fraction of its sends (MK-037), and there is now no way to
 **Fixed by** committing the lab, opt in behind `MK_GAS_LAB=1` so it costs CI nothing, with its
 runtime, its knobs and the reconstruction's numbers written at the top of the file so the next run
 has something to disagree with.
+
+---
+
+## MK-040 · The export map ships CommonJS types and never points at them
+
+**Class** S2 · **Status** fixed · **Found in release preparation, by typechecking a consumer against
+the packed tarball rather than against the workspace**
+
+**What happens.** Both packages declare `"type": "module"` and build BOTH declaration files,
+`dist/index.d.ts` and `dist/index.d.cts`. `dist/index.d.cts` is in the published tarball. **Nothing
+in `package.json` ever refers to it.** The export map carried one top level `types` condition:
+
+```json
+"exports": { ".": {
+  "types": "./dist/index.d.ts",
+  "import": "./dist/index.js",
+  "require": "./dist/index.cjs"
+} }
+```
+
+One `types` for both conditions means a CommonJS consumer resolving `require` gets `index.cjs` at
+runtime and `index.d.ts` at type level. In a `"type": "module"` package `index.d.ts` describes an ES
+module, so TypeScript refuses it:
+
+```
+error TS1479: The current file is a CommonJS module whose imports will produce 'require'
+calls; however, the referenced file is an ECMAScript module and cannot be imported with
+'require'.
+```
+
+**Blast radius, measured rather than reasoned.** A consumer project was created, the packed 0.2.0
+tarballs installed into it, and one probe file typechecked under four configurations:
+
+| Consumer | `module` | `moduleResolution` | Before | After |
+|---|---|---|---|---|
+| CommonJS | `node16` | `node16` | **exit 2, TS1479** | exit 0 |
+| CommonJS | `esnext` | `bundler` | exit 0 | exit 0 |
+| ESM | `node16` | `node16` | exit 0 | exit 0 |
+| ESM | `esnext` | `bundler` | exit 0 | exit 0 |
+
+So it is **one configuration of four**, and it is types only: `require('@musd-kit/core')` returns all
+88 exports at runtime in every case, before and after. A CJS consumer on Node16 or NodeNext
+resolution could run the package and could not typecheck against it.
+
+**It shipped in 0.1.0.** The published `@musd-kit/core@0.1.0` tarball carries the identical export
+map, so this is not a 0.2.0 regression. It was found now because release preparation typechecked
+against the PACKED TARBALL rather than against the workspace, where path mapping hides it. A
+workspace typecheck is green either way, which is why every previous wave missed it.
+
+**Fix.** Nest the `types` condition inside each of `import` and `require`, which is what a dual
+package has to do:
+
+```json
+"exports": { ".": {
+  "import":  { "types": "./dist/index.d.ts",  "default": "./dist/index.js"  },
+  "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+} }
+```
+
+`main`, `module` and `types` stay at the top level for resolvers that do not read `exports`.
+
+**Pinned by** the four way matrix above, re-run against the repacked tarballs. It is not pinned by an
+automated test: doing that needs a pack, an install into a scratch project and a `tsc` run, which is
+its own job rather than a unit test. **That is a gap, and it is stated here rather than left
+implied.** The check is written down in this entry and in the release preconditions of the pull
+request that fixed it.
 
 ---
 
