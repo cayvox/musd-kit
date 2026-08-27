@@ -166,3 +166,66 @@ describe('MK-042, the thresholds are the contract constants', () => {
     expect(evaluateAdjust({ ...base, isRecoveryMode: true }).icrThreshold).toBe(CCR)
   })
 })
+
+describe('MK-042, the clamping branches, which only fire on degenerate inputs', () => {
+  it('a Trove whose debt is at or below the gas compensation clamps rather than underflowing', () => {
+    // `_getNetDebt` (`:856`) subtracts the 200 MUSD reserve. A Trove cannot normally hold less
+    // than that, but the evaluator must not produce a negative if one somehow does: the
+    // clamp is why a preview returns a verdict instead of throwing.
+    const dust = { ...base, entireDebt: MUSD_GAS_COMPENSATION }
+    const p = evaluateAdjust({ ...dust, repayDebt: 1n })
+    expect(p.reasons).toContain('REPAY_EXCEEDS_DEBT')
+    expect(p.reasons).toContain('BELOW_MINIMUM_DEBT')
+  })
+
+  it('a withdrawal larger than the balance reports the reason rather than a negative ratio', () => {
+    const p = evaluateAdjust({ ...base, withdrawCollateral: base.collateral * 2n })
+    expect(p.reasons).toContain('WITHDRAWAL_EXCEEDS_COLLATERAL')
+    expect(p.resultingIcr, 'clamped at zero, not negative').toBe(0n)
+  })
+
+  it('close clamps when this Trove is the whole system', () => {
+    const only = evaluateClose({
+      status: 1,
+      collateral: 2n * BTC,
+      entireDebt: 100_000n * MUSD,
+      musdBalance: 500_000n * MUSD,
+      canMint: false,
+      isRecoveryMode: false,
+      price: PRICE,
+      systemColl: 2n * BTC,
+      systemDebt: 100_000n * MUSD,
+    })
+    // Removing the only position leaves an empty system: no division by zero, and with
+    // canMint false the TCR gate does not run at all (`:964`).
+    expect(only.reasons).not.toContain('TCR_BELOW_CCR')
+    expect(only.viable).toBe(true)
+  })
+
+  it('close with canMint false skips the TCR gate even when TCR would fail', () => {
+    const thin = {
+      status: 1,
+      collateral: 2n * BTC,
+      entireDebt: 100_000n * MUSD,
+      musdBalance: 500_000n * MUSD,
+      isRecoveryMode: false,
+      price: PRICE,
+      systemColl: 2n * BTC + 1n,
+      systemDebt: 100_001n * MUSD,
+    }
+    expect(evaluateClose({ ...thin, canMint: true }).reasons).toContain('TCR_BELOW_CCR')
+    expect(evaluateClose({ ...thin, canMint: false }).reasons).not.toContain('TCR_BELOW_CCR')
+  })
+
+  it('maxWithdrawable handles a system with no collateral to give', () => {
+    const m = computeMaxWithdrawable({
+      collateral: 0n,
+      entireDebt: 100_000n * MUSD,
+      isRecoveryMode: false,
+      price: PRICE,
+      systemColl: 0n,
+      systemDebt: 20_000_000n * MUSD,
+    })
+    expect(m.amount).toBe(0n)
+  })
+})
