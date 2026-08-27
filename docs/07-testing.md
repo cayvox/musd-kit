@@ -146,6 +146,74 @@ cases:
 
 ---
 
+## 4a. The differential harness (verdict against chain outcome)
+
+`packages/core/test/differential.fork.test.ts`. For each generated case it runs the SDK
+preview, then **actually attempts the operation on the fork**, then asserts the verdict matches
+whether the transaction succeeded.
+
+**Why it exists, and why it is not more formula checks.** The formula level cross checks against
+the contract's own `pure` helpers already exist and are green (`09-review-and-validated-surface`
+§3). They could not have caught MK-004, MK-005 or MK-006, because all three were preview
+**verdicts** that disagreed with the chain while every formula agreed.
+
+**Two failure directions, always reported separately**, because they are not equally bad:
+
+| Direction | What it means | What it costs a user |
+|---|---|---|
+| `FALSE_VIABLE` | the preview said go, the chain refused | a failed transaction, gas spent |
+| `FALSE_BLOCKED` | the preview said no, the chain would have accepted | access to their own position, silently |
+| `NUMBERS` | verdicts agreed, a predicted number missed | a wrong figure in the UI |
+
+**Generation is seeded and boundary weighted**, 60% boundary / 20% extreme / 20% middle, stated
+in `BAND_WEIGHTS` rather than tuned quietly. A uniform sweep spends its budget in the middle of
+the space where nothing has ever been wrong; every S1 in this repository lived at a boundary.
+The boundary band targets the debt floor, the MCR and CCR thresholds and zero, each jittered one
+wei either side.
+
+**Every case runs in its own `evm_snapshot` and reverts.** Cases must not see each other, or a
+failure becomes a function of everything before it and the seed stops reproducing it.
+
+```sh
+pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
+MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep
+MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
+```
+
+**The seed is printed on every run, passing or failing.** A seed only visible on failure is a
+seed nobody has when they need it.
+
+### Placement, decided from the measured cost
+
+Measured on the declared Node at the pinned block, not estimated:
+
+| | |
+|---|---|
+| per case, fresh anvil | **about 3 seconds** |
+| per case, late in a long run | **about 20 seconds** |
+| 1000 cases | **about 96 minutes**, across two slices |
+
+**The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
+seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
+cases against a fresh anvil came back to 3 seconds each. So the cost grows with the LIFE of the
+anvil process, not with the case index, which is why `MK_DIFF_FROM` exists: it slices the same
+generated set across runs rather than generating a different set.
+
+**The split, and the reasoning.**
+
+- **On every push: 24 cases**, the default, about 90 seconds on a fresh fork. It is deterministic
+  from a fixed seed, so it is a gate rather than a lottery, and it is small enough to sit beside
+  a fork suite that already takes about 50 seconds.
+- **The full 1000 case sweep: on demand and on a schedule, never on push.** A ninety minute job
+  on the push path would make every merge wait for it, and people would start skipping it.
+- **It is not hidden either**, which is the other failure mode. `docs/08-conventions.md` §10 is
+  where a wave's obligations live, and the sweep belongs in a wave's acceptance when preview or
+  math code changed, with the seed reported.
+
+**The fork state cache applies**, verified rather than assumed: these runs used
+`~/.foundry/cache/rpc/31611/15043414` like every other fork test, and the harness warm up
+reported the usual `fork state warmed in 5xms (230 sorted Troves)` rather than a cold refetch.
+
 ## 5. Determinism & CI matrix
 
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in
