@@ -1,6 +1,6 @@
 {
   "name": "@musd-kit/react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "wagmi-idiomatic React hooks for MUSD on Mezo (Mezo MUSD SDK), over @musd-kit/core. Consumes any wagmi context (e.g. @mezo-org/passport).",
   "license": "MIT",
   "author": "Cayvox Labs <info@cayvox.com>",
