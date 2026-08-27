@@ -78,6 +78,75 @@ claim about it was not).
 
 ---
 
+## Provenance of the numbers in this register
+
+Every quantitative claim in this file and in `docs/09-review-and-validated-surface.md` was audited
+against step 10 of the wave checklist (`docs/08-conventions.md`): **a measurement is citable only if
+the code that produced it is committed and someone else can run it, with the command recorded.**
+
+The audit was run because a number that decided a shipped default turned out not to be checkable
+(MK-039). **No number below has been deleted or softened.** Where the evidence is weaker than the
+text read, the entry now says which part is evidence and which part is not.
+
+| Class | Count | What it means |
+|---|---|---|
+| **Reproducible** | 18 | The instrument is committed. The command is named below or in the entry |
+| **Observed once** | 5 | One execution, pinned by a run ID. Every one is enumerated below |
+| **Observed once, unlinked** | 3 | One execution whose artifact was not preserved. Grandfathered, and the label says it cannot be re-checked |
+| **Unestablished** | 8 | Inferred, or the instrument is gone, or the premise turned out to be wrong |
+
+**34 claims, counted as claims rather than as lines**, since several are quoted in more than one
+place. A count of numerals would be larger and would mean less.
+
+### The reproducible set, and the command for each
+
+| Measurement | Where | Command |
+|---|---|---|
+| Flake rates and run windows | MK-016, MK-021, MK-022, MK-023, MK-024, MK-025, MK-026, MK-030 | `pnpm test:fork`, `pnpm test:coverage` |
+| Coverage against the ratchet | MK-016, and the floors in `docs/07-testing.md` §4 | `pnpm test:coverage` |
+| The 1000 case differential sweep, 0 mismatches, 41 skipped | MK-016, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` (two slices, see `MK_DIFF_FROM`) |
+| Chain constants and the fee exempt scan at both pinned blocks | MK-014, MK-018, `docs/09` §6 | `pnpm facts --stdout` |
+| Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
+| The zero debt sentinel value | MK-017 | `pnpm test:unit` |
+| The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
+
+**One caveat on the flake rates, stated once rather than eight times.** The instrument is committed
+and the command is nameable, so these are reproducible in the sense the rule means. They were
+measured on trees that have since changed, so re-running today measures today's suite rather than
+that window. The window each rate was taken from is named in its own entry, and that naming is what
+makes the two comparable at all.
+
+### The observed once set, every one named
+
+**Pinned by an identifier (5).** MK-034's
+[32962767819](https://github.com/cayvox/musd-kit/actions/runs/32962767819) on `main` at `e7f77f4`;
+MK-035's [32983444134](https://github.com/cayvox/musd-kit/actions/runs/32983444134), the `useRedeem`
+revert; MK-029's six run table showing five consecutive red merges, `32628458775` through
+`32703530387`; MK-036's `3aca53b` run `32990919057`, which was **failure** and had been reported
+twice as not existing; MK-037's `margin=1.5%`, in
+[33041778521](https://github.com/cayvox/musd-kit/actions/runs/33041778521),
+[33042756192](https://github.com/cayvox/musd-kit/actions/runs/33042756192) and
+[33043038071](https://github.com/cayvox/musd-kit/actions/runs/33043038071).
+
+**Artifact not preserved (3).** MK-035's traced redemption, 610270 to 710023 gas ending in
+`ActivePool` out of gas at call depth 4; MK-037's payload diff and its two against one request
+counts; MK-037's balance threshold refutation. All three were local probes, deleted once they had
+answered their question, and all three are load bearing. They are grandfathered by the rule that the
+audit itself produced, and that clause does not extend forward.
+
+### The unestablished set
+
+MK-035's nine path spread table and everything derived from its 10.16%; MK-035's 2 in 40 and 0 in 80
+isolation rates; MK-035's 610270 to 710023 spread read as a spread across 40 attempts rather than as
+one traced growth; MK-016's 670 opens at 576469 to 605443 gas; MK-010's seven point fee shape probe;
+MK-010's roughly 77 sequential calls, which is inferred from the search's bit width rather than
+counted; MK-020's twelve `latestRoundData()` reads.
+
+**Seven of the eight are the same defect**, which is why MK-039 is filed as a process finding rather
+than a numerical one: the instrument was ad hoc, it answered its question, and it was thrown away.
+
+---
+
 ## MK-001 · `isLiquidatable` applies a Recovery Mode rule the protocol does not have
 
 **Class** S1 · **Status** fixed
@@ -462,7 +531,8 @@ it.
 
 **SDK location.** `packages/core/src/math/getBorrowingPower.ts`. The binary search issues one
 `getBorrowingFee` call per iteration over a caller supplied, unvalidated collateral amount. Roughly
-77 sequential calls for one BTC, and far more for adversarial inputs. A UI bound to a text input can
+77 sequential calls for one BTC (**inferred**, from the search's bit width rather than counted), and
+far more for adversarial inputs. A UI bound to a text input can
 inflict this on its own RPC endpoint.
 
 **Decision.** Fix now. Validate the input, bound the iteration count, and cut the per iteration
@@ -481,8 +551,12 @@ round trips.
    answer is solved in closed form, and the chain is asked for a real `getBorrowingFee` only to
    CONFIRM it. Roughly 77 sequential calls becomes about four.
 
-**The fee shape was established, not assumed.** Probed against the forked deployment at the pinned
-block, `getBorrowingFee(d)` equals `borrowingRate() * d / DECIMAL_PRECISION()` EXACTLY, at
+**The fee shape was established, not assumed.** **Provenance: UNESTABLISHED.** The probe was
+ad hoc and was not committed, so the seven point check below cannot be re-run. It is load bearing
+only as a premise, and the code does not rely on it: the closed form's answer is confirmed against a
+real `getBorrowingFee` call on every invocation and falls back to the bounded search on a mismatch,
+which is why this stays a premise rather than a guarantee. Probed against the forked deployment at
+the pinned block, `getBorrowingFee(d)` equals `borrowingRate() * d / DECIMAL_PRECISION()` EXACTLY, at
 `d` = 1, 7, 1000, 1e18, 1.234...e18, 5000e18 and 1e30. 1000 matters: at the live rate it is the
 smallest sample where the floor division is visible. Live values are `borrowingRate() = 1e15`
 against `DECIMAL_PRECISION() = 1e18`, a flat 0.1% with no intercept, no tier and no minimum.
@@ -774,7 +848,8 @@ retries. `refreshOracle` went too, as MK-032 rather than as a mitigation, and it
 say `mineBlocks(1)`, which is what it always did.
 
 **The fixed 6M gas cap in `openTroveRaw` is DEFERRED, not removed**, and the reason is evidence
-gathered later in the same wave. 670 opens used 576469 to 605443 gas against a 6000000 cap, roughly
+gathered later in the same wave. **Provenance: UNESTABLISHED**, no instrument was committed for it
+and none exists now. 670 opens used 576469 to 605443 gas against a 6000000 cap, roughly
 a tenfold headroom never approached, which argues the cap does nothing. Against that, the phase 6
 redemption failure this wave finally read reverted with `gasUsed: 710023`, zero logs, and a replay
 at the mined block that did NOT revert, which is the signature of a gas or state dependence rather
@@ -1001,8 +1076,14 @@ this finding combined with the ordering coupling that remains in MK-016, and is 
 given an ID of its own.
 
 **Ground truth for the fix.** Whether the endpoint honours a historical block tag on a precompile
-served outside the EVM is a property of the endpoint, not something to assume, so it was measured:
-twelve consecutive `eth_call` reads of `latestRoundData()` pinned to block 15043414 returned one
+served outside the EVM is a property of the endpoint, not something to assume, so it was measured.
+
+> **Provenance: UNESTABLISHED.** The probe was ad hoc and was not committed, so the reads below
+> cannot be re-run as they were, though a chain read at a pinned block is cheap to redo from
+> scratch. The conclusion is separately pinned by the shim itself, which throws for any block other
+> than the one its seed was recorded at.
+
+Twelve consecutive `eth_call` reads of `latestRoundData()` pinned to block 15043414 returned one
 identical round (`roundId 13948341`, answer `77051107320000000000000`), a read pinned one million
 blocks earlier returned a genuinely older round (`roundId 12899794`), and a read at block 4096
 returned `header not found`, which is the endpoint's pruning boundary rather than a silent wrong
@@ -1958,6 +2039,13 @@ only place that re-simulates afterwards and looks.
 **The measurement that sized the fix.** Every write path the SDK exposes, 12 attempts each from a
 byte identical `evm_snapshot` so nothing but the block timestamp differed:
 
+> **Provenance: UNESTABLISHED.** The script that produced this table was never committed, so no one
+> can re-run it (MK-039, and the rule is now step 10 of the wave checklist in
+> `docs/08-conventions.md`). The committed successor,
+> `packages/core/test/gas-variance.fork.test.ts`, measures `redeemCollateral` only, not all nine
+> paths. The table is kept rather than deleted because it is what the default was derived from and a
+> reader has to be able to see that; it is not evidence anyone can check.
+
 | Path | gas used, min to max | spread | margin viem's estimate left |
 |---|---|---|---|
 | `openTrove` | 605419 to 605419 | 0% | 1.51% |
@@ -1980,8 +2068,21 @@ multiplier keyed to "the sorted list paths" would have missed the two worst.
 The 0% rows are the window being small, not the path being safe. `redeem` showed 0% across these 12
 and 16.4% across the 40 that produced the traced failure. **The spread here is a lower bound.**
 
+That last sentence has since been undercut by its own successor. The committed lab, run at three
+redemption sizes, produced gas figures **identical to the unit** within every fixture, including
+across five hours of warped clock (MK-039). From byte identical state at a given timestamp the EVM
+cannot produce a spread, so the 0% rows are what the description predicts and the seven non zero
+rows are what it does not. Something was varying that "nothing but the block timestamp differed"
+does not account for, and with the instrument gone there is no way to find out what.
+
 **The default: 25%, and it is not a round number chosen because buffers are round.** It is roughly
 1.5 times the worst growth ever traced (16.4%) and 2.5 times the worst typical spread (10.16%).
+
+> **Provenance of the derivation, one leg each.** The 16.4% is **observed once, unlinked**: a real
+> transaction that really reverted, traced to `ActivePool` out of gas at call depth 4, whose log was
+> not preserved. The 10.16% is **unestablished**, resting on the table above. **The default is not
+> being softened.** One leg standing is enough to justify a margin, and 25 clears the traced growth
+> by half again on that leg alone. What changes is that the record now says which leg is which.
 `DEFAULT_GAS_MARGIN_PERCENT` carries that derivation, and `createMusdClient({ gasMarginPercent })`
 overrides it. `0` restores the old behavior.
 
@@ -2062,6 +2163,13 @@ The work varies by ten times the margin. That is the finding in one line.
 stamps blocks with wall clock, so interest accrual differs, so the redemption's traversal and
 partial arithmetic differ. The harness makes this easy to hit; it does not create it. On any chain
 the estimate is taken before the block the transaction mines in.
+
+> **Provenance: the trace is UNESTABLISHED as a rate and OBSERVED ONCE as a growth.** Read the two
+> apart. That one `redeemCollateral` grew to 710023 and reverted with `ActivePool` out of gas at
+> call depth 4 is an observation of a real transaction; its log was not preserved, so it is
+> **observed once, unlinked**. That 2 of 40 attempts did so is a claim about a population, it needed
+> an instrument, the instrument was never committed, and the rebuilt one produces no variance at all
+> across 52 executions (MK-039). **The growth still justifies the margin. The rate is not evidence.**
 
 **The isolation rate against the suite rate.** 2 in 40 operations in isolation, roughly 5%. In the
 full suite the same class of failure appeared in roughly 1 run in 5, and a run performs about six
@@ -2198,6 +2306,14 @@ hypothesis and it is wrong.** It was tested directly, by funding an account both
 computed `blockGasLimit * maxFeePerGas + value` threshold and probing each side: both sides reported
 `estimateOk=true` and `writeOk=true`. The hypothesis is not merely unproven, it is refuted.
 
+> **Provenance: OBSERVED ONCE, linked.** The margin=1.5% line appears in three CI runs on the P9
+> branch, recovered from the logs rather than recalled:
+> [33041778521](https://github.com/cayvox/musd-kit/actions/runs/33041778521),
+> [33042756192](https://github.com/cayvox/musd-kit/actions/runs/33042756192) and
+> [33043038071](https://github.com/cayvox/musd-kit/actions/runs/33043038071), all three reading
+> `[MK-035] sentGasLimit=614550 gasUsed=605407 margin=1.5%`. This entry cited the number for a wave
+> with no way to reach it; the links were added by the provenance audit.
+
 The second hypothesis, that the CI failures were all balance errors, is also wrong. Correlating the
 CI log line by line, the warning immediately preceding `[MK-035] margin=1.5%` was
 `The contract function "openTrove" reverted.`, not a balance error. The balance errors in that log
@@ -2226,6 +2342,18 @@ address only:   estimateGasRequests=1  gasFieldSent=undefined  nonceSent=undefin
 
 Identical answer, one fewer round trip, and no self imposed cap. **This is MK-035's own mechanism, a
 gas limit set too low from a stale estimate, reappearing one level up inside the fix for MK-035.**
+
+> **Provenance of the figures above: OBSERVED ONCE, UNLINKED.** The payload diff, the two against
+> one request counts, the `0xa1c58` cap and the 662616 result all came from throwaway fork probes
+> that were deleted after they answered the question, and the balance threshold refutation
+> (`estimateOk=true` and `writeOk=true` on both sides) came from another. Written before step 10 of
+> the checklist existed, and by that rule they would not be citable today.
+>
+> **What IS reproducible is the conclusion, which is the part that matters.**
+> `packages/core/test/write-gas-fallback.test.ts` asserts that the estimate is asked with an address
+> and not an `Account` object, chain free, and fails when the object is put back:
+> `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts`. The
+> illustrative numbers are not checkable; the behaviour they illustrate is pinned.
 
 **How far this generalises.** The two halves generalise differently and the distinction matters.
 The node half is standard: `eth_estimateGas` bounding its search by a supplied `gas` field is
