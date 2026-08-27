@@ -214,6 +214,33 @@ generated set across runs rather than generating a different set.
 `~/.foundry/cache/rpc/31611/15043414` like every other fork test, and the harness warm up
 reported the usual `fork state warmed in 5xms (230 sorted Troves)` rather than a cold refetch.
 
+## 4b. The gas variance lab (MK-039)
+
+`packages/core/test/gas-variance.fork.test.ts`. Opt in, skipped unless `MK_GAS_LAB=1`.
+
+```sh
+MK_GAS_LAB=1 pnpm test:fork                                       # 40 redemptions, margin 25
+MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 MK_GAS_LAB_MARGIN=0 \
+  MK_GAS_LAB_N=6 MK_GAS_LAB_STEP=3600 pnpm test:fork              # a small fixture, no margin
+```
+
+| knob | default | what it changes |
+|---|---|---|
+| `MK_GAS_LAB_N` | 40 | attempts, each a real transaction at about 45 seconds |
+| `MK_GAS_LAB_MARGIN` | 25 | `gasMarginPercent` on the client under test |
+| `MK_GAS_LAB_AMOUNT` | 5000 | MUSD redeemed per attempt; traversal depth, and so gas, scales with it |
+| `MK_GAS_LAB_STEP` | 0 | seconds warped before attempt `i`, times `i`. Zero holds the clock still |
+
+**Why it is committed at all.** `DEFAULT_GAS_MARGIN_PERCENT` is 25 because of a measurement, and
+the script that produced that measurement was never committed, so it could not be re-run when a
+later wave was asked to. A number that decides a default has to be checkable by someone who was not
+there. The reconstruction's own numbers are at the top of the file, so the next run has something
+to disagree with, and what they show is in `FINDINGS.md` under MK-039.
+
+**It reports the `GasDecision` source per attempt**, not just the gas. An attempt that fell back
+(MK-037) sent no margin at all, and a lab that cannot see which of its attempts those were is
+measuring a population it has not identified. That is the specific hole MK-039 records.
+
 ## 5. Determinism & CI matrix
 
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in

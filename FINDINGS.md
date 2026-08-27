@@ -74,6 +74,7 @@ claim about it was not).
 | MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
 | MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
 | MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
+| MK-039 | The measurement that sized the default gas margin was never committed, so it could not be re-run, and its description cannot be right | S3 | fixed |
 
 ---
 
@@ -2257,6 +2258,15 @@ not applied. **It was deliberately not weakened to make CI green**, because an a
 when the thing it asserts is untrue is worth less than a red build. It now passes for the right
 reason.
 
+**Was the P7 window running without the margin?** The wave that fixed this was asked to re-measure
+the isolation rate P7 reported, 2 in 40 before and 0 in 80 after, on the suspicion that part of that
+window had silently lost the margin. It cannot be answered for that window and it never will be:
+nothing recorded, at the time, which sends carried a margin and which did not. That is the finding.
+Going forward it is answerable from the SDK itself, on every send, without a lab: `gas.source`. In
+52 redemptions across three fixtures on the rebuilt lab, every one reported `source: 'estimate'` and
+none reported `source: 'fallback'`. Separately, the rebuilt lab does not reproduce P7's variance at
+all, which is MK-039.
+
 **Pinned by** `packages/core/test/write-gas-fallback.test.ts`, two independent assertions that fail
 for different reasons: one on the SHAPE of the estimate request, so the mechanism cannot return, and
 one on the RESULT, so a future fallback cannot go trace free again. Both proved by mutation: putting
@@ -2347,6 +2357,55 @@ acceptance, and grafting one onto a wave scoped to MK-037 is how scope creep ent
 What changes now is the false claim: `docs/03-core-api.md` is corrected to say these two ARE gated in
 normal mode, with the citations above, and the scope limit is restated to cover four writes rather
 than two.
+
+---
+
+## MK-039 · The measurement behind the gas margin was not reproducible
+
+**Class** S3 · **Status** fixed · **Found by being asked to re-run it**
+
+**What happened.** `DEFAULT_GAS_MARGIN_PERCENT` is 25 because of a measurement: the same
+`redeemCollateral` call varying from 610270 to 710023 gas across 40 attempts, 2 of which reverted,
+against a limit carrying a 1.5% margin. That number decided a default every write in this SDK
+carries. The script that produced it was never committed. When the next wave was asked to re-run
+it, there was nothing to re-run, and it had to be rebuilt from a prose description.
+
+**And the description cannot be right.** Rebuilt, the lab is now committed as
+`packages/core/test/gas-variance.fork.test.ts`, and across three fixtures on a fork of testnet at
+block 15043414, every attempt restored from the same `evm_snapshot`:
+
+| redeem | attempts | gas limit | gas used | realised margin | reverts | fallbacks |
+|---|---|---|---|---|---|---|
+| 100 MUSD | 40 | 442640 | 408178 | 8.4% | 0 | 0 |
+| 5000 MUSD | 6 | 726657 | 615858 | 17.9% | 0 | 0 |
+| 20000 MUSD | 6 | 2087949 | 1642624 | 27.1% | 0 | 0 |
+
+**The gas used was identical to the unit within every fixture.** The last two ran with an extra
+hour warped onto the clock per attempt, out to five hours, and the figure still did not move.
+
+That is not a surprising result, it is the only possible one. **EVM execution is deterministic.**
+From byte identical state at a given timestamp the same call consumes the same gas, necessarily.
+So a 16% spread across 40 attempts proves that something was varying which the description did not
+name, and the description said the state was byte identical. Hours of accrued interest are ruled
+out by the two fixtures above. What is NOT ruled out, and what this entry does not claim to have
+established: a deeper traversal in which a partial redemption flips between troves, a fixture
+mutated by other tests in the same run, or attempts that were not snapshot isolated at all.
+
+**What this does not overturn.** The 610270 to 710023 growth was observed on a real transaction and
+the revert it ended in was traced to `ActivePool` running out of gas at call depth 4. That happened.
+The margin is still justified: at the 100 MUSD fixture the node's own estimate leaves only 8.4%
+headroom, well under the 16.4% growth traced, which is exactly the gap the margin closes. What is
+not established is the "2 in 40" RATE, because the lab that produced it cannot be reproduced and
+the rebuilt one produces no variance at all.
+
+**Why it is S3 rather than S2.** No consumer is affected. The default is defensible on the traced
+growth alone. What was lost is the ability to check a number that decided a default, which is a
+process defect, and the kind that compounds: the P7 window also ran with the margin silently
+dropped on an unknown fraction of its sends (MK-037), and there is now no way to find out which.
+
+**Fixed by** committing the lab, opt in behind `MK_GAS_LAB=1` so it costs CI nothing, with its
+runtime, its knobs and the reconstruction's numbers written at the top of the file so the next run
+has something to disagree with.
 
 ---
 
