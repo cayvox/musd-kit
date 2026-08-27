@@ -84,6 +84,50 @@ function assertEq(label: string, actual: bigint, expected: bigint): void {
   console.log(`  ${label}: ${actual} ✓ matches the preview to the wei`)
 }
 
+/** Seconds in a year, the divisor the interest accrual uses. */
+const SECONDS_PER_YEAR = 365n * 24n * 3600n
+/**
+ * The widest gap this script will accept between a preview and a later read, expressed as
+ * elapsed seconds of interest. Generous on purpose: a real disagreement is orders of magnitude
+ * larger than a minute of interest on a two thousand MUSD position, so a loose bound still
+ * catches one while a tight bound only catches a slow RPC.
+ */
+const MAX_DRIFT_SECONDS = 120n
+
+/**
+ * Debt parity, allowing for interest accrued BETWEEN the preview and the read (MK-046).
+ *
+ * A preview predicts the debt at the moment the operation lands. A read taken afterwards
+ * includes whatever interest accrued since, and on a live chain that is never zero: the first
+ * attempt at this run failed on `entireDebt after open` by 1903035502288 wei, which is exactly
+ * **3.00 seconds** of interest at 100 bps on 2001.8 MUSD. The preview was right and the
+ * assertion was comparing two different quantities. On a fork the same assertion passes,
+ * because anvil mines on demand and no wall clock time passes.
+ *
+ * So the check is: the drift must be POSITIVE, since debt only grows with time, and no larger
+ * than {@link MAX_DRIFT_SECONDS} of interest. Both the drift and its equivalent in seconds are
+ * printed, so a reader sees the number rather than a pass.
+ */
+function assertDebtEq(label: string, actual: bigint, expected: bigint, rateBps: bigint): void {
+  const drift = actual - expected
+  if (drift < 0n) {
+    die(
+      `${label}: chain says ${actual}, BELOW the preview's ${expected}. Debt cannot shrink with time.`,
+    )
+  }
+  const perYear = (expected * rateBps) / 10_000n
+  const maxDrift = (perYear * MAX_DRIFT_SECONDS) / SECONDS_PER_YEAR
+  if (drift > maxDrift) {
+    die(
+      `${label}: chain says ${actual}, the preview said ${expected}, a drift of ${drift} wei. That exceeds ${MAX_DRIFT_SECONDS}s of interest (${maxDrift} wei), so it is not accrual.`,
+    )
+  }
+  const seconds = perYear > 0n ? (drift * SECONDS_PER_YEAR) / perYear : 0n
+  console.log(
+    `  ${label}: ${actual} ✓ preview ${expected}, drift ${drift} wei = ${seconds}s of interest`,
+  )
+}
+
 function assertViable(label: string, viable: boolean, reasons: readonly string[]): void {
   if (!viable) die(`${label}: the preview says NOT viable [${reasons.join(',')}], so it stops here`)
   console.log(`  ${label}: preview viable ✓`)
@@ -176,7 +220,7 @@ async function plan(musd: MusdClient, publicClient: ReturnType<typeof createPubl
       `unrunnable: draw ${formatMusd(debt)} plus fee ${formatMusd(fee)} is below the ${formatMusd(constants.minNetDebt)} floor.`,
     )
   }
-  return { total, collateral, debt, fee, entireDebt, price }
+  return { total, collateral, debt, fee, entireDebt, price, gasReserve }
 }
 
 async function main(): Promise<void> {
@@ -218,36 +262,84 @@ async function main(): Promise<void> {
 
   console.log(`account     ${owner}`)
   const sizing = await plan(musd, publicClient)
+  const rateBps = BigInt((await musd.getConstants()).interestRate)
   const required = sizing.total
   const COLLATERAL = sizing.collateral
   const DEBT = sizing.debt
+  // Safe re-run. A pre-existing Trove is closed so the open below is a clean first open, and
+  // when it CANNOT be closed the run continues against it rather than dying (MK-045).
+  //
+  // That second branch is not defensive coding, it is the ordinary case: a position cannot be
+  // closed with only the MUSD it drew, because the borrowing fee is added to the debt and
+  // never paid out. So the second invocation of this script on the same account always finds
+  // a Trove it cannot close, and refusing to continue would make the script single use.
+  let carriedPosition = false
+  const existing = await musd.getTrove(owner)
+  if (existing.exists) {
+    const canClose = await musd.previewClose(owner)
+    if (canClose.viable) {
+      console.log(`\nexisting Trove (debt ${formatMusd(existing.entireDebt)} MUSD), closing first`)
+      await waitOk((await musd.close()).hash, 'close (pre-existing)')
+    } else {
+      carriedPosition = true
+      console.log(
+        `\nexisting Trove (debt ${formatMusd(existing.entireDebt)} MUSD) CANNOT be closed:
+  short ${formatMusd(canClose.musdShortfall)} MUSD (MK-045). Continuing against it, so the
+  remaining surfaces are still exercised. openTrove is recorded as a previous stage.`,
+      )
+    }
+  }
+
   const balance = await publicClient.getBalance({ address: owner })
   console.log(`\nbalance     ${formatEther(balance)} BTC`)
-  if (balance < required) {
+  // Collateral already locked in a carried position is not needed again (MK-045). The full
+  // requirement assumes an empty account; when a Trove is carried, what is still needed is
+  // the REST of the peak plus the gas reserve. Comparing the full figure against the balance
+  // left after the deposit would refuse a run that fits.
+  const alreadyLocked = carriedPosition ? existing.collateral : 0n
+  const stillNeeded = required > alreadyLocked ? required - alreadyLocked : sizing.gasReserve
+  if (alreadyLocked > 0n) {
+    console.log(
+      `  ${formatBtc(alreadyLocked)} BTC is already locked in the carried Trove, so this run needs ${formatBtc(stillNeeded)} BTC more`,
+    )
+  }
+  if (balance < stillNeeded) {
     die(
-      `balance ${formatEther(balance)} BTC is below the computed requirement ${formatBtc(required)} BTC.
+      `balance ${formatEther(balance)} BTC is below what this run still needs, ${formatBtc(stillNeeded)} BTC.
   Fund the account from the Mezo testnet faucet and retry. Refusing to start a run that
   cannot finish, because a half-finished run leaves an open position.`,
     )
   }
 
-  // Safe re-run: close any pre-existing Trove so the open below is a clean first open.
-  const existing = await musd.getTrove(owner)
-  if (existing.exists) {
-    console.log(`\nexisting Trove (debt ${formatMusd(existing.entireDebt)} MUSD), closing first`)
-    await waitOk((await musd.close()).hash, 'close (pre-existing)')
-  }
-
   // ---- 1. previewOpen -> openTrove -> getTrove parity
   console.log('\n--- previewOpen + openTrove ---')
-  const open = await musd.previewOpen({ collateral: COLLATERAL, debt: DEBT })
-  assertViable('previewOpen', open.viable, open.reasons)
-  console.log(`  predicted entireDebt ${formatMusd(open.entireDebt)} MUSD, icr ${open.icr}`)
-  await waitOk((await musd.openTrove({ collateral: COLLATERAL, debt: DEBT })).hash, 'openTrove')
-  const opened = await musd.getTrove(owner)
-  assertEq('entireDebt after open', opened.entireDebt, open.entireDebt)
-  record('previewOpen', 'exercised', 'verdict and entireDebt matched the chain to the wei')
-  record('openTrove', 'exercised', 'mined, position created')
+  if (carriedPosition) {
+    // The preview is still RUN and its verdict still checked, because `previewOpen` on an
+    // account that already holds a Trove must report exactly that. Only the write is skipped.
+    const open = await musd.previewOpen({ collateral: COLLATERAL, debt: DEBT, account: owner })
+    console.log(
+      `  previewOpen on an account that already has a Trove: viable=${open.viable} [${open.reasons.join(',')}]`,
+    )
+    record(
+      'previewOpen',
+      'exercised',
+      `on an existing position: viable=${open.viable} [${open.reasons.join(',')}]`,
+    )
+    record(
+      'openTrove',
+      'skipped',
+      'a previous stage opened the position and MK-045 prevents closing it',
+    )
+  } else {
+    const open = await musd.previewOpen({ collateral: COLLATERAL, debt: DEBT })
+    assertViable('previewOpen', open.viable, open.reasons)
+    console.log(`  predicted entireDebt ${formatMusd(open.entireDebt)} MUSD, icr ${open.icr}`)
+    await waitOk((await musd.openTrove({ collateral: COLLATERAL, debt: DEBT })).hash, 'openTrove')
+    const opened = await musd.getTrove(owner)
+    assertDebtEq('entireDebt after open', opened.entireDebt, open.entireDebt, rateBps)
+    record('previewOpen', 'exercised', 'verdict held and entireDebt matched within accrual')
+    record('openTrove', 'exercised', 'mined, position created')
+  }
   record('getTrove', 'exercised', 'used as the parity oracle for every step')
 
   // ---- 2. getBorrowingCapacity + getBorrowingPower, the two calculators
@@ -279,7 +371,12 @@ async function main(): Promise<void> {
   assertViable('previewBorrow', borrowPreview.viable, borrowPreview.reasons)
   await waitOk((await musd.borrow({ amount: draw })).hash, 'borrow')
   const afterBorrow = await musd.getTrove(owner)
-  assertEq('entireDebt after borrow', afterBorrow.entireDebt, borrowPreview.resultingEntireDebt)
+  assertDebtEq(
+    'entireDebt after borrow',
+    afterBorrow.entireDebt,
+    borrowPreview.resultingEntireDebt,
+    rateBps,
+  )
   record('previewBorrow', 'exercised', 'resultingEntireDebt matched to the wei')
   record('borrow', 'exercised', `drew ${formatMusd(draw)} MUSD`)
 
@@ -339,7 +436,12 @@ async function main(): Promise<void> {
       'adjustTrove',
     )
     const afterAdjust = await musd.getTrove(owner)
-    assertEq('entireDebt after adjust', afterAdjust.entireDebt, combined.resultingEntireDebt)
+    assertDebtEq(
+      'entireDebt after adjust',
+      afterAdjust.entireDebt,
+      combined.resultingEntireDebt,
+      rateBps,
+    )
     record('adjustTrove', 'exercised', 'combined add + borrow, entireDebt matched to the wei')
   } else {
     record('adjustTrove', 'skipped', `preview refused: ${combined.reasons.join(',')}`)
