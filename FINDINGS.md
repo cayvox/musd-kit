@@ -73,10 +73,12 @@ claim about it was not).
 | MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
 | MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
 | MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
-| MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
+| MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued | S2 | fixed, previewed by MK-042 |
 | MK-039 | The measurement that sized the default gas margin was never committed, so it could not be re-run, and its description cannot be right | S3 | fixed |
 | MK-040 | The published export map never points at the CommonJS type declarations it ships, so a CJS consumer on node16 resolution cannot typecheck | S2 | fixed |
 | MK-041 | The Foundry toolchain version was never pinned, so a new anvil stable turned the fork gate red on a docs only commit | S2 | fixed |
+| MK-042 | Five exposed writes had no preview, so a caller could only discover the contract's answer by sending | S2 | fixed |
+| MK-043 | Two contract reverts mapped to no typed error, and three Recovery Mode reverts shared one wrong message | S2 | fixed |
 
 ---
 
@@ -2407,7 +2409,7 @@ fails the second.
 
 ## MK-038 · `addCollateral` and `repay` ARE ratio gated, and a sinking position cannot be partly rescued
 
-**Class** S2 · **Status** open, documented · **Found by reading the contract to check a claim this
+**Class** S2 · **Status** fixed, the gap is previewed and prechecked by MK-042 · **Found by reading the contract to check a claim this
 repository had made from reasoning**
 
 **What the claim was.** `docs/03-core-api.md` justified shipping no preview for `addCollateral` and
@@ -2481,12 +2483,30 @@ anything that lets a caller know BEFORE sending, or that tells them the minimum 
 **Reproduction.** `packages/core/test/zz-findings.fork.test.ts`, the MK-038 case: open a Trove, drop
 the oracle price until ICR is under MCR, then `addCollateral` a small amount and watch it revert.
 
-**Decision.** Documented now, not fixed now. The fix is a preview, and it is the same missing preview
-`withdrawCollateral` and `adjustTrove` need; building four of them is its own wave with its own
-acceptance, and grafting one onto a wave scoped to MK-037 is how scope creep enters this programme.
-What changes now is the false claim: `docs/03-core-api.md` is corrected to say these two ARE gated in
-normal mode, with the citations above, and the scope limit is restated to cover four writes rather
-than two.
+**Decision, as taken at the time.** Documented, not fixed. The fix is a preview, and it is the same
+missing preview `withdrawCollateral` and `adjustTrove` need; building four of them is its own wave
+with its own acceptance, and grafting one onto a wave scoped to MK-037 is how scope creep enters
+this programme. What changed then was the false claim: `docs/03-core-api.md` was corrected to say
+these two ARE gated in normal mode, with the citations above, and the scope limit was restated to
+cover four writes rather than two.
+
+**Decision, revised. The gap is CLOSED rather than documented (MK-042).**
+
+The earlier decision is left standing above rather than rewritten, because it was the right call for
+the wave it was made in and the reasoning is worth keeping: a preview built as a rider on a gas
+handling wave would have had no sweep behind it, and an unswept preview is not a validated one.
+
+What changed is that the limit stopped being a scope boundary and started being the thing the
+documentation had to keep apologising for. Three separate documents carried a paragraph explaining
+which writes a caller must not trust, and each one was a place the explanation could drift from the
+Solidity, which is exactly how the false claim this entry corrects got in. A limit that has to be
+restated in three places to stay true is more expensive to carry than to fix.
+
+**Closed by MK-042**, which builds `previewAdjustTrove`, `previewWithdrawCollateral`,
+`previewClose` and `maxWithdrawableCollateral`, prechecks every affected write, and puts all five
+new paths into the differential sweep. The absolute nature of the ratio requirement, which is this
+entry's whole subject, is surfaced as `icrIsAbsolute` and `minimumCollateralToClearIcr` on the
+preview result rather than left in prose.
 
 ---
 
@@ -2658,6 +2678,109 @@ or whether this fork's block headers genuinely lack `excessBlobGas` and 1.7.1 wa
 Answering that needs reading anvil's changelog and the Mezo block header, which is a wave rather
 than a paragraph. The pin makes the gate honest in the meantime, and it does **not** mean the SDK is
 incompatible with anvil 1.8.0: nothing here tested the SDK against it, only the test harness.
+
+---
+
+## MK-042 · Five exposed writes had no preview, so the only way to ask was to send
+
+**Class** S2 · **Status** fixed · **Closes the gap MK-038 documented as a scope limit**
+
+**What was missing.** Eleven writes are exposed; three had a preview. For the other eight a caller
+could not ask "would this work" without sending a transaction and reading the revert, and five of
+those eight have real constraints a preview can evaluate.
+
+**The gate table, rebuilt from the contract for this wave** rather than carried forward, because
+part of the earlier table's reasoning was wrong (MK-038). `mezo-org/musd`, main branch, with
+`BorrowerOperations.sol` line numbers unless noted.
+
+| SDK write | Contract path | Gates it must pass |
+|---|---|---|
+| `openTrove` | `:180` -> `_openTrove` | not active `:633`; `minNetDebt` `:645`; **recovery** ICR>=CCR `:655`; **normal** ICR>=MCR `:657` and TCR>=CCR `:665` |
+| `addCollateral` | `:189` -> `_adjustTrove(0,0,false)` | active `:790`; non zero `:789`; **normal** ICR>=MCR `:1201` and TCR>=CCR `:1209`; **recovery** none |
+| `borrow` | `:243` -> `_adjustTrove(0,amt,true)` | active `:790`; non zero debt `:786`; **normal** ICR>=MCR, TCR>=CCR; **recovery** ICR>=CCR `:1272` and newICR>=oldICR `:1273`; capacity `:851` |
+| `repay` | `:261` -> `_adjustTrove(0,amt,false)` | active; **normal** ICR>=MCR, TCR>=CCR; **recovery** none; `minNetDebt` `:856`; repayment <= debt-200 `:859`; balance `:860` |
+| `withdrawCollateral` | `:225` -> `_adjustTrove(amt,0,false)` | active; `assert(amt <= coll)` `:837`; **recovery** NO withdrawal at all `:1270`; **normal** ICR>=MCR, TCR>=CCR |
+| `adjustTrove` | `:296` -> `_adjustTrove(...)` | every row above, by combination; plus singular coll change `:788` |
+| `close` | `:278` -> `_closeTrove` | active `:951`; **if `canMint`** not recovery `:954`; balance >= debt-200 `:963`; **if `canMint`** TCR>=CCR `:972` |
+| `refinance` | `:282` -> `_refinance` | not recovery `:1023`; active `:1024`; ICR>=MCR **after the fee** `:1058`; TCR>=CCR `:1059` |
+| `claim` | `:316` -> `_claimCollateral` `:1119-1124` | **none.** It reads the surplus pool and sends. No preview is possible because there is no condition |
+| `redeem` | `TroveManager.sol:294` | TCR>=MCR `:318`; amount>0 `:319`; balance `:320` |
+| `liquidate` | `TroveManager.sol:265` | trove active `:266`, then the batch path |
+| `batchLiquidate` | `TroveManager.sol:654` | non empty array `:657`; something actually liquidatable `:690` |
+
+**Four things in that table are not what a Liquity reader expects**, and each is now expressed in a
+preview rather than in prose:
+
+1. **The individual ratio gate is absolute** (`:1330-1335`). It tests the resulting level, not the
+   direction, so an improving operation is refused when the result is still under the floor. This is
+   MK-038 and it is why `AdjustPreview` carries `icrIsAbsolute` and `minimumCollateralToClearIcr`.
+2. **Recovery Mode does not check TCR and normal mode does.** `:1265-1275` never looks at TCR;
+   `:1197-1210` checks it on every adjustment. The mode with the tighter reputation has the shorter
+   list for a pure top-up or a pure repayment.
+3. **A plain borrow can never succeed in Recovery Mode.** `withdrawMUSD` sends no collateral, so
+   `newICR < oldICR` always and `_requireNewICRisAboveOldICR` (`:1273`) cannot be satisfied at any
+   draw size. Only `adjustTrove` with a collateral leg can clear it.
+4. **Two of `close`'s four gates are conditional on a live chain read**, `musd.mintList(address(this))`
+   (`:949`). With BorrowerOperations off the mint list, closing is permitted in Recovery Mode and the
+   TCR check does not run. `ClosePreview.canMint` reports it rather than assuming it.
+
+**What was built.** `previewAdjustTrove`, `previewWithdrawCollateral`, `previewClose` and
+`maxWithdrawableCollateral`, in the shape the existing previews use: a `viable` verdict, machine
+readable `reasons`, a `bindingConstraint`, and the raw numbers. **One evaluator for the adjust
+family**, because the contract has one: five entry points funnel into `_adjustTrove` and are gated by
+the same code, and a guard per write is how the guards disagree with each other later. Prechecks on
+`addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove` and `close`, each throwing a
+typed error carrying the real numbers before simulate. Four React hooks.
+
+**`claim` deliberately has no preview**, and the table says so rather than adding ceremony to make
+the surface look symmetrical: `_claimCollateral` (`:1119-1124`) has no require of any kind.
+
+**Proved by** the differential harness, extended from three operations to eight so every preview is
+swept: verdict against outcome, both directions reported separately, boundary weighted, each case
+snapshot isolated. Plus ten chain free tests of the pure evaluators, four of them proved by mutation.
+
+**Cost.** A preview is a read, and these read more than the old ones: the adjust preview issues eight
+concurrent reads plus a conditional fee read. That is the price of answering before sending, and it
+is paid only when a caller asks.
+
+---
+
+## MK-043 · Two reverts had no typed error, and three shared one that was wrong
+
+**Class** S2 · **Status** fixed · **Found while wiring MK-042's prechecks, by checking which reverts
+the new typed errors would collide with**
+
+**What was wrong.** Every revert string in `BorrowerOperations.sol` and `TroveManager.sol` was
+extracted and checked against `mapRevert`'s patterns. Two consumer reachable reverts matched nothing
+and arrived as a generic `ContractCallFailed`:
+
+- `"BorrowerOps: An operation that would result in TCR < CCR is not permitted"` (`:1344-1349`), which
+  gates `openTrove`, every normal mode adjustment, `closeTrove` and `refinance`.
+- `"BorrowerOps: An operation that exceeds maxBorrowingCapacity is not permitted"` (`:1358-1365`).
+  `ExceedsBorrowingCapacity` existed and was thrown by the precheck; the revert path never reached it.
+
+And three DIFFERENT Recovery Mode reverts all matched `/recovery mode/i` and returned the same
+`RecoveryModeRestriction`, whose message is "this operation must leave the Trove with ICR >= CCR":
+
+- `"Operation not permitted during Recovery Mode"` (`:1136`), where nothing about ICR helps.
+- `"Cannot decrease your Trove's ICR in Recovery Mode"` (`:1401`), which is about the OLD ratio.
+- `"Collateral withdrawal not permitted Recovery Mode"` (`:1391`), where **no amount is permitted**.
+
+**The third is the one that costs a user something.** Told to reach ICR >= CCR, they go looking for a
+smaller withdrawal that satisfies it. There isn't one: `_requireNoCollWithdrawal` permits zero.
+
+**Fix.** `SystemRatioBelowCCR` and `CollateralWithdrawalBlocked` added, the capacity revert mapped,
+and the withdrawal case matched before the general Recovery Mode pattern. `ExceedsBorrowingCapacity`
+now takes its four numbers as OPTIONAL, for the same reason `BelowMinimumDebt` does since MK-017: the
+decode path knows none of them, and constructing it with four zeros would print four numbers the user
+never encountered.
+
+**Not fixed, and stated rather than implied:** seven further revert strings remain unmapped, all of
+them conditions the SDK's own prechecks catch first (`Cannot withdraw and add coll`,
+`There must be either a collateral change or a debt change`, `Debt increase requires non-zero
+debtChange`, `Amount must be greater than zero`, `Calldata address array must not be empty`,
+`Cannot redeem when TCR < MCR`, `Only one trove in the system`). They are reachable only by racing
+the precheck, and mapping them is a separate, smaller wave.
 
 ---
 

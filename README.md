@@ -74,21 +74,47 @@ protocol or from Mezo's own dApp. [`SECURITY.md`](SECURITY.md) covers maturity, 
 and does not touch, and how to report a problem. Known gaps are public and tracked rather than
 quietly carried, and a correctness report is treated with the same seriousness as a security report.
 
-**Two open findings change what you can rely on at 0.2.0.** Neither is a bug you will hit by
-accident; both are limits you have to design around.
+### What this SDK does
 
-- **MK-011, `maxFeePercentage` is advisory only.** The SDK checks it. It does not bind the contract.
-  Do not treat it as slippage protection.
-- **MK-038, four of eleven writes are ratio gated with no preview.** `addCollateral`, `repay`,
-  `withdrawCollateral` and `adjustTrove` have no verdict you can render before the user commits.
-  `addCollateral` and `repay` are gated in a way that surprises people: in normal mode a top-up
-  that RAISES a position's ICR still reverts if the result is under MCR
-  (`BorrowerOperations.sol:1201`), so an already under-water position cannot be partly rescued.
+**Every write you can call, you can ask about first.** Ten of the eleven exposed writes have a
+preview returning a verdict, the reasons behind it, the constraint that binds first, and the raw
+numbers, so a UI can render its own message and grey out its own button. The eleventh, `claim`, has
+no preview because `_claimCollateral` (`BorrowerOperations.sol:1119-1124`) has no condition to
+check. Every write with a constraint a preview can evaluate also prechecks it before sending, and
+fails with a typed error carrying the real numbers.
 
-Both are in the register with their evidence, and the second is stated where the API is documented,
-in [`docs/03-core-api.md`](docs/03-core-api.md).
+Reads come from the contract's own getters, never recomputed. Previews are validated by a
+differential harness that runs each one and then attempts the operation on chain, comparing the
+verdict to what actually happened, in both directions.
 
-Every other S1 and S2 in the register is closed. There is **no open S1**.
+### What this SDK does not do
+
+**It cannot enforce a fee cap on chain.** `maxFeePercentage` is checked here and then the
+transaction is sent; **no MUSD write path takes a fee cap parameter**, so there is nothing to pass
+one to and the governable rate can move in between. This is a property of the protocol, not a gap in
+this SDK, and no SDK can close it. Treat the cap as a local guard, not as slippage protection
+(MK-011).
+
+**It cannot make the protocol's rules kinder than they are.** The individual ratio requirement is
+absolute: `_requireICRisAboveMCR` (`BorrowerOperations.sol:1201`, defined at `:1330-1335`) tests the
+resulting ratio, not whether you improved. A position already under MCR cannot be partly rescued by
+adding collateral, and a preview can tell you that before you spend the gas but cannot change it.
+`AdjustPreview.minimumCollateralToClearIcr` is the figure that would work (MK-038, MK-042).
+
+**It does not hold keys, request approvals, or take custody.** There is no approval flow anywhere in
+the surface.
+
+### Maturity
+
+Single author, unaudited, pre 1.0, with a public register of every known correctness gap. It has a
+fork harness against real Mezo contracts, a differential sweep of every preview against real
+transaction outcomes, and a coverage ratchet. It has not had an external audit and has not been run
+at scale by anyone but its author. That is the whole of it: use it on testnet, evaluate it against
+your own cases, and read the register before you depend on it.
+
+**No S1 is open.** One S2 stays open and it is the fee cap above (MK-011), which is a protocol
+property rather than something this SDK can fix. Every other open finding is S3 and concerns this
+repository's own test suite rather than what the SDK returns.
 
 ---
 
