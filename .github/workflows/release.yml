@@ -1,6 +1,10 @@
 # Publish @musd-kit/core + @musd-kit/react to npm with provenance.
 #
 # THIS WORKFLOW IS NOT RUN AUTOMATICALLY, it is the deliberate, credentialed go-live.
+#
+# 0.1.0 shipped from here on 2026-06-22. The steps below were the FIRST publish checklist and
+# steps 1 and 2 are already done; step 3 is the one that repeats for every release.
+#
 # Before the first publish, the maintainer (Anıl) must:
 #   1. Make the GitHub repo `cayvox/musd-kit` PUBLIC, npm provenance (--provenance) signs
 #      the build via OIDC and generally requires a public repo. (The grant narrative is

@@ -1,8 +1,8 @@
 # Deploy the combined musdkit.xyz site (Astro landing at / + VitePress docs at /docs).
 #
 # MANUAL ONLY (workflow_dispatch), this never runs on push. Go-live is Anıl's step,
-# AFTER the npm 0.1.0 publish, so the hero `npm install` is real and the live widget
-# reads through the published package.
+# AFTER the matching npm publish, so the hero `npm install` is real and the live widget
+# reads through the published package. 0.1.0 shipped this way; 0.2.0 follows the same order.
 #
 # Prerequisites (repo secrets) before the first manual run:
 #   CLOUDFLARE_API_TOKEN, Pages:Edit token
