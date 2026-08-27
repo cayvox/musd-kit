@@ -50,6 +50,7 @@ function writeDeps(simulate: () => Promise<unknown>): WriteDeps {
     // skipped by accident. These tests are about the revert handling, so it resolves.
     ensureVerified: async () => {},
     getMinNetDebt: async () => 1800n * 10n ** 18n,
+    isAccountFeeExempt: async () => false,
     gasMarginPercent: 0,
   }
 }

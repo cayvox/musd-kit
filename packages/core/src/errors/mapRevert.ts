@@ -12,13 +12,16 @@
 import { BaseError, ContractFunctionRevertedError } from 'viem'
 import {
   BelowMinimumDebt,
+  CollateralWithdrawalBlocked,
   ContractCallFailed,
+  ExceedsBorrowingCapacity,
   ICRBelowMCR,
   InsufficientMusdBalance,
   NothingToLiquidate,
   RecoveryModeRestriction,
   RedemptionFailed,
   RepayExceedsDebt,
+  SystemRatioBelowCCR,
   TroveAlreadyExists,
   TroveNotFound,
   revertReason,
@@ -76,8 +79,16 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
   const at = context?.address ?? 'unknown'
 
   //, Recovery Mode before the plain ICR check (its string also concerns ICR/CCR),
+  // MK-043. The three Recovery Mode reverts say DIFFERENT things and used to share one
+  // message, so a user blocked from withdrawing any collateral was told to satisfy a ratio
+  // that would not have helped. Split, most specific first.
+  if (has(/Collateral withdrawal not permitted/i)) return new CollateralWithdrawalBlocked(error)
   if (has(/ICR >= CCR/i) || has(/recovery mode/i)) return new RecoveryModeRestriction(error)
   if (has(/ICR < MCR is not permitted/i)) return new ICRBelowMCR(error)
+  // MK-043. Neither of these matched any pattern, so both arrived as ContractCallFailed.
+  if (has(/TCR < CCR is not permitted/i)) return new SystemRatioBelowCCR(error)
+  if (has(/exceeds maxBorrowingCapacity/i))
+    return new ExceedsBorrowingCapacity(undefined, undefined, undefined, undefined, error)
 
   // MK-017: no placeholder zeros. The decoder does not know the floor or the net debt, so it
   // says so rather than inventing two numbers the user never encountered.

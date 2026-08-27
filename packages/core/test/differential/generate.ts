@@ -22,7 +22,15 @@ export const BAND_WEIGHTS = {
 export type Band = keyof typeof BAND_WEIGHTS
 
 /** The operations the harness exercises. Read off the SDK's preview surface, not invented. */
-export type CaseOp = 'open' | 'borrow' | 'refinance'
+export type CaseOp =
+  | 'open'
+  | 'borrow'
+  | 'refinance'
+  | 'addCollateral'
+  | 'repay'
+  | 'withdrawCollateral'
+  | 'adjust'
+  | 'close'
 
 /** One generated case. Every field is part of its reproduction. */
 export interface DiffCase {
@@ -103,7 +111,19 @@ export function generateCases(
 ): DiffCase[] {
   const rnd = mulberry32(seed)
   const cases: DiffCase[] = []
-  const ops: CaseOp[] = ['open', 'borrow', 'refinance']
+  // MK-042. Every preview the SDK exposes is in the sweep. A preview that is not swept is
+  // not validated, whatever the documentation says, and five of these eight did not exist
+  // when this generator was written.
+  const ops: CaseOp[] = [
+    'open',
+    'borrow',
+    'refinance',
+    'addCollateral',
+    'repay',
+    'withdrawCollateral',
+    'adjust',
+    'close',
+  ]
 
   for (let index = 0; index < count; index++) {
     const band = pickBand(rnd)

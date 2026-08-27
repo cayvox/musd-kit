@@ -440,62 +440,68 @@ the payload diff that established it: `FINDINGS.md`, MK-037.
 
 ### Which writes have a preview, which have prechecks, and which have neither
 
-Read from the source, not from intent. **Three writes have a preview object; every write has at
-least one precheck; four writes are ratio gated by the contract with no verdict you can inspect
-first.**
+Read from the contract for the 0.2.x preview wave, not carried forward: part of an earlier version
+of this table was reasoned rather than read, and was wrong (MK-038). Line numbers are
+`mezo-org/musd`, `BorrowerOperations.sol` unless stated.
 
-| Write | Preview | Prechecks it runs before simulate | Ratio or mode gate before simulate |
+**Ten of eleven writes have a preview. The eleventh has no condition to preview.**
+
+| Write | Preview | Prechecked before simulate | Gates the contract enforces |
 |---|---|---|---|
-| `openTrove` | **`previewOpen`** | positive amounts, fee cap | in the preview only |
-| `borrow` | **`previewBorrow`** | positive, fee cap, Trove active, **borrowing capacity** | capacity yes, ICR and TCR no |
-| `refinance` | **`previewRefinance`** | Trove active | in the preview only |
-| `addCollateral` | **none** | positive, Trove active | **none**, and the contract gates it, see below |
-| `repay` | **none** | positive, Trove active, MUSD balance | **none**, and the contract gates it, see below |
-| `withdrawCollateral` | **none** | positive, Trove active | **none** |
-| `adjustTrove` | **none** | fee cap, Trove active, capacity when borrowing | **none** |
-| `close` | none | Trove active | not applicable |
-| `redeem` | none | positive, MUSD balance, rate cap | not applicable |
-| `liquidate`, `batchLiquidate` | none | none, permissionless by design | not applicable |
-| `claim` | none | matches exactly one revert, rethrows the rest | not applicable |
+| `openTrove` | **`previewOpen`** | amounts, fee cap, floor, ratios | not active `:633`; `minNetDebt` `:645`; recovery ICR>=CCR `:655`; normal ICR>=MCR `:657`, TCR>=CCR `:665` |
+| `addCollateral` | **`previewAdjustTrove`** | **all of them** | active `:790`; **normal** ICR>=MCR `:1201`, TCR>=CCR `:1209`; **recovery: none** |
+| `borrow` | **`previewBorrow`**, **`previewAdjustTrove`** | **all of them** | active; **normal** ICR>=MCR, TCR>=CCR; **recovery** ICR>=CCR `:1272`, newICR>=oldICR `:1273`; capacity `:851` |
+| `repay` | **`previewAdjustTrove`** | **all of them** | active; **normal** ICR>=MCR, TCR>=CCR; **recovery: none**; `minNetDebt` `:856`; repay <= debt-200 `:859`; balance `:860` |
+| `withdrawCollateral` | **`previewWithdrawCollateral`**, **`maxWithdrawableCollateral`** | **all of them** | active; `assert(amt <= coll)` `:837`; **recovery: no withdrawal at all** `:1270`; **normal** ICR>=MCR, TCR>=CCR |
+| `adjustTrove` | **`previewAdjustTrove`** | **all of them** | every row above, by combination; singular coll change `:788` |
+| `close` | **`previewClose`** | **all of them** | active `:951`; *if `canMint`* not recovery `:954`; balance >= debt-200 `:963`; *if `canMint`* TCR>=CCR `:972` |
+| `refinance` | **`previewRefinance`** | Trove active, Recovery Mode | not recovery `:1023`; active `:1024`; ICR>=MCR **after the fee** `:1058`; TCR>=CCR `:1059` |
+| `claim` | **none, and none is possible** | matches one revert, rethrows the rest | **none.** `_claimCollateral` (`:1119-1124`) reads the surplus pool and sends |
+| `redeem` | none | positive, MUSD balance, rate cap | `TroveManager.sol`: TCR>=MCR `:318`; amount>0 `:319`; balance `:320` |
+| `liquidate`, `batchLiquidate` | none, permissionless by design | none | `TroveManager.sol`: non empty `:657`; something liquidatable `:690` |
 
-**`addCollateral` and `repay` are gated too, in normal mode (MK-038).** An earlier revision of this
-page said they need no ratio gate, as a property of the operation: adding collateral raises ICR and
-repaying lowers debt, so neither can move a **valid** position below MCR. That is true, and the
-conclusion drawn from it was wrong, because the contract does not test the direction of the change.
-It tests the resulting level, absolutely.
+### Four rules that are not what a Liquity reader expects
 
-In `mezo-org/musd`, `solidity/contracts/BorrowerOperations.sol`: `addColl` (`:189-203`) and
-`repayMUSD` (`:261-276`) both reach `_adjustTrove` (`:752-761`), which calls
-`_requireValidAdjustmentInCurrentMode` unconditionally at `:840-845`. In normal mode
-(`:1197-1210`) that runs `_requireICRisAboveMCR(newICR)` at `:1201` with no direction condition
-around it, and `_requireICRisAboveMCR` (`:1330-1335`) is `require(_newICR >= MCR, ...)`.
+Each is expressed on a preview result rather than left in prose, because prose in three documents is
+how the earlier version of this table drifted from the Solidity.
 
-So a position **already below MCR** cannot be rescued by a partial top-up or a partial repayment.
-The ICR rises, the transaction still reverts, and this SDK gives you no verdict before you spend the
-gas and no number for how much would have been enough. That is the case a user hits after a price
-drop while doing the right thing.
+**1. The individual ratio requirement is ABSOLUTE.** `_requireICRisAboveMCR` is
+`require(_newICR >= MCR, ...)` (`:1330-1335`). It tests the resulting level, not whether you
+improved. **A position already under MCR cannot be partly rescued by adding collateral:** the ICR
+rises and the call still reverts.
 
-Recovery Mode is the opposite way round from what you would guess. `:1265-1275` requires only
-`_requireNoCollWithdrawal` (which both paths satisfy, they send zero) and puts both ICR requirements
-behind `if (_isDebtIncrease)`, which is false for both. **In Recovery Mode these two really are
-ungated.** It is normal mode where they are gated.
+```ts
+const p = await musd.previewAdjustTrove({ owner, addCollateral: parseBtc('0.01') });
+if (!p.viable && p.bindingConstraint === 'ICR_BELOW_THRESHOLD' && p.icrIsAbsolute) {
+  // p.minimumCollateralToClearIcr is the collateral that WOULD clear it.
+}
+```
 
-**`withdrawCollateral` and `adjustTrove` are the wider gap.** Both can leave a position below MCR or
-the system below CCR from a healthy start, so they can fail where the other two would have succeeded.
+**2. Recovery Mode does not check TCR; normal mode does.** `_requireValidAdjustmentInRecoveryMode`
+(`:1265-1275`) never looks at TCR, and `_requireValidAdjustmentInNormalMode` (`:1197-1210`) checks it
+on every adjustment. So a pure top-up and a pure repayment are **ungated in Recovery Mode** and gated
+in normal mode, which is the opposite of the intuition.
 
-### The scope limit, stated exactly
+**3. A plain `borrow` can never succeed in Recovery Mode.** `withdrawMUSD` sends no collateral, so
+`newICR < oldICR` always and `_requireNewICRisAboveOldICR` (`:1273`) cannot be satisfied at any draw
+size. Only `adjustTrove` with a collateral leg can clear it. `previewBorrow` and `previewAdjustTrove`
+both report `ICR_NOT_IMPROVED_IN_RECOVERY_MODE` rather than sending you to hunt for a smaller draw.
 
-**Do not treat `addCollateral`, `repay`, `withdrawCollateral` or `adjustTrove` as guarded against
-ratio failures.** They are protected, but only by simulate before send: the contract's refusal comes
-back as a typed `ICRBelowMCR` or `RecoveryModeRestriction` when you call them, not as a verdict you
-can render before the user commits. There is no preview for any of the four.
+**4. Recovery Mode refuses collateral withdrawal outright, not by amount.** `_requireNoCollWithdrawal`
+(`:1270`) permits zero, so no smaller number works. `maxWithdrawableCollateral` returns
+`{ amount: 0n, limitedBy: 'RECOVERY_MODE' }`, which is a different message to a user than a ratio.
 
-If you need to grey out a button rather than catch an exception, you have to compute the resulting
-ratio yourself from `getTrove` plus `computeICR`, which are both exported for exactly this, and
-compare it against `MCR` rather than against the ratio you started from.
+**5. Two of `close`'s four gates are conditional on a live chain read.** `canMint` is
+`musd.mintList(borrowerOperations)` (`:949`), a governable mapping. When it is false, closing is
+permitted in Recovery Mode and the TCR check does not run at all. `ClosePreview.canMint` reports what
+was read rather than assuming.
 
-That limit is deliberate and it is the honest description of what exists. Previously the
-documentation implied the preview family covered the lifecycle; it covers three of eleven writes.
+### The one limit that remains, and where it comes from
+
+**`maxFeePercentage` cannot be enforced on chain.** No MUSD write path takes a fee cap parameter, so
+the SDK reads the rate, compares, and sends; the governable rate can move in between. **This is a
+property of the protocol, not of this SDK**, and no SDK can close it. Treat it as a local guard
+(MK-011).
 
 ### When a write reverts anyway
 

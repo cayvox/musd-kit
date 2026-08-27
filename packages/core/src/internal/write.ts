@@ -87,6 +87,13 @@ export interface WriteDeps {
    * bypassed verification.
    */
   getMinNetDebt: () => Promise<bigint>
+  /**
+   * `GovernableVariables.isAccountFeeExempt(account)` (MK-018), the same accessor the
+   * preview family uses. REQUIRED here since MK-042, because the ratio prechecks evaluate
+   * the same preview the caller can, and a preview that assumes nobody is exempt reports a
+   * fee the contract will not charge. The exempt cohort is not empty on mainnet.
+   */
+  isAccountFeeExempt: (account: Address) => Promise<boolean>
 }
 
 /**

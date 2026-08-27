@@ -48,6 +48,7 @@ function deps(over: { estimate?: () => Promise<bigint>; margin?: number } = {}):
       addresses: T,
       ensureVerified: async () => {},
       getMinNetDebt: async () => 1800n * 10n ** 18n,
+      isAccountFeeExempt: async () => false,
       gasMarginPercent: over.margin ?? DEFAULT_GAS_MARGIN_PERCENT,
     },
     sent: () => sentRequest,

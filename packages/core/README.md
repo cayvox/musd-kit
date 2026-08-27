@@ -77,14 +77,22 @@ redemption RATE in a field named `fee` (MK-014), and `previewOpen.meetsRecoveryR
 which 0.1.0 behaviours return wrong numbers and which fail transactions, so you can judge your own
 exposure.
 
-## Two limits at 0.2.0
+## What it does, and the one thing it cannot
 
-- **`maxFeePercentage` is advisory only (MK-011).** Checked here, not binding on the contract.
-- **Four of eleven writes are ratio gated with no preview (MK-038).** `addCollateral`, `repay`,
-  `withdrawCollateral` and `adjustTrove`. For the first two this surprises people: in normal mode a
-  top-up that RAISES ICR still reverts if the result is under MCR
-  (`BorrowerOperations.sol:1201`), so an under-water position cannot be partly rescued. Compute the
-  resulting ratio from `getTrove` plus `computeICR` and compare it against `MCR` yourself.
+**Every write you can call, you can ask about first.** Ten of eleven exposed writes have a preview
+returning a verdict, machine readable reasons, the binding constraint and the raw numbers, and each
+prechecks the same conditions before sending. `claim` is the eleventh and has no preview because
+`_claimCollateral` (`BorrowerOperations.sol:1119-1124`) has no condition to check.
+
+**The rule that surprises people, surfaced rather than documented:** the individual ratio
+requirement is ABSOLUTE (`BorrowerOperations.sol:1201`, defined at `:1330-1335`). It tests the
+resulting ratio, not whether you improved, so a position already under MCR cannot be partly rescued
+by adding collateral. `previewAdjustTrove` returns `icrIsAbsolute` and
+`minimumCollateralToClearIcr`, the figure that would actually work.
+
+**The one thing it cannot do: enforce a fee cap on chain (MK-011).** No MUSD write path takes a fee
+cap parameter, so `maxFeePercentage` is read, compared and then the transaction is sent. That is a
+property of the protocol, not a gap here, and no SDK can close it.
 
 ## React?
 

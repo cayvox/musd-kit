@@ -96,15 +96,113 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
   await fork.mineBlocks(1)
 
   if (c.op === 'open') return await openCase(fork, client, account, c)
-  // `borrow` and `refinance` need a position first. Opening one is a fixture step, not the
-  // case: if it fails, the case is skipped rather than counted as a mismatch, because the
-  // thing under test never ran.
+  // Every other op needs a position first. Opening one is a fixture step, not the case: if it
+  // fails, the case is skipped rather than counted as a mismatch, because the thing under
+  // test never ran.
   const seeded = await seedPosition(fork, client, c)
   if (seeded !== undefined)
     return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
-  return c.op === 'borrow'
-    ? await borrowCase(fork, client, account, c)
-    : await refinanceCase(fork, client, account, c)
+  switch (c.op) {
+    case 'borrow':
+      return await borrowCase(fork, client, account, c)
+    case 'refinance':
+      return await refinanceCase(fork, client, account, c)
+    // MK-042. The five that had no preview to compare against until this wave.
+    case 'addCollateral':
+      return await adjustCase(fork, client, account, c, { addCollateral: adjustCollateral(c) })
+    case 'repay':
+      return await adjustCase(fork, client, account, c, { repayDebt: adjustDebt(c) })
+    case 'withdrawCollateral':
+      return await adjustCase(fork, client, account, c, {
+        withdrawCollateral: adjustCollateral(c),
+      })
+    case 'adjust':
+      return await adjustCase(fork, client, account, c, {
+        addCollateral: adjustCollateral(c),
+        increaseDebt: adjustDebt(c),
+      })
+    default:
+      return await closeCase(fork, client, account, c)
+  }
+}
+
+/**
+ * The collateral leg for an adjust style case, derived from the generated tuple.
+ *
+ * The generator sizes `collateral` for an OPEN, which is the whole position. An adjustment is
+ * a delta against a seeded position, so using it unscaled would put every case far outside
+ * the band the generator was aiming at. A fraction keeps the boundary weighting meaningful:
+ * a withdrawal near the ICR cap is a boundary case, a withdrawal of ten times the balance is
+ * just an arithmetic check, and the extreme band already covers those.
+ */
+function adjustCollateral(c: DiffCase): bigint {
+  return c.collateral / 4n
+}
+
+/** The debt leg for an adjust style case, on the same reasoning as {@link adjustCollateral}. */
+function adjustDebt(c: DiffCase): bigint {
+  return c.debt / 4n
+}
+
+/**
+ * One adjust style case: preview the exact legs, attempt the exact same legs, compare.
+ *
+ * Routed through `adjustTrove` for every shape rather than through the single leg helpers,
+ * so the preview under test and the write under test take the same path through the contract
+ * and a mismatch cannot be an artefact of the SDK picking a different entry point.
+ */
+async function adjustCase(
+  fork: ForkConnection,
+  client: MusdClient,
+  account: PrivateKeyAccount,
+  c: DiffCase,
+  legs: {
+    addCollateral?: bigint
+    withdrawCollateral?: bigint
+    increaseDebt?: bigint
+    repayDebt?: bigint
+  },
+): Promise<CaseResult> {
+  const preview = await client.previewAdjustTrove({ owner: account.address, ...legs })
+  const attempt = await attemptWrite(fork, () =>
+    client.adjustTrove({
+      ...(legs.addCollateral !== undefined && legs.addCollateral > 0n
+        ? { addCollateral: legs.addCollateral }
+        : {}),
+      ...(legs.withdrawCollateral !== undefined && legs.withdrawCollateral > 0n
+        ? { withdrawCollateral: legs.withdrawCollateral }
+        : {}),
+      ...(legs.increaseDebt !== undefined && legs.increaseDebt > 0n
+        ? { borrow: legs.increaseDebt }
+        : {}),
+      ...(legs.repayDebt !== undefined && legs.repayDebt > 0n ? { repay: legs.repayDebt } : {}),
+    }),
+  )
+  const mismatch = compare(preview.viable, attempt, `reasons=[${preview.reasons.join(',')}]`)
+  return {
+    case: c,
+    previewViable: preview.viable,
+    chainSucceeded: attempt.ok,
+    ...(mismatch ? { mismatch } : {}),
+  }
+}
+
+/** One close case. Close has its own gate set, so it has its own preview and its own case. */
+async function closeCase(
+  fork: ForkConnection,
+  client: MusdClient,
+  account: PrivateKeyAccount,
+  c: DiffCase,
+): Promise<CaseResult> {
+  const preview = await client.previewClose(account.address)
+  const attempt = await attemptWrite(fork, () => client.close())
+  const mismatch = compare(preview.viable, attempt, `reasons=[${preview.reasons.join(',')}]`)
+  return {
+    case: c,
+    previewViable: preview.viable,
+    chainSucceeded: attempt.ok,
+    ...(mismatch ? { mismatch } : {}),
+  }
 }
 
 /** Open a modest, always-viable position so borrow and refinance have something to act on. */

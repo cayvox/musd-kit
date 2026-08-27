@@ -11,14 +11,18 @@ import {
 } from '../hints'
 import { DEFAULT_GAS_MARGIN_PERCENT } from '../internal/write'
 import {
+  type AdjustPreview,
   type BorrowPreview,
   type BorrowingCapacity,
+  type ClosePreview,
   type ComputeEntireDebtParams,
   type ComputeICRParams,
   type ComputeLiquidationPriceParams,
   type GetBorrowingPowerParams,
   type MathDeps,
+  type MaxWithdrawable,
   type OpenPreview,
+  type PreviewAdjustParams,
   type PreviewBorrowParams,
   type PreviewOpenParams,
   type RefinancePreview,
@@ -28,9 +32,13 @@ import {
   getBorrowingCapacity,
   getBorrowingPower,
   getHealthFactor,
+  maxWithdrawableCollateral,
+  previewAdjustTrove,
   previewBorrow,
+  previewClose,
   previewOpen,
   previewRefinance,
+  previewWithdrawCollateral,
 } from '../math'
 import {
   type ReadDeps,
@@ -220,6 +228,14 @@ export interface MusdClient {
    * verdict that is false when the contract would refuse, Recovery Mode included.
    */
   previewRefinance(owner: Address): Promise<RefinancePreview>
+  /** MK-042. The combined adjust path: every ratio and mode gate, with the raw numbers. */
+  previewAdjustTrove(params: PreviewAdjustParams): Promise<AdjustPreview>
+  /** MK-042. A pure collateral withdrawal. Refused OUTRIGHT in Recovery Mode. */
+  previewWithdrawCollateral(params: { owner: Address; amount: bigint }): Promise<AdjustPreview>
+  /** MK-042. The largest withdrawal the contract accepts now, and which gate caps it. */
+  maxWithdrawableCollateral(owner: Address): Promise<MaxWithdrawable>
+  /** MK-042. Closing, whose gate set is its own and two of whose gates are conditional. */
+  previewClose(owner: Address): Promise<ClosePreview>
   /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
   getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
   /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
@@ -361,6 +377,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     addresses,
     ensureVerified: verifyDeployment,
     getMinNetDebt: () => getConstants().then((c) => c.minNetDebt),
+    isAccountFeeExempt,
     gasMarginPercent: params.gasMarginPercent ?? DEFAULT_GAS_MARGIN_PERCENT,
   }
 
@@ -387,6 +404,10 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     previewOpen: (params) => previewOpen(mathDeps, params),
     previewBorrow: (params) => previewBorrow(mathDeps, params),
     previewRefinance: (owner) => previewRefinance(mathDeps, owner),
+    previewAdjustTrove: (params) => previewAdjustTrove(mathDeps, params),
+    previewWithdrawCollateral: (params) => previewWithdrawCollateral(mathDeps, params),
+    maxWithdrawableCollateral: (owner) => maxWithdrawableCollateral(mathDeps, owner),
+    previewClose: (owner) => previewClose(mathDeps, owner),
     getBorrowingCapacity: (owner) => getBorrowingCapacity(mathDeps, owner),
     getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
     openTrove: (params) => openTrove(writeDeps, params),

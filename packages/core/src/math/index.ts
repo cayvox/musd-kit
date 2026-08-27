@@ -40,3 +40,28 @@ export {
   estimateCollateralDrawn,
   exceedsRateCap,
 } from './fee'
+
+// MK-042. The adjust family, previewed. One evaluator because the contract has one:
+// addColl, withdrawColl, withdrawMUSD, repayMUSD and adjustTrove all funnel into
+// `_adjustTrove` (`BorrowerOperations.sol:752-761`) and are gated by the same code.
+export {
+  previewAdjustTrove,
+  previewWithdrawCollateral,
+  maxWithdrawableCollateral,
+  computeMaxWithdrawable,
+  evaluateAdjust,
+  type PreviewAdjustParams,
+  type AdjustPreview,
+  type AdjustBlockReason,
+  type EvaluateAdjustInput,
+  type MaxWithdrawable,
+} from './previewAdjust'
+
+// MK-042. Closing has its own gate set, two of them conditional on a live chain read.
+export {
+  previewClose,
+  evaluateClose,
+  type ClosePreview,
+  type CloseBlockReason,
+  type EvaluateCloseInput,
+} from './previewClose'

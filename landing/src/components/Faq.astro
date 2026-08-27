@@ -27,7 +27,7 @@ const items = [
   },
   {
     q: 'How is correctness verified?',
-    a: 'Every release runs against a fork of real Mezo: a differential harness sweeps generated cases through each preview and then attempts the operation on-chain, comparing the verdict to what actually happened. A live testnet lifecycle is a separate manual gate run before publishing. No governable value is hardcoded. The sweep covers three previews against open, borrow and refinance, and not the other writes; what is and is not covered is stated per surface in the <a href="/docs/09-review-and-validated-surface">validated surface table</a>, alongside a public register of every known correctness gap.',
+    a: 'Every release runs against a fork of real Mezo: a differential harness sweeps generated cases through each preview and then attempts the operation on-chain, comparing the verdict to what actually happened. A live testnet lifecycle is a separate manual gate run before publishing. No governable value is hardcoded. The sweep covers eight operations, every write that has a preview to compare, and not redemption, liquidation or claim, which have none; what is and is not covered is stated per surface in the <a href="/docs/09-review-and-validated-surface">validated surface table</a>.',
   },
 ]
 
