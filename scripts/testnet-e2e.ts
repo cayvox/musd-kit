@@ -66,6 +66,17 @@ const COLLATERAL_OVERRIDE = process.env.E2E_COLLATERAL_BTC
   : undefined
 const DEBT_OVERRIDE = process.env.E2E_DEBT_MUSD ? parseMusd(process.env.E2E_DEBT_MUSD) : undefined
 const ALLOW_REDEEM = process.env.E2E_ALLOW_REDEEM === '1'
+/**
+ * MUSD to redeem when `E2E_ALLOW_REDEEM=1`. Defaults to a tenth of the balance.
+ *
+ * Controllable because the redemption comes BEFORE the close in this run, and every MUSD
+ * redeemed is one more the close then needs from outside the position (MK-045). A default
+ * fraction of the balance was fine when nothing depended on the balance afterwards; it is not
+ * fine now.
+ */
+const REDEEM_OVERRIDE = process.env.E2E_REDEEM_MUSD
+  ? parseMusd(process.env.E2E_REDEEM_MUSD)
+  : undefined
 const PLAN_ONLY = process.argv.includes('--plan')
 
 /** What each surface did. Printed as one table at the end, so nothing is silently absent. */
@@ -469,11 +480,25 @@ async function main(): Promise<void> {
   console.log('\n--- redeem ---')
   if (ALLOW_REDEEM) {
     const musdBalance = await musd.balanceOf(owner)
-    const amount = musdBalance / 10n
+    const amount = REDEEM_OVERRIDE ?? musdBalance / 10n
     if (amount > 0n) {
+      // The redemption acts on the LOWEST ICR Trove in the system, which belongs to someone
+      // else. On testnet that is acceptable and it is stated rather than glossed: redemption
+      // is a permissionless protocol operation, the counterparty is compensated in collateral
+      // at the oracle price, and no testnet position carries value. It would NOT be acceptable
+      // to do this casually on mainnet, which is why it is behind a flag.
+      const before = await musd.balanceOf(owner)
       const result = await musd.redeem({ amount })
       await waitOk(result.hash, 'redeem')
-      record('redeem', 'exercised', `redeemed ${formatMusd(amount)} MUSD`)
+      const after = await musd.balanceOf(owner)
+      console.log(
+        `  redeemed ${formatMusd(amount)} MUSD, rate ${result.redemptionRate}, estimated fee ${result.estimatedFeeCollateral} BTC wei`,
+      )
+      record(
+        'redeem',
+        'exercised',
+        `redeemed ${formatMusd(before - after)} MUSD against the lowest ICR Trove in the system, which is another account. Acceptable on testnet, deliberate, and flag gated`,
+      )
     } else {
       record('redeem', 'skipped', 'no MUSD balance to redeem')
     }
