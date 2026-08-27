@@ -43,10 +43,18 @@ correctness-sensitive, and shipped by no one as a reusable package. `musd-kit`
 writes it once, correctly, validated against the real contracts.
 
 **Correctness is the product.** Live position data comes from the contract's own
-authoritative getters. Two fields on `getTrove` are derived in TypeScript from
-those getters rather than read: `liquidationPrice` and `healthFactor`, both thin
-functions of values the contract returned (MK-015). Everything else, including
-`entireDebt`, `icr`, `nominalICR` and `interestOwed`, is the contract's own answer.
+authoritative getters, and `getTrove` says exactly which of its fourteen fields are
+read and which are derived in TypeScript from them (MK-015):
+
+- **Read from getters (9):** `collateral`, `principal`, `interestOwed`, `icr`,
+  `nominalICR`, `interestRate`, `status`, `price`, `blockNumber`.
+- **Derived (5):** `entireDebt` is `principal + interestOwed`, `isLiquidatable` is
+  `icr < MCR`, `exists` is a status check, and `liquidationPrice` and
+  `healthFactor` are the two formulas in `math/`.
+
+None of the five re-implements protocol logic; each is a thin function of values
+the contract returned in the same call. What the SDK never does is recompute debt
+or interest itself.
 
 Client-side math is confined to previews and calculators for positions that do not
 exist yet. What validates it, and what that validation does and does not cover, is

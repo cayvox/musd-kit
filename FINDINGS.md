@@ -702,12 +702,20 @@ belong to a later wave.
 | `docs/02-architecture.md:64` | "dual-validated" | "validation per docs/09 §3" |
 | `landing/src/components/Architecture.astro:44` | "dual-validated against a fork and the contracts' own pure helpers" | names the third validation and points at the table |
 
-**On "never re-derived", the honest answer.** It was not true, and the correction is specific rather
-than a hedge. `getTrove` returns eleven fields. Nine come straight from contract getters. TWO are
-derived in TypeScript from those getters: `liquidationPrice`, which is
-`MCR * entireDebt / collateral`, and `healthFactor`, which is `icr / MCR`. Both are thin functions
-of values the contract returned, neither re-implements protocol logic, and after MK-017 both live in
-exactly one place. That is what the README now says.
+**On "never re-derived", the honest answer, and a correction I nearly shipped.** It was not true.
+My first correction said "eleven fields, two derived", which was ALSO not true, and counting them
+against `read/types.ts` rather than from memory is what caught it. `getTrove` returns **fourteen**
+fields:
+
+| Read from a getter (9) | Derived in TypeScript (5) |
+|---|---|
+| `collateral`, `principal`, `interestOwed`, `icr`, `nominalICR`, `interestRate`, `status`, `price`, `blockNumber` | `entireDebt` = `principal + interestOwed`; `isLiquidatable` = `icr < MCR`; `exists` from `status`; `liquidationPrice` and `healthFactor` from `math/` |
+
+None of the five re-implements protocol logic; each is a thin function of values the contract
+returned in the same call, and after MK-017 the two formulas live in exactly one place. What the SDK
+never does is recompute debt or interest itself, which is the true claim the false one was reaching
+for. Writing "two" when the answer was "five", inside the wave whose subject is claims that overstate
+reality, is worth recording rather than quietly fixing.
 
 **On "validated twice", it is replaced rather than reworded.** Two was never the number and is now
 three: forked contracts, the contracts' own `pure` helpers, and actual transaction outcomes via the

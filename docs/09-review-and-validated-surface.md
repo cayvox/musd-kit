@@ -134,7 +134,7 @@ table is that a reader can trust it without cross referencing the register.
 | CI matrix across Node versions | **True.** 20, 22 and 24, resolving to v20.20.2, v22.23.2 and v24.19.0, measured from a run rather than assumed |
 | Post publish install verification | **Corrected: not verified.** `release.yml` `verify-published` exists and has never run, because publishing is out of bounds for this programme. It is verified by reading, not by execution |
 | Unit layer runs with no chain | **True**, and proven in process on every wave: `anvil` off `PATH` and `MEZO_TESTNET_RPC_URL` unset, 8 files passing |
-| Live data never re-derived | **Corrected.** Two fields on `getTrove` ARE derived in TypeScript from contract getters: `liquidationPrice` and `healthFactor`. Everything else is the contract's own answer. §3 says which is which (MK-015) |
+| Live data never re-derived | **Corrected.** Five of `getTrove`'s fourteen fields are derived in TypeScript from contract getters: `entireDebt`, `isLiquidatable`, `exists`, `liquidationPrice`, `healthFactor`. Nine are read. The README lists both sides. None re-implements protocol logic, and the SDK never recomputes debt or interest itself (MK-015) |
 | Validated twice | **Corrected.** Replaced by §3, which states coverage per surface including what it does not cover |
 | Simulate before send prevents failed writes | **Corrected.** It prevents every failure whose condition holds at simulate time, and neither a race nor gas exhaustion (MK-035). §2 states the limit with the measurement |
 | Previews cover the trove lifecycle | **Corrected.** Three of eleven writes have a preview. `withdrawCollateral` and `adjustTrove` have none, and `docs/03-core-api.md` names them |
