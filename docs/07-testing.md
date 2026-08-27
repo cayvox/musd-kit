@@ -178,7 +178,19 @@ failure becomes a function of everything before it and the seed stops reproducin
 pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
 MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep
 MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
+
+# The full sweep, in four slices with a fresh anvil each. One run does not fit.
+for FROM in 0 250 500 750; do
+  MK_DIFF_CASES=1000 MK_DIFF_FROM=$FROM MK_DIFF_TO=$((FROM+250)) pnpm test:fork
+done
 ```
+
+**Why four slices and not one run.** Measured on the 0.2.0 release sweep: cases 1 to 100 took
+582s, 5.8 seconds each, and cases 101 to 200 took 882s, 8.8 seconds each. The cost grows with the
+LIFE of the anvil process, not with the case index, so a single thousand case run reaches the
+test's own 90 minute timeout part way through and takes its results with it. A fresh anvil per
+slice holds the per case cost near the first figure. `MK_DIFF_TO` exists for exactly this: without
+an upper bound `MK_DIFF_FROM` can only cut a tail.
 
 **The seed is printed on every run, passing or failing.** A seed only visible on failure is a
 seed nobody has when they need it.
