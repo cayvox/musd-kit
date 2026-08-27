@@ -73,6 +73,7 @@ claim about it was not).
 | MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
 | MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
 | MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
+| MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
 
 ---
 
@@ -2261,6 +2262,91 @@ for different reasons: one on the SHAPE of the estimate request, so the mechanis
 one on the RESULT, so a future fallback cannot go trace free again. Both proved by mutation: putting
 the `Account` object back fails the first, and restoring `return undefined` with a bare `{ hash }`
 fails the second.
+
+---
+
+## MK-038 · `addCollateral` and `repay` ARE ratio gated, and a sinking position cannot be partly rescued
+
+**Class** S2 · **Status** open, documented · **Found by reading the contract to check a claim this
+repository had made from reasoning**
+
+**What the claim was.** `docs/03-core-api.md` justified shipping no preview for `addCollateral` and
+`repay` like this: they "need no ratio gate, and that is a property of the operation rather than an
+omission: adding collateral raises ICR and repaying lowers debt, so neither can move a valid
+position below MCR."
+
+Every sentence of that is true. The conclusion drawn from it is false, and the word carrying the
+weight is **valid**.
+
+**Ground truth.** `mezo-org/musd`, `solidity/contracts/BorrowerOperations.sol`, main branch.
+
+Both writes reach the same gate. `addColl` (`:189-203`) calls
+`_adjustTrove(_collWithdrawal = 0, _mUSDChange = 0, _isDebtIncrease = false)`; `repayMUSD`
+(`:261-276`) calls `_adjustTrove(_collWithdrawal = 0, _mUSDChange = _amount,
+_isDebtIncrease = false)`, against the signature at `:752-761`. `_adjustTrove` calls
+`_requireValidAdjustmentInCurrentMode` unconditionally at `:840-845`, which branches on mode at
+`:1212-1227`.
+
+**Normal mode, `:1197-1210`.** Every adjustment, in either direction, runs:
+
+```solidity
+1201:        _requireICRisAboveMCR(_vars.newICR);
+1209:        _requireNewTCRisAboveCCR(_vars.newTCR);
+```
+
+There is no `if (_isDebtIncrease)` around either one. `_requireICRisAboveMCR` (`:1330-1335`) is
+`require(_newICR >= MCR, "BorrowerOps: An operation that would result in ICR < MCR is not
+permitted")`. It is an **absolute** test on the resulting ICR, not a test that the operation did not
+make things worse.
+
+So for a position already **below** MCR, a partial top-up or a partial repayment raises the ICR and
+still reverts, because the raised ICR is still under the floor. The exact case a user hits after a
+price drop, doing the exactly correct thing, is refused, and this SDK gives them no verdict before
+they spend the gas and no number telling them how much would be enough.
+
+`_requireNewTCRisAboveCCR` (`:1344-1349`) cannot bite for these two: both raise TCR, and being in
+normal mode means TCR was already at or above CCR.
+
+**Recovery Mode, `:1265-1275`.** Here the original claim holds exactly:
+
+```solidity
+1270:        _requireNoCollWithdrawal(_collWithdrawal);
+1271:        if (_isDebtIncrease) {
+1272:            _requireICRisAboveCCR(_vars.newICR);
+1273:            _requireNewICRisAboveOldICR(_vars.newICR, _vars.oldICR);
+1274:        }
+```
+
+`_requireNoCollWithdrawal` passes trivially, both paths send zero, and both ICR requirements sit
+behind `if (_isDebtIncrease)`, which is false for both. A pure top-up and a pure repayment really
+are ungated in Recovery Mode.
+
+**Which is the opposite of what the claim predicted.** The documentation said Recovery Mode "adds
+restrictions to other operations, not to these two", and treated normal mode as the safe case. The
+contract does the reverse: Recovery Mode is where these two are ungated, and normal mode is where
+they are gated.
+
+**Why the reasoning failed, which is the part worth keeping.** The claim reasoned about the
+DIRECTION of the operation and the contract tests the RESULTING LEVEL. Monotone improvement and
+"passes an absolute floor" are different properties, and no amount of reasoning about the first
+tells you anything about the second. This is the third time in this programme that a claim reasoned
+from an operation's semantics disagreed with the line of Solidity that enforces it (MK-004, MK-005,
+MK-006 were all of this shape), and the standing rule that produced this entry, read the contract
+rather than reason about it, is the only thing that caught it.
+
+**Blast radius.** Any consumer holding an under-MCR position. `addCollateral` and `repay` revert
+with `ICRBelowMCR`, which the SDK maps correctly, so nothing is silently wrong; what is missing is
+anything that lets a caller know BEFORE sending, or that tells them the minimum that would work.
+
+**Reproduction.** `packages/core/test/zz-findings.fork.test.ts`, the MK-038 case: open a Trove, drop
+the oracle price until ICR is under MCR, then `addCollateral` a small amount and watch it revert.
+
+**Decision.** Documented now, not fixed now. The fix is a preview, and it is the same missing preview
+`withdrawCollateral` and `adjustTrove` need; building four of them is its own wave with its own
+acceptance, and grafting one onto a wave scoped to MK-037 is how scope creep enters this programme.
+What changes now is the false claim: `docs/03-core-api.md` is corrected to say these two ARE gated in
+normal mode, with the citations above, and the scope limit is restated to cover four writes rather
+than two.
 
 ---
 

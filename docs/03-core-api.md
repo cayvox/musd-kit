@@ -438,15 +438,16 @@ the payload diff that established it: `FINDINGS.md`, MK-037.
 ### Which writes have a preview, which have prechecks, and which have neither
 
 Read from the source, not from intent. **Three writes have a preview object; every write has at
-least one precheck; two writes have no ratio gate before simulate.**
+least one precheck; four writes are ratio gated by the contract with no verdict you can inspect
+first.**
 
 | Write | Preview | Prechecks it runs before simulate | Ratio or mode gate before simulate |
 |---|---|---|---|
 | `openTrove` | **`previewOpen`** | positive amounts, fee cap | in the preview only |
 | `borrow` | **`previewBorrow`** | positive, fee cap, Trove active, **borrowing capacity** | capacity yes, ICR and TCR no |
 | `refinance` | **`previewRefinance`** | Trove active | in the preview only |
-| `addCollateral` | none | positive, Trove active | none needed, see below |
-| `repay` | none | positive, Trove active, MUSD balance | none needed, see below |
+| `addCollateral` | **none** | positive, Trove active | **none**, and the contract gates it, see below |
+| `repay` | **none** | positive, Trove active, MUSD balance | **none**, and the contract gates it, see below |
 | `withdrawCollateral` | **none** | positive, Trove active | **none** |
 | `adjustTrove` | **none** | fee cap, Trove active, capacity when borrowing | **none** |
 | `close` | none | Trove active | not applicable |
@@ -454,22 +455,41 @@ least one precheck; two writes have no ratio gate before simulate.**
 | `liquidate`, `batchLiquidate` | none | none, permissionless by design | not applicable |
 | `claim` | none | matches exactly one revert, rethrows the rest | not applicable |
 
-**`addCollateral` and `repay` need no ratio gate**, and that is a property of the operation rather
-than an omission: adding collateral raises ICR and repaying lowers debt, so neither can move a valid
-position below MCR. Recovery Mode adds restrictions to other operations, not to these two.
+**`addCollateral` and `repay` are gated too, in normal mode (MK-038).** An earlier revision of this
+page said they need no ratio gate, as a property of the operation: adding collateral raises ICR and
+repaying lowers debt, so neither can move a **valid** position below MCR. That is true, and the
+conclusion drawn from it was wrong, because the contract does not test the direction of the change.
+It tests the resulting level, absolutely.
 
-**`withdrawCollateral` and `adjustTrove` are the real gap.** Both can leave a position below MCR or
-the system below CCR, and neither has a verdict you can inspect first.
+In `mezo-org/musd`, `solidity/contracts/BorrowerOperations.sol`: `addColl` (`:189-203`) and
+`repayMUSD` (`:261-276`) both reach `_adjustTrove` (`:752-761`), which calls
+`_requireValidAdjustmentInCurrentMode` unconditionally at `:840-845`. In normal mode
+(`:1197-1210`) that runs `_requireICRisAboveMCR(newICR)` at `:1201` with no direction condition
+around it, and `_requireICRisAboveMCR` (`:1330-1335`) is `require(_newICR >= MCR, ...)`.
+
+So a position **already below MCR** cannot be rescued by a partial top-up or a partial repayment.
+The ICR rises, the transaction still reverts, and this SDK gives you no verdict before you spend the
+gas and no number for how much would have been enough. That is the case a user hits after a price
+drop while doing the right thing.
+
+Recovery Mode is the opposite way round from what you would guess. `:1265-1275` requires only
+`_requireNoCollWithdrawal` (which both paths satisfy, they send zero) and puts both ICR requirements
+behind `if (_isDebtIncrease)`, which is false for both. **In Recovery Mode these two really are
+ungated.** It is normal mode where they are gated.
+
+**`withdrawCollateral` and `adjustTrove` are the wider gap.** Both can leave a position below MCR or
+the system below CCR from a healthy start, so they can fail where the other two would have succeeded.
 
 ### The scope limit, stated exactly
 
-**Do not treat `withdrawCollateral` or `adjustTrove` as guarded against ratio failures.** They are
-protected, but only by simulate before send: the contract's refusal comes back as a typed
-`ICRBelowMCR` or `RecoveryModeRestriction` when you call them, not as a verdict you can render
-before the user commits. There is no `previewWithdrawCollateral` and no `previewAdjustTrove`.
+**Do not treat `addCollateral`, `repay`, `withdrawCollateral` or `adjustTrove` as guarded against
+ratio failures.** They are protected, but only by simulate before send: the contract's refusal comes
+back as a typed `ICRBelowMCR` or `RecoveryModeRestriction` when you call them, not as a verdict you
+can render before the user commits. There is no preview for any of the four.
 
 If you need to grey out a button rather than catch an exception, you have to compute the resulting
-ratio yourself from `getTrove` plus `computeICR`, which are both exported for exactly this.
+ratio yourself from `getTrove` plus `computeICR`, which are both exported for exactly this, and
+compare it against `MCR` rather than against the ratio you started from.
 
 That limit is deliberate and it is the honest description of what exists. Previously the
 documentation implied the preview family covered the lifecycle; it covers three of eleven writes.
