@@ -19,6 +19,37 @@ export const musdQueryKeys = {
   /** Key for `useBorrowPreview`: one entry per owner and draw (MK-002). */
   borrowPreview: (chainId: number, owner: string, amount: bigint) =>
     ['musd', chainId, 'borrowPreview', owner, amount.toString()] as const,
+  /**
+   * MK-042. Carries all four legs, because a preview for "add 1 BTC" and one for "add 1 BTC
+   * and borrow 500" are different questions with different answers.
+   */
+  adjustPreview: (
+    chainId: number,
+    owner: string,
+    addCollateral: bigint,
+    withdrawCollateral: bigint,
+    increaseDebt: bigint,
+    repayDebt: bigint,
+  ) =>
+    [
+      'musd',
+      chainId,
+      'adjustPreview',
+      owner,
+      addCollateral.toString(),
+      withdrawCollateral.toString(),
+      increaseDebt.toString(),
+      repayDebt.toString(),
+    ] as const,
+  /** MK-042. A pure collateral withdrawal of `amount`, keyed per owner and per amount. */
+  withdrawCollateralPreview: (chainId: number, owner: string, amount: bigint) =>
+    ['musd', chainId, 'withdrawCollateralPreview', owner, amount.toString()] as const,
+  /** MK-042. The largest withdrawal the contract would accept now, and which gate caps it. */
+  maxWithdrawable: (chainId: number, owner: string) =>
+    ['musd', chainId, 'maxWithdrawable', owner] as const,
+  /** MK-042. Whether closing is permitted, and the MUSD the caller must hold to do it. */
+  closePreview: (chainId: number, owner: string) =>
+    ['musd', chainId, 'closePreview', owner] as const,
   /** Key for `useRefinancePreview`: one entry per owner (MK-003). */
   refinancePreview: (chainId: number, owner: string) =>
     ['musd', chainId, 'refinancePreview', owner] as const,

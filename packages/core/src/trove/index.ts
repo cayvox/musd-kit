@@ -6,14 +6,20 @@ import {
   priceFeedAbi,
   troveManagerAbi,
 } from '../clients'
-import { MUSD_GAS_COMPENSATION } from '../constants'
+import { CCR, MUSD_GAS_COMPENSATION } from '../constants'
 import {
   BelowMinimumDebt,
+  CollateralWithdrawalBlocked,
   ExceedsBorrowingCapacity,
+  InsufficientCollateral,
   InsufficientMusdBalance,
   InvalidAdjustment,
+  InvalidAmount,
   MaxFeeExceeded,
+  type MusdError,
+  RecoveryModeRestriction,
   RepayExceedsDebt,
+  SystemRatioBelowCCR,
   TroveAlreadyExists,
   TroveNotFound,
   assertPositiveAmount,
@@ -21,6 +27,13 @@ import {
 import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/mapRevert'
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
+import type { MathDeps } from '../math/deps'
+import {
+  type AdjustPreview,
+  type PreviewAdjustParams,
+  previewAdjustTrove,
+} from '../math/previewAdjust'
+import { previewClose } from '../math/previewClose'
 
 export type { GasDecision, WriteDeps, WriteResult } from '../internal/write'
 
@@ -305,6 +318,82 @@ export async function openTrove(deps: WriteDeps, params: OpenTroveParams): Promi
   })
 }
 
+/**
+ * MK-042. The shared ratio precheck for every write that funnels into `_adjustTrove`.
+ *
+ * Runs the SAME evaluator the caller can run themselves ({@link previewAdjustTrove}) and
+ * turns its binding constraint into a typed error carrying the real numbers, BEFORE simulate.
+ * One evaluator rather than one guard per path, because the contract has one gate set and
+ * duplicating it per write is how the two disagree later.
+ *
+ * **This is what closes the gap MK-038 documented as a scope limit.** The individual ratio
+ * requirement is absolute (`BorrowerOperations.sol:1201`, defined at `:1330-1335`), so an
+ * operation that IMPROVES a position can still be refused, and the error says so with the
+ * collateral figure that would actually clear it.
+ */
+async function assertAdjustViable(
+  deps: WriteDeps,
+  owner: Address,
+  params: Omit<PreviewAdjustParams, 'owner'>,
+): Promise<void> {
+  const preview = await previewAdjustTrove(mathDepsOf(deps), { owner, ...params })
+  if (preview.viable) return
+  throw adjustReasonToError(preview, owner)
+}
+
+/** `WriteDeps` already carries everything the preview calculators need. */
+function mathDepsOf(deps: WriteDeps): MathDeps {
+  return {
+    publicClient: deps.publicClient,
+    addresses: deps.addresses,
+    getMinNetDebt: deps.getMinNetDebt,
+    isAccountFeeExempt: deps.isAccountFeeExempt,
+  }
+}
+
+/**
+ * The binding constraint, as the typed error a caller catches.
+ *
+ * `bindingConstraint` is used rather than the whole list because it is the one the chain
+ * would report first, so the thrown error matches what a revert would have said.
+ */
+function adjustReasonToError(p: AdjustPreview, owner: Address): MusdError {
+  switch (p.bindingConstraint) {
+    case 'TROVE_NOT_ACTIVE':
+      return new TroveNotFound(owner)
+    case 'NO_CHANGE_REQUESTED':
+      return new InvalidAdjustment(
+        'No change requested: the contract requires a collateral change or a debt change (BorrowerOperations.sol:1377-1386).',
+      )
+    case 'COLLATERAL_ADD_AND_WITHDRAW':
+      return new InvalidAdjustment(
+        'Cannot add and withdraw collateral in one call (BorrowerOperations.sol:1367-1375).',
+      )
+    case 'ZERO_DEBT_INCREASE':
+      return new InvalidAmount('increaseDebt', 0n)
+    case 'WITHDRAWAL_EXCEEDS_COLLATERAL':
+      return new InsufficientCollateral(p.resultingIcr, p.icrThreshold)
+    case 'COLLATERAL_WITHDRAWAL_IN_RECOVERY_MODE':
+      return new CollateralWithdrawalBlocked()
+    case 'ICR_BELOW_THRESHOLD':
+      return new InsufficientCollateral(p.resultingIcr, p.icrThreshold)
+    case 'ICR_NOT_IMPROVED_IN_RECOVERY_MODE':
+      return new RecoveryModeRestriction(undefined)
+    case 'TCR_BELOW_CCR':
+      return new SystemRatioBelowCCR(undefined, { resultingTcr: p.resultingTcr, ccr: CCR })
+    case 'EXCEEDS_BORROWING_CAPACITY':
+      return new ExceedsBorrowingCapacity(undefined, undefined, p.netDebtChange, undefined)
+    case 'BELOW_MINIMUM_DEBT':
+      return new BelowMinimumDebt()
+    case 'REPAY_EXCEEDS_DEBT':
+      return new RepayExceedsDebt(undefined, { repay: p.netDebtChange })
+    case 'INSUFFICIENT_MUSD_BALANCE':
+      return new InsufficientMusdBalance(p.netDebtChange, 0n)
+    default:
+      return new InvalidAdjustment('The adjustment is not viable.')
+  }
+}
+
 export async function addCollateral(
   deps: WriteDeps,
   { amount }: { amount: bigint },
@@ -313,6 +402,10 @@ export async function addCollateral(
   assertPositiveAmount('amount', amount)
   const pos = await currentPosition(deps, wallet.account.address)
   assertTroveActive(pos.entireDebt, wallet.account.address)
+  // MK-042. The ratio gate applies to a pure top-up in NORMAL mode and is ABSOLUTE
+  // (`BorrowerOperations.sol:1201`), so a position already under MCR is refused even though
+  // this improves it. MK-038 is the entry that established it; this is the precheck.
+  await assertAdjustViable(deps, wallet.account.address, { addCollateral: amount })
   // Adding collateral does not touch principal.
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral + amount, pos.principal)
   return send(deps, 'addColl', [upperHint, lowerHint], {
@@ -342,6 +435,10 @@ export async function borrow(deps: WriteDeps, params: BorrowParams): Promise<Wri
   assertTroveActive(pos.entireDebt, wallet.account.address)
   // MK-002: the capacity gate, checked before simulate rather than surfaced as a revert.
   await assertWithinBorrowingCapacity(deps, wallet.account.address, pos.entireDebt, amount + fee)
+  // MK-042. And the ratio gates, which capacity alone never covered. In Recovery Mode this
+  // is what reports that a plain borrow can NEVER succeed: `withdrawMUSD` sends no
+  // collateral, so `_requireNewICRisAboveOldICR` (`:1273`) cannot be satisfied.
+  await assertAdjustViable(deps, wallet.account.address, { increaseDebt: amount })
   // `increaseTroveDebt` adds the whole draw plus fee to PRINCIPAL
   // (`TroveManager.sol:529-530`), so the resulting sort key grows by exactly that.
   const { upperHint, lowerHint } = await hintsFor(
@@ -367,6 +464,10 @@ export async function repay(deps: WriteDeps, { amount }: { amount: bigint }): Pr
   const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
   if (amount > netDebt) throw new RepayExceedsDebt(undefined, { repay: amount, netDebt })
   if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
+  // MK-042. The ratio gate applies to a pure repayment in NORMAL mode too, and it is
+  // ABSOLUTE (`BorrowerOperations.sol:1201`): a position already under MCR is refused even
+  // though repaying improves it. MK-038 is the entry; this is the precheck.
+  await assertAdjustViable(deps, owner, { repayDebt: amount })
   // Interest first: a payment at or below interest owed moves principal by zero.
   const { upperHint, lowerHint } = await hintsFor(
     deps,
@@ -387,6 +488,9 @@ export async function withdrawCollateral(
   const pos = await currentPosition(deps, wallet.account.address)
   assertTroveActive(pos.entireDebt, wallet.account.address)
   // Withdrawing collateral does not touch principal.
+  // MK-042. Withdrawal is refused OUTRIGHT in Recovery Mode (`:1270`), and gated on the
+  // absolute resulting ICR and on the system TCR in normal mode (`:1201`, `:1209`).
+  await assertAdjustViable(deps, wallet.account.address, { withdrawCollateral: amount })
   const { upperHint, lowerHint } = await hintsFor(deps, pos.collateral - amount, pos.principal)
   return send(deps, 'withdrawColl', [amount, upperHint, lowerHint], {
     revert: { operation: 'withdrawCollateral', address: wallet.account.address },
@@ -442,6 +546,14 @@ export async function adjustTrove(
     const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
     if (rpy > netDebt) throw new RepayExceedsDebt(undefined, { repay: rpy, netDebt })
   }
+  // MK-042. Every ratio and mode gate on the combined path, in one place. This is the write
+  // the earlier scope limit named as having no verdict at all.
+  await assertAdjustViable(deps, owner, {
+    ...(collAdd > 0n ? { addCollateral: collAdd } : {}),
+    ...(collWithdrawal > 0n ? { withdrawCollateral: collWithdrawal } : {}),
+    ...(brw !== undefined ? { increaseDebt: brw } : {}),
+    ...(rpy !== undefined ? { repayDebt: rpy } : {}),
+  })
   const resultingColl = pos.collateral + collAdd - collWithdrawal
   // The sort key moves by the PRINCIPAL change on both legs: a debt increase adds draw plus
   // fee to principal, and a repayment reduces principal only by whatever is left after
@@ -472,6 +584,25 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
   const required = pos.entireDebt - MUSD_GAS_COMPENSATION
   const balance = await getMusdBalance(deps, owner)
   if (balance < required) throw new InsufficientMusdBalance(required, balance)
+  // MK-042. Close has its own gate set, and two of its four gates are conditional on a live
+  // chain read, `musd.mintList(borrowerOperations)` (`BorrowerOperations.sol:949`). When
+  // that is true, closing is refused in Recovery Mode (`:954`) and gated on the resulting
+  // system TCR (`:972`). Neither was checked before this.
+  const closePreview = await previewClose(mathDepsOf(deps), owner)
+  if (!closePreview.viable) {
+    if (closePreview.bindingConstraint === 'RECOVERY_MODE') {
+      throw new RecoveryModeRestriction(undefined)
+    }
+    if (closePreview.bindingConstraint === 'TCR_BELOW_CCR') {
+      throw new SystemRatioBelowCCR(undefined, {
+        resultingTcr: closePreview.resultingTcr,
+        ccr: CCR,
+      })
+    }
+    if (closePreview.bindingConstraint === 'INSUFFICIENT_MUSD_BALANCE') {
+      throw new InsufficientMusdBalance(closePreview.musdRequired, closePreview.musdBalance)
+    }
+  }
   return send(deps, 'closeTrove', [], { revert: { operation: 'close', address: owner } })
 }
 

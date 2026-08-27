@@ -1,4 +1,12 @@
-import type { BorrowPreview, BorrowingCapacity, RefinancePreview, Trove } from '@musd-kit/core'
+import type {
+  AdjustPreview,
+  BorrowPreview,
+  BorrowingCapacity,
+  ClosePreview,
+  MaxWithdrawable,
+  RefinancePreview,
+  Trove,
+} from '@musd-kit/core'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { Address } from 'viem'
 import { useChainId } from 'wagmi'
@@ -152,3 +160,110 @@ export function useMusdBalance({
 // NOTE: `useMusdPeg` is intentionally NOT shipped in v1. The core `getPeg` is unimplemented
 // because Mezo exposes no MUSD/USD oracle (Phase 2 / docs/09), a hook returning a guessed
 // peg would violate the prime directive. It will land if/when a peg oracle exists.
+
+/**
+ * Preview a combined adjustment (core `previewAdjustTrove`, MK-042): every ratio and mode
+ * gate the contract enforces on `_adjustTrove`, with the raw numbers behind the verdict.
+ *
+ * **Read `icrIsAbsolute` before rendering a message.** The individual ratio requirement is an
+ * absolute test on the RESULTING ratio, not a do-no-harm test, so an adjustment that improves
+ * a position can still be refused (MK-038). `minimumCollateralToClearIcr` is the figure that
+ * would actually clear it.
+ */
+export function useAdjustTrovePreview(params: {
+  owner: Address | undefined
+  addCollateral?: bigint
+  withdrawCollateral?: bigint
+  increaseDebt?: bigint
+  repayDebt?: bigint
+}): UseQueryResult<AdjustPreview, Error> {
+  const chainId = useChainId()
+  const {
+    owner,
+    addCollateral = 0n,
+    withdrawCollateral = 0n,
+    increaseDebt = 0n,
+    repayDebt = 0n,
+  } = params
+  return useMusdQuery<AdjustPreview>({
+    queryKey: musdQueryKeys.adjustPreview(
+      chainId,
+      owner ?? '0x',
+      addCollateral,
+      withdrawCollateral,
+      increaseDebt,
+      repayDebt,
+    ),
+    fetch: (client) =>
+      client.previewAdjustTrove({
+        owner: owner as Address,
+        addCollateral,
+        withdrawCollateral,
+        increaseDebt,
+        repayDebt,
+      }),
+    enabled: owner !== undefined,
+  })
+}
+
+/**
+ * Preview withdrawing collateral (core `previewWithdrawCollateral`, MK-042).
+ *
+ * **Refused outright in Recovery Mode**, not merely limited: `_requireNoCollWithdrawal`
+ * (`BorrowerOperations.sol:1270`) permits no amount at all, so there is no smaller number
+ * that works. The reason is `COLLATERAL_WITHDRAWAL_IN_RECOVERY_MODE` rather than a ratio.
+ */
+export function useWithdrawCollateralPreview({
+  owner,
+  amount,
+}: {
+  owner: Address | undefined
+  amount: bigint | undefined
+}): UseQueryResult<AdjustPreview, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<AdjustPreview>({
+    queryKey: musdQueryKeys.withdrawCollateralPreview(chainId, owner ?? '0x', amount ?? 0n),
+    fetch: (client) =>
+      client.previewWithdrawCollateral({ owner: owner as Address, amount: amount as bigint }),
+    enabled: owner !== undefined && amount !== undefined,
+  })
+}
+
+/**
+ * The largest collateral withdrawal the contract would accept right now, and which gate caps
+ * it (core `maxWithdrawableCollateral`, MK-042).
+ *
+ * This is the "max" button's number. `limitedBy` says whether the cap is the position's own
+ * ratio, the system ratio, or Recovery Mode refusing withdrawal entirely, which are three
+ * different things to tell a user.
+ */
+export function useMaxWithdrawableCollateral({
+  owner,
+}: { owner: Address | undefined }): UseQueryResult<MaxWithdrawable, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<MaxWithdrawable>({
+    queryKey: musdQueryKeys.maxWithdrawable(chainId, owner ?? '0x'),
+    fetch: (client) => client.maxWithdrawableCollateral(owner as Address),
+    enabled: owner !== undefined,
+  })
+}
+
+/**
+ * Preview closing a Trove (core `previewClose`, MK-042): whether it is permitted, the MUSD
+ * the caller must hold, and the shortfall if they do not.
+ *
+ * The balance requirement is the whole entire debt minus the 200 MUSD gas compensation
+ * (`BorrowerOperations.sol:963`), which is the reason closing fails most often.
+ * `canMint` reports whether the Recovery Mode and TCR gates are enforced at all: both are
+ * conditional on `musd.mintList(borrowerOperations)`, read live rather than assumed.
+ */
+export function useClosePreview({
+  owner,
+}: { owner: Address | undefined }): UseQueryResult<ClosePreview, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<ClosePreview>({
+    queryKey: musdQueryKeys.closePreview(chainId, owner ?? '0x'),
+    fetch: (client) => client.previewClose(owner as Address),
+    enabled: owner !== undefined,
+  })
+}

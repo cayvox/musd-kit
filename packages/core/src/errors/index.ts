@@ -81,18 +81,31 @@ export class BelowMinimumDebt extends MusdError {
  * the Trove's debt AFTER `updateSystemAndTroveInterest`, so accrued interest counts.
  */
 export class ExceedsBorrowingCapacity extends MusdError {
+  /**
+   * MK-043. The four numbers are OPTIONAL, for the same reason {@link BelowMinimumDebt}'s
+   * are (MK-017): the pre-send guard knows them and passes them, and `mapRevert` decodes a
+   * revert string and knows none of them. Constructing this with four zeros from the decode
+   * path would print four numbers the user never encountered. Absent means absent.
+   */
   constructor(
-    capacity: bigint,
-    entireDebt: bigint,
-    netDebtChange: bigint,
-    remaining: bigint,
+    capacity?: bigint,
+    entireDebt?: bigint,
+    netDebtChange?: bigint,
+    remaining?: bigint,
     cause?: unknown,
   ) {
+    const known =
+      capacity !== undefined &&
+      entireDebt !== undefined &&
+      netDebtChange !== undefined &&
+      remaining !== undefined
     super(
       Codes.EXCEEDS_BORROWING_CAPACITY,
-      `Borrowing ${netDebtChange} (draw plus fee) against a debt of ${entireDebt} would need ${entireDebt + netDebtChange} of capacity, but the Trove's maxBorrowingCapacity is ${capacity}, leaving ${remaining}. Capacity is fixed at the opening price and never rises, so a higher collateral price does not raise it.`,
+      known
+        ? `Borrowing ${netDebtChange} (draw plus fee) against a debt of ${entireDebt} would need ${entireDebt + netDebtChange} of capacity, but the Trove's maxBorrowingCapacity is ${capacity}, leaving ${remaining}. Capacity is fixed at the opening price and never rises, so a higher collateral price does not raise it.`
+        : "This operation exceeds the Trove's maxBorrowingCapacity. Capacity is fixed at the opening price and never rises, so a higher collateral price does not raise it. The exact figures are not available here: this was decoded from a contract revert rather than caught by the pre-send guard, which is the path that carries them.",
       {
-        context: { capacity, entireDebt, netDebtChange, remaining },
+        ...(known ? { context: { capacity, entireDebt, netDebtChange, remaining } } : {}),
         ...(cause !== undefined ? { cause } : {}),
       },
     )
@@ -202,6 +215,56 @@ export class ICRBelowMCR extends MusdError {
       { cause },
     )
     this.name = 'ICRBelowMCR'
+  }
+}
+
+/**
+ * The SYSTEM ratio gate, `_requireNewTCRisAboveCCR` (`BorrowerOperations.sol:1344-1349`).
+ *
+ * Distinct from {@link ICRBelowMCR} and from {@link RecoveryModeRestriction}, and it had no
+ * typed error at all before MK-043: the revert string "An operation that would result in
+ * TCR < CCR is not permitted" matched no pattern in `mapRevert` and arrived as a generic
+ * `ContractCallFailed`.
+ *
+ * **It is a normal mode gate.** `_requireValidAdjustmentInNormalMode` (`:1197-1210`) runs it
+ * on every adjustment; `_requireValidAdjustmentInRecoveryMode` (`:1265-1275`) does not run it
+ * at all. It also gates `openTrove` (`:665`), `closeTrove` (`:972`) and `refinance` (`:1059`).
+ *
+ * Your own position can be perfectly healthy and this still refuses you: the constraint is
+ * about the system, so what has to change is usually not yours to change.
+ */
+export class SystemRatioBelowCCR extends MusdError {
+  constructor(cause?: unknown, context?: { resultingTcr?: bigint; ccr?: bigint }) {
+    const known = context?.resultingTcr !== undefined && context?.ccr !== undefined
+    super(
+      Codes.SYSTEM_RATIO_BELOW_CCR,
+      known
+        ? `This operation would take the system total collateral ratio to ${context.resultingTcr}, below the ${context.ccr} minimum (CCR). The constraint is on the system, not on your position.`
+        : 'This operation would take the system total collateral ratio below CCR. The constraint is on the system, not on your position. The exact figures are not available here: this was decoded from a contract revert rather than caught by the pre-send guard, which is the path that carries them.',
+      { ...(cause !== undefined ? { cause } : {}), ...(context ? { context } : {}) },
+    )
+    this.name = 'SystemRatioBelowCCR'
+  }
+}
+
+/**
+ * Recovery Mode refuses collateral withdrawal OUTRIGHT, `_requireNoCollWithdrawal`
+ * (`BorrowerOperations.sol:1270`, `:1388-1393`).
+ *
+ * Separate from {@link RecoveryModeRestriction} because the two say different things and the
+ * difference is actionable (MK-043). `RecoveryModeRestriction` means "leave the Trove at
+ * ICR >= CCR and you may proceed"; this one means **no amount is permitted**, so there is no
+ * number a user can adjust to. Both reverts previously mapped to the first message, which
+ * told a user to satisfy a ratio that would not have helped.
+ */
+export class CollateralWithdrawalBlocked extends MusdError {
+  constructor(cause?: unknown) {
+    super(
+      Codes.COLLATERAL_WITHDRAWAL_BLOCKED,
+      'The system is in Recovery Mode, which permits no collateral withdrawal at all. This is not a ratio you can satisfy with a smaller amount; withdrawal resumes when the system leaves Recovery Mode.',
+      cause !== undefined ? { cause } : {},
+    )
+    this.name = 'CollateralWithdrawalBlocked'
   }
 }
 
