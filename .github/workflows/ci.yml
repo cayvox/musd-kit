@@ -34,6 +34,27 @@ jobs:
   # Cheap, deterministic, chain-free. Runs across the Node range the packages advertise
   # in `engines` (>=20.20.2), so resolution drift is caught before users hit it. This is
   # the matrix `docs/07-testing.md` §5 describes; keep the two in sync.
+  #
+  # WHAT IS PINNED HERE, AND WHAT IS NOT (MK-044)
+  #
+  # Pinned to an exact version, in every workflow: Node, pnpm, and Foundry. These EXECUTE the
+  # project's code, so a version moving changes what the suite measures, and this repository
+  # has been bitten twice: MK-029 (Node differed between local and CI, both reporting
+  # honestly) and MK-041 (Foundry shipped anvil 1.8.0 and the fork gate went red on a commit
+  # that touched one markdown file).
+  #
+  # NOT pinned, deliberately: the `uses:` action majors. They are workflow infrastructure,
+  # not measurement. A major float can break a run loudly; it cannot silently change a test
+  # result, which is the failure mode the pins above exist to stop. Pinning them would mean
+  # commit SHAs, which is a real supply chain protection against a tag being re-pointed, and
+  # a real ongoing cost: every action needs a manual bump forever, in a single maintainer
+  # repository, and stale actions are their own failure. The judgment is that the measurement
+  # boundary is where the pins pay for themselves. Revisit it if this repository grows more
+  # maintainers, or if an action ever does change a result.
+  #
+  # THE COST OF PINNING, stated because it is not free: pins go stale. A pinned Node or
+  # Foundry stops receiving fixes until someone bumps it, and nothing here will remind you.
+  # Bumping is a deliberate act in its own commit, with the run read afterwards.
   checks:
     name: Checks (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
@@ -49,7 +70,13 @@ jobs:
         # development pin cannot move CI under us (MK-029). Verified rather than assumed, from
         # run 32706407738: '20' resolves to v20.20.2, '22' to v22.23.2, '24' to v24.19.0.
         # See `docs/08-conventions.md` §1 and `docs/07-testing.md` §5.
-        node: ['20', '22', '24']
+        # PINNED to exact patches, not majors (MK-044). '20' is a moving label: it resolved
+        # to v20.20.2 in run 32706407738 and would silently become v20.20.3 the day one ships.
+        # That is the same shape as MK-029 (a runtime moving under a commit) and MK-041 (a
+        # tool moving under a commit), and the matrix is the last place in this repository
+        # where it was still true. The values are the ones the run above actually resolved,
+        # so this pin changes nothing today and stops it changing tomorrow without a commit.
+        node: ['20.20.2', '22.23.2', '24.19.0']
     steps:
       - name: Checkout
         uses: actions/checkout@v5

@@ -31,7 +31,7 @@ jobs:
       contents: read
       deployments: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
         with:
@@ -39,13 +39,15 @@ jobs:
 
       # RUNTIME: already declared here rather than read from `.nvmrc`, which is the rule
       # (`docs/08-conventions.md` §1), so this job was not touched when the other four were
-      # decoupled. Two things about it are open and deliberately NOT changed in a repair:
-      # `20` is a floating major, and Node 20 reached end of life on 2026-04-30. This
-      # workflow is manual dispatch behind a typed confirmation and builds a static site, so
-      # neither is urgent; both are worth a deliberate decision rather than a drive by bump.
-      - uses: actions/setup-node@v4
+      # decoupled. Both things an earlier wave left open here are now decided (MK-044): `20`
+      # was a floating major AND Node 20 reached end of life on 2026-04-30. It is pinned to
+      # 24.19.0, the same exact version the fork gate declares, so the site is built on the
+      # runtime the tests ran on rather than on an unsupported one. `actions/setup-node` moves
+      # to v5 for the same reason: every other workflow is already there, and one workflow on
+      # a different major is a difference nobody would think to look for.
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24.19.0
           cache: pnpm
 
       - name: Install
