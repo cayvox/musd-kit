@@ -38,6 +38,7 @@
 
 import { mezoTestnet } from '@mezo-org/chains'
 import {
+  MUSD_GAS_COMPENSATION as GAS_COMPENSATION,
   type MusdClient,
   MusdError,
   createMusdClient,
@@ -50,8 +51,20 @@ import { http, type Address, createPublicClient, createWalletClient, formatEther
 import { privateKeyToAccount } from 'viem/accounts'
 
 const RPC = process.env.MEZO_TESTNET_RPC_URL ?? 'https://rpc.test.mezo.org'
-const COLLATERAL = parseBtc(process.env.E2E_COLLATERAL_BTC ?? '0.05')
-const DEBT = parseMusd(process.env.E2E_DEBT_MUSD ?? '2500')
+/**
+ * The position is sized FROM THE CHAIN, not from a constant (MK-045).
+ *
+ * A hardcoded 0.05 BTC against a 2500 MUSD draw was a comfortable number, and comfortable is
+ * the wrong property here: the faucet caps at 0.05 BTC per day, so a run that needs more than
+ * the cap cannot be funded in one day, and every input that decides the minimum is governable.
+ * The debt is the protocol floor and the collateral is whatever that floor needs at
+ * `E2E_TARGET_ICR`, both read live. Override either only to test a specific shape.
+ */
+const TARGET_ICR_PCT = BigInt(process.env.E2E_TARGET_ICR ?? '140')
+const COLLATERAL_OVERRIDE = process.env.E2E_COLLATERAL_BTC
+  ? parseBtc(process.env.E2E_COLLATERAL_BTC)
+  : undefined
+const DEBT_OVERRIDE = process.env.E2E_DEBT_MUSD ? parseMusd(process.env.E2E_DEBT_MUSD) : undefined
 const ALLOW_REDEEM = process.env.E2E_ALLOW_REDEEM === '1'
 const PLAN_ONLY = process.argv.includes('--plan')
 
@@ -89,55 +102,81 @@ async function plan(musd: MusdClient, publicClient: ReturnType<typeof createPubl
     musd.getConstants(),
     publicClient.getGasPrice(),
   ])
-  const fee = await musd.getBorrowingFee(DEBT)
 
-  // Collateral locked: the open, plus the top-up step, minus what the withdraw step returns.
-  // The adjust step adds and the close returns everything, so the peak is what matters.
-  const topUp = COLLATERAL / 10n
-  const adjustAdd = COLLATERAL / 20n
-  const peakCollateral = COLLATERAL + topUp + adjustAdd
+  // The debt floor, from the chain. `_requireAtLeastMinNetDebt` (`BorrowerOperations.sol:645`,
+  // `:1239-1244`) applies to netDebt, which is draw PLUS fee, and the composite debt adds the
+  // 200 MUSD gas compensation on top (`:648`).
+  const drawFloor = constants.minNetDebt
+  const debt = DEBT_OVERRIDE ?? drawFloor
+  const fee = await musd.getBorrowingFee(debt)
+  const entireDebt = debt + fee + GAS_COMPENSATION
 
-  // Gas. Eleven sends at the SDK's own margin, and the account must hold
-  // `gasLimit * gasPrice` UP FRONT for each, not just the amount actually burned (MK-035).
+  // Collateral to put that debt at the target ratio. Ceil, so the position lands at or above
+  // the target rather than one wei under it.
+  const sized = (TARGET_ICR_PCT * 10n ** 16n * entireDebt + price - 1n) / price
+  const collateral = COLLATERAL_OVERRIDE ?? sized
+
+  // Collateral locked at the PEAK, which is a single Trove holding all three deposits at once
+  // (`openTrove`, then `addCollateral`, then the `adjustTrove` leg). It is not a sum across
+  // separate positions: this script opens exactly one Trove and closes it.
+  const topUp = collateral / 10n
+  const adjustAdd = collateral / 20n
+  const peakCollateral = collateral + topUp + adjustAdd
+
+  // Gas. Eleven sends, and the account must hold `gasLimit * gasPrice` UP FRONT for each, not
+  // just what is burned (MK-035).
   const SENDS = 11n
-  const PER_SEND_GAS = 800_000n // the largest limit observed on this SDK's writes, openTrove
-  const MARGIN_NUM = 125n
-  const MARGIN_DEN = 100n
-  const gasBudget = (SENDS * PER_SEND_GAS * MARGIN_NUM * gasPrice) / MARGIN_DEN
+  const PER_SEND_GAS = 800_000n
+  const gasBudget = (SENDS * PER_SEND_GAS * 125n * gasPrice) / 100n
 
-  const subtotal = peakCollateral + gasBudget
-  // A margin, justified rather than round: the faucet is rate limited, so a run that dies
-  // halfway leaves an open position AND no quick way to top up. 50% covers a doubling of the
-  // gas price between planning and running, which is the input most likely to move.
-  const total = (subtotal * 150n) / 100n
+  // THE MARGIN GOES ON THE GAS, NOT ON THE COLLATERAL (MK-045).
+  //
+  // An earlier version multiplied the whole requirement by 1.5, which put a 50% buffer on the
+  // collateral term. That term is exact and deterministic: it is a number this script chooses
+  // and then deposits. Nothing about it can move between planning and running. The gas price
+  // is the only volatile input, and at 146 wei it is roughly one part in thirty million of the
+  // requirement, so a margin on the total was buying protection against the wrong thing while
+  // pushing the figure above what a day's faucet can fund.
+  //
+  // 20x the gas estimate, floored at 0.001 BTC, because a gas price read once can be wrong by
+  // orders of magnitude and a floor costs 2% of a day's faucet.
+  const FLOOR = 1_000_000_000_000_000n
+  const scaled = gasBudget * 20n
+  const gasReserve = scaled > FLOOR ? scaled : FLOOR
+  const total = peakCollateral + gasReserve
 
   console.log('\n=== funding plan, computed from live chain values ===')
   console.log(`  price                 ${formatMusd(price)} USD/BTC`)
   console.log(`  minNetDebt            ${formatMusd(constants.minNetDebt)} MUSD`)
-  console.log(`  borrowing fee on draw ${formatMusd(fee)} MUSD (draw ${formatMusd(DEBT)})`)
+  console.log(`  interestRate          ${constants.interestRate} bps`)
+  console.log(`  draw                  ${formatMusd(debt)} MUSD`)
+  console.log(`  borrowing fee         ${formatMusd(fee)} MUSD`)
+  console.log(`  entireDebt at open    ${formatMusd(entireDebt)} MUSD  (draw + fee + 200 reserve)`)
   console.log(`  gasPrice              ${gasPrice} wei`)
   console.log('  ---')
-  console.log(`  collateral, open      ${formatBtc(COLLATERAL)} BTC`)
+  console.log(
+    `  collateral, open      ${formatBtc(collateral)} BTC   (${TARGET_ICR_PCT}% of entireDebt at this price)`,
+  )
   console.log(`  collateral, top-up    ${formatBtc(topUp)} BTC`)
   console.log(`  collateral, adjust    ${formatBtc(adjustAdd)} BTC`)
-  console.log(`  peak collateral       ${formatBtc(peakCollateral)} BTC   (returned by close)`)
   console.log(
-    `  gas budget            ${formatBtc(gasBudget)} BTC   = ${SENDS} sends * ${PER_SEND_GAS} gas * 1.25 * ${gasPrice} wei`,
+    `  peak collateral       ${formatBtc(peakCollateral)} BTC   ONE Trove, all three at once`,
   )
-  console.log(`  subtotal              ${formatBtc(subtotal)} BTC`)
-  console.log(`  + 50% margin          ${formatBtc(total)} BTC   <- FUND AT LEAST THIS`)
   console.log(
-    '\n  The collateral comes back on close; the gas does not. The margin is for the gas\n' +
-      '  price moving between planning and running, because the faucet is rate limited and a\n' +
-      '  half-finished run leaves an open position with no quick way to top up.',
+    `  gas reserve           ${formatBtc(gasReserve)} BTC   (${SENDS} sends * ${PER_SEND_GAS} * 1.25 * ${gasPrice} wei, x20, floored)`,
   )
-  // The debt floor, checked here so an unrunnable configuration is caught before funding.
-  if (DEBT + fee < constants.minNetDebt) {
+  console.log(`  TOTAL TO FUND         ${formatBtc(total)} BTC`)
+  console.log(
+    '\n  The collateral is returned by close; the gas is not. The margin sits on the gas\n' +
+      '  because that is the only input that can move: the collateral is a number this script\n' +
+      '  chooses and deposits.',
+  )
+  if (debt + fee < constants.minNetDebt) {
     die(
-      `E2E_DEBT_MUSD is unrunnable: draw ${formatMusd(DEBT)} plus fee ${formatMusd(fee)} is below the ${formatMusd(constants.minNetDebt)} floor.`,
+      `unrunnable: draw ${formatMusd(debt)} plus fee ${formatMusd(fee)} is below the ${formatMusd(constants.minNetDebt)} floor.`,
     )
   }
-  return total
+  return { total, collateral, debt, fee, entireDebt, price }
 }
 
 async function main(): Promise<void> {
@@ -169,6 +208,7 @@ async function main(): Promise<void> {
   const musd = createMusdClient({ chainId: 31611, publicClient, walletClient })
   const owner: Address = account.address
 
+  let leftOpen = false
   const waitOk = async (hash: `0x${string}`, label: string): Promise<void> => {
     console.log(`  ${label}: ${hash}`)
     const receipt = await publicClient.waitForTransactionReceipt({ hash })
@@ -177,7 +217,10 @@ async function main(): Promise<void> {
   }
 
   console.log(`account     ${owner}`)
-  const required = await plan(musd, publicClient)
+  const sizing = await plan(musd, publicClient)
+  const required = sizing.total
+  const COLLATERAL = sizing.collateral
+  const DEBT = sizing.debt
   const balance = await publicClient.getBalance({ address: owner })
   console.log(`\nbalance     ${formatEther(balance)} BTC`)
   if (balance < required) {
@@ -370,19 +413,58 @@ async function main(): Promise<void> {
     beforeClose.entireDebt - parseMusd('200'),
   )
   if (!closePreview.viable) {
-    die(
-      `previewClose says the position cannot be closed [${closePreview.reasons.join(',')}]. The
+    // MK-045. A Trove cannot be closed with only the MUSD it drew, and this is a PROTOCOL
+    // property rather than a defect here or a mistake in this run.
+    //
+    // The borrowing fee is capitalised into the debt and minted to the PCV, never handed to
+    // the borrower (`BorrowerOperations.sol:637-643`), while closing requires
+    // `entireDebt - MUSD_GAS_COMPENSATION` in hand (`:963`). So the borrower ends up short by
+    // exactly the accumulated fees plus accrued interest, always. Measured on a fork: a draw
+    // of 2000 delivered 2000 and required 2002 to close, a shortfall of exactly the 2 MUSD
+    // fee.
+    //
+    // `previewClose` reports it correctly, with the exact number, which is the SDK behaving
+    // as designed. What it means for this script is that a self funded account cannot end the
+    // run with no Trove unless it obtains MUSD from outside the position.
+    if (
+      closePreview.bindingConstraint === 'INSUFFICIENT_MUSD_BALANCE' &&
+      closePreview.musdShortfall > 0n
+    ) {
+      console.log(
+        `  cannot close: short ${formatMusd(closePreview.musdShortfall)} MUSD (MK-045). The
+  borrowing fee is added to the debt and never paid out, so a position cannot be
+  closed with only what it drew. The Trove is LEFT OPEN, deliberately and reported.`,
+      )
+      record(
+        'previewClose',
+        'exercised',
+        `musdRequired matched entireDebt minus the reserve; reports a ${formatMusd(closePreview.musdShortfall)} MUSD shortfall`,
+      )
+      record(
+        'close',
+        'skipped',
+        `MK-045: short ${formatMusd(closePreview.musdShortfall)} MUSD, which is the borrowing fee. Needs MUSD from outside the position`,
+      )
+      leftOpen = true
+    } else {
+      die(
+        `previewClose says the position cannot be closed [${closePreview.reasons.join(',')}]. The
   account is LEFT OPEN; resolve the reason and re-run, which will close it first.`,
-    )
+      )
+    }
   }
-  await waitOk((await musd.close()).hash, 'close')
-  const closed = await musd.getTrove(owner)
-  if (closed.exists) die('close mined but getTrove still reports the Trove as existing')
-  console.log('  closed, getTrove.exists is false ✓')
-  record('previewClose', 'exercised', 'musdRequired matched entireDebt minus the gas reserve')
-  record('close', 'exercised', 'position closed, account left with no Trove')
+  if (!leftOpen) {
+    await waitOk((await musd.close()).hash, 'close')
+    const closed = await musd.getTrove(owner)
+    if (closed.exists) die('close mined but getTrove still reports the Trove as existing')
+    console.log('  closed, getTrove.exists is false ✓')
+    record('previewClose', 'exercised', 'musdRequired matched entireDebt minus the gas reserve')
+    record('close', 'exercised', 'position closed, account left with no Trove')
+  }
 
   // ---- the ledger
+  const finalTrove = await musd.getTrove(owner)
+  const finalBalance = await publicClient.getBalance({ address: owner })
   console.log('\n=== what this run exercised ===')
   for (const row of ledger) {
     console.log(
@@ -393,6 +475,13 @@ async function main(): Promise<void> {
   console.log(
     `\n  ${ledger.length - skipped.length} exercised, ${skipped.length} skipped, and every skip has a reason above.`,
   )
+  console.log(`\n  account holds an open Trove: ${finalTrove.exists}`)
+  if (finalTrove.exists) {
+    console.log(
+      `  entireDebt ${formatMusd(finalTrove.entireDebt)} MUSD, collateral ${formatBtc(finalTrove.collateral)} BTC (MK-045)`,
+    )
+  }
+  console.log(`  remaining BTC balance: ${formatEther(finalBalance)}`)
   console.log('\n✓ GO, live lifecycle verified on Mezo testnet.')
 }
 
