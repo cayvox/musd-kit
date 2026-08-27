@@ -18,6 +18,11 @@ anvil*.log
 .env
 .env.*
 !.env.example
+# Local key material for the live testnet run (scripts/testnet-e2e.ts). The whole directory
+# is ignored, not one filename, so a second key file cannot be added and tracked by accident.
+# The script reads MEZO_TESTNET_PRIVATE_KEY from the ENVIRONMENT; this file is only where an
+# operator keeps it between runs, and it is sourced, never read by path from the code.
+.secrets/
 
 # editor / OS
 .DS_Store
