@@ -417,8 +417,11 @@ switch (result.gas.source) {
     result.gas.estimate;      // what the node answered
     result.gas.marginPercent; // what was added
     break;
-  case 'explicit':  // you passed a gas limit; the estimate was not consulted
-    break;
+  case 'explicit':  // a gas limit was set explicitly; the estimate was not consulted.
+    break;            // NOT reachable from the public write methods today: none of them
+                      // takes a `gas` parameter. The branch exists on the internal write
+                      // path and is covered by its tests; it is documented here so the
+                      // union is complete, not because you can currently produce it
   case 'fallback':  // estimation FAILED. This send carried no margin at all
     result.gas.error; // the typed MusdError explaining why
     break;
