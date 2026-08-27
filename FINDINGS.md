@@ -72,7 +72,7 @@ claim about it was not).
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
 | MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
 | MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
-| MK-037 | `estimateContractGas` balance checks, so the MK-035 gas margin is silently dropped whenever the account is thinly funded | S2 | open |
+| MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
 
 ---
 
@@ -2169,10 +2169,10 @@ pinned, so the answer cannot come from an ancestor.
 
 ---
 
-## MK-037 · The gas margin is silently dropped when the estimate balance checks
+## MK-037 · The gas margin is silently dropped, because the estimate caps itself
 
-**Class** S2 · **Status** open, NOT fixed here · **Found by us in the P9 wave, by the warning added
-in the same wave**
+**Class** S2 · **Status** fixed · **Found by us in the P9 wave, by the warning added in the same
+wave**
 
 **What happens.** `simulateAndSend` estimates gas and multiplies by
 `DEFAULT_GAS_MARGIN_PERCENT` (MK-035). When that estimate throws, it falls back to sending with no
@@ -2188,14 +2188,61 @@ gas estimation failed for refinance ... Transaction creation failed.
 gas estimation failed for withdrawMUSD ... Transaction creation failed.
 ```
 
-**The mechanism, as far as it is established.** `eth_estimateGas` checks the sender's balance
-against `gas * gasPrice + value`, and with no `gas` supplied the node assumes something large,
-plausibly the block gas limit. An account funded for the transaction it is about to send can
-therefore fail ESTIMATION while the transaction itself would succeed, which is exactly what happens:
-these writes go through, at the old 1.5% margin, having silently lost the fix.
+**The mechanism. Established, and it is not what this entry first said.**
 
-**What is NOT established:** which gas figure the node assumes, and whether the "Transaction creation
-failed" cases share the cause or are a second thing. Both need reading anvil rather than guessing.
+This entry originally recorded the cause as a balance check: `eth_estimateGas` comparing the
+sender's balance against `gas * gasPrice + value` with the node assuming a large `gas`. **That was a
+hypothesis and it is wrong.** It was tested directly, by funding an account both below and above the
+computed `blockGasLimit * maxFeePerGas + value` threshold and probing each side: both sides reported
+`estimateOk=true` and `writeOk=true`. The hypothesis is not merely unproven, it is refuted.
+
+The second hypothesis, that the CI failures were all balance errors, is also wrong. Correlating the
+CI log line by line, the warning immediately preceding `[MK-035] margin=1.5%` was
+`The contract function "openTrove" reverted.`, not a balance error. The balance errors in that log
+came from the differential harness's extreme band, which generates collateral up to 5000 BTC against
+a funded balance far below it, and are expected there.
+
+The actual cause was found by diffing the raw JSON-RPC payloads of our estimate against the one viem
+sends internally during `writeContract`:
+
+```
+ours    {"data":"0x2f3a6d98...","gas":"0xa1c58","nonce":"0x0","to":"0xCdF7028c...",...}
+viem's  {"data":"0x2f3a6d98...","to":"0xCdF7028c...",...}            no gas, no nonce
+```
+
+`simulateAndSend` passed the `Account` OBJECT to `estimateContractGas`. viem responds to an account
+object by running `prepareTransactionRequest` first, which fills in a nonce and a gas figure, and
+then sends `eth_estimateGas` **with that gas field set**. A node treats a supplied gas field as the
+upper bound of its search, so the estimate fails as soon as the real work exceeds a cap the estimate
+itself invented. `writeContract`, which sends no gas field, is uncapped and succeeds. Measured both
+ways against the same call:
+
+```
+Account object: estimateGasRequests=2  gasFieldSent="0xa1c58"  nonceSent="0x0"  result=662616
+address only:   estimateGasRequests=1  gasFieldSent=undefined  nonceSent=undefined  result=662616
+```
+
+Identical answer, one fewer round trip, and no self imposed cap. **This is MK-035's own mechanism, a
+gas limit set too low from a stale estimate, reappearing one level up inside the fix for MK-035.**
+
+**How far this generalises.** The two halves generalise differently and the distinction matters.
+The node half is standard: `eth_estimateGas` bounding its search by a supplied `gas` field is
+ordinary behavior, not an anvil quirk. The client half is viem specific: whether handing a library
+an account object makes it prepare and cap the request is that library's choice, and nothing here
+establishes what ethers, web3.py or a raw JSON-RPC caller would do. A consumer on another client
+should assume nothing from this entry beyond the node half, which is why the fix pins the REQUEST
+shape rather than the outcome.
+
+**The fix.** Pass `wallet.account.address` to the estimate and keep the `Account` object on the
+simulation. `packages/core/src/internal/write.ts`. Cost to a consumer: none. Same estimate, one
+fewer `eth_estimateGas` round trip, no change to fees, latency, or any typed error.
+
+**And the fallback is no longer trace free.** Even fixed, the estimate can still fail for real
+reasons, and losing the margin then would still be invisible. `WriteResult` now carries a
+`GasDecision`: `{source:'estimate'}` with the estimate and margin used, `{source:'explicit'}`, or
+`{source:'fallback'}` carrying the typed error from `mapRevert`. The `console.warn` stays, but it is
+no longer the only trace. A library consumer cannot assert on a console line, cannot route it to
+their own telemetry, and does not see it in a console they have filtered.
 
 **How it was found, which is the part worth keeping.** The fallback was added in P7 with
 `.catch(() => undefined)` and no logging. It was invisible for a wave. The MK-035 pin caught it in
@@ -2203,16 +2250,17 @@ CI as `margin=1.5%` with no explanation anywhere, and the warning added in P9 na
 run. A fallback that restores the behavior a finding was raised about must never be silent, and this
 is the second time in this programme that a silent catch cost a diagnosis (see MK-007).
 
-**Why it is not fixed here.** P9's scope is MK-015, MK-017 and MK-027. This changes gas handling in
-the one function every write goes through, which is what MK-035's own entry says needs its own wave
-with its own acceptance. The obvious candidates, estimating without the account or supplying a gas
-cap to the estimate, both change what the estimate MEANS, and picking one without measuring is how
-MK-035 got its first two hypotheses wrong.
+**Its cost while it was carried.** The MK-035 pin failed whenever this fired, so the fork gate was
+red in those runs. That was the pin working: it asserts the margin is applied, and the margin was
+not applied. **It was deliberately not weakened to make CI green**, because an assertion that passes
+when the thing it asserts is untrue is worth less than a red build. It now passes for the right
+reason.
 
-**Its cost while carried.** The MK-035 pin fails whenever this fires, so the fork gate is red in
-those runs. That is the pin working: it asserts the margin is applied, and the margin is not applied.
-**It has deliberately not been weakened to make CI green**, because an assertion that passes when
-the thing it asserts is untrue is worth less than a red build.
+**Pinned by** `packages/core/test/write-gas-fallback.test.ts`, two independent assertions that fail
+for different reasons: one on the SHAPE of the estimate request, so the mechanism cannot return, and
+one on the RESULT, so a future fallback cannot go trace free again. Both proved by mutation: putting
+the `Account` object back fails the first, and restoring `return undefined` with a bare `{ hash }`
+fails the second.
 
 ---
 

@@ -401,6 +401,40 @@ What it costs you, measured on a fork rather than assumed:
 
 `gasMarginPercent: 0` restores the old behavior, which is what produced the reverts.
 
+### Knowing whether the margin was actually applied (MK-037)
+
+Every write result carries a `gas` field saying how its limit was chosen. This exists because
+for one release the margin could be dropped on any send and the only trace was a
+`console.warn`, which a library consumer cannot assert on, cannot route to their own telemetry,
+and does not see in a console they have filtered.
+
+```ts
+const result = await musd.openTrove({ collateral, debt });
+
+switch (result.gas.source) {
+  case 'estimate':  // the normal case
+    result.gas.limit;         // what was sent
+    result.gas.estimate;      // what the node answered
+    result.gas.marginPercent; // what was added
+    break;
+  case 'explicit':  // you passed a gas limit; the estimate was not consulted
+    break;
+  case 'fallback':  // estimation FAILED. This send carried no margin at all
+    result.gas.error; // the typed MusdError explaining why
+    break;
+}
+```
+
+`source: 'fallback'` is the one worth branching on. That send went out with pre-margin
+behavior, so it is the send most likely to run out of gas, and now you can tell.
+
+The cause of nearly every historic `fallback` was in this SDK rather than in your node. The
+estimate was made with the account OBJECT, which makes viem prepare the request and put a `gas`
+field on `eth_estimateGas`; the node then treats that as the ceiling of its search and the
+estimate fails against a cap it supplied itself, while the write succeeds. It now estimates
+with the address. Same answer, one fewer round trip, no self imposed cap. Full mechanism and
+the payload diff that established it: `FINDINGS.md`, MK-037.
+
 ### Which writes have a preview, which have prechecks, and which have neither
 
 Read from the source, not from intent. **Three writes have a preview object; every write has at
