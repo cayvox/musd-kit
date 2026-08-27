@@ -401,6 +401,45 @@ What it costs you, measured on a fork rather than assumed:
 
 `gasMarginPercent: 0` restores the old behavior, which is what produced the reverts.
 
+### Which writes have a preview, which have prechecks, and which have neither
+
+Read from the source, not from intent. **Three writes have a preview object; every write has at
+least one precheck; two writes have no ratio gate before simulate.**
+
+| Write | Preview | Prechecks it runs before simulate | Ratio or mode gate before simulate |
+|---|---|---|---|
+| `openTrove` | **`previewOpen`** | positive amounts, fee cap | in the preview only |
+| `borrow` | **`previewBorrow`** | positive, fee cap, Trove active, **borrowing capacity** | capacity yes, ICR and TCR no |
+| `refinance` | **`previewRefinance`** | Trove active | in the preview only |
+| `addCollateral` | none | positive, Trove active | none needed, see below |
+| `repay` | none | positive, Trove active, MUSD balance | none needed, see below |
+| `withdrawCollateral` | **none** | positive, Trove active | **none** |
+| `adjustTrove` | **none** | fee cap, Trove active, capacity when borrowing | **none** |
+| `close` | none | Trove active | not applicable |
+| `redeem` | none | positive, MUSD balance, rate cap | not applicable |
+| `liquidate`, `batchLiquidate` | none | none, permissionless by design | not applicable |
+| `claim` | none | matches exactly one revert, rethrows the rest | not applicable |
+
+**`addCollateral` and `repay` need no ratio gate**, and that is a property of the operation rather
+than an omission: adding collateral raises ICR and repaying lowers debt, so neither can move a valid
+position below MCR. Recovery Mode adds restrictions to other operations, not to these two.
+
+**`withdrawCollateral` and `adjustTrove` are the real gap.** Both can leave a position below MCR or
+the system below CCR, and neither has a verdict you can inspect first.
+
+### The scope limit, stated exactly
+
+**Do not treat `withdrawCollateral` or `adjustTrove` as guarded against ratio failures.** They are
+protected, but only by simulate before send: the contract's refusal comes back as a typed
+`ICRBelowMCR` or `RecoveryModeRestriction` when you call them, not as a verdict you can render
+before the user commits. There is no `previewWithdrawCollateral` and no `previewAdjustTrove`.
+
+If you need to grey out a button rather than catch an exception, you have to compute the resulting
+ratio yourself from `getTrove` plus `computeICR`, which are both exported for exactly this.
+
+That limit is deliberate and it is the honest description of what exists. Previously the
+documentation implied the preview family covered the lifecycle; it covers three of eleven writes.
+
 ### When a write reverts anyway
 
 ```ts

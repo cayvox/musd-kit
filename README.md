@@ -42,11 +42,17 @@ power calculator and a collateral-health monitor. That work is duplicated,
 correctness-sensitive, and shipped by no one as a reusable package. `musd-kit`
 writes it once, correctly, validated against the real contracts.
 
-**Correctness is the product.** Live position data is read from the contract's own
-authoritative getters (never re-derived); the only client-side math,
-previews/calculators for positions that don't exist yet, is validated twice:
-against a fork of the real Mezo contracts and against the contracts' own `pure`
-helpers.
+**Correctness is the product.** Live position data comes from the contract's own
+authoritative getters. Two fields on `getTrove` are derived in TypeScript from
+those getters rather than read: `liquidationPrice` and `healthFactor`, both thin
+functions of values the contract returned (MK-015). Everything else, including
+`entireDebt`, `icr`, `nominalICR` and `interestOwed`, is the contract's own answer.
+
+Client-side math is confined to previews and calculators for positions that do not
+exist yet. What validates it, and what that validation does and does not cover, is
+stated per surface in
+[the validated surface table](https://github.com/cayvox/musd-kit/blob/main/docs/09-review-and-validated-surface.md).
+That page is the claim; this paragraph is a pointer to it.
 
 ---
 

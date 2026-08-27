@@ -39,7 +39,7 @@ const musd = createMusdClient({ chainId: mezoTestnet.id, publicClient, walletCli
 const trove = await musd.getTrove(account.address)
 // trove.entireDebt, trove.icr, trove.healthFactor, trove.liquidationPrice, …
 
-// Preview, the only client-side math (dual-validated against the fork + pure helpers).
+// Preview, the only client-side math. See docs/09 for what its validation covers.
 const preview = await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })
 if (preview.meetsMinimum) {
   await musd.openTrove({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })
@@ -61,8 +61,11 @@ Every protocol revert maps to a discriminated `MusdError` you can branch on
 - **Live position data → the contract's own getters** (`getEntireDebtAndColl`,
   `getCurrentICR`, `getTCR`, …). Never recomputed client-side, no interest-drift by
   construction.
-- **Previews of positions that don't exist yet → client math, dual-validated** against
-  forked-Mezo behavior *and* the contract's `pure` helpers.
+- **Previews of positions that don't exist yet → client math.** Validated against
+  forked-Mezo behavior, against the contract's `pure` helpers, and since P8 against
+  actual transaction outcomes by the differential harness. Coverage is stated per
+  surface in `docs/09-review-and-validated-surface.md` §3, including what it does
+  not cover (MK-015).
 
 ## React?
 

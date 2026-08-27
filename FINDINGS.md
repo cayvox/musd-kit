@@ -50,9 +50,9 @@ claim about it was not).
 | MK-012 | Governable constants are cached for the client lifetime | S2 | fixed |
 | MK-013 | Price is read outside the multicall, so price and ICR can straddle blocks | S2 | fixed |
 | MK-014 | `redeem` returns a rate in a field named `fee` | S1 | fixed |
-| MK-015 | Documentation claims that overstate reality | S3 | open |
+| MK-015 | Documentation claims that overstate reality | S3 | fixed |
 | MK-016 | Test suite is one stateful sequence with unpinned fork and flake mitigations | S3 | open |
-| MK-017 | Duplicated derivations and placeholder values | S3 | open |
+| MK-017 | Duplicated derivations and placeholder values | S3 | fixed |
 | MK-018 | Fee exemption is not modeled | S1 | fixed |
 | MK-019 | `refinance()` reverts in Recovery Mode, which the SDK neither checks nor documents | S2 | fixed |
 | MK-020 | Oracle shim seed is not pinned, so a pinned fork block is not a pinned price | S3 | fixed |
@@ -62,7 +62,7 @@ claim about it was not).
 | MK-024 | Phase 6 normal mode liquidation intermittently crashes on a missing event | S3 | open |
 | MK-025 | React block watching test intermittently sends a write that reverts | S3 | open |
 | MK-026 | Phase 5 lifecycle writes fail only under the coverage run, never under a plain fork run | S3 | open |
-| MK-027 | Source files sit outside every typecheck and lint configuration | S3 | open |
+| MK-027 | Source files sit outside every typecheck and lint configuration | S3 | fixed |
 | MK-028 | The DOM test environment pairs jsdom's `AbortSignal` with Node's `Request`, which Node 24 rejects | S2 | fixed |
 | MK-029 | Local evidence and CI evidence were both true, because they ran different runtimes | S2 | fixed |
 | MK-030 | `zz-findings` MK-003 refinance fee assertion fails intermittently on a plain fork run | S3 | open |
@@ -689,6 +689,32 @@ marked done only when a check in CI enforces it, never when a document merely de
 The two remaining rows, live data never re-derived and validated twice, are untouched and
 belong to a later wave.
 
+**Fixed, P9 wave. Every occurrence reconciled, by file and line, not the first one found.**
+
+| File | What it said | What it says now |
+|---|---|---|
+| `README.md:45-48` | "never re-derived", "validated twice" | names the two derived fields, and points at `docs/09` §3 |
+| `packages/core/README.md:42` | "dual-validated against the fork + pure helpers" | points at `docs/09` |
+| `packages/core/README.md:64` | "client math, dual-validated" | names all three validations including the differential harness, and points at §3 for what is NOT covered |
+| `docs/00-overview.md:22` | "the dual-validation method" | "how the math is validated" |
+| `docs/02-architecture.md:15` | "PREVIEW-only, dual-validated" | "PREVIEW-only, see docs/09 §3" |
+| `docs/02-architecture.md:47` | "validated twice" | "validated as docs/09 §3 states" |
+| `docs/02-architecture.md:64` | "dual-validated" | "validation per docs/09 §3" |
+| `landing/src/components/Architecture.astro:44` | "dual-validated against a fork and the contracts' own pure helpers" | names the third validation and points at the table |
+
+**On "never re-derived", the honest answer.** It was not true, and the correction is specific rather
+than a hedge. `getTrove` returns eleven fields. Nine come straight from contract getters. TWO are
+derived in TypeScript from those getters: `liquidationPrice`, which is
+`MCR * entireDebt / collateral`, and `healthFactor`, which is `icr / MCR`. Both are thin functions
+of values the contract returned, neither re-implements protocol logic, and after MK-017 both live in
+exactly one place. That is what the README now says.
+
+**On "validated twice", it is replaced rather than reworded.** Two was never the number and is now
+three: forked contracts, the contracts' own `pure` helpers, and actual transaction outcomes via the
+differential harness. Rather than update a count that will go stale again, every occurrence now
+points at `docs/09` §3, which states coverage per surface INCLUDING what it does not cover.
+
+
 ---
 
 ## MK-016 · Test suite is one stateful sequence with unpinned fork and flake mitigations
@@ -788,6 +814,42 @@ zero debt sentinel ICR. Three `as unknown as Abi` casts and one `any` remain in 
 
 **Decision.** Fix now. Single source each derivation, remove the placeholders, handle the sentinel,
 and type the write path properly.
+
+**Fixed, P9 wave.**
+
+- **Single sourced.** `read/getTrove.ts` calls `computeLiquidationPrice` and `getHealthFactor`
+  rather than writing the formulas out again. Proven value identical rather than asserted:
+  `packages/core/test/mk-017-dedup.test.ts` reproduces the OLD inline expressions verbatim and
+  compares them against the pure functions across a grid of seven collaterals by five debts, plus
+  the MCR and CCR thresholds and one wei either side.
+- **The placeholders are gone, and the shape changed rather than the values being invented.**
+  `BelowMinimumDebt` and `InsufficientMusdBalance` now take their numbers as OPTIONAL. The pre-send
+  guard knows them and passes them; `mapRevert` decodes a revert string and does not, so it passes
+  nothing and the message says the figures are unavailable and why. Previously a user who tried to
+  draw 1700 against a floor of 1800 was told their net debt was 0 and the minimum was 0.
+- **The sentinel is handled, and it CHANGES a value.** This is stated because it is true rather than
+  hidden because it is inconvenient: `getHealthFactor` on the zero debt sentinel used to return
+  `1.0526553567028745e59`, a finite number with no interpretation. It returns `Infinity`. The read
+  path is unaffected, because `getTrove` returns its zero-Trove early with `healthFactor: 0` and
+  never passes an infinite ICR, and a test pins that. The existing `math.test.ts` case that PINNED
+  the old limitation, with a comment saying it "is expected to change when the sentinel is handled",
+  was flipped to assert the new behavior.
+- **The casts.** All three `as unknown as Abi` are gone: a plain `: Abi` annotation is sufficient,
+  which means they were never needed. Both `any` declarations in `internal/write.ts` are gone,
+  replaced by a `satisfies DynamicWriteParams` on the literal, so a misspelled field is a compile
+  error again. **Three casts remain, at dependency boundaries, and are kept with the specific
+  reason** rather than to make a count go down: `simulateContract`, `estimateContractGas` and
+  `writeContract` each take a different parameter type, all generic over the ABI and the function
+  name, and both are runtime values on this path. Typing the object as
+  `SimulateContractParameters<Abi, string, readonly unknown[]>` compiles and then fails at all three
+  call sites with `Type 'Account' is not assignable to type 'null | undefined'`, not assignable to
+  `EstimateContractGasParameters`, and `WriteContractParameters<readonly [never], ...>`. That was
+  tried and reverted, not assumed.
+
+**A correction to the prompt that asked for this.** It said "five casts of the form `as unknown as`
+plus one `any`". The source had **three** `as unknown as Abi` and **two** `any` declarations, which
+is what this entry itself said. The count in the request was wrong; the work was done against the
+source.
 
 ---
 
@@ -1378,8 +1440,32 @@ bearing, had an override typed against a name that did not resolve. Fixed to the
 `?? ''` fallback removed rather than kept: returning an empty path for every spec would sort them all
 equal and silently destroy the ordering, so it throws with the reason instead.
 
-Still uncovered: `docs/.vitepress/config.ts` and `docs/.vitepress/theme/index.ts`, both in the
-`docs` workspace, which has no `typecheck` script at all.
+**P9: zero tracked TypeScript files are now outside typecheck.** `docs/tsconfig.json` brings
+`.vitepress/config.ts` and `.vitepress/theme/index.ts` in, and it is wired into `pnpm typecheck` so
+it cannot rot. Re-audited with `tsc --listFilesOnly` against `git ls-files`: nothing left.
+
+Including them surfaced a real error, twice over, which is the point of doing it. First
+`docs/.vitepress/config.ts:3` imports `landing/src/lib/code-theme.mjs`, a plain ES module with no
+types, so it was an implicit `any`. Then, once `allowJs` let TypeScript read the object, it failed
+against shiki's `ThemeRegistrationResolved`, which requires `settings`, `fg` and `bg`.
+
+**The mismatch has no runtime consequence** and that was checked rather than assumed: it is a valid
+raw TextMate theme, shiki accepts it, and `pnpm build:site` renders both the landing site and the
+docs with it. What was wrong was the DECLARATION, not the theme, so `landing/src/lib/code-theme.d.mts`
+declares it as `ThemeRegistrationRaw`, the arm of shiki's union it actually belongs to. It was not
+silenced with a cast to make the count go down.
+
+**The landing site: a deliberate limit, narrowed rather than closed.** It stays out of `biome.json`
+lint and out of typecheck, and the reason is proportion rather than laziness. It ships no code to
+any consumer: it is a marketing and documentation site whose failure mode is a broken page, and that
+IS gated, by `pnpm build:site` running on every push (`ci.yml:204`), which builds all 27 sources and
+runs the link check.
+
+**What was NOT defensible was the `check` script**, and it is removed. `landing/package.json` carried
+`"check": "astro check"`, run by nothing and unable to run at all, because `@astrojs/check` is not
+installed. A script that names a gate which does not exist is the same defect as a document that
+implies coverage it does not have, which is the subject of this whole wave. Removing it is more
+honest than leaving it as an aspiration.
 
 **Decision.** The hole that caused both observed consequences is closed. The eight files and the
 landing site are recorded here and NOT fixed in this wave, because closing them means touching build

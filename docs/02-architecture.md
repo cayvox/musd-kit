@@ -12,7 +12,7 @@
                                          │  clients/    typed viem clients     │
                                          │  addresses/  31611 / 31612 (+override)
                                          │  read/       getTrove via CONTRACT getters
-                                         │  math/       PREVIEW-only, dual-validated
+                                         │  math/       PREVIEW-only, see docs/09 §3
                                          │  hints/      getApproxHint + findInsertPosition
                                          │  trove/      lifecycle writes → real ABI
                                          │  redemption/ redeem + getRedemptionHints + fee
@@ -44,7 +44,7 @@ getters, so the SDK does not re-derive what the chain will tell it.
 
 `read/` and `math/` are deliberately **separate modules**. A live `getTrove`
 **never** calls `math/` for its core numbers, it reads the contract. `previewOpen`
-and `getBorrowingPower` live in `math/` and are validated twice (against forked-Mezo
+and `getBorrowingPower` live in `math/` and are validated as `docs/09` §3 states (forked-Mezo
 behavior and against the contract's `pure` helpers `computeCR`/`computeNominalCR`/
 `getBorrowingFee`). See `05-math-and-hints` for the method.
 
@@ -61,7 +61,7 @@ across every read.
 | `clients/` | typed viem contract instances from bundled ABIs | internal, consumed by every other module |
 | `addresses/` | per-network address maps (31611/31612) + override | resolve-by-chainId; values from `01-ground-truth` §4 |
 | `read/` | **live** position + system reads (contract-authoritative) | `getTrove`, `getSystemState`, `isLiquidatable`, balances, peg, price |
-| `math/` | **preview** compute only, dual-validated | `previewOpen`, `getBorrowingPower`, `computeICR`, `computeLiquidationPrice`, `computeEntireDebt`, `getHealthFactor` |
+| `math/` | **preview** compute only, validation per `docs/09` §3 | `previewOpen`, `getBorrowingPower`, `computeICR`, `computeLiquidationPrice`, `computeEntireDebt`, `getHealthFactor` |
 | `hints/` | the insertion-hint ritual | `computeHints({ collateral, entireDebt })` → `{ upperHint, lowerHint }` |
 | `trove/` | lifecycle writes, mapped to the real ABI | `openTrove`, `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `close`, `claim`, `refinance` |
 | `redemption/` | redemption + the permissionless keeper surface | `redeem`, `isLiquidatable`, `liquidate`, `batchLiquidate` |

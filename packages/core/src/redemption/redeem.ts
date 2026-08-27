@@ -11,7 +11,7 @@ import { findHintsForNICR } from '../hints'
 import { type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
 import { estimateCollateralDrawn, exceedsRateCap } from '../math/fee'
 
-const TM_ABI = troveManagerAbi as unknown as Abi
+const TM_ABI: Abi = troveManagerAbi
 
 /** Sane default trove-scan bound for a redemption (override per call). */
 export const DEFAULT_REDEMPTION_MAX_ITERATIONS = 100n

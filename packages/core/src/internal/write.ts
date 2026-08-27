@@ -1,4 +1,14 @@
-import type { Abi, Account, Address, Hex, PublicClient, WalletClient } from 'viem'
+import type {
+  Abi,
+  Account,
+  Address,
+  EstimateContractGasParameters,
+  Hex,
+  PublicClient,
+  SimulateContractParameters,
+  WalletClient,
+  WriteContractParameters,
+} from 'viem'
 import type { MusdAddresses } from '../addresses'
 import { MissingWalletClient } from '../errors'
 import { type RevertContext, mapRevert } from '../errors/mapRevert'
@@ -84,6 +94,21 @@ export interface WriteResult {
   hash: Hex
 }
 
+/**
+ * The shape every dynamic write builds, checked with `satisfies` at the construction site
+ * (MK-017). viem's own parameter types are generic over the ABI and the function name, both of
+ * which are runtime values on this path, so they cannot be used directly; this is what the
+ * object genuinely is, and the boundary casts are documented where they occur.
+ */
+interface DynamicWriteParams {
+  account: Account
+  address: Address
+  abi: Abi
+  functionName: string
+  args: readonly unknown[]
+  value?: bigint
+}
+
 export interface Wallet {
   walletClient: WalletClient
   account: Account
@@ -144,11 +169,27 @@ export async function simulateAndSend(
   // life of the client and a resolved promise on every send after that.
   await deps.ensureVerified()
   try {
-    // Dynamic dispatch over a write set; viem's per-function typing can't be expressed
-    // generically here, so the params object is untyped.
-    // biome-ignore lint/suspicious/noExplicitAny: dynamic write dispatch (ABI typed at call sites).
-    const sim: any = { account: wallet.account, address, abi, functionName, args }
-    if (opts?.value !== undefined) sim.value = opts.value
+    // MK-017. This used to be `const sim: any`, which switched off checking for the whole
+    // object including a misspelled field. `satisfies` checks the literal against a real shape
+    // WITHOUT widening it, so a typo here is a compile error again.
+    //
+    // The casts at the two call sites below are kept, and the reason is specific rather than
+    // "viem is generic": `simulateContract`, `estimateContractGas` and `writeContract` each
+    // take a DIFFERENT parameter type, all three generic over the ABI and the function name,
+    // and both of those are runtime values here. Typing `sim` as
+    // `SimulateContractParameters<Abi, string, readonly unknown[]>` compiles but then fails at
+    // all three call sites with, respectively: `Type 'Account' is not assignable to type
+    // 'null | undefined'`; not assignable to `EstimateContractGasParameters`; and
+    // `WriteContractParameters<readonly [never], ...>`. That was tried and reverted rather
+    // than assumed.
+    const sim = {
+      account: wallet.account,
+      address,
+      abi,
+      functionName,
+      args,
+      ...(opts?.value !== undefined ? { value: opts.value } : {}),
+    } satisfies DynamicWriteParams
     // MK-035. `simulateContract` returns a request with NO `gas` field, verified rather than
     // assumed, so without an explicit limit `writeContract` estimates internally and sends
     // whatever came back. That estimate is taken before the block the transaction mines in,
@@ -161,25 +202,25 @@ export async function simulateAndSend(
     // `docsPath: '/docs/contract/estimateContractGas'` on the error. In parallel they see
     // the same head, and the write costs no more latency than it did before.
     const [{ request }, estimate] = await Promise.all([
-      deps.publicClient.simulateContract(sim),
+      deps.publicClient.simulateContract(sim as unknown as SimulateContractParameters),
       // A failed estimate must NOT fail the write. If the state really has moved,
       // `writeContract` estimates internally and surfaces it exactly as it did before this
       // change; falling back is never worse than the behavior being replaced.
       deps.publicClient
-        .estimateContractGas(sim)
+        .estimateContractGas(sim as unknown as EstimateContractGasParameters)
         .catch(() => undefined),
     ])
 
     // A caller supplied `gas` wins outright: an explicit limit is a decision, not a default.
-    // biome-ignore lint/suspicious/noExplicitAny: same dynamic dispatch as above.
-    const req: any = { ...(request as any) }
-    if (opts?.gas !== undefined) {
-      req.gas = opts.gas
-    } else if (estimate !== undefined) {
-      req.gas = withGasMargin(estimate, deps.gasMarginPercent)
-    }
+    const gas =
+      opts?.gas !== undefined
+        ? opts.gas
+        : estimate !== undefined
+          ? withGasMargin(estimate, deps.gasMarginPercent)
+          : undefined
+    const req = { ...request, ...(gas !== undefined ? { gas } : {}) }
 
-    const hash = await wallet.walletClient.writeContract(req)
+    const hash = await wallet.walletClient.writeContract(req as unknown as WriteContractParameters)
     return { hash }
   } catch (error) {
     throw mapRevert(error, { operation: functionName, ...opts?.revert })

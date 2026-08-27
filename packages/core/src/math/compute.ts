@@ -42,10 +42,28 @@ export function computeLiquidationPrice({
 }
 
 /**
+ * The ICR {@link computeICR} returns for a position with no debt: the contract's own
+ * "infinite CR" convention, `2^256 - 1`.
+ */
+const INFINITE_ICR = (1n << 256n) - 1n
+
+/**
  * Normalized distance to liquidation: `icr / MCR` as a number (1.0 at MCR). Computed
  * in fixed point first so very large ICRs don't lose precision.
+ *
+ * MK-017: the zero debt sentinel is handled EXPLICITLY, and this CHANGES the value it returns.
+ * `computeICR` returns `2^256 - 1` for zero debt, matching the contract's infinite CR
+ * convention. Scaling that by `1_000_000n` and converting to `Number` used to produce
+ * `1.0526553567028745e59`, a finite number with no interpretation, which is exactly what the
+ * finding means by "loses meaning for a zero debt sentinel ICR". A position with no debt is
+ * infinitely far from liquidation, so that is what it says now.
+ *
+ * The change is confined to callers of this pure helper. `read/getTrove.ts` returns its
+ * zero-Trove early when `entireDebt === 0`, with `healthFactor: 0`, so it never passes an
+ * infinite ICR here and its output is unaffected.
  */
 export function getHealthFactor({ icr }: { icr: bigint }): number {
+  if (icr >= INFINITE_ICR) return Number.POSITIVE_INFINITY
   return Number((icr * 1_000_000n) / MCR) / 1_000_000
 }
 

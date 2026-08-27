@@ -31,7 +31,7 @@ export interface ClaimResult {
 }
 
 const ONE = 10n ** 18n
-const BO_ABI = borrowerOperationsAbi as unknown as Abi
+const BO_ABI: Abi = borrowerOperationsAbi
 
 /** Current (collateral, entireDebt) of `owner`, to-now, from the contract. */
 /**

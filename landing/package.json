@@ -9,8 +9,7 @@
     "dev:site": "DOCS_BASE=/docs/ pnpm -w docs:build && astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro",
-    "check": "astro check"
+    "astro": "astro"
   },
   "dependencies": {
     "@mezo-org/chains": "0.0.1",

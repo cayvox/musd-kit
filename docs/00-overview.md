@@ -19,7 +19,7 @@ community (interaction).
 | [Architecture](/02-architecture) | The package graph, the two-source correctness model, module responsibilities |
 | [Reads, previews, and the Trove lifecycle](/03-core-api) | The framework-agnostic `@musd-kit/core` surface |
 | [React hooks](/04-react-api) | The hook set and the Passport relationship |
-| [Math and insertion hints](/05-math-and-hints) | The exact formulas, the hint ritual, the dual-validation method |
+| [Math and insertion hints](/05-math-and-hints) | The exact formulas, the hint ritual, and how the math is validated |
 | [Typed errors](/06-errors) | The discriminated error set and the revert mapping |
 | [Ground truth](/01-ground-truth) | Every verified constant, signature, address, and formula, the anti-assumption source |
 | [Testing](/07-testing) | The forked-Mezo harness, the test gates, the boundary corpus |
