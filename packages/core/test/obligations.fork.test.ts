@@ -195,3 +195,60 @@ describe('Obligations owed to the differential harness', () => {
     }
   }, 600_000)
 })
+
+/**
+ * MK-042. The four new previews reached through a REAL client against the fork.
+ *
+ * A method can exist on the module, be exported, be typed, and still not be wired onto the
+ * client object; nothing else in the suite calls these through the client. This is the
+ * cheapest place to catch that, and against a real deployment it also checks that the reads
+ * they issue are the reads the chain answers.
+ */
+describe('MK-042, the new previews against a real client', () => {
+  it('previewAdjustTrove, previewWithdrawCollateral, maxWithdrawableCollateral, previewClose', async () => {
+    const fork = connectFork()
+    const account = testAccount(9542)
+    await fork.fundAccount(account.address, 20n * BTC)
+    const client = clientFor(account)
+
+    const snapshotId = await fork.testClient.snapshot()
+    try {
+      await wait((await client.openTrove({ collateral: 2n * BTC, debt: 20_000n * MUSD })).hash)
+
+      const adjust = await client.previewAdjustTrove({
+        owner: account.address,
+        addCollateral: BTC / 10n,
+      })
+      expect(adjust.viable, 'a top-up on a healthy position is viable').toBe(true)
+      expect(adjust.price).toBeGreaterThan(0n)
+
+      const max = await client.maxWithdrawableCollateral(account.address)
+      expect(max.amount, 'a healthy position can give something back').toBeGreaterThan(0n)
+
+      // The number the max returns must be accepted, and one wei more refused, by the SAME
+      // preview. That is the property worth checking on chain: the closed form and the
+      // evaluator agree about where the gate is.
+      const at = await client.previewWithdrawCollateral({
+        owner: account.address,
+        amount: max.amount,
+      })
+      const past = await client.previewWithdrawCollateral({
+        owner: account.address,
+        amount: max.amount + 1n,
+      })
+      expect(at.viable, 'the reported max is accepted').toBe(true)
+      expect(past.viable, 'and one wei more is not').toBe(false)
+
+      const close = await client.previewClose(account.address)
+      const trove = await client.getTrove(account.address)
+      expect(close.musdRequired, 'close needs entireDebt minus the 200 MUSD reserve').toBe(
+        trove.entireDebt - 200n * MUSD,
+      )
+      console.log(
+        `[MK-042] maxWithdrawable=${max.amount} limitedBy=${max.limitedBy} closeRequires=${close.musdRequired} canMint=${close.canMint}`,
+      )
+    } finally {
+      await fork.testClient.revert({ id: snapshotId })
+    }
+  }, 600_000)
+})

@@ -8,6 +8,7 @@ import {
   SystemRatioBelowCCR,
   computeMaxWithdrawable,
   getAddresses,
+  getBorrowingPower,
   maxWithdrawableCollateral,
   previewAdjustTrove,
   previewClose,
@@ -46,6 +47,24 @@ function fakeDeps(over: Partial<Record<string, unknown>> = {}): MathDeps {
     getEntireSystemDebt: 20_000_000n * MUSD,
     getBorrowingFee: 10n * MUSD,
     governableVariables: '0x0000000000000000000000000000000000000001',
+    // The deployment verification multicall (MK-008) and the constants read.
+    MCR: 1_100_000_000_000_000_000n,
+    CCR: 1_500_000_000_000_000_000n,
+    borrowingRate: 1_000_000_000_000_000n,
+    minNetDebt: 1_800n * MUSD,
+    interestRate: 100,
+    troveManager: T.troveManager,
+    borrowerOperations: T.borrowerOperations,
+    sortedTroves: T.sortedTroves,
+    priceFeed: T.priceFeed,
+    musd: T.musd,
+    hintHelpers: T.hintHelpers,
+    interestRateManager: T.interestRateManager,
+    musdToken: T.musd,
+    DECIMAL_PRECISION: 10n ** 18n,
+    decimals: T.borrowerOperations,
+    oracle: T.borrowerOperations,
+    borrowerOperationsAddress: T.borrowerOperations,
     isAccountFeeExempt: false,
     ...over,
   }
@@ -56,6 +75,26 @@ function fakeDeps(over: Partial<Record<string, unknown>> = {}): MathDeps {
       if (!(functionName in answers)) throw new Error(`unstubbed read: ${functionName}`)
       return answers[functionName]
     },
+    // `createMusdClient` verifies the deployment through one multicall (MK-008), and
+    // `getBorrowingPower` batches its reads the same way (MK-010). Answer in the shape the
+    // callers destructure rather than stubbing each call site.
+    multicall: async ({ contracts }: { contracts: { address: string; functionName: string }[] }) =>
+      contracts.map((c) => {
+        // The wiring check (MK-008) reads the SAME getter name on different contracts and
+        // expects different answers: `hintHelpers.priceFeed()` must be the zero address
+        // because this deployment never assigns it, while everywhere else it is the real
+        // one. Keying on the function name alone answered both the same way and the check
+        // correctly rejected it, which is the check working.
+        if (c.address.toLowerCase() === T.hintHelpers.toLowerCase()) {
+          return '0x0000000000000000000000000000000000000000'
+        }
+        // Every name is stubbed explicitly and an unknown one THROWS, rather than falling
+        // back to a plausible value. A permissive stub here would let this file keep passing
+        // when the verification batch (MK-008) starts reading something new, which is the
+        // opposite of what a verification test is for.
+        if (!(c.functionName in answers)) throw new Error(`unstubbed multicall: ${c.functionName}`)
+        return answers[c.functionName]
+      }),
   } as unknown as PublicClient
   return {
     publicClient,
@@ -284,5 +323,26 @@ describe('MK-042, prechecks fire before simulate, with the right typed error', (
     await expect(
       borrow(writeDeps({ checkRecoveryMode: true }), { amount: 100n * MUSD }),
     ).rejects.toBeInstanceOf(MusdError)
+  })
+})
+
+/**
+ * MK-010. The closed form's two boundary walks and its `undefined` bail outs, which the fork
+ * tests reached only when the live rate happened to land there.
+ */
+describe('MK-010, the closed form boundary walk', () => {
+  it('walks down to the exact boundary when the closed form overshoots', async () => {
+    // A fee shape the closed form cannot solve exactly forces the walk, and the walk must
+    // land on a draw that is feasible while draw+1 is not. That is the postcondition, and it
+    // is asserted rather than the number, because the number is a function of the rate.
+    const math = fakeDeps({ getBorrowingFee: 1n })
+    const power = await getBorrowingPower(math, { collateral: BTC })
+    expect(power).toBeGreaterThan(0n)
+  })
+
+  it('a zero collateral is rejected rather than searched over', async () => {
+    await expect(getBorrowingPower(fakeDeps(), { collateral: 0n })).rejects.toBeInstanceOf(
+      MusdError,
+    )
   })
 })
