@@ -170,6 +170,12 @@ the fix is more lines, not a stronger adjective on the ones already there.
 
 Each of the three closes one specific absence that produced MK-029.
 
+- **Every version the build depends on is PINNED in the workflow, not floated** (MK-029 for Node,
+  MK-041 for Foundry). `stable` and `latest` are not versions, they are subscriptions to someone
+  else's release schedule. MK-041 is what that costs: `foundry-rs/foundry-toolchain` was set to
+  `version: stable`, Foundry shipped anvil 1.8.0 mid afternoon, and the fork gate went from green to
+  red about two hours later on a commit that changed one markdown file. Bumping a pinned version is
+  a deliberate act, in its own commit, with the run read afterwards.
 - **Step 2's Node requirement** exists because local and CI evidence cannot be compared unless
   they ran the same runtime. Five green local runs on Node 20.20.1 and four red fork gate runs
   on 24.19.0 were all reporting honestly and were never in contradiction. Running the fork

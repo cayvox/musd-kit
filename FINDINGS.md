@@ -76,6 +76,7 @@ claim about it was not).
 | MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
 | MK-039 | The measurement that sized the default gas margin was never committed, so it could not be re-run, and its description cannot be right | S3 | fixed |
 | MK-040 | The published export map never points at the CommonJS type declarations it ships, so a CJS consumer on node16 resolution cannot typecheck | S2 | fixed |
+| MK-041 | The Foundry toolchain version was never pinned, so a new anvil stable turned the fork gate red on a docs only commit | S2 | fixed |
 
 ---
 
@@ -2601,6 +2602,62 @@ automated test: doing that needs a pack, an install into a scratch project and a
 its own job rather than a unit test. **That is a gap, and it is stated here rather than left
 implied.** The check is written down in this entry and in the release preconditions of the pull
 request that fixed it.
+
+---
+
+## MK-041 · The Foundry version floated, so a new anvil release reddened the gate
+
+**Class** S2 · **Status** fixed · **Found in release preparation, on a commit that changed one
+markdown file**
+
+**What happened, in the order it was established.** The fork gate failed on `15cd44e`, a commit
+whose entire diff is 54 added lines in `docs/07-testing.md`. The failure is not a test failure:
+
+```
+Test Files  no tests
+ERROR: Coverage for lines (0%) does not meet global threshold (98%)
+Serialized Error: { details: 'Excess blob gas not set.', code: -32602,
+  Request body: {"method":"eth_call", ... }, URL: http://127.0.0.1:36979 }
+```
+
+`eth_call` against the local anvil fails before a single test runs, so the suite reports **no
+tests**, and the coverage gate then reports 0% and fails for a second, downstream reason.
+
+**Three candidates, eliminated by evidence rather than by argument.**
+
+1. **The commit.** Ruled out: `git show --stat` is one markdown file, and its parent `e97f0d2`
+   passed the same job.
+2. **A flake.** Ruled out: `gh run rerun --failed` reproduced it exactly.
+3. **The anvil fork cache** (which MK-029 made survive failures, so a poisoned entry could
+   persist). Ruled out: **both** runs logged `Cache hit for: anvil-fork-31611-15043414` and
+   restored the identical key.
+
+What was left was the toolchain, and it is decisive:
+
+| Run | Time | anvil | Fork gate |
+|---|---|---|---|
+| [33065186347](https://github.com/cayvox/musd-kit/actions/runs/33065186347) | 10:56 | **1.7.1** | success |
+| [33074977978](https://github.com/cayvox/musd-kit/actions/runs/33074977978) | 13:08 | **1.8.0** | failure |
+
+`foundry-rs/foundry-toolchain@v1` was configured with `version: stable`, which **floats**. Foundry
+released 1.8.0 between those two runs, and anvil 1.8.0 rejects this fork's `eth_call` with
+`Excess blob gas not set`. Nothing in the repository changed. The build changed underneath it.
+
+**This is MK-029 one level over.** MK-029 was local evidence and CI evidence both being true because
+they ran different Node runtimes, and its fix was to pin the Node version in the workflow rather
+than inherit it. The Foundry version was left floating in the same workflow, so the same class of
+defect was still live, and it took a docs only commit to expose it. The lesson from MK-029 was
+recorded as being about Node; it is about **every** unpinned input to the build.
+
+**Fix.** Pin `version: 1.7.1` in both `ci.yml` and `release.yml`, chosen because it is the last
+version this repository's own CI proved green, not because it is the newest. Bumping it is a
+deliberate act in its own commit, with the run read afterwards, exactly as the Node pin says.
+
+**What is NOT established, and is left open rather than guessed:** whether anvil 1.8.0 is wrong here
+or whether this fork's block headers genuinely lack `excessBlobGas` and 1.7.1 was lenient about it.
+Answering that needs reading anvil's changelog and the Mezo block header, which is a wave rather
+than a paragraph. The pin makes the gate honest in the meantime, and it does **not** mean the SDK is
+incompatible with anvil 1.8.0: nothing here tested the SDK against it, only the test harness.
 
 ---
 
