@@ -43,7 +43,9 @@ handles a key, and simulates every write before sending.
 **What simulate before send does NOT limit, measured rather than assumed (MK-035):** it cannot
 catch a condition that becomes true after the simulation, and it cannot catch the transaction
 running out of gas, because the limit comes from an estimate taken before the mining block. The
-same call's gas varied 16% from identical state. Writes now ship a 25% margin and
+same call's gas grew 16% in one traced execution. That growth is **observed once** and its log was
+not preserved; the earlier wording, "varied 16% from identical state", read as a spread across a
+sample and the sample's instrument was never committed (MK-039). Writes now ship a 25% margin and
 `diagnoseRevertedWrite` classifies what still fails. The SDK no longer sends the simulation's own
 request object unchanged: it sets an explicit gas limit on it, and nothing else.
 
@@ -60,15 +62,15 @@ evidence for what it actually exercises.
 | `addCollateral`, `borrow`, `repay`, `withdrawCollateral`, `adjustTrove`, `refinance` | Fork exercised, not dual validated | **No preview validation.** For `addCollateral` and `repay`, MK-038 pins the gate they were documented as not having |
 | `previewBorrow`, `previewRefinance` | Fork exercised end to end against the contract's own gates, plus exhaustive chain-free tests of the verdict as a pure function | **Verdict and fee validated; not yet compared against a reverting write for every reason** |
 | Insertion hints on every existing-trove write path | Pinned on a fork against `getNominalICR` after the write, including a repay at, below and above interest owed | Full for the paths exercised |
-| Preview verdict against actual transaction outcome, swept | 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** It covers `previewOpen`, `previewBorrow` and `previewRefinance` against open, borrow and refinance. It does NOT cover repay, collateral changes, `adjustTrove`, redemption, liquidation or claim, none of which have a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
+| Preview verdict against actual transaction outcome, swept | **Reproducible:** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, two slices via `MK_DIFF_FROM`. 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** It covers `previewOpen`, `previewBorrow` and `previewRefinance` against open, borrow and refinance. It does NOT cover repay, collateral changes, `adjustTrove`, redemption, liquidation or claim, none of which have a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
 | Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | **Observed executing**, P8: capacity `140092922400000000000000` at open, unchanged after a price rise, `70046461200000000000000` after withdrawing half the collateral | Full. The obligation is discharged (MK-002) |
 | Fee exemption on the DEBT INCREASE path, not just on open | **Observed executing**, P8: an exempt account borrowing against an existing position, `quotedFee=2000000000000000000`, `preview.fee=0`, principal added exactly the draw | Full. The obligation is discharged (MK-018) |
 | Preview verdict against actual transaction outcome | The differential harness: generated cases run the preview, then attempt the operation, then compare. Seeded, boundary weighted, snapshot isolated per case | See the sweep row below. This is the gate the "open path only" row above was waiting for |
 | Deployment identity: code at all seven addresses, fourteen cross wiring pointers, `HintHelpers.priceFeed()` unset | Chain-free against a constructed lookalike and a bent pointer, plus the real deployment on a fork, and gated before the first write | Full for the pointer set `docs/09` §6 records; the "has code but is not the one the deployment points at" case is pinned chain free only (MK-008) |
 | One block snapshot for `getTrove`, `getSystemState`, `isLiquidatable` | Fork exercised: blocks are mined after the read, then `icr` and `price` are reconciled at the REPORTED block | Full for those three. `previewOpen`, `previewBorrow`, `previewRefinance` and `getBorrowingPower` still read the price separately and make **no** single block claim (MK-013) |
 | `getBorrowingPower` closed form against the live fee | Fork exercised: affinity of `getBorrowingFee` asserted at the live rate, the closed form compared to the search to the wei, and the search kept as the fallback | **Full at the CURRENT rate only.** The rate is governable, so affinity is a property of today's implementation, not a guarantee (MK-010) |
-| Simulate before send, as a limit on blast radius | Fork exercised on every write; the limits are now MEASURED rather than assumed | **Partial, and the gap is quantified.** It catches every condition true at simulate time. It does NOT catch a condition that becomes true afterwards, nor gas exhaustion, because the limit comes from an estimate taken before the mining block. Measured: the same call's gas varied up to 10.16% across paths and 16.4% in one traced case, against a 1.5% margin (MK-035) |
-| Gas margin on writes, 25% over the estimate | Sized from a per path spread table, 12 attempts per path from byte identical state; pinned by a findings test that flipped when the fix landed | Full for the nine measurable paths. `claim` is unmeasured, since it sends no transaction without a surplus. The 0% rows are a small window, not a safe path (MK-035) |
+| Simulate before send, as a limit on blast radius | Fork exercised on every write; the limits are now MEASURED rather than assumed | **Partial, and the gap is quantified.** It catches every condition true at simulate time. It does NOT catch a condition that becomes true afterwards, nor gas exhaustion, because the limit comes from an estimate taken before the mining block. Measured: 16.4% growth in one traced case against a 1.5% margin, **observed once**; and up to 10.16% across paths, which is **unestablished**, its instrument having never been committed (MK-035, MK-039) |
+| Gas margin on writes, 25% over the estimate | **Provenance split.** The traced 16.4% growth that justifies it is **observed once, unlinked**. The per path spread table it was cross checked against is **unestablished**: 12 attempts per path, instrument never committed (MK-039). Pinned by a findings test that flipped when the fix landed, and by `MK_GAS_LAB=1 pnpm test:fork` | The margin stands on the traced growth alone, which clears it by half again. The nine path table is kept for the derivation, not as evidence. `claim` is unmeasured, it sends no transaction without a surplus (MK-035) |
 | Telling an out of gas revert from a protocol one | `diagnoseRevertedWrite`, from evidence a consumer has without tracing | **Two of three cases decidable.** `gasUsed === gasLimit` and a still reverting replay are conclusive; everything else is `INDETERMINATE`, because a nested exhaustion leaves gas at the top level and a replay runs against end of block state. Separating those needs `debug_traceTransaction` (MK-035) |
 | `@musd-kit/react`, the whole published hook layer | Fork exercised via React Testing Library against a fork-backed wagmi config | **Not measured by the coverage gate at all.** The floor covers `packages/core/src` only, so no number on this page or in CI describes how much of the React package is exercised |
 
@@ -97,6 +99,29 @@ P3a wave implemented from the Solidity and could not drive on a fork: the capaci
 collateral withdrawal that lowers the recalculated value below the stored one, and the exempt fee
 skip on a debt increase needs an exempt account that already holds a Trove. They are listed here so
 the harness is designed to reach them, rather than being built first and pointed at them after.
+
+### Provenance of every number on this page
+
+Audited against step 10 of the wave checklist (`docs/08-conventions.md`): **a measurement is citable
+only if the code that produced it is committed and someone else can run it, with the command
+recorded.** The audit covered this page and `FINDINGS.md` together; the full classification, with
+every claim named, is under **Provenance of the numbers in this register** at the top of
+`FINDINGS.md`.
+
+| Class | Count | On this page |
+|---|---|---|
+| **Reproducible** | 18 | the 1000 case sweep, the coverage floors, every §6 on chain fact, the gas variance fixtures |
+| **Observed once** | 5 | CI runs, each pinned by its run ID |
+| **Observed once, unlinked** | 3 | the traced redemption growth, and two probes from the MK-037 wave |
+| **Unestablished** | 8 | led by MK-035's nine path spread table, whose instrument was never committed |
+
+**No number was deleted and no finding was softened.** Where the evidence turned out weaker than the
+text read, the entry now says which part is evidence and which part is not. The clearest case is the
+gas margin: the traced growth that justifies it is real and unrepeatable, the isolation rate built on
+top of it is not established, and the two now carry different labels in the same entry.
+
+**Every §6 fact on this page is machine written** by `pnpm facts --stdout` at the block named beside
+it, which is why that whole section is reproducible without qualification.
 
 ## 4. Three way divergence matrix
 

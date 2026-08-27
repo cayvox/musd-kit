@@ -154,6 +154,7 @@ selected window.
 | 7 | `pnpm build:site` | Clean, which includes `pnpm check:links` |
 | 8 | **Read the CI run for the branch.** `gh run list --branch <branch> --workflow CI` then `gh run view --job <id> --log` for every job that is not green | The run link, its conclusion, and the first real failure in any red job. Local green does not stand in for this |
 | 9 | **Read the CI run on `main` after the merge, WAITING for it to exist.** `gh run list --branch main --workflow CI --limit 5 --json conclusion,headSha` and match the `headSha` against `git rev-parse HEAD`. An absent run means **not yet**, not never: poll until it appears, and only report absence as a finding if it persists | The run link, its conclusion, and that its `headSha` is the tip rather than an ancestor. **A red `main` blocks the next wave**: repair it first, and register the cause before fixing it |
+| 10 | **Commit the instrument for every measurement you intend to cite**, before citing it. A number quoted in a finding, a pull request body or the documentation is only citable if the code that produced it is in the repository and someone else can run it, and the command is recorded beside the number | The command, verbatim, next to every number. A measurement whose instrument is not committed is not reportable as a measurement; see the labels below |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
@@ -205,3 +206,46 @@ necessarily one you have. When local and CI disagree, the first question is whic
 - **A green signal must mean what a reader will assume it means.** If a gate does not cover
   something, say so where the gate is claimed, rather than letting the word "clean" carry more
   than it earned.
+
+**Step 10, and the three labels every number must carry.**
+
+Step 10 exists because a number that decided a shipped default could not be checked. The gas
+margin every write in this SDK carries was set to 25 from a measured isolation rate, 2 reverts in
+40 attempts before and 0 in 80 after. The script that produced it was never committed. When a later
+wave was asked to re-run it there was nothing to re-run, it had to be rebuilt from a prose
+description, and the rebuilt instrument produced **no variance at all** across 52 executions, which
+means the description of the original cannot have been right (MK-039).
+
+Nothing was dishonest at any point. The number was measured, reported in good faith, and acted on.
+It was simply never checkable, and by the time anyone tried, the evidence was gone. **Every
+measurement this programme has acted on came from a tool nobody else could run**, and that is the
+gap step 10 closes.
+
+So every quantitative claim in the public record carries exactly one of three labels, and the label
+is written down rather than left to the reader:
+
+| Label | What it means | What it must carry |
+|---|---|---|
+| **Reproducible** | The instrument is committed and anyone can re-run it | The exact command, next to the number. `MK_GAS_LAB=1 pnpm test:fork` is a command; "measured on a fork" is not |
+| **Observed once** | A specific execution that by its nature cannot be repeated: a CI run, a traced transaction, a chain read at a block | A link or an identifier that pins it. A run URL, a transaction hash, a block number. The words **observed once** appear in the text |
+| **Observed once, unlinked** | The same, but the artifact was never preserved: a local run whose log is gone, a trace nobody saved | Say that it cannot be re-checked, in place. **Admissible only for observations recorded before this rule existed.** A new observation is preserved when it is made, or it is not citable |
+| **Unestablished** | Inferred, or its instrument is gone, or its premise turned out to be wrong | Say so, in place, and keep the number rather than deleting it. A reader has to be able to see what was believed and why it is not evidence |
+
+The fourth label exists because the audit that first applied this rule found real, load bearing
+evidence with no surviving artifact, and deleting those numbers would have removed the grounds a
+finding actually stands on. It is a grandfather clause, deliberately, and it does not extend
+forward: **preserve the artifact when you make the observation.** Save the log, record the run URL,
+record the transaction hash. An observation is cheap to pin at the moment it happens and impossible
+to pin a wave later, which is the whole lesson of MK-039.
+
+**The exception is "observed once", and it is a real one, not a loophole.** A revert that happened
+in one CI run cannot be re-executed on demand, and refusing to cite it would throw away the best
+evidence this programme has produced. MK-035's traced growth, 610270 to 710023 gas ending in
+`ActivePool` out of gas at call depth 4, is exactly that: unrepeatable, and decisive. What the label
+buys is that a reader can tell it apart from a rate, which is a claim about a population and needs
+an instrument. In MK-035 the traced growth is **observed once** and still justifies the margin,
+while the 2 in 40 rate built on top of it is **unestablished**. One entry, two labels, and the
+difference is the whole point.
+
+**Do not soften a finding because its number turned out to be weaker than it read.** The finding
+stands on the evidence that remains. The record only has to say what that evidence is.
