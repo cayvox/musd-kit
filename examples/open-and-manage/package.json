@@ -1,6 +1,6 @@
 {
   "name": "@musd-kit/example-open-and-manage",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Reference React dApp on @musd-kit/react + @mezo-org/passport: preview → open → monitor → repay.",
   "license": "MIT",

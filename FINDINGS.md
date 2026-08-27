@@ -75,6 +75,8 @@ claim about it was not).
 | MK-037 | The MK-035 gas margin is silently dropped, because the estimate caps itself and then fails against its own cap | S2 | fixed |
 | MK-038 | `addCollateral` and `repay` ARE ratio gated in normal mode, so an under-MCR position cannot be partly rescued and nothing says so | S2 | open, documented |
 | MK-039 | The measurement that sized the default gas margin was never committed, so it could not be re-run, and its description cannot be right | S3 | fixed |
+| MK-040 | The published export map never points at the CommonJS type declarations it ships, so a CJS consumer on node16 resolution cannot typecheck | S2 | fixed |
+| MK-041 | The Foundry toolchain version was never pinned, so a new anvil stable turned the fork gate red on a docs only commit | S2 | fixed |
 
 ---
 
@@ -2534,6 +2536,128 @@ dropped on an unknown fraction of its sends (MK-037), and there is now no way to
 **Fixed by** committing the lab, opt in behind `MK_GAS_LAB=1` so it costs CI nothing, with its
 runtime, its knobs and the reconstruction's numbers written at the top of the file so the next run
 has something to disagree with.
+
+---
+
+## MK-040 · The export map ships CommonJS types and never points at them
+
+**Class** S2 · **Status** fixed · **Found in release preparation, by typechecking a consumer against
+the packed tarball rather than against the workspace**
+
+**What happens.** Both packages declare `"type": "module"` and build BOTH declaration files,
+`dist/index.d.ts` and `dist/index.d.cts`. `dist/index.d.cts` is in the published tarball. **Nothing
+in `package.json` ever refers to it.** The export map carried one top level `types` condition:
+
+```json
+"exports": { ".": {
+  "types": "./dist/index.d.ts",
+  "import": "./dist/index.js",
+  "require": "./dist/index.cjs"
+} }
+```
+
+One `types` for both conditions means a CommonJS consumer resolving `require` gets `index.cjs` at
+runtime and `index.d.ts` at type level. In a `"type": "module"` package `index.d.ts` describes an ES
+module, so TypeScript refuses it:
+
+```
+error TS1479: The current file is a CommonJS module whose imports will produce 'require'
+calls; however, the referenced file is an ECMAScript module and cannot be imported with
+'require'.
+```
+
+**Blast radius, measured rather than reasoned.** A consumer project was created, the packed 0.2.0
+tarballs installed into it, and one probe file typechecked under four configurations:
+
+| Consumer | `module` | `moduleResolution` | Before | After |
+|---|---|---|---|---|
+| CommonJS | `node16` | `node16` | **exit 2, TS1479** | exit 0 |
+| CommonJS | `esnext` | `bundler` | exit 0 | exit 0 |
+| ESM | `node16` | `node16` | exit 0 | exit 0 |
+| ESM | `esnext` | `bundler` | exit 0 | exit 0 |
+
+So it is **one configuration of four**, and it is types only: `require('@musd-kit/core')` returns all
+88 exports at runtime in every case, before and after. A CJS consumer on Node16 or NodeNext
+resolution could run the package and could not typecheck against it.
+
+**It shipped in 0.1.0.** The published `@musd-kit/core@0.1.0` tarball carries the identical export
+map, so this is not a 0.2.0 regression. It was found now because release preparation typechecked
+against the PACKED TARBALL rather than against the workspace, where path mapping hides it. A
+workspace typecheck is green either way, which is why every previous wave missed it.
+
+**Fix.** Nest the `types` condition inside each of `import` and `require`, which is what a dual
+package has to do:
+
+```json
+"exports": { ".": {
+  "import":  { "types": "./dist/index.d.ts",  "default": "./dist/index.js"  },
+  "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+} }
+```
+
+`main`, `module` and `types` stay at the top level for resolvers that do not read `exports`.
+
+**Pinned by** the four way matrix above, re-run against the repacked tarballs. It is not pinned by an
+automated test: doing that needs a pack, an install into a scratch project and a `tsc` run, which is
+its own job rather than a unit test. **That is a gap, and it is stated here rather than left
+implied.** The check is written down in this entry and in the release preconditions of the pull
+request that fixed it.
+
+---
+
+## MK-041 · The Foundry version floated, so a new anvil release reddened the gate
+
+**Class** S2 · **Status** fixed · **Found in release preparation, on a commit that changed one
+markdown file**
+
+**What happened, in the order it was established.** The fork gate failed on `15cd44e`, a commit
+whose entire diff is 54 added lines in `docs/07-testing.md`. The failure is not a test failure:
+
+```
+Test Files  no tests
+ERROR: Coverage for lines (0%) does not meet global threshold (98%)
+Serialized Error: { details: 'Excess blob gas not set.', code: -32602,
+  Request body: {"method":"eth_call", ... }, URL: http://127.0.0.1:36979 }
+```
+
+`eth_call` against the local anvil fails before a single test runs, so the suite reports **no
+tests**, and the coverage gate then reports 0% and fails for a second, downstream reason.
+
+**Three candidates, eliminated by evidence rather than by argument.**
+
+1. **The commit.** Ruled out: `git show --stat` is one markdown file, and its parent `e97f0d2`
+   passed the same job.
+2. **A flake.** Ruled out: `gh run rerun --failed` reproduced it exactly.
+3. **The anvil fork cache** (which MK-029 made survive failures, so a poisoned entry could
+   persist). Ruled out: **both** runs logged `Cache hit for: anvil-fork-31611-15043414` and
+   restored the identical key.
+
+What was left was the toolchain, and it is decisive:
+
+| Run | Time | anvil | Fork gate |
+|---|---|---|---|
+| [33065186347](https://github.com/cayvox/musd-kit/actions/runs/33065186347) | 10:56 | **1.7.1** | success |
+| [33074977978](https://github.com/cayvox/musd-kit/actions/runs/33074977978) | 13:08 | **1.8.0** | failure |
+
+`foundry-rs/foundry-toolchain@v1` was configured with `version: stable`, which **floats**. Foundry
+released 1.8.0 between those two runs, and anvil 1.8.0 rejects this fork's `eth_call` with
+`Excess blob gas not set`. Nothing in the repository changed. The build changed underneath it.
+
+**This is MK-029 one level over.** MK-029 was local evidence and CI evidence both being true because
+they ran different Node runtimes, and its fix was to pin the Node version in the workflow rather
+than inherit it. The Foundry version was left floating in the same workflow, so the same class of
+defect was still live, and it took a docs only commit to expose it. The lesson from MK-029 was
+recorded as being about Node; it is about **every** unpinned input to the build.
+
+**Fix.** Pin `version: 1.7.1` in both `ci.yml` and `release.yml`, chosen because it is the last
+version this repository's own CI proved green, not because it is the newest. Bumping it is a
+deliberate act in its own commit, with the run read afterwards, exactly as the Node pin says.
+
+**What is NOT established, and is left open rather than guessed:** whether anvil 1.8.0 is wrong here
+or whether this fork's block headers genuinely lack `excessBlobGas` and 1.7.1 was lenient about it.
+Answering that needs reading anvil's changelog and the Mezo block header, which is a wave rather
+than a paragraph. The pin makes the gate honest in the meantime, and it does **not** mean the SDK is
+incompatible with anvil 1.8.0: nothing here tested the SDK against it, only the test harness.
 
 ---
 

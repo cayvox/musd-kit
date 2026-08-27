@@ -1,6 +1,6 @@
 {
   "name": "@musd-kit/example-keeper",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Headless MUSD liquidation keeper, depends on @musd-kit/core ONLY (no React/wagmi). Structural proof the core is framework-agnostic.",
   "license": "MIT",

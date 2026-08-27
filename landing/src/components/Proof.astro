@@ -15,7 +15,7 @@ const tiles = [
 const handled = [
   'Insertion hints for the sorted Trove list, recomputed on every write',
   'The borrowing fee plus the 200 MUSD gas reserve, in the debt math',
-  'Simulate-before-send on every transaction',
+  'Simulate-before-send on every transaction, with a measured gas margin on top',
   'Discriminated typed errors, mapped from the real contract reverts',
   'Governable values (minNetDebt, fees, rates, price) read live, never hardcoded',
 ]
@@ -23,7 +23,7 @@ const handled = [
 const checks = [
   {
     t: 'Verified against real Mezo contracts',
-    d: 'A fork harness backs the whole suite, plus a live testnet pass through the published packages. Not mocks.',
+    d: 'A fork of real Mezo backs the whole suite, and a differential harness checks each preview verdict against what the chain actually does. A live testnet lifecycle is a manual gate before publishing. Not mocks.',
   },
   {
     t: 'Proven live on Mezo testnet',

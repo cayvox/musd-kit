@@ -67,6 +67,25 @@ Every protocol revert maps to a discriminated `MusdError` you can branch on
   surface in `docs/09-review-and-validated-surface.md` §3, including what it does
   not cover (MK-015).
 
+## Upgrading from 0.1.0
+
+**Read `docs/11-migration-0.1-to-0.2.md` before you upgrade, and before you decide not to.** 0.1.0
+returned wrong numbers on seven surfaces. Three of them were wrong silently: `isLiquidatable`
+reported Recovery Mode liquidations this protocol does not have (MK-001), `redeem()` returned the
+redemption RATE in a field named `fee` (MK-014), and `previewOpen.meetsRecoveryRequirement` was
+`true` for every normal mode open while nothing checked TCR against CCR (MK-005). That page lists
+which 0.1.0 behaviours return wrong numbers and which fail transactions, so you can judge your own
+exposure.
+
+## Two limits at 0.2.0
+
+- **`maxFeePercentage` is advisory only (MK-011).** Checked here, not binding on the contract.
+- **Four of eleven writes are ratio gated with no preview (MK-038).** `addCollateral`, `repay`,
+  `withdrawCollateral` and `adjustTrove`. For the first two this surprises people: in normal mode a
+  top-up that RAISES ICR still reverts if the result is under MCR
+  (`BorrowerOperations.sol:1201`), so an under-water position cannot be partly rescued. Compute the
+  resulting ratio from `getTrove` plus `computeICR` and compare it against `MCR` yourself.
+
 ## React?
 
 For wagmi-idiomatic hooks over this core, use

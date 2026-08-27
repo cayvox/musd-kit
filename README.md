@@ -74,17 +74,38 @@ protocol or from Mezo's own dApp. [`SECURITY.md`](SECURITY.md) covers maturity, 
 and does not touch, and how to report a problem. Known gaps are public and tracked rather than
 quietly carried, and a correctness report is treated with the same seriousness as a security report.
 
+**Two open findings change what you can rely on at 0.2.0.** Neither is a bug you will hit by
+accident; both are limits you have to design around.
+
+- **MK-011, `maxFeePercentage` is advisory only.** The SDK checks it. It does not bind the contract.
+  Do not treat it as slippage protection.
+- **MK-038, four of eleven writes are ratio gated with no preview.** `addCollateral`, `repay`,
+  `withdrawCollateral` and `adjustTrove` have no verdict you can render before the user commits.
+  `addCollateral` and `repay` are gated in a way that surprises people: in normal mode a top-up
+  that RAISES a position's ICR still reverts if the result is under MCR
+  (`BorrowerOperations.sol:1201`), so an already under-water position cannot be partly rescued.
+
+Both are in the register with their evidence, and the second is stated where the API is documented,
+in [`docs/03-core-api.md`](docs/03-core-api.md).
+
+Every other S1 and S2 in the register is closed. There is **no open S1**.
+
 ---
 
 ## Packages
 
 | Package | Status | Description |
 |---|---|---|
-| `@musd-kit/core` | v1 | Framework-agnostic (viem): typed clients, addresses, Trove lifecycle, auto-hints, preview math, redemption, typed errors |
-| `@musd-kit/react` | v1 | wagmi-idiomatic hooks over the core |
-| `@musd-kit/ui` | v2 | Optional headless/styled components |
-| `@musd-kit/testing` | v2 | MUSD mock + forked-Mezo test helpers |
-| `musd-kit-py` | v2 | Python SDK for bots/keepers |
+| `@musd-kit/core` | **published, 0.2.0** | Framework-agnostic (viem): typed clients, addresses, Trove lifecycle, auto-hints, preview math, redemption, typed errors |
+| `@musd-kit/react` | **published, 0.2.0** | wagmi-idiomatic hooks over the core |
+| `@musd-kit/ui` | planned, not published | Optional headless/styled components |
+| `@musd-kit/testing` | planned, not published | MUSD mock + forked-Mezo test helpers |
+| `musd-kit-py` | planned, not published | Python SDK for bots/keepers |
+
+**Two packages exist on npm.** The other three are intent, not artifacts, and nothing in this
+repository builds them. Upgrading from 0.1.0? Read
+[`docs/11-migration-0.1-to-0.2.md`](docs/11-migration-0.1-to-0.2.md) first: 0.1.0 returned wrong
+numbers on seven surfaces, three of them in ways nothing in your code would have noticed.
 
 ---
 

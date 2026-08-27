@@ -241,6 +241,60 @@ to disagree with, and what they show is in `FINDINGS.md` under MK-039.
 (MK-037) sent no margin at all, and a lab that cannot see which of its attempts those were is
 measuring a population it has not identified. That is the specific hole MK-039 records.
 
+## 4c. The packaged artifact check (MK-040), manual, before every publish
+
+**A workspace typecheck cannot see a broken `exports` map**, because path mapping resolves
+`@musd-kit/core` to `packages/core/src` and never reads `package.json`. MK-040 lived there for a
+whole release: the published tarball shipped `dist/index.d.cts` and the export map never pointed at
+it, so a CommonJS consumer on `moduleResolution: node16` got `TS1479` and could not typecheck
+against the package, while `pnpm typecheck` was green the entire time.
+
+This check exists because that is only findable from OUTSIDE the workspace.
+
+```sh
+pnpm build
+(cd packages/core  && pnpm pack --pack-destination /tmp/pack)
+(cd packages/react && pnpm pack --pack-destination /tmp/pack)
+
+mkdir -p /tmp/installcheck && cd /tmp/installcheck && npm init -y
+npm i /tmp/pack/musd-kit-core-*.tgz /tmp/pack/musd-kit-react-*.tgz \
+      viem@^2 react@^18 wagmi@^2 @tanstack/react-query@^5
+npm i -D typescript@5 @types/react@18
+```
+
+Then write one file importing a value, a type and a hook from each package, and typecheck it under
+**four** configurations. All four must exit 0:
+
+| Consumer `package.json` | `module` | `moduleResolution` |
+|---|---|---|
+| no `type` field (CommonJS) | `node16` | `node16` |
+| no `type` field (CommonJS) | `esnext` | `bundler` |
+| `"type": "module"` | `node16` | `node16` |
+| `"type": "module"` | `esnext` | `bundler` |
+
+**The first row is the one that matters**, and it is the only one MK-040 failed. Also confirm both
+runtimes resolve, since a types fix must not break them:
+
+```sh
+node -e "console.log(Object.keys(require('@musd-kit/core')).length)"
+node --input-type=module -e "import * as m from '@musd-kit/core'; console.log(Object.keys(m).length)"
+```
+
+**And inspect what is actually in the tarball**, because the `files` allowlist is what stops source,
+tests and stray dotfiles from shipping:
+
+```sh
+tar tzf /tmp/pack/musd-kit-core-*.tgz | sort
+```
+
+Expected, and unchanged since 0.1.0: `LICENSE`, `README.md`, `package.json`, and six `dist/` files.
+Nothing else.
+
+**This is not automated, and that is a stated gap rather than an oversight.** Automating it needs a
+build, a pack, an install into a scratch project and a `tsc` run, which is its own CI job rather
+than a unit test. Until it is one, it is a manual gate here, written down so someone other than its
+author can run it.
+
 ## 5. Determinism & CI matrix
 
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in

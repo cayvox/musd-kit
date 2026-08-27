@@ -135,10 +135,19 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # PINNED, not `stable` (MK-041). `stable` floats: Foundry shipped anvil 1.8.0 on
+      # 2026-08-27 and the fork gate went from green on 1.7.1 to red about two hours later,
+      # on a commit that changed one markdown file. anvil 1.8.0 answers `eth_call` against
+      # this fork with `Excess blob gas not set` (-32602) before a single test runs, so the
+      # suite reports "no tests" and the coverage gate reports 0%. Both runs restored the
+      # same fork cache, so the cache was not it; the toolchain version was the only input
+      # that differed. This is MK-029 one level over: the Node version was pinned then, and
+      # the Foundry version was left floating. Bump it deliberately, in its own commit, and
+      # read the run.
       - name: Install Foundry (anvil)
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: 1.7.1
 
       # anvil lazily fetches upstream state on first access and persists it, per pinned
       # block, under ~/.foundry/cache/rpc/<chainId>/<block>/ (MK-021). Without this, CI is

@@ -25,6 +25,14 @@ not Passport**, usable with any wagmi connection layer.
 > are not yet validated against the Passport ecosystem (see the React-19 note in
 > `docs/04-react-api.md`), so install latest of those unpinned and the peer ranges won't match.
 
+## Upgrading from 0.1.0
+
+**The hooks are purely additive at 0.2.0**: `useBorrowPreview`, `useBorrowingCapacity` and
+`useRefinancePreview` are new, nothing was removed or renamed. **But this package re-exports
+`@musd-kit/core`, where 0.1.0 returned wrong numbers on seven surfaces**, and the shape changes to
+`OpenPreview` and `RedeemResult` reach you through `useOpenTrove` and `useRedeem`. Read
+`docs/11-migration-0.1-to-0.2.md` before upgrading.
+
 ## Usage
 
 The hooks work inside the wagmi context Passport sets up, no extra provider:
