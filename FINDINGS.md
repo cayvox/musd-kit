@@ -82,7 +82,7 @@ claim about it was not).
 | MK-044 | Two runtime versions CI executes were still resolved by a moving label, one of them end of life | S3 | fixed |
 | MK-045 | A Trove cannot be closed with only the MUSD it drew, so a self funded run cannot end clean | S3 | documented, protocol property |
 | MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
-| MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | **S2** | **open, blocks the release** |
+| MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
 
 ---
 
@@ -2902,8 +2902,8 @@ equivalent in seconds, so a reader sees the number rather than a pass. The compl
 
 ## MK-047 · `previewOpen` says viable for an account that already has a Trove
 
-**Class** S2 · **Status** OPEN. **This blocks the release** · **Found by the live testnet run, which
-is the only place it could have been found**
+**Class** S2 · **Status** fixed, in the preview AND in the generator that could not express it ·
+**Found by the live testnet run, which is the only place it could have been found**
 
 **A preview verdict that disagrees with the contract.** `previewOpen` returns
 `viable: true, reasons: []` for an owner who already holds an active Trove. The contract refuses:
@@ -2944,14 +2944,46 @@ wrong is the **verdict a UI renders**: an interface that enables its open button
 `previewOpen.viable` shows "you can open a position" to someone who already has one, and the call
 then throws. That is the same class as MK-005, and it is why this is S2 rather than S3.
 
-**Not fixed here, and that is deliberate.** The fix is small and nameable: read `getTroveStatus`,
-add `TROVE_ALREADY_EXISTS` to `OpenBlockReason`, correct the docstring. But shipping a preview change
-without the sweep coverage that would have caught it is the mistake this programme has spent waves
-removing. The generator must be able to produce an open against an occupied account first, and that
-is a wave with its own acceptance.
+**The fix, and the order it was done in.** The generator first, then the preview, because shipping a
+preview change without the coverage that would have caught it is the mistake this programme has spent
+waves removing.
 
-**It stops the release.** A preview verdict that disagrees with the chain is exactly what the live
-run exists to find, and finding one is not a reason to proceed carefully; it is a reason to stop.
+`previewOpen` now reads `getTroveStatus` when an account is supplied and emits
+`TROVE_ALREADY_ACTIVE`. The reason is named for what the contract actually tests: `:1146` compares
+against `Status.active`, so a Trove closed by the owner, by liquidation or by redemption does NOT
+block a reopen. Calling it `TROVE_ALREADY_EXISTS`, which was the obvious name, would have been wrong.
+
+**With no account supplied the gate is not evaluated and the absence is reported**, via
+`troveStatus: undefined`, on exactly the rule `feeExempt` already used: without an account there is
+nobody to ask about, and guessing is worse than saying so.
+
+**The docstring was corrected too**, and that is not cosmetic. It claimed the verdict was "true only
+when every condition `_openTrove` enforces is satisfied" while the code checked three of four. A test
+now pins the reason list against the contract's gate list in call order, so the claim and the code
+cannot drift apart silently again.
+
+**Proved by mutation**, three ways, each failing a different test: removing the gate, blocking on any
+non zero status instead of `active`, and moving the gate out of call order.
+
+### The larger finding: what the generator could not express
+
+Fixing the preview would have left the hole that hid it. The generator now carries a `precondition`
+of `FRESH` or `OCCUPIED`, and one case in five runs against the state OPPOSITE to the one its
+operation expects. One in five rather than one in two, because a mismatched state short circuits
+every later gate, so a higher rate would spend the sweep proving one reason repeatedly instead of
+probing the boundaries the bands were weighted for.
+
+**The same blind spot existed in the other direction, for four more previews.** Every non open case
+called `seedPosition` first, so `previewBorrow`, `previewRefinance`, `previewAdjustTrove` and
+`previewClose` all list `TROVE_NOT_ACTIVE` and no generated case could ever produce it. Both status
+gates were unreachable, in opposite directions, and only one of them happened to be wrong.
+
+**What the generator still cannot construct** is recorded in
+`docs/09-review-and-validated-surface.md` §3 rather than left implied: adding and withdrawing
+collateral in one call, an adjustment that requests nothing, a debt increase of zero, and a Trove
+that was closed rather than never opened. The first three are input validation the SDK prechecks
+separately; the fourth is blocked by MK-045, because the harness cannot obtain the fee needed to
+close a seeded position.
 
 ---
 

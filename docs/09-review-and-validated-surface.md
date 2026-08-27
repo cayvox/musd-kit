@@ -40,21 +40,17 @@ are limits an integrator designs around rather than bugs they hit by accident.
 | Real money on mainnet | **No.** Single author, unaudited, pre 1.0. Use it to evaluate, read, and prototype |
 | Upgrading from 0.1.0 | **Do it, and read `docs/11-migration-0.1-to-0.2.md` first.** 0.1.0 returned wrong numbers on seven surfaces, three of them silently: `isLiquidatable` in Recovery Mode (MK-001), `redeem().fee` holding a rate (MK-014), and `previewOpen.meetsRecoveryRequirement` (MK-005). That page splits 0.1.0's defects into the ones that return wrong numbers and the ones that fail transactions |
 
-**Two open findings an integrator has to know about**, both S2.
-
-- **MK-047, `previewOpen` says viable for an account that already holds a Trove**, and the contract
-  refuses with `BorrowerOps: Trove is active` (`BorrowerOperations.sol:633`, `:1140-1149`). A UI that
-  enables its open button from `previewOpen.viable` will offer an open to someone who already has a
-  position; the write path prechecks it, so the call throws rather than reverting on chain. **This
-  blocks the 0.2.0 release.** Found by the live testnet run, which is the only place it could have
-  been found: every generated sweep case uses a fresh account, so no case ever previewed an open
-  against an occupied one.
-
-The second is a protocol property rather than something this SDK can fix. Stated where the API is
-documented, in `docs/03-core-api.md`:
+**One open finding an integrator has to know about**, S2, and it is a protocol property rather than
+something this SDK can fix. Stated where the API is documented, in `docs/03-core-api.md`:
 
 - **MK-011, `maxFeePercentage` is advisory only.** The SDK checks it; it does not bind the contract.
   It is not slippage protection.
+**And one closed in the same wave it was found, worth reading anyway.** MK-047: `previewOpen`
+returned `viable: true` for an owner who already held a Trove, where the contract refuses with
+`BorrowerOps: Trove is active` (`BorrowerOperations.sol:633`, `:1140-1149`). Fixed, along with the
+generator hole that made a thousand sweep cases unable to reach it. Read it for what it says about
+what a sweep proves, not for the defect.
+
 - **MK-038 is now closed by MK-042**, and what it established remains true and is the thing to
   read: in normal mode a top-up that RAISES a position's ICR still reverts if the result is under
   MCR (`BorrowerOperations.sol:1201`, defined at `:1330-1335`), so an already under-water position
@@ -93,7 +89,40 @@ evidence for what it actually exercises.
 | `previewBorrow`, `previewRefinance` | Fork exercised end to end against the contract's own gates, plus exhaustive chain-free tests of the verdict as a pure function | **Verdict and fee validated; not yet compared against a reverting write for every reason** |
 | Insertion hints on every existing-trove write path | Pinned on a fork against `getNominalICR` after the write, including a repay at, below and above interest owed | Full for the paths exercised |
 | The PACKAGED artifact, not the workspace | The packed tarball is installed into a scratch project and a consumer file is typechecked against it under four module configurations, plus ESM and CJS runtime imports | **Manual, at release preparation, not automated.** This is what found MK-040, a broken `exports` map that a workspace typecheck cannot see because path mapping hides it. Automating it needs a pack, an install and a `tsc` run, which is its own job |
-| Live testnet lifecycle, end to end | `scripts/testnet-e2e.ts`, **run against live Mezo testnet**: every write and every preview the SDK exposes, each asserting the preview's verdict and numbers against what the chain did. **17 surfaces exercised, 6 skipped with reasons** | **It found MK-047**, a preview verdict that disagrees with the contract, which 1000 fork sweep cases could not because every generated case uses a fresh account. Not reached: `redeem` (acts on a third party's position, opt in), `liquidate` and `batchLiquidate` (need a Trove below MCR, uncreatable on live testnet), `claim` (needs a surplus), and `close` (MK-045) |
+| Live testnet lifecycle, end to end | `scripts/testnet-e2e.ts`, **run against live Mezo testnet**, chain 31611, blocks 15153708 to 15153787. Every write and every preview, each asserting the preview's verdict and numbers against what the chain did. The full ledger is `docs/13-live-testnet-ledger.md` | **It found MK-047, MK-046 and MK-045**, none of which a fork could produce. Not reached: `liquidate` and `batchLiquidate` (need a Trove below MCR, uncreatable on live testnet), `claim` (needs a surplus), `close` (MK-045) |
+
+**The fork sweep and the live run prove different things, and the table lists them separately for
+that reason.**
+
+The sweep proves **breadth**: a thousand generated cases across eight operations, boundary weighted,
+each snapshot isolated, comparing every preview verdict against the chain outcome. What it cannot
+prove is anything that depends on wall clock time passing, because anvil mines on demand, and
+anything its generator cannot construct.
+
+The live run proves **reality**: one ordered lifecycle against the real deployment, the real oracle
+and real gas. It is one path, not a thousand, and its value is that the path is real. Both of the
+findings a fork structurally could not produce came from it: MK-046, whose cause is elapsed time, and
+MK-047, whose cause was a state the generator could not express.
+
+**What the sweep's generator can and cannot construct**, which is the honest boundary of what a
+thousand cases prove (MK-047):
+
+| Precondition | Expressible? |
+|---|---|
+| No Trove, and no Trove, for every operation | **Yes, since MK-047.** `precondition: 'FRESH'` |
+| A Trove is already open, for every operation | **Yes, since MK-047.** `precondition: 'OCCUPIED'` |
+| Debt floor, ratio and capacity boundaries | Yes, the boundary band targets each threshold and jitters one wei either side |
+| Recovery Mode | Yes, via the extreme band's price multipliers |
+| Repay above the debt, withdrawal above the balance | Yes, via the extreme band |
+| **Adding and withdrawing collateral in one call** | **No.** `adjustCase` never passes both legs, so `COLLATERAL_ADD_AND_WITHDRAW` is unreachable |
+| **An adjustment that requests nothing** | **No.** `NO_CHANGE_REQUESTED` is unreachable |
+| **A debt increase of zero** | **No.** `ZERO_DEBT_INCREASE` is unreachable |
+| **A Trove closed rather than never opened** | **No.** Blocked by MK-045: the harness cannot close a seeded position, because it cannot obtain the fee |
+
+The last four are stated rather than left implied. **Any operation whose precondition the generator
+cannot construct is untested no matter how many cases run**, and the first three are input validation
+the SDK also prechecks, while the fourth is blocked by a protocol property rather than by an
+oversight.
 | Preview verdict against actual transaction outcome, swept | **Reproducible:** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, two slices via `MK_DIFF_FROM`. **The sweep covers eight operations since MK-042**, up from three: open, borrow, refinance, addCollateral, repay, withdrawCollateral, adjust and close. It does NOT reach redemption, liquidation or claim, which have no preview to compare. 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** The 1000 case figure is from the three operation sweep; the eight operation sweep is newer and its counts are in MK-042. What it still does NOT cover: redemption, liquidation and claim, none of which have a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
 | Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | **Observed executing**, P8: capacity `140092922400000000000000` at open, unchanged after a price rise, `70046461200000000000000` after withdrawing half the collateral | Full. The obligation is discharged (MK-002) |
 | Fee exemption on the DEBT INCREASE path, not just on open | **Observed executing**, P8: an exempt account borrowing against an existing position, `quotedFee=2000000000000000000`, `preview.fee=0`, principal added exactly the draw | Full. The obligation is discharged (MK-018) |

@@ -32,6 +32,23 @@ export type CaseOp =
   | 'adjust'
   | 'close'
 
+/**
+ * The ACCOUNT STATE a case runs against (MK-047, and the larger finding behind it).
+ *
+ * Until this existed the generator could not express one, and that is why a thousand cases
+ * missed a preview verdict that disagreed with the contract. `openCase` used a fresh account
+ * for every case, so `previewOpen` was never asked about an owner who already held a Trove;
+ * every other case seeded a position first, so no preview was ever asked about an owner who
+ * held none. **Both status gates were unreachable, in opposite directions.**
+ *
+ * A sweep proves what its generator can express. The count of cases says nothing about that.
+ */
+export type Precondition =
+  /** No Trove. The only state `open` could reach before, and the only one the others could not. */
+  | 'FRESH'
+  /** A Trove is open. What `open` must be refused against, and what the others need. */
+  | 'OCCUPIED'
+
 /** One generated case. Every field is part of its reproduction. */
 export interface DiffCase {
   index: number
@@ -46,6 +63,14 @@ export interface DiffCase {
   pricePercent: number
   /** EVM seconds to warp before the operation, so interest owed spans zero to large. */
   elapsedSeconds: number
+  /**
+   * The account state to construct before the operation runs (MK-047).
+   *
+   * Weighted rather than uniform: the state that matches the operation is the ordinary case
+   * and the mismatched one is the boundary, so most cases keep the shape the sweep already
+   * had and a minority probe the gate that had never been reached.
+   */
+  precondition: Precondition
 }
 
 /**
@@ -186,7 +211,25 @@ export function generateCases(
           ? ([0, 31_536_000, 3 * 31_536_000][Math.floor(rnd() * 3)] ?? 0)
           : Math.floor(rnd() * 2_592_000)
 
-    cases.push({ index, seed, band, op, collateral, debt, pricePercent, elapsedSeconds })
+    // MK-047. One case in five runs against the OPPOSITE account state to the one the
+    // operation expects, which is the only way a status gate is ever exercised. One in five
+    // rather than one in two: the mismatched state short circuits every later gate, so a
+    // higher rate would spend the sweep proving one reason over and over and stop probing
+    // the ratio and capacity boundaries the bands were weighted for.
+    const mismatched = rnd() < 0.2
+    const precondition: Precondition =
+      op === 'open' ? (mismatched ? 'OCCUPIED' : 'FRESH') : mismatched ? 'FRESH' : 'OCCUPIED'
+    cases.push({
+      index,
+      seed,
+      band,
+      op,
+      collateral,
+      debt,
+      pricePercent,
+      elapsedSeconds,
+      precondition,
+    })
   }
   return cases
 }
@@ -202,5 +245,6 @@ export function describeCase(c: DiffCase): string {
     `debt=${c.debt}`,
     `pricePercent=${c.pricePercent}`,
     `elapsedSeconds=${c.elapsedSeconds}`,
+    `precondition=${c.precondition}`,
   ].join(' ')
 }
