@@ -74,7 +74,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import {
   CCR,
-  ICRBelowMCR,
+  InsufficientCollateral,
   MCR,
   MUSD_GAS_COMPENSATION,
   borrowerOperationsAbi,
@@ -1000,10 +1000,38 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe(false)
 
       // THE FINDING. A strictly ICR RAISING operation, refused.
+      //
+      // MK-042 changed WHERE it is refused, and this assertion changed with it rather than
+      // being weakened. Before the preview surface existed the call reached the chain and
+      // came back as `ICRBelowMCR`, decoded from the revert. Now the precheck evaluates the
+      // same gate first and throws `InsufficientCollateral`, the pre-send guard's error,
+      // carrying the resulting ratio and the threshold. **The user is refused either way;
+      // the difference is that they are no longer charged gas to find out.**
+      //
+      // This test failing on the wave that closed the gap is the pin working: it asserted a
+      // behaviour, the behaviour changed on purpose, and the assertion had to be revisited
+      // rather than the change landing silently.
       await expect(
         client.addCollateral({ amount: BTC / 1000n }),
         'MK-038: `_requireICRisAboveMCR` is an absolute floor, not a direction check',
-      ).rejects.toBeInstanceOf(ICRBelowMCR)
+      ).rejects.toBeInstanceOf(InsufficientCollateral)
+
+      // And the preview says the same thing WITHOUT sending anything, which is what MK-042
+      // added: the verdict, the reason, and the number that would actually work.
+      const blocked = await client.previewAdjustTrove({
+        owner: account.address,
+        addCollateral: BTC / 1000n,
+      })
+      expect(blocked.viable).toBe(false)
+      expect(blocked.bindingConstraint).toBe('ICR_BELOW_THRESHOLD')
+      expect(
+        blocked.icrIsAbsolute,
+        'MK-042: and it says the gate is absolute, which is the part integrators get wrong',
+      ).toBe(true)
+      expect(blocked.minimumCollateralToClearIcr).not.toBeNull()
+      console.log(
+        `[MK-042] previewAdjustTrove blocked: reason=${blocked.bindingConstraint} resultingIcr=${blocked.resultingIcr} needs=${blocked.minimumCollateralToClearIcr}`,
+      )
 
       // And the same operation, larger, is accepted. This is what makes the point precise: the
       // gate is not against topping up, it is against ENDING below MCR. Which is also why the
