@@ -72,6 +72,7 @@ claim about it was not).
 | MK-034 | Two DIFFERENT redemption failures, wrongly folded into one entry, now split by evidence | S3 | open |
 | MK-035 | A write is sent with a gas margin thinner than its own work varies, so it can revert out of gas after a passing simulate | S2 | fixed |
 | MK-036 | The checklist's CI step was executed before the run existed, and reported "no run" as a finding twice | S3 | fixed |
+| MK-037 | `estimateContractGas` balance checks, so the MK-035 gas margin is silently dropped whenever the account is thinly funded | S2 | open |
 
 ---
 
@@ -2165,6 +2166,53 @@ rather than never: it is only a finding if it persists. It also names the comman
 pinned, so the answer cannot come from an ancestor.
 
 ---
+
+---
+
+## MK-037 · The gas margin is silently dropped when the estimate balance checks
+
+**Class** S2 · **Status** open, NOT fixed here · **Found by us in the P9 wave, by the warning added
+in the same wave**
+
+**What happens.** `simulateAndSend` estimates gas and multiplies by
+`DEFAULT_GAS_MARGIN_PERCENT` (MK-035). When that estimate throws, it falls back to sending with no
+explicit gas, which is the pre-MK-035 behavior, which is the behavior that produced the reverts.
+
+It throws more often than anyone knew. From one CI run, with the warning that made it visible:
+
+```
+gas estimation failed for openTrove, sending without a margin (MK-035).
+  ContractFunctionExecutionError: The total cost (gas * gas fee + value) of executing
+  this transaction exceeds the balance of the account.
+gas estimation failed for refinance ... Transaction creation failed.
+gas estimation failed for withdrawMUSD ... Transaction creation failed.
+```
+
+**The mechanism, as far as it is established.** `eth_estimateGas` checks the sender's balance
+against `gas * gasPrice + value`, and with no `gas` supplied the node assumes something large,
+plausibly the block gas limit. An account funded for the transaction it is about to send can
+therefore fail ESTIMATION while the transaction itself would succeed, which is exactly what happens:
+these writes go through, at the old 1.5% margin, having silently lost the fix.
+
+**What is NOT established:** which gas figure the node assumes, and whether the "Transaction creation
+failed" cases share the cause or are a second thing. Both need reading anvil rather than guessing.
+
+**How it was found, which is the part worth keeping.** The fallback was added in P7 with
+`.catch(() => undefined)` and no logging. It was invisible for a wave. The MK-035 pin caught it in
+CI as `margin=1.5%` with no explanation anywhere, and the warning added in P9 named it on the next
+run. A fallback that restores the behavior a finding was raised about must never be silent, and this
+is the second time in this programme that a silent catch cost a diagnosis (see MK-007).
+
+**Why it is not fixed here.** P9's scope is MK-015, MK-017 and MK-027. This changes gas handling in
+the one function every write goes through, which is what MK-035's own entry says needs its own wave
+with its own acceptance. The obvious candidates, estimating without the account or supplying a gas
+cap to the estimate, both change what the estimate MEANS, and picking one without measuring is how
+MK-035 got its first two hypotheses wrong.
+
+**Its cost while carried.** The MK-035 pin fails whenever this fires, so the fork gate is red in
+those runs. That is the pin working: it asserts the margin is applied, and the margin is not applied.
+**It has deliberately not been weakened to make CI green**, because an assertion that passes when
+the thing it asserts is untrue is worth less than a red build.
 
 ---
 
