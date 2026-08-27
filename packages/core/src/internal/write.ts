@@ -208,7 +208,17 @@ export async function simulateAndSend(
       // change; falling back is never worse than the behavior being replaced.
       deps.publicClient
         .estimateContractGas(sim as unknown as EstimateContractGasParameters)
-        .catch(() => undefined),
+        .catch((error: unknown) => {
+          // Never silent. This fallback restores the pre-MK-035 behavior, which is the
+          // behavior that produced the reverts, so a caller has to be able to see that it
+          // happened. It was silent for exactly one wave and the MK-035 pin caught it in CI
+          // with `margin=1.5%`, the pre-fix number, and no explanation anywhere.
+          const e = error as Error
+          console.warn(
+            `[musd-kit] gas estimation failed for ${functionName}, sending without a margin (MK-035). ${e.name}: ${e.message.split('\n')[0]}`,
+          )
+          return undefined
+        }),
     ])
 
     // A caller supplied `gas` wins outright: an explicit limit is a decision, not a default.
