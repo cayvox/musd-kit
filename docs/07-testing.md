@@ -284,8 +284,25 @@ Then write one file importing a value, a type and a hook from each package, and 
 | `"type": "module"` | `node16` | `node16` |
 | `"type": "module"` | `esnext` | `bundler` |
 
-**The first row is the one that matters**, and it is the only one MK-040 failed. Also confirm both
-runtimes resolve, since a types fix must not break them:
+**The first row is the one that matters**, and it is the only one MK-040 failed.
+
+**All four rows assume `skipLibCheck: true`, and that was an unstated precondition until it was
+measured.** With `skipLibCheck: false` the CommonJS rows do not pass, and the reason is upstream
+rather than ours: `viem` is ESM only, so a `.d.cts` that references its types produces `TS1479`
+under `moduleResolution: node16`, and the same run reports `TS1542` from `@mezo-org/chains` and a
+long tail from `ox`, which is one of viem's own dependencies. Measured on the 0.2.0 tarballs:
+
+```
+skipLibCheck: true   all four rows exit 0
+skipLibCheck: false  cjs/node16 fails, 2 errors in @musd-kit dist/index.d.cts, the rest upstream
+```
+
+Nothing here is fixable inside this repository without dropping the CommonJS build, and
+`skipLibCheck: true` is what the TypeScript starter templates and every framework preset set. It is
+recorded because a gate that says "all four exit 0" without naming the configuration is a gate that
+claims more than it checked.
+
+Also confirm both runtimes resolve, since a types fix must not break them:
 
 ```sh
 node -e "console.log(Object.keys(require('@musd-kit/core')).length)"
