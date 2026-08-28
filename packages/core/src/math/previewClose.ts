@@ -43,11 +43,22 @@ export interface ClosePreview {
   viable: boolean
   reasons: CloseBlockReason[]
   bindingConstraint: CloseBlockReason | null
-  /** MUSD the caller must hold: `entireDebt - MUSD_GAS_COMPENSATION` (`:963`). */
+  /**
+   * MUSD the caller must hold: `entireDebt - MUSD_GAS_COMPENSATION` (`:963`).
+   *
+   * **A snapshot the chain outgrows (MK-050).** `_closeTrove` accrues interest on the Trove at
+   * `:945` and only then reads the debt at `:958`, so by the block a close executes in the required
+   * figure is LARGER than this one. Holding exactly this amount is refused. Acquire a margin above
+   * it, or recompute at the point of use. See `FINDINGS.md`, MK-050.
+   */
   musdRequired: bigint
   /** What the caller actually holds. */
   musdBalance: bigint
-  /** `musdRequired - musdBalance`, floored at zero. What still has to be acquired. */
+  /**
+   * `musdRequired - musdBalance`, floored at zero. What still has to be acquired.
+   *
+   * Acquiring EXACTLY this is not enough, for the reason on {@link musdRequired} (MK-050).
+   */
   musdShortfall: bigint
   /** The Trove's live entire debt. */
   entireDebt: bigint

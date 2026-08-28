@@ -46,6 +46,19 @@ const FROM_CASE = Number(process.env.MK_DIFF_FROM ?? 0)
  * anvil per slice, which needs a bound at both ends.
  */
 const TO_CASE = process.env.MK_DIFF_TO !== undefined ? Number(process.env.MK_DIFF_TO) : undefined
+/**
+ * Run only cases whose operation matches, from the same generated set.
+ *
+ * Added while closing MK-048. The sweep reports how many cases RAN and how many were skipped, but
+ * a skip carries a reason and not an operation, so after a thousand cases nobody could say how many
+ * REDEMPTIONS had actually reached the chain. A redemption case skips for a reason no other case
+ * has: at the extreme band's low price multipliers every Trove falls below MCR, so the loop finds
+ * nothing and there is no first eligible Trove to have a headroom. **A band that never ran proves
+ * nothing, and the count is the only thing that distinguishes the two.**
+ *
+ *   MK_DIFF_OP=redeem MK_DIFF_CASES=1000 pnpm test:fork
+ */
+const ONLY_OP = process.env.MK_DIFF_OP
 
 describe('Differential harness, preview verdict against chain outcome', () => {
   it(`sweeps ${CASES} generated cases`, async () => {
@@ -70,6 +83,7 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     if (FROM_CASE > 0) cases = cases.filter((c) => c.index >= FROM_CASE)
     if (TO_CASE !== undefined) cases = cases.filter((c) => c.index < TO_CASE)
     if (ONLY_CASE !== undefined) cases = cases.filter((c) => c.index === ONLY_CASE)
+    if (ONLY_OP !== undefined) cases = cases.filter((c) => c.op === ONLY_OP)
 
     const results: CaseResult[] = []
     const started = Date.now()
@@ -113,6 +127,23 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     console.log(
       `[differential] mismatches: FALSE_VIABLE=${falseViable.length} FALSE_BLOCKED=${falseBlocked.length} NUMBERS=${numbers.length}`,
     )
+    // Redemption coverage by band, ran against skipped. A band with a zero in the ran column is a
+    // band the sweep did not exercise, whatever the headline case count says.
+    const redeemCases = results.filter((r) => r.case.op === 'redeem')
+    if (redeemCases.length > 0) {
+      const tally = new Map<string, { ran: number; skipped: number }>()
+      for (const r of redeemCases) {
+        const row = tally.get(r.case.redeemBand) ?? { ran: 0, skipped: 0 }
+        if (r.skipped !== undefined) row.skipped++
+        else row.ran++
+        tally.set(r.case.redeemBand, row)
+      }
+      console.log(
+        `[differential] redeem bands: ${[...tally.entries()]
+          .map(([band, row]) => `${band} ran=${row.ran} skipped=${row.skipped}`)
+          .join('  ')}`,
+      )
+    }
     for (const s of skipped.slice(0, 5)) {
       console.log(`[differential] skipped ${describeCase(s.case)} :: ${s.skipped}`)
     }

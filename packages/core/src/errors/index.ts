@@ -268,6 +268,42 @@ export class CollateralWithdrawalBlocked extends MusdError {
   }
 }
 
+/**
+ * The redemption amount falls in the gap the debt floor creates (MK-048).
+ *
+ * `redeemCollateral` hands the whole requested amount to the first eligible Trove
+ * (`TroveManager.sol:1218-1221`). If that would take the Trove's net debt below `minNetDebt` the
+ * partial is CANCELLED (`:1299-1306`), the loop breaks (`:392`), and with nothing drawn the whole
+ * call reverts (`:406-408`). Consuming the Trove WHOLE takes a different branch (`:1252`) with no
+ * floor check, so the amounts that work are not an interval:
+ *
+ *   amount <= maxWithoutConsuming   works, a partial inside the headroom
+ *   in between                      REVERTS, which is this error
+ *   amount >= nextViableAmount      works, the Trove is consumed whole
+ *
+ * **The blocking condition lives in someone else's position**, which is why this is prechecked
+ * rather than left to the revert: a caller cannot see it, cannot cause it, and cannot fix it. The
+ * two numbers on the error are the edges of the gap, so a caller can move to either side.
+ */
+export class RedemptionBreachesDebtFloor extends MusdError {
+  constructor(context?: {
+    requested?: bigint
+    maxWithoutConsuming?: bigint
+    nextViableAmount?: bigint
+  }) {
+    const known =
+      context?.maxWithoutConsuming !== undefined && context?.nextViableAmount !== undefined
+    super(
+      Codes.REDEMPTION_BREACHES_DEBT_FLOOR,
+      known
+        ? `Redeeming ${context.requested ?? 'this amount'} would take the first eligible Trove's net debt below the minimum, so the contract cancels the partial and the whole call reverts. Redeem at most ${context.maxWithoutConsuming}, or at least ${context.nextViableAmount} to consume that Trove whole. The larger figure already carries a margin for the interest that Trove accrues before this lands, so offering exactly its net debt is NOT enough. The limit is that Trove's headroom above the debt floor, not your balance.`
+        : 'This redemption would take the first eligible Trove below the minimum net debt, which cancels the partial and reverts the call.',
+      context ? { context } : {},
+    )
+    this.name = 'RedemptionBreachesDebtFloor'
+  }
+}
+
 /** Blocked by Recovery Mode (TCR < CCR): tightened rules require ICR ≥ CCR. */
 export class RecoveryModeRestriction extends MusdError {
   constructor(cause: unknown) {

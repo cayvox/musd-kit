@@ -438,31 +438,61 @@ estimate fails against a cap it supplied itself, while the write succeeds. It no
 with the address. Same answer, one fewer round trip, no self imposed cap. Full mechanism and
 the payload diff that established it: `FINDINGS.md`, MK-037.
 
-### A redemption can be refused for an amount the hints call redeemable (MK-048)
+### Sizing a redemption: use `previewRedeem`, not `truncatedAmount` (MK-048)
 
-`redeem` returns `truncatedAmount`, taken from the protocol's `getRedemptionHints`. **It reports
-amounts the chain then refuses**, and the whole redemption reverts rather than redeeming less.
+**The amounts a redemption accepts are not an interval. There is a gap.** For the first eligible
+Trove, the one with the lowest ICR at or above MCR, with net debt `D` as read, the live floor `M`,
+and the interest `G` that Trove accrues before your transaction lands:
 
-Measured on live Mezo testnet, hints computed fresh for each amount immediately before simulating:
+| amount | outcome |
+|---|---|
+| `A <= D - M` | **works.** A partial inside that Trove's headroom |
+| `D - M < A < D + G` | **reverts.** The whole call, not a smaller redemption |
+| `A >= D + G` | **works.** The Trove is consumed whole, a branch with no floor check |
 
-| requested | `truncatedAmount` says | chain |
-|---|---|---|
-| 50 MUSD | 50.00 | `TroveManager: Unable to redeem any amount` |
-| 20 MUSD | 20.00 | `TroveManager: Unable to redeem any amount` |
-| 5 MUSD | 5.00 | succeeds |
+**`D` itself is inside the gap, not above it.** The contract accrues interest on that Trove before
+it sizes your lot (`:366`, then `:1218-1221`), so by the time your transaction executes the Trove
+owes more than you read, and an offer of exactly `D` arrives as a partial that leaves dust. Use
+`nextViableAmount`, which already carries `G`, rather than computing the net debt yourself.
 
-**The binding quantity is not your balance, it is the target Trove's headroom above the debt floor.**
-A redemption that does not consume a whole Trove is a partial against the first eligible one, and
-`_redeemCollateralFromTrove` cancels a partial when the resulting net debt would fall below
-`minNetDebt` (`TroveManager.sol:1299-1306`). A cancelled partial breaks the loop (`:392`), leaving
-nothing drawn, which reverts (`:406-408`). On the trove the hints pointed at, that headroom was
-**7.52 MUSD**, which sits exactly between the 5 that worked and the 20 that did not.
+**The binding quantity is another account's headroom, not your balance**, which is why no amount of
+inspecting your own position tells you the answer. From `mezo-org/musd`, `TroveManager.sol`:
+`:1218-1221` hands the whole requested amount to that Trove, `:1299-1306` cancels the partial if the
+result would fall below `minNetDebt`, `:392` breaks the loop, and `:406-408` reverts because nothing
+was drawn. Consuming the Trove whole takes `:1252` instead, which never reaches the cancellation.
 
-`getRedemptionHints` does not model that cancellation, so `truncatedAmount` over-reports.
+```ts
+const p = await musd.previewRedeem({ redeemer, amount });
+if (!p.viable && p.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR') {
+  p.maxWithoutConsuming; // the largest amount below the gap
+  p.nextViableAmount;    // the smallest amount above it: net debt PLUS the accrual margin
+  p.accrualMargin;       // the margin itself, if you want to see the offset
+}
+p.redeemable;            // what a single call will ACTUALLY redeem
+```
 
-**What to do about it today:** size redemptions small, or be ready to catch `RedemptionFailed` and
-retry smaller. There is no preview for `redeem` yet; building one that walks the list the way the
-contract does is tracked as MK-048.
+`redeem` prechecks this and throws `RedemptionBreachesDebtFloor` with both edges, so you do not pay
+gas to discover it.
+
+**Do not size a redemption from `RedeemResult.truncatedAmount`.** That is what
+`getRedemptionHints` returned, and the helper answers a different question: it sizes each partial to
+a Trove's headroom and then moves to the next one, which needs one call per Trove
+(`HintHelpers.sol:138-162`). It reported `headroom + 1`, `netDebt / 2` and `netDebt - 1` as fully
+redeemable on a live chain where all three revert.
+
+### A redemption can revert even when the preview is right (MK-049)
+
+**Retry is part of using `redeem` correctly.** The partial hint carries an NICR computed from the
+collateral remaining after the redemption, derived at the price the hint was read at
+(`HintHelpers.sol:148`), and the contract derives the same quantity at the price when the
+transaction MINES (`TroveManager.sol:1224-1226`). **If the oracle moves in between, the two differ
+and the partial cancels** (`:1299-1301`). The contract allows a band for interest accrual
+(`:1276-1285`) but not for the oracle.
+
+Observed live: an amount at 50% of the headroom failed on the first attempt and succeeded on the
+second, unchanged. **The SDK does not retry for you**, deliberately: a retry is a second
+transaction, and spending your gas without asking is not its decision. Catch `RedemptionFailed` and
+retry with a freshly computed amount.
 
 ### Closing costs more MUSD than the position ever gave you (MK-045)
 

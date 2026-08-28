@@ -15,6 +15,7 @@ export {
   useBorrowPreview,
   useClosePreview,
   useMaxWithdrawableCollateral,
+  useRedeemPreview,
   useWithdrawCollateralPreview,
   useBorrowingCapacity,
   useRefinancePreview,

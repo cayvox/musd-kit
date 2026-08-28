@@ -57,6 +57,18 @@ export {
   type MaxWithdrawable,
 } from './previewAdjust'
 
+// MK-048. Redemption, previewed by walking the list the way `redeemCollateral` does rather
+// than trusting `getRedemptionHints`, which answers a different question and over-reports.
+export {
+  previewRedeem,
+  evaluateRedeem,
+  type PreviewRedeemParams,
+  type RedemptionPreview,
+  type RedeemBlockReason,
+  type EvaluateRedeemInput,
+  type EligibleTrove,
+} from './previewRedeem'
+
 // MK-042. Closing has its own gate set, two of them conditional on a live chain read.
 export {
   previewClose,

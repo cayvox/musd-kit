@@ -83,7 +83,9 @@ claim about it was not).
 | MK-045 | A Trove cannot be closed with only the MUSD it drew, so a self funded run cannot end clean | S3 | documented, protocol property |
 | MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
-| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper ignores the debt floor | **S2** | open, documented |
+| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | **closed.** Previewed, prechecked, and the preview agrees with the chain in both directions across 83 executed redemption cases |
+| MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | open, documented, needs retry |
+| MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented |
 
 ---
 
@@ -2990,8 +2992,15 @@ close a seeded position.
 
 ## MK-048 · `truncatedAmount` reports redeemable amounts the chain refuses
 
-**Class** S2 · **Status** open, documented · **Found by the live testnet run, on the only chain where
-another account's Trove sits near the debt floor**
+**Class** S2 · **Status** CLOSED. Previewed by `previewRedeem`, prechecked on the write path,
+verified live at the lower edge, and confirmed in both directions by a sweep that first proved the
+upper edge wrong · **Found by the live testnet run, on the only chain where another account's Trove
+sits near the debt floor**
+
+**The bar for closing it was that the preview agrees with the chain in both directions, and it now
+does**: across 83 executed redemption cases from seed `20260826`, zero FALSE_VIABLE and zero
+FALSE_BLOCKED, including 19 that offer exactly the net debt as read and are refused. The numbers are
+in full at the end of this entry.
 
 **What happens.** `redeem` reports `truncatedAmount`, taken from the protocol's own
 `getRedemptionHints`, as the amount that will be redeemed. On live Mezo testnet that number is wrong
@@ -3061,15 +3070,270 @@ into `RedemptionFailed` with an accurate message, and no number reaches a user a
 rather than S3 because the SDK returns a figure the chain contradicts, which is the same class as
 MK-014 and MK-047 even though the source of the wrong number is upstream.
 
-**Not fixed here.** The fix is a `previewRedeem` that walks the sorted list the way the contract does
-and reports the amount that will actually redeem, plus a corrected docstring on `truncatedAmount`.
-That is a preview surface, and this programme's rule since MK-042 is that a preview ships with the
-sweep coverage that would have caught it, which means the generator must first be able to construct
-a Trove near the floor. That is a wave.
+### The complete rule, derived from source and verified to the wei
 
-**Its cost while carried:** documented on `redeem` in `docs/03-core-api.md`, so a caller sizing a
-redemption knows to expect a revert rather than a smaller redemption, and knows the binding quantity
-is the target Trove's headroom above `minNetDebt` rather than their own balance.
+Reading the whole path rather than the two lines first cited changes the shape of the answer. **It is
+a GAP, not a cap.** For the first eligible Trove with net debt `D` **as read**, floor `M`, and the
+interest `G` that Trove accrues between the read and the block the transaction lands in:
+
+| amount | outcome | why |
+|---|---|---|
+| `A <= D - M` | succeeds | a partial inside the headroom |
+| `D - M < A < D + G` | **REVERTS** | `:1218-1221` hands the whole amount to that Trove, `:1299-1306` cancels, `:392` breaks, `:406-408` reverts |
+| `A >= D + G` | succeeds | the Trove is consumed WHOLE via `:1252`, a branch with **no hint check and no floor check at all** |
+
+The `G` in that table is the correction the sweep forced, and it is recorded in full below. The
+first version of this table said the upper edge was `D`, and that was wrong.
+
+**Full consumption behaving differently was the open question, and this is the answer.** `:1252` is
+`if (vars.newDebt == MUSD_GAS_COMPENSATION)`, which holds exactly when the offered amount covers the
+Trove's entire net debt. That branch calls `_redeemCloseTrove` and `_closeTrove(Status.closedByRedemption)`
+and never reaches the cancellation. A whole consumption can never be cancelled.
+
+Simulated on a fork against the real deployment, with the helper's answer beside each:
+
+```
+headroom exactly  208463779941643739864   hint said the same   SUCCEEDS
+headroom + 1 wei                          hint said the same   REVERT
+netDebt / 2                               hint said the same   REVERT
+netDebt - 1 wei                           hint said the same   REVERT
+netDebt exactly  2008463779941643739864   hint said the same   SUCCEEDS   <- ARTEFACT, see below
+netDebt + 1 wei                           hint said the same   SUCCEEDS   <- ARTEFACT, see below
+```
+
+The three REVERT rows and the headroom row were later reconfirmed by sending. The last two were not,
+and they do not hold; why is the next section.
+
+And again on LIVE testnet at pinned block 15164949, where `edge - 1` and `edge` succeed while
+`edge + 1 wei` and `edge + 1 MUSD` revert.
+
+### The correction the sweep forced: the upper edge is `D + G`, not `D`
+
+The rule above was derived from source and then measured, and the measurement of the upper edge was
+**wrong because of how it was taken**. The fork evidence used `simulateContract`, which is an
+`eth_call` at the current block: no block is mined, so no time passes, so no interest accrues, and
+`mUSDLot = min(A, totalDebt - GAS_COMP)` at `A = D` is an exact equality that consumes the Trove.
+
+A real send does not work that way. `:366` runs `_updateTroveInterest(currentBorrower)` before the
+lot is sized, and `:1218-1221` then reads `_getTotalDebt` on the UPDATED Trove. By the block a
+transaction executes in, the Trove owes more than the preview read, so an offer of exactly `D`
+arrives as a **partial** leaving dust, dust is far below `minNetDebt`, and it cancels.
+
+The 1000 case sweep found it as two `FALSE_VIABLE` mismatches, both `redeemBand=WHOLE_TROVE`, which
+is exactly the band added in this wave to cover full consumption. Probed directly on a fork by
+sending rather than simulating:
+
+```
+PROBE target=0xDA04759E54728B6636Fe48F7c9795c7B609bAaAa netDebt(read)=2008463782732775139373
+PROBE preview at whole: viable=true redeemable=2008463782732775139373
+PROBE SEND whole            -> THREW RedemptionFailed
+PROBE SEND whole + 1 MUSD   -> status=success
+```
+
+**So the preview was wrong, and its own harness caught it before a user did.** `nextViableAmount`
+now carries `G`, sized as 600 seconds of interest on the Trove's entire debt at its rate. 600 is not
+a number chosen to feel safe: it is the contract's own allowance for accrual where it bounds a
+partial hint (`:1276-1285`). Overshooting costs nothing, because the excess spills to the next Trove
+and a cancellation there cannot revert the call once the first Trove has been drawn (`:406-408`).
+
+**The methodological finding is the durable one.** A simulation and a send are not the same
+experiment against a contract that mutates state before it reads it, and this whole programme had
+been treating them as interchangeable. Every remaining redemption claim in this file was re-checked
+against that distinction; the three REVERT rows above and the live pair below were all taken by
+sending, so they stand.
+
+### Is the helper wrong, or only our use of it
+
+**Neither, exactly, and the distinction is the finding.** `HintHelpers.sol:138-162` sizes each
+partial to `min(remainingMUSD, netDebt - minNetDebt)` and then CONTINUES to the next Trove. So
+`truncatedAmount` answers **"how much could be redeemed if every partial were sized per Trove"**,
+which needs one call per Trove. `TroveManager.sol:1218-1221` does no such sizing: it hands the whole
+remaining amount to the first Trove and cancels if that breaches the floor.
+
+The helper is internally correct and answers a question nobody asked. **What is entirely ours is
+passing its answer through as `RedeemResult.truncatedAmount` and describing it as the redeemable
+amount.** So the fix is ours entirely, and it is not a workaround for a protocol bug.
+
+### The fix
+
+`previewRedeem` walks the sorted list the way the LOOP does, and reports what a single call will
+actually redeem, with both edges of the gap named so a caller can move to either side:
+`maxWithoutConsuming` is `D - M` and `nextViableAmount` is `D + G`. `PARTIAL_BREACHES_DEBT_FLOOR` is
+the reason that had no field before, and `accrualMargin` reports `G` so the offset is inspectable
+rather than folded silently into a total.
+
+**The write path prechecks it**, which is a deliberate exception to the usual judgment. Everywhere
+else a revert the caller could have inspected is tolerable. Here **the blocking condition lives in
+someone else's position**: it is the headroom of the first eligible Trove in the sorted list, it
+moves without the caller doing anything, and no field the SDK exposed could see it. Charging a
+caller gas to discover a number they cannot look up is the wrong trade.
+
+`RedeemResult.truncatedAmount` keeps its value and loses its claim: the docstring now says what it
+is, that the actual result is often zero and a revert rather than "less", and points at
+`previewRedeem`.
+
+**Verified live in both directions**, on Mezo testnet:
+
+```
+preview said redeemable 1259575681295202401
+chain burned            1259575681295202401   EXACT
+  0xbb205c5b2482d12c2eb949d9c322580b6cc2aa965debc98c7a192c7e9e7f7f13, block 15165003
+
+edge + 1 MUSD: RedemptionBreachesDebtFloor, nonce 37 before and after
+  -> no transaction was sent, no gas spent
+```
+
+**And the generator can now construct the state**, which is the rule since MK-042: cases carry a
+`RedeemBand` of `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP`, `AT_NET_DEBT` or `WHOLE_TROVE`,
+computed from the REAL first eligible Trove at run time rather than a seeded fixture, because a
+redemption targets the lowest ICR Trove system wide and a fixture cannot reliably be that one.
+`AT_NET_DEBT` exists only because of the correction above: it offers exactly the net debt as read,
+which must be refused, and keeps that pinned against the chain rather than against the evaluator's
+own arithmetic.
+
+### The sweep that closes it
+
+**Seed `20260826`, 1000 cases, four slices of 250, a fresh anvil per slice at pinned block
+15043414.** Reported by direction, because a preview that says go when the chain refuses and one
+that says stop when the chain would accept are different defects:
+
+| slice | ran | skipped | FALSE_VIABLE | FALSE_BLOCKED | NUMBERS | threw | exit |
+|---|---|---|---|---|---|---|---|
+| 0..250 | 250 | 21 | 0 | 0 | 0 | 0 | 0 |
+| 250..500 | 250 | 22 | 0 | 0 | 0 | 0 | 0 |
+| 500..750 | 250 | 27 | 0 | 0 | 0 | 0 | 0 |
+| 750..1000 | 250 | 19 | 0 | 0 | 0 | 0 | 0 |
+
+**And a fifth run over the redemption cases alone, from the same generated set**, because the
+headline count could not answer the question that mattered. A skip carries a reason and not an
+operation, so "1000 cases, 89 skipped" does not say how many REDEMPTIONS reached the chain, and a
+band that never ran proves nothing:
+
+```
+MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+
+ran=123  skipped=40   FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0  exit=0
+  AT_NET_DEBT      ran=19  skipped=10
+  AT_HEADROOM      ran=19  skipped=6
+  WITHIN_HEADROOM  ran=17  skipped=12
+  WHOLE_TROVE      ran=17  skipped=6
+  IN_THE_GAP       ran=11  skipped=6
+```
+
+**The 19 in the `AT_NET_DEBT` row is the evidence that closes this.** Nineteen times the preview
+said the net debt as read is NOT redeemable and nineteen times the chain agreed, on a chain where
+the previous version of this preview would have said the opposite.
+
+**Why 40 of 123 skipped, which is a high rate and is not hidden.** Redemption skips for a reason no
+other operation has. At the extreme band's price multipliers of 25 and 50 percent, and at the
+boundary band's 66, every Trove in the fork's list falls below MCR, so the loop finds nothing, there
+is no first eligible Trove, and there is no headroom for a band to sit either side of. The rest are
+the ordinary fixture skips the whole sweep has: a seeding open that was not itself viable, or an
+account that does not hold what the band needs.
+
+---
+
+## MK-050 · `previewClose.musdRequired` is short by the interest that accrues before the close lands
+
+**Class** S3 · **Status** open, documented. **Registered rather than fixed**, because it is outside
+MK-048's scope and changing a shipped field's value is not a release prep edit · **Found by asking
+whether MK-048's mechanism has siblings, then reading `BorrowerOperations.sol`**
+
+**The same shape as MK-048, in a different method.** MK-048's defect was a figure read at one block
+and handed back to a contract that accrues interest before it reads the same figure. `_closeTrove`
+does exactly that, in the same order:
+
+```solidity
+function _closeTrove(address _borrower, address _caller, address _recipient) internal {
+    ITroveManager troveManagerCached = troveManager;
+    troveManagerCached.updateSystemAndTroveInterest(_borrower);          // :945  accrues FIRST
+    ...
+    uint256 debt = troveManagerCached.getTroveDebt(_borrower);           // :958  reads AFTER
+    _requireSufficientMUSDBalance(_caller, debt - MUSD_GAS_COMPENSATION); // :963
+    ...
+    musdTokenCached.burn(_caller, debt - MUSD_GAS_COMPENSATION);         // :997
+}
+```
+
+`previewClose` reports `musdRequired = entireDebt - MUSD_GAS_COMPENSATION` at the block it reads
+(`previewClose.ts:94`). By the block the close executes in, `debt` at `:958` is larger. **A caller
+who acquires exactly `musdShortfall` and then closes is refused at `:963`.**
+
+**Why it is S3 and not higher.** It is a revert, not a loss: `:963` fails before anything is burned
+or removed, so the position is untouched and the cost is gas. The overwhelming case is a caller who
+holds comfortably more than the figure, for whom nothing is wrong. It bites the caller who mints or
+buys the exact shortfall, which is a narrow path.
+
+**It is not hypothetical on this programme.** The live funding run in `docs/13-live-testnet-ledger.md`
+minted MUSD to cover a computed shortfall for exactly this operation. It succeeded because the
+figure was recomputed at the point of use rather than reused, which is the right habit and not a
+property of the API.
+
+**Why the sweep did not find it.** `closeCase` seeds a position and the account keeps whatever the
+open drew, which is far more than the shortfall, so the harness has never held exactly
+`musdRequired`. `docs/09-review-and-validated-surface.md` now carries this as a row in the
+generator's work queue rather than as prose.
+
+**What would close it.** The same treatment MK-048 got: a margin field alongside `musdRequired`
+rather than a change to it, plus a `closeBand` in the generator that funds an account to exactly the
+reported figure and expects a refusal. Not done here, deliberately.
+
+**Repayment is NOT affected, and that was checked rather than assumed.** `_adjustTrove:769` accrues
+first as well, but the checks that follow move in the safe direction: `:859`
+`_requireValidMUSDRepayment(vars.debt, vars.netDebtChange)` compares against a debt that has grown,
+so a repay sized from a stale read is still valid, and `:860` checks the balance against the
+caller's own chosen amount rather than against a re-read total. A stale read makes a repay smaller
+relative to the debt, never larger.
+
+---
+
+## MK-049 · A redemption's partial hint goes stale when the price moves
+
+**Class** S3 · **Status** open, documented. **Retry is the mitigation** · **Found while verifying
+MK-048's fix live, and separated from it deliberately**
+
+**What happens.** A redemption that `previewRedeem` says is viable, and that `eth_call` accepts at
+head with hints computed in the same breath, can still mine and revert with
+`TroveManager: Unable to redeem any amount`.
+
+**It is NOT MK-048.** Measured: at 90% of the headroom the floor has roughly 190,000 seconds of
+interest as margin, so the floor condition cannot be what fires. And a repeat of the identical
+amount succeeds:
+
+```
+attempt 1: RedemptionFailed
+attempt 2: SUCCESS  0xbb205c5b2482d12c2eb949d9c322580b6cc2aa965debc98c7a192c7e9e7f7f13
+```
+
+**The mechanism.** `_redeemCollateralFromTrove` cancels a partial on three conditions
+(`TroveManager.sol:1299-1306`), and only the third is the debt floor. The other two compare the
+supplied `_partialRedemptionHintNICR` against the NICR the trove will actually have:
+
+```solidity
+_partialRedemptionHintNICR < vars.newNICR ||
+_partialRedemptionHintNICR > vars.upperBoundNICR ||
+```
+
+`HintHelpers` computes that NICR from the collateral remaining after the redemption, which it derives
+at the price it read (`:148`). The contract derives it at the price when the transaction MINES
+(`:1224-1226`). **If the price moves in between, the two NICRs differ and the partial cancels.** The
+contract allows a band for interest, `upperBoundNICR` using `block.timestamp - 600` (`:1276-1285`),
+but that band is for accrual, not for the oracle.
+
+**Why a fork cannot show it.** anvil holds the price still unless a test moves it, so the hint price
+and the mining price are always identical. This needs a live oracle.
+
+**Not a preview defect, and not fixable by a preview.** Whether the price moves between the hint and
+the block is not a function of any state a preview can read. `RedemptionFailed`'s docstring already
+named "a stale hint" as one of its two causes; what is new is the live evidence and the measurement
+that separates it from MK-048.
+
+**Mitigation, and its cost.** Retry: the second attempt succeeded at the identical amount. The SDK
+does NOT retry automatically, deliberately, because a retry is a second transaction and spending a
+caller's gas without asking is not the SDK's decision to make. This is documented on `redeem` in
+`docs/03-core-api.md` so a caller builds the retry rather than discovering the need for it.
+
+
 
 ---
 
