@@ -3418,8 +3418,10 @@ bundle at `musdkit.xyz/_astro/PreviewWidget.astro_astro_type_script_index_0_lang
 `https://rpc.test.mezo.org`. **It fetches nothing from npm and cannot, because nothing in the page
 resolves a registry version.**
 
-The same overstatement is in the user-facing copy. `landing/src/components/PreviewWidget.astro:48`
-renders "Read-only via the shipped `@musd-kit/core`."
+The same overstatement was in the user-facing copy. `landing/src/components/PreviewWidget.astro:48`
+renders "Read-only via the shipped `@musd-kit/core`." **That caption needed no edit in the end: the
+fix below made it true rather than aspirational**, which is the better of the two ways to resolve a
+claim that outran its evidence.
 
 **Why S3 rather than higher.** The code the widget runs IS the code that was published, byte for
 byte, because both are built from the same commit by the same build. Nobody is shown a wrong number.
