@@ -88,6 +88,7 @@ claim about it was not).
 | MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented, deferred to 0.2.1 |
 | MK-051 | `maxWithdrawableCollateral` reports a figure that stops being withdrawable one second later, and the ledger recorded a preview-against-preview check as chain verification | S3 | open, documented, deferred to 0.2.1. The provenance claim is corrected |
 | MK-052 | The live run's optional redeem step could kill the run and leave a position open, because a reverted receipt reached `process.exit` instead of the `catch` that promised to absorb it | S2 | fixed. It happened, on a real run, and cost a close |
+| MK-053 | The post publish verification gate had never executed once, for either release, while being presented as part of the supply chain posture | S2 | fixed and proven by running it. The never executed audit it generalizes to is in the entry |
 
 ---
 
@@ -3255,6 +3256,113 @@ boundary band's 66, every Trove in the fork's list falls below MCR, so the loop 
 is no first eligible Trove, and there is no headroom for a band to sit either side of. The rest are
 the ordinary fixture skips the whole sweep has: a seeding open that was not itself viable, or an
 account that does not hold what the band needs.
+
+---
+
+## MK-053 · A gate that was trusted because it existed
+
+**Class** S2 · **Status** fixed, and proven by executing it rather than by reading it · **Found by
+running the release**, which is the only thing that could have found it
+
+**What was claimed.** `release.yml` carried a `verify-published` job with a comment calling it "the
+genuinely POST-publish check", distinguished from `scripts/release-smoke.sh` which "is a PRE-publish
+check ... so it cannot catch a bad publish. This job can." `docs/12-release-runbook.md` and the
+release reporting treated it as the thing that decides whether a release stands.
+
+**What happened.** On 2026-08-28 the 0.2.0 release ran it for the first time, in
+[run 33176886491](https://github.com/cayvox/musd-kit/actions/runs/33176886491). The `publish` job
+succeeded. The verification job failed in `Setup Node`, step 3 of 8:
+
+```
+Unable to locate executable file: pnpm. Please verify either the file path exists or the file
+can be found within a directory specified by the PATH environment variable.
+```
+
+All six substantive steps reported `skipped`. **The job produced no verdict about the artifact at
+all.**
+
+**Why it could not start.** `actions/setup-node@v5` defaults `package-manager-cache` to true. It
+detects the repository's pnpm lockfile, tries to run pnpm to locate the cache directory, and fails
+because this job never installs pnpm. The `publish` job installs it at `release.yml:39`, before
+`setup-node` at `:46`. The verification job called `setup-node` with no pnpm anywhere.
+
+**And it had never run for the previous release either.** The 0.1.0 release,
+[run 27951952166](https://github.com/cayvox/musd-kit/actions/runs/27951952166), has exactly one job,
+`publish`. The verification job was added later, during the 0.2.0 preparation. So across the whole
+life of this package **two releases shipped behind a post publish gate that had never once produced
+a verdict**, and the second one is the first time anybody found out.
+
+**What actually covered this release.** The independent verification run by hand: install from the
+registry into a clean directory outside the repository, import under ESM and CJS, typecheck the
+registry copy under all four consumer configurations, diff the published file list against the
+allowlist, and read the provenance predicate. It passed on every axis, and the provenance attests to
+`cayvox/musd-kit`, `.github/workflows/release.yml`, `refs/heads/main`, commit
+`371d5d9953f7f305cba0b4cfd2599e451f91aea8`.
+
+**That is worth less than the same checks in CI, and the difference is worth naming.** It ran on
+macOS with a locally managed Node, against npm 11.x from that toolchain, in a shell that had this
+repository's environment. CI would have run it on `ubuntu-latest` with Node 24.19.0 and npm 11.17.0
+in a container that had never seen the workspace. A check that passes on the maintainer's machine is
+the weaker of the two, which is the whole reason the job exists.
+
+**The class.** This is not a bug in a formula. It is a gate believed because it was written down,
+which is the same class this programme opened with when documentation claimed behaviour the code did
+not have, moved one level out: from claims about the product to claims about the machinery that
+verifies the product. **A gate that has never executed is a comment.**
+
+### The fix, and why this shape rather than the fast one
+
+The fast fix is one line: add `pnpm/action-setup@v4` to the job. That was rejected. **The value of
+this job is that it resolves nothing through the workspace**: it installs from the registry with npm
+into an empty directory outside the checkout. Installing pnpm to satisfy a cache probe would add a
+tool the job must not use, in order to silence a feature it does not want. `package-manager-cache:
+false` says the true thing instead.
+
+The larger change is that it is now a reusable workflow, `.github/workflows/verify-published.yml`,
+called by `release.yml` with `needs: publish` and also dispatchable on its own against any published
+version. **A gate that can only run as part of the thing it gates cannot be tested**, and that
+property is what let this survive two releases. The `publish` job now exposes the version it
+published as an output, so the verification checks that version rather than re-deriving it from a
+checkout that could have moved.
+
+Two checks were added while it was open, because the original job proved the package imports and
+nothing else: the published **file list** against the `files` allowlist, and the **provenance
+predicate** against this repository.
+
+**Proven by execution**, which is the point of the entry: see the run recorded in
+`docs/13-live-testnet-ledger.md` under the 0.2.0 release. What running it standalone does NOT cover
+is the wiring in the release path: that `needs: publish` fires it, with the right version, after a
+real publish. That is only exercised by the next release, and it is recorded as owed.
+
+### The audit this generalizes to: every job and step that has never executed
+
+The same question, asked of every workflow. Counted from the Actions API rather than from reading
+the files.
+
+| Workflow | Never executed | Evidence |
+|---|---|---|
+| `release.yml` | the `verify-published` job | 2 runs total, both `workflow_dispatch`. Absent in the 0.1.0 run; all six steps `skipped` in the 0.2.0 run |
+| `release.yml` | the `push: tags: v*` trigger | Both runs are `event=workflow_dispatch`. `gh api repos/cayvox/musd-kit/tags` returns 0 tags, so no `v*` tag has ever existed to fire it |
+| `deploy-site.yml` | **the entire workflow** | `gh run list --workflow deploy-site.yml` returns 0 runs. Its `deploy` job, its `confirm == 'deploy'` input gate and its Cloudflare Pages step have never executed |
+| `deploy-site.yml` | it could not have run | It needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. `gh secret list` returns only `MEZO_TESTNET_RPC_URL` and `NPM_TOKEN` |
+| `ci.yml` | the `Save anvil fork state` step | `skipped` in all 35 runs where the step exists, including run 32706412379 at commit `349c5c2`, the commit that added it. Its condition is `cache-hit != 'true'` and the pinned block has not changed, so the cache has always hit |
+
+**Two of these carry a false claim in the repository, and that is the part that matters.**
+
+`deploy-site.yml`'s header says "0.1.0 shipped this way; 0.2.0 follows the same order." The workflow
+has zero runs, so 0.1.0 did not ship that way. `musdkit.xyz` answers HTTP 200 and is served by
+Cloudflare, so the site was deployed by some other route, most likely the Pages git integration.
+**The comment describes a procedure nobody has used.**
+
+`ci.yml`'s `Save anvil fork state` is MK-029's fix, added so a failed fork gate would still populate
+the cache. It has never populated anything. That is not a defect, it is a fallback that has not been
+needed, and it is listed because an untested fallback in the release path is exactly what this audit
+is for.
+
+**What is NOT on this list**, checked rather than assumed: `ci.yml`'s `checks` matrix and
+`fork-gate` job both run on every push; `Upload coverage report` is `if: always()` and runs; the
+`Restore anvil fork state`, `Pre-publish smoke` and `Build combined site + check links` steps run
+unconditionally.
 
 ---
 
