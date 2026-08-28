@@ -111,6 +111,7 @@ thing a fork cannot be:
 | MK-046 | **Elapsed time.** anvil mines on demand, so no wall clock passes between a write and the read after it, and the interest drift is always zero |
 | MK-047 | **A state the generator could not build.** Every generated open case used a fresh account |
 | MK-048 | **Other people's positions.** It needs a third party's Trove sitting within a few MUSD of the debt floor |
+| MK-049 | **A moving oracle.** anvil holds the price still, so a hint can never go stale between the read and the block |
 | MK-045 | Reproducible on a fork once looked for, and nobody looked until a real run had to leave an account clean |
 
 That is the case for keeping the live run as a release gate rather than treating the sweep as
@@ -131,12 +132,20 @@ thousand cases prove (MK-047):
 | **An adjustment that requests nothing** | **No.** `NO_CHANGE_REQUESTED` is unreachable |
 | **A debt increase of zero** | **No.** `ZERO_DEBT_INCREASE` is unreachable |
 | **A Trove closed rather than never opened** | **No.** Blocked by MK-045: the harness cannot close a seeded position, because it cannot obtain the fee |
+| A redemption on either side of a Trove's headroom above the debt floor | **Yes, since MK-048.** `RedeemBand`: `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP`, `WHOLE_TROVE`, computed from the REAL first eligible Trove at run time |
+| **A moving oracle between a hint and a block** | **No, and it cannot be.** anvil holds the price still, so MK-049's condition has no fork expression at all |
 
-The last four are stated rather than left implied. **Any operation whose precondition the generator
-cannot construct is untested no matter how many cases run**, and the first three are input validation
-the SDK also prechecks, while the fourth is blocked by a protocol property rather than by an
-oversight.
-| Preview verdict against actual transaction outcome, swept | **Reproducible:** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, two slices via `MK_DIFF_FROM`. **The sweep covers eight operations since MK-042**, up from three: open, borrow, refinance, addCollateral, repay, withdrawCollateral, adjust and close. It does NOT reach redemption, liquidation or claim, which have no preview to compare. 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** The 1000 case figure is from the three operation sweep; the eight operation sweep is newer and its counts are in MK-042. What it still does NOT cover: redemption, liquidation and claim, none of which have a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
+**This list is a work queue, not a disclaimer.** It has produced two findings, MK-047 and MK-048,
+and each was closed by teaching the generator the state FIRST and fixing the code second. The rows
+still marked **No** are the next candidates.
+
+The first three are input validation the SDK also prechecks. The fourth is blocked by a protocol
+property rather than an oversight. The last cannot be closed at all: a fork has one oracle and it
+does not move on its own, so MK-049 belongs to the live gate rather than to the sweep. **Any
+operation whose precondition the generator cannot construct is untested no matter how many cases
+run.**
+| Preview verdict against actual transaction outcome, swept | **Reproducible:** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, two slices via `MK_DIFF_FROM`. **The sweep covers eight operations since MK-042**, up from three: open, borrow, refinance, addCollateral, repay, withdrawCollateral, adjust and close. **Redemption joined it in MK-048**, with a `RedeemBand` per case; it does NOT reach liquidation or
+claim, which have no preview to compare. 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** The 1000 case figure is from the three operation sweep; the eight operation sweep is newer and its counts are in MK-042. What it still does NOT cover: liquidation and claim, neither of which has a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
 | Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | **Observed executing**, P8: capacity `140092922400000000000000` at open, unchanged after a price rise, `70046461200000000000000` after withdrawing half the collateral | Full. The obligation is discharged (MK-002) |
 | Fee exemption on the DEBT INCREASE path, not just on open | **Observed executing**, P8: an exempt account borrowing against an existing position, `quotedFee=2000000000000000000`, `preview.fee=0`, principal added exactly the draw | Full. The obligation is discharged (MK-018) |
 | Preview verdict against actual transaction outcome | The differential harness: generated cases run the preview, then attempt the operation, then compare. Seeded, boundary weighted, snapshot isolated per case | See the sweep row below. This is the gate the "open path only" row above was waiting for |
