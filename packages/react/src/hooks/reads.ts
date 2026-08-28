@@ -4,6 +4,7 @@ import type {
   BorrowingCapacity,
   ClosePreview,
   MaxWithdrawable,
+  RedemptionPreview,
   RefinancePreview,
   Trove,
 } from '@musd-kit/core'
@@ -265,5 +266,36 @@ export function useClosePreview({
     queryKey: musdQueryKeys.closePreview(chainId, owner ?? '0x'),
     fetch: (client) => client.previewClose(owner as Address),
     enabled: owner !== undefined,
+  })
+}
+
+/**
+ * Preview a redemption (core `previewRedeem`, MK-048): what a single `redeemCollateral` call will
+ * ACTUALLY redeem, by walking the sorted list the way the contract's loop does.
+ *
+ * **Do not size a redemption from `RedeemResult.truncatedAmount`.** That is what
+ * `getRedemptionHints` returned, and the helper answers a different question: it sizes each
+ * partial to a Trove's headroom above the debt floor and then moves on, which needs one call per
+ * Trove. A single call hands the whole amount to the first eligible Trove and reverts if that
+ * breaches the floor.
+ *
+ * So the amounts that work are not an interval. Render `maxWithoutConsuming` and
+ * `nextViableAmount` as the two edges when `bindingConstraint` is
+ * `PARTIAL_BREACHES_DEBT_FLOOR`: the limit is another account's headroom, not the user's balance,
+ * which is exactly the thing a user cannot be expected to guess.
+ */
+export function useRedeemPreview({
+  redeemer,
+  amount,
+}: {
+  redeemer: Address | undefined
+  amount: bigint | undefined
+}): UseQueryResult<RedemptionPreview, Error> {
+  const chainId = useChainId()
+  return useMusdQuery<RedemptionPreview>({
+    queryKey: musdQueryKeys.redeemPreview(chainId, redeemer ?? '0x', amount ?? 0n),
+    fetch: (client) =>
+      client.previewRedeem({ redeemer: redeemer as Address, amount: amount as bigint }),
+    enabled: redeemer !== undefined && amount !== undefined,
   })
 }

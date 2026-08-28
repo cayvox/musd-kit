@@ -6,10 +6,16 @@ import {
   priceFeedAbi,
   troveManagerAbi,
 } from '../clients'
-import { InsufficientMusdBalance, MaxFeeExceeded, assertPositiveAmount } from '../errors'
+import {
+  InsufficientMusdBalance,
+  MaxFeeExceeded,
+  RedemptionBreachesDebtFloor,
+  assertPositiveAmount,
+} from '../errors'
 import { findHintsForNICR } from '../hints'
 import { type GasDecision, type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
 import { estimateCollateralDrawn, exceedsRateCap } from '../math/fee'
+import { previewRedeem } from '../math/previewRedeem'
 
 const TM_ABI: Abi = troveManagerAbi
 
@@ -59,9 +65,22 @@ export interface RedeemParams {
 export interface RedeemResult {
   hash: Hex
   /**
-   * Redeemable amount estimated by `getRedemptionHints` given the `minNetDebt` floor +
-   * `maxIterations`. The ACTUAL redeemed amount (in the `Redemption` event) can be less
-   * when a partial of the last Trove is skipped, surfaced so callers know.
+   * What `getRedemptionHints` returned. **Do not size a redemption from this number** (MK-048).
+   *
+   * The old wording here said the actual amount "can be less when a partial of the last Trove is
+   * skipped". That understates it in the way that matters: the actual amount is often ZERO and
+   * the transaction REVERTS, because the helper and the loop answer different questions.
+   * `HintHelpers.sol:143-146` sizes each partial to the target's headroom above the debt floor
+   * and then continues to the next Trove, which needs one call per Trove;
+   * `TroveManager.sol:1218-1221` hands the whole amount to the first Trove and cancels if that
+   * breaches the floor (`:1299-1306`, `:392`, `:406-408`).
+   *
+   * Verified on a fork to the wei: the helper reported `headroom + 1`, `netDebt / 2` and
+   * `netDebt - 1` as fully redeemable, and all three revert.
+   *
+   * **Use `previewRedeem` instead.** It walks the list the way the loop does and reports what a
+   * single call will actually redeem, plus the two edges of the gap. This field is kept because
+   * it is what the contract was handed, which is worth being able to see.
    */
   truncatedAmount: bigint
   /**
@@ -133,6 +152,31 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
   if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
   // Rate against rate cap: unit consistent, and deliberately left that way. Comparing the
   // fee AMOUNT from `getRedemptionRate` against a 1e18 fraction would be a unit error.
+  // MK-048. The gap the debt floor creates, prechecked BEFORE simulate.
+  //
+  // This is prechecked where a plain revert would have been tolerable elsewhere, and the reason
+  // is that the blocking condition is not in the caller's position: it is the headroom of the
+  // first eligible Trove in the sorted list, which belongs to someone else, moves without the
+  // caller doing anything, and is invisible from every field the SDK used to expose. A caller
+  // cannot foresee it, so leaving them to discover it by paying gas is the wrong trade. Every
+  // other precheck this SDK has guards a condition the caller can at least inspect.
+  const redemption = await previewRedeem(
+    {
+      publicClient: deps.publicClient,
+      addresses: deps.addresses,
+      getMinNetDebt: deps.getMinNetDebt,
+      isAccountFeeExempt: deps.isAccountFeeExempt,
+    },
+    { redeemer: wallet.account.address, amount, maxIterations },
+  )
+  if (!redemption.viable && redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR') {
+    throw new RedemptionBreachesDebtFloor({
+      requested: amount,
+      maxWithoutConsuming: redemption.maxWithoutConsuming,
+      nextViableAmount: redemption.nextViableAmount,
+    })
+  }
+
   if (exceedsRateCap(redemptionRate, params.maxFeePercentage)) {
     throw new MaxFeeExceeded(params.maxFeePercentage as bigint, redemptionRate, redemptionRate)
   }

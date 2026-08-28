@@ -83,7 +83,8 @@ claim about it was not).
 | MK-045 | A Trove cannot be closed with only the MUSD it drew, so a self funded run cannot end clean | S3 | documented, protocol property |
 | MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
-| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper ignores the debt floor | **S2** | open, documented |
+| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | fixed, previewed and prechecked |
+| MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | open, documented, needs retry |
 
 ---
 
@@ -2990,8 +2991,9 @@ close a seeded position.
 
 ## MK-048 · `truncatedAmount` reports redeemable amounts the chain refuses
 
-**Class** S2 · **Status** open, documented · **Found by the live testnet run, on the only chain where
-another account's Trove sits near the debt floor**
+**Class** S2 · **Status** fixed. Previewed by `previewRedeem`, prechecked on the write path, and
+verified live in both directions · **Found by the live testnet run, on the only chain where another
+account's Trove sits near the debt floor**
 
 **What happens.** `redeem` reports `truncatedAmount`, taken from the protocol's own
 `getRedemptionHints`, as the amount that will be redeemed. On live Mezo testnet that number is wrong
@@ -3061,15 +3063,130 @@ into `RedemptionFailed` with an accurate message, and no number reaches a user a
 rather than S3 because the SDK returns a figure the chain contradicts, which is the same class as
 MK-014 and MK-047 even though the source of the wrong number is upstream.
 
-**Not fixed here.** The fix is a `previewRedeem` that walks the sorted list the way the contract does
-and reports the amount that will actually redeem, plus a corrected docstring on `truncatedAmount`.
-That is a preview surface, and this programme's rule since MK-042 is that a preview ships with the
-sweep coverage that would have caught it, which means the generator must first be able to construct
-a Trove near the floor. That is a wave.
+### The complete rule, derived from source and verified to the wei
 
-**Its cost while carried:** documented on `redeem` in `docs/03-core-api.md`, so a caller sizing a
-redemption knows to expect a revert rather than a smaller redemption, and knows the binding quantity
-is the target Trove's headroom above `minNetDebt` rather than their own balance.
+Reading the whole path rather than the two lines first cited changes the shape of the answer. **It is
+a GAP, not a cap.** For the first eligible Trove with net debt `D` and floor `M`:
+
+| amount | outcome | why |
+|---|---|---|
+| `A <= D - M` | succeeds | a partial inside the headroom |
+| `D - M < A < D` | **REVERTS** | `:1218-1221` hands the whole amount to that Trove, `:1299-1306` cancels, `:392` breaks, `:406-408` reverts |
+| `A >= D` | succeeds | the Trove is consumed WHOLE via `:1252`, a branch with **no hint check and no floor check at all** |
+
+**Full consumption behaving differently was the open question, and this is the answer.** `:1252` is
+`if (vars.newDebt == MUSD_GAS_COMPENSATION)`, which holds exactly when the offered amount covers the
+Trove's entire net debt. That branch calls `_redeemCloseTrove` and `_closeTrove(Status.closedByRedemption)`
+and never reaches the cancellation. A whole consumption can never be cancelled.
+
+Verified on a fork against the real deployment, with the helper's answer beside each:
+
+```
+headroom exactly  208463779941643739864   hint said the same   SUCCEEDS
+headroom + 1 wei                          hint said the same   REVERT
+netDebt / 2                               hint said the same   REVERT
+netDebt - 1 wei                           hint said the same   REVERT
+netDebt exactly  2008463779941643739864   hint said the same   SUCCEEDS
+netDebt + 1 wei                           hint said the same   SUCCEEDS
+```
+
+And again on LIVE testnet at pinned block 15164949, where `edge - 1` and `edge` succeed while
+`edge + 1 wei` and `edge + 1 MUSD` revert.
+
+### Is the helper wrong, or only our use of it
+
+**Neither, exactly, and the distinction is the finding.** `HintHelpers.sol:138-162` sizes each
+partial to `min(remainingMUSD, netDebt - minNetDebt)` and then CONTINUES to the next Trove. So
+`truncatedAmount` answers **"how much could be redeemed if every partial were sized per Trove"**,
+which needs one call per Trove. `TroveManager.sol:1218-1221` does no such sizing: it hands the whole
+remaining amount to the first Trove and cancels if that breaches the floor.
+
+The helper is internally correct and answers a question nobody asked. **What is entirely ours is
+passing its answer through as `RedeemResult.truncatedAmount` and describing it as the redeemable
+amount.** So the fix is ours entirely, and it is not a workaround for a protocol bug.
+
+### The fix
+
+`previewRedeem` walks the sorted list the way the LOOP does, and reports what a single call will
+actually redeem, with both edges of the gap named so a caller can move to either side:
+`maxWithoutConsuming` is `D - M` and `nextViableAmount` is `D`. `PARTIAL_BREACHES_DEBT_FLOOR` is
+the reason that had no field before.
+
+**The write path prechecks it**, which is a deliberate exception to the usual judgment. Everywhere
+else a revert the caller could have inspected is tolerable. Here **the blocking condition lives in
+someone else's position**: it is the headroom of the first eligible Trove in the sorted list, it
+moves without the caller doing anything, and no field the SDK exposed could see it. Charging a
+caller gas to discover a number they cannot look up is the wrong trade.
+
+`RedeemResult.truncatedAmount` keeps its value and loses its claim: the docstring now says what it
+is, that the actual result is often zero and a revert rather than "less", and points at
+`previewRedeem`.
+
+**Verified live in both directions**, on Mezo testnet:
+
+```
+preview said redeemable 1259575681295202401
+chain burned            1259575681295202401   EXACT
+  0xbb205c5b2482d12c2eb949d9c322580b6cc2aa965debc98c7a192c7e9e7f7f13, block 15165003
+
+edge + 1 MUSD: RedemptionBreachesDebtFloor, nonce 37 before and after
+  -> no transaction was sent, no gas spent
+```
+
+**And the generator can now construct the state**, which is the rule since MK-042: cases carry a
+`RedeemBand` of `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP` or `WHOLE_TROVE`, computed from the
+REAL first eligible Trove at run time rather than a seeded fixture, because a redemption targets the
+lowest ICR Trove system wide and a fixture cannot reliably be that one.
+
+---
+
+## MK-049 · A redemption's partial hint goes stale when the price moves
+
+**Class** S3 · **Status** open, documented. **Retry is the mitigation** · **Found while verifying
+MK-048's fix live, and separated from it deliberately**
+
+**What happens.** A redemption that `previewRedeem` says is viable, and that `eth_call` accepts at
+head with hints computed in the same breath, can still mine and revert with
+`TroveManager: Unable to redeem any amount`.
+
+**It is NOT MK-048.** Measured: at 90% of the headroom the floor has roughly 190,000 seconds of
+interest as margin, so the floor condition cannot be what fires. And a repeat of the identical
+amount succeeds:
+
+```
+attempt 1: RedemptionFailed
+attempt 2: SUCCESS  0xbb205c5b2482d12c2eb949d9c322580b6cc2aa965debc98c7a192c7e9e7f7f13
+```
+
+**The mechanism.** `_redeemCollateralFromTrove` cancels a partial on three conditions
+(`TroveManager.sol:1299-1306`), and only the third is the debt floor. The other two compare the
+supplied `_partialRedemptionHintNICR` against the NICR the trove will actually have:
+
+```solidity
+_partialRedemptionHintNICR < vars.newNICR ||
+_partialRedemptionHintNICR > vars.upperBoundNICR ||
+```
+
+`HintHelpers` computes that NICR from the collateral remaining after the redemption, which it derives
+at the price it read (`:148`). The contract derives it at the price when the transaction MINES
+(`:1224-1226`). **If the price moves in between, the two NICRs differ and the partial cancels.** The
+contract allows a band for interest, `upperBoundNICR` using `block.timestamp - 600` (`:1276-1285`),
+but that band is for accrual, not for the oracle.
+
+**Why a fork cannot show it.** anvil holds the price still unless a test moves it, so the hint price
+and the mining price are always identical. This needs a live oracle.
+
+**Not a preview defect, and not fixable by a preview.** Whether the price moves between the hint and
+the block is not a function of any state a preview can read. `RedemptionFailed`'s docstring already
+named "a stale hint" as one of its two causes; what is new is the live evidence and the measurement
+that separates it from MK-048.
+
+**Mitigation, and its cost.** Retry: the second attempt succeeded at the identical amount. The SDK
+does NOT retry automatically, deliberately, because a retry is a second transaction and spending a
+caller's gas without asking is not the SDK's decision to make. This is documented on `redeem` in
+`docs/03-core-api.md` so a caller builds the retry rather than discovering the need for it.
+
+
 
 ---
 

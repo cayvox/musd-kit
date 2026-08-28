@@ -110,7 +110,10 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
   // case: if it fails, the case is skipped rather than counted as a mismatch, because the
   // thing under test never ran. A FRESH case deliberately skips the seeding, so the preview is
   // asked about an owner with no Trove and the TROVE_NOT_ACTIVE gate is exercised.
-  if (c.precondition === 'OCCUPIED') {
+  // A redeem case ALWAYS seeds, whatever the precondition: the redeemer needs MUSD, and the only
+  // way to hold MUSD is to have opened a position. The precondition dimension is about the
+  // account's Trove, and redemption does not care about the redeemer's own Trove.
+  if (c.precondition === 'OCCUPIED' || c.op === 'redeem') {
     const seeded = await seedPosition(fork, client, c)
     if (seeded !== undefined)
       return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
@@ -134,8 +137,76 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
         addCollateral: adjustCollateral(c),
         increaseDebt: adjustDebt(c),
       })
+    case 'redeem':
+      return await redeemCase(fork, client, account, c)
     default:
       return await closeCase(fork, client, account, c)
+  }
+}
+
+/**
+ * One redemption case (MK-048).
+ *
+ * The amount is computed from the REAL first eligible Trove's headroom at run time, not from a
+ * seeded fixture, because a redemption targets the lowest ICR Trove system wide and a fixture
+ * cannot reliably be that one. That makes the case a test of the preview against whatever the
+ * chain actually holds, which is the only way the gap gets exercised at all.
+ *
+ * The preview is the thing under test, so the amount comes from ITS reported edges. If the
+ * preview's `maxWithoutConsuming` and `nextViableAmount` are wrong, the bands land in the wrong
+ * places and the comparison against the chain catches it.
+ */
+async function redeemCase(
+  fork: ForkConnection,
+  client: MusdClient,
+  account: PrivateKeyAccount,
+  c: DiffCase,
+): Promise<CaseResult> {
+  // A probe preview at one wei tells us where the edges are without committing to an amount.
+  const probe = await client.previewRedeem({ redeemer: account.address, amount: 1n })
+  if (probe.firstEligibleTrove === null) {
+    return { case: c, previewViable: false, chainSucceeded: false, skipped: 'no eligible Trove' }
+  }
+  const headroom = probe.maxWithoutConsuming
+  const whole = probe.nextViableAmount
+  const amount =
+    c.redeemBand === 'WITHIN_HEADROOM'
+      ? headroom / 2n
+      : c.redeemBand === 'AT_HEADROOM'
+        ? headroom
+        : c.redeemBand === 'IN_THE_GAP'
+          ? headroom + 1n
+          : whole
+  if (amount <= 0n) {
+    return {
+      case: c,
+      previewViable: false,
+      chainSucceeded: false,
+      skipped: 'band resolves to zero',
+    }
+  }
+  const balance = await client.balanceOf(account.address)
+  if (balance < amount) {
+    return {
+      case: c,
+      previewViable: false,
+      chainSucceeded: false,
+      skipped: `fixture: holds ${balance}, band needs ${amount}`,
+    }
+  }
+
+  const preview = await client.previewRedeem({ redeemer: account.address, amount })
+  const attempt = await attemptWrite(fork, () => client.redeem({ amount }))
+  const mismatch = compare(
+    preview.viable,
+    attempt,
+    `band=${c.redeemBand} amount=${amount} headroom=${headroom} whole=${whole} reasons=[${preview.reasons.join(',')}]`,
+  )
+  return {
+    case: c,
+    previewViable: preview.viable,
+    chainSucceeded: attempt.ok,
+    ...(mismatch ? { mismatch } : {}),
   }
 }
 

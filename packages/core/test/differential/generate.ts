@@ -31,6 +31,7 @@ export type CaseOp =
   | 'withdrawCollateral'
   | 'adjust'
   | 'close'
+  | 'redeem'
 
 /**
  * The ACCOUNT STATE a case runs against (MK-047, and the larger finding behind it).
@@ -43,6 +44,25 @@ export type CaseOp =
  *
  * A sweep proves what its generator can express. The count of cases says nothing about that.
  */
+/**
+ * Where a redemption amount sits relative to the first eligible Trove's headroom (MK-048).
+ *
+ * The generator could not express this at all, which is how MK-048 survived a thousand cases: the
+ * redeemable set has a GAP rather than a cap, and every band below lands on a different side of
+ * it. The amounts are computed from the REAL first eligible Trove at run time rather than from a
+ * seeded one, because the redemption targets the lowest ICR Trove system wide and a seeded fixture
+ * cannot reliably be that.
+ */
+export type RedeemBand =
+  /** Comfortably inside the headroom. A partial the contract accepts. */
+  | 'WITHIN_HEADROOM'
+  /** Exactly the headroom. The last amount that works before the gap. */
+  | 'AT_HEADROOM'
+  /** One wei past the headroom. The first amount in the gap, which REVERTS. */
+  | 'IN_THE_GAP'
+  /** Exactly the Trove's whole net debt. Consumes it, via a branch with no floor check. */
+  | 'WHOLE_TROVE'
+
 export type Precondition =
   /** No Trove. The only state `open` could reach before, and the only one the others could not. */
   | 'FRESH'
@@ -71,6 +91,8 @@ export interface DiffCase {
    * had and a minority probe the gate that had never been reached.
    */
   precondition: Precondition
+  /** Only meaningful when `op` is `redeem` (MK-048). */
+  redeemBand: RedeemBand
 }
 
 /**
@@ -148,6 +170,7 @@ export function generateCases(
     'withdrawCollateral',
     'adjust',
     'close',
+    'redeem',
   ]
 
   for (let index = 0; index < count; index++) {
@@ -216,6 +239,10 @@ export function generateCases(
     // rather than one in two: the mismatched state short circuits every later gate, so a
     // higher rate would spend the sweep proving one reason over and over and stop probing
     // the ratio and capacity boundaries the bands were weighted for.
+    // MK-048. Every band is generated, weighted evenly, because each lands on a different side
+    // of the gap and the one that mattered was a single wei wide.
+    const bands: RedeemBand[] = ['WITHIN_HEADROOM', 'AT_HEADROOM', 'IN_THE_GAP', 'WHOLE_TROVE']
+    const redeemBand = bands[Math.floor(rnd() * bands.length)] as RedeemBand
     const mismatched = rnd() < 0.2
     const precondition: Precondition =
       op === 'open' ? (mismatched ? 'OCCUPIED' : 'FRESH') : mismatched ? 'FRESH' : 'OCCUPIED'
@@ -229,6 +256,7 @@ export function generateCases(
       pricePercent,
       elapsedSeconds,
       precondition,
+      redeemBand,
     })
   }
   return cases
@@ -246,5 +274,6 @@ export function describeCase(c: DiffCase): string {
     `pricePercent=${c.pricePercent}`,
     `elapsedSeconds=${c.elapsedSeconds}`,
     `precondition=${c.precondition}`,
+    `redeemBand=${c.redeemBand}`,
   ].join(' ')
 }

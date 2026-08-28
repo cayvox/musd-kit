@@ -50,6 +50,9 @@ export const musdQueryKeys = {
   /** MK-042. Whether closing is permitted, and the MUSD the caller must hold to do it. */
   closePreview: (chainId: number, owner: string) =>
     ['musd', chainId, 'closePreview', owner] as const,
+  /** MK-048. What a single redeemCollateral call will actually redeem, per redeemer and amount. */
+  redeemPreview: (chainId: number, redeemer: string, amount: bigint) =>
+    ['musd', chainId, 'redeemPreview', redeemer, amount.toString()] as const,
   /** Key for `useRefinancePreview`: one entry per owner (MK-003). */
   refinancePreview: (chainId: number, owner: string) =>
     ['musd', chainId, 'refinancePreview', owner] as const,

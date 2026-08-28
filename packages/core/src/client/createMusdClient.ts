@@ -25,6 +25,8 @@ import {
   type PreviewAdjustParams,
   type PreviewBorrowParams,
   type PreviewOpenParams,
+  type PreviewRedeemParams,
+  type RedemptionPreview,
   type RefinancePreview,
   computeEntireDebt,
   computeICR,
@@ -37,6 +39,7 @@ import {
   previewBorrow,
   previewClose,
   previewOpen,
+  previewRedeem,
   previewRefinance,
   previewWithdrawCollateral,
 } from '../math'
@@ -236,6 +239,12 @@ export interface MusdClient {
   maxWithdrawableCollateral(owner: Address): Promise<MaxWithdrawable>
   /** MK-042. Closing, whose gate set is its own and two of whose gates are conditional. */
   previewClose(owner: Address): Promise<ClosePreview>
+  /**
+   * MK-048. What a single `redeemCollateral` call will ACTUALLY redeem, by walking the sorted
+   * list the way the loop does. Not `getRedemptionHints`, which answers a different question and
+   * over-reports in the gap between a Trove's headroom and its whole net debt.
+   */
+  previewRedeem(params: PreviewRedeemParams): Promise<RedemptionPreview>
   /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
   getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
   /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
@@ -408,6 +417,7 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     previewWithdrawCollateral: (params) => previewWithdrawCollateral(mathDeps, params),
     maxWithdrawableCollateral: (owner) => maxWithdrawableCollateral(mathDeps, owner),
     previewClose: (owner) => previewClose(mathDeps, owner),
+    previewRedeem: (params) => previewRedeem(mathDeps, params),
     getBorrowingCapacity: (owner) => getBorrowingCapacity(mathDeps, owner),
     getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
     openTrove: (params) => openTrove(writeDeps, params),
