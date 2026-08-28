@@ -9,12 +9,39 @@ someone who was not present can read what was exercised, what was not, and what 
 
 ---
 
-## The run
+## The run that describes what ships
+
+**Re-run on 2026-08-28 against `main` at `82fc7e7`**, because the ledger below it was produced
+before MK-047, MK-048 and their corrections landed, so it did not describe the artifact being
+published. Three attempts, and all three are reported, because the second one found MK-052:
+
+| # | Outcome | What it produced |
+|---|---|---|
+| 1 | `GO`, exit 0, 19 exercised | Closed clean. `redeem` recorded a SKIP: the step asked for a tenth of the balance, 221.77 MUSD, against a headroom of 1.269, and the MK-048 precheck refused it. **The precheck firing correctly on live is itself the result**, and it did not cost the close |
+| 2 | exit 1, **a Trove left open** | The redemption was sized from the preview this time and still reverted, a stale hint (MK-049). The step advertised itself as non fatal and was not: **MK-052** |
+| 3 | `GO`, exit 0, **20 exercised** | Closed clean, and `redeem` exercised for the first time on live |
+
+**Run 3 is the ledger.** Its numbers are below. Runs 1 and 2 are kept because a ledger that reports
+only the attempt that worked is not a ledger, and because run 2 produced a finding.
+
+**What closed between the two runs**, which is why the re-run was necessary rather than tidy:
+
+| Finding | | Landed in |
+|---|---|---|
+| MK-047 | `previewOpen` said viable for an account that already held a Trove | PR 23 |
+| MK-048 | `redeem` reported amounts the chain refuses. `previewRedeem`, the `PARTIAL_BREACHES_DEBT_FLOOR` precheck, and the corrected upper edge | PR 25 |
+| MK-049 | Registered, still open. Retry is the mitigation, and run 3 is where the retry path was added | PR 25, then this wave |
+| MK-050, MK-051 | Registered, deferred to 0.2.1 | this wave |
+| MK-052 | Found BY run 2 and fixed before run 3 | this wave |
+
+The older ledger described a tree without any of these. Its numbers were correct for what it ran
+against and are kept below where they still stand.
 
 | | |
 |---|---|
 | Chain | **Mezo testnet, chain id 31611** |
-| Blocks | **15163946 to 15164162** |
+| Blocks | **15168917 to 15168939** (run 3). The earlier ledger's run was 15163946 to 15164162 |
+| Tree | `main` at `82fc7e7`, plus the MK-052 fix the run itself produced |
 | End to end account | `0x18B0Da56B272b4FAAbdd8D60E3797e8cC17d248D` |
 | Funding account | `0x7e6D833C6b5DE1e2a740db78899daFBCCfE4D076` |
 | Funded | 0.05 BTC each, testnet faucet |
@@ -63,7 +90,7 @@ chain did, and its **numbers** against what the chain recorded.
 | `borrow` | ✓ | `0xe1e94f7cc7b504db518870db89e36cfdb937a841e407c36db04db770f55c9c3f`, block 15164072 |
 | `previewAdjustTrove` (repay) | ✓ | verdict held |
 | `repay` | ✓ | `0xaee44359017e5bc6bed18e186d1fbfe039ce6870d0b5b086af0d3961e43aad11`, block 15164075 |
-| `maxWithdrawableCollateral` | ✓ | **the reported max was viable and one wei more was not, on the real chain** |
+| `maxWithdrawableCollateral` | ✓ | the reported max was viable and one wei more was not, **by the SDK's own preview rather than by the chain** (MK-051). A quarter of the max is what was actually sent. The contract's answer, and the fact that the figure expires in about a second, is on a fork in `withdraw-max-boundary.fork.test.ts` |
 | `previewWithdrawCollateral` | ✓ | chain recorded the predicted collateral **to the wei** |
 | `withdrawCollateral` | ✓ | `0x654972014547e60367623c66e5584cb0090f2eed796d0032f4158c2352066bc7`, block 15164078 |
 | `previewAdjustTrove` (combined) | ✓ | drift **9s of interest** |
@@ -151,24 +178,53 @@ Added after the lifecycle run, once `previewRedeem` existed. **Both directions, 
 The upper edge of the gap was later corrected from `D` to `D + G`; what that correction could and
 could not be verified against is at the end of this section.
 
-**The boundary, at pinned block 15164949**, with `getRedemptionHints`'s answer beside each. The
-first eligible Trove was `0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08` with net debt
+**The boundary, SIMULATED at pinned block 15164949**, with `getRedemptionHints`'s answer beside
+each. The first eligible Trove was `0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08` with net debt
 `1802519016881414909779` against a floor of `1800000000000000000000`, so the edge was
 `2519016881414909779`:
 
-| amount | hint said | chain |
-|---|---|---|
-| edge - 1 wei | the same | **SUCCEEDS** |
-| edge exactly | the same | **SUCCEEDS** |
-| edge + 1 wei | the same | **REVERT** `TroveManager: Unable to redeem any amount` |
-| edge + 1 MUSD | the same | **REVERT** |
+| amount | hint said | simulated at 15164949 | holds after a delay? |
+|---|---|---|---|
+| edge - 1 wei | the same | **SUCCEEDS** | yes |
+| edge exactly | the same | **SUCCEEDS** | yes |
+| edge + 1 wei | the same | **REVERT** `TroveManager: Unable to redeem any amount` | **no** |
+| edge + 1 MUSD | the same | **REVERT** | yes, for any practical delay |
 
-**The success direction, as a real transaction:**
+**The label and the last column were added by the audit that followed MK-048's correction, and the
+`edge + 1 wei` row is why.** These four readings were `simulateContract` at one pinned block, and
+the column that used to say `chain` claimed more than they establish. The headroom is
+`netDebt - minNetDebt` and the net debt GROWS, so the edge moves outward: an amount one wei past the
+edge as read stops being past it almost immediately. Measured on a fork with only the delay varied
+(`packages/core/test/redeem-boundary.fork.test.ts`):
 
 ```
+warp     0s  headroom + 1 wei   send=reverted
+warp     1s  headroom + 1 wei   send=success
+warp   600s  headroom + 1 wei   send=success
+```
+
+The `edge - 1`, `edge` and `edge + 1 MUSD` rows are not delay sensitive in any way that matters: the
+first two only get safer as the edge moves outward, and one MUSD of headroom growth takes about
+twenty days at the current rate. **The one wei row is a statement about a block, not about the
+chain**, and it is kept with its label rather than deleted, because it is still the sharpest
+demonstration that the edge exists at all.
+
+**The success direction, as a real transaction.** Twice, on two different runs, and the second is
+the one that ships:
+
+```
+run of 2026-08-27
 previewRedeem said redeemable  1259575681295202401
 chain burned                   1259575681295202401     EXACT
 0xbb205c5b2482d12c2eb949d9c322580b6cc2aa965debc98c7a192c7e9e7f7f13, block 15165003, success
+
+run 3 of 2026-08-28, sized from previewRedeem.maxWithoutConsuming rather than from the balance
+first eligible Trove           0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08
+headroom, and the amount sent  1269795396009657148
+chain burned                   1269795396009657148     EXACT
+redemptionRate                 7500000000000000
+collateral drawn, measured     15808595613516 wei, net of gas
+0x64a870fb52ed95eae446a9bd355c821defb3ebc82a2abedcdecc66f84989a1ea, block 15168936, success
 ```
 
 **The refusal direction, as a precheck:**
@@ -197,20 +253,41 @@ interest on the target before `:1218-1221` sizes the lot, so an offer of exactly
 partial and cancels. `nextViableAmount` now carries a 600 second accrual margin. Full detail is in
 `FINDINGS.md`, MK-048.
 
-**That correction is verified on a fork by SENDING, and it is not verified live.** Two things are in
-the way, and both are stated rather than worked around:
+**That correction is verified on a fork by SENDING, and it is still not verified live. It is OWED,
+and here is the exact amount.**
 
-| what is needed | what the end to end account holds |
-|---|---|
-| `~1801 MUSD` to consume the current first eligible Trove whole | `42.710869016637255886 MUSD` at block 15165691 |
-| the account's key, to sign | not present in the session that made the correction |
+Measured at block 15168832:
 
-Minting the shortfall is possible, since MUSD only exists by opening a Trove, and it is what the
-earlier funding run did. It is roughly 1758 MUSD short, which is another Trove of its own and a
-second overcollateralised position on the same account. **The fork evidence is a real send against
-the real deployment's bytecode at a pinned block, which is the same experiment the live run would
-be, minus the shared mempool.** So the gap here is the mempool and the oracle moving, which is
-MK-049's territory and already documented, rather than the arithmetic being unchecked.
+```
+first eligible Trove  0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08
+  netDebt             1801269530311312688741
+  accrualMargin           380759043057707
+  nextViableAmount    1801269911070355746448   <- what consuming it whole costs
+
+held, end to end        40050367523489868251
+held, funder          1740000000000000000000
+held, combined        1780050367523489868251
+
+OWED                    21219543546865878197   (21.219543546865878197 MUSD)
+```
+
+**21.22 MUSD.** The two accounts together are within about one percent of being able to do it.
+
+**Why the gap cannot be closed by drawing more, which is the obvious move and does not work.** MUSD
+only exists by opening a Trove, and the debt floor means the smallest draw is 1800 MUSD net. So any
+new draw overshoots by two orders of magnitude, and worse, it is self defeating: let `D` be the
+draw. After redeeming, the account holds `D + 40.05 - 1801.27`, and closing its own new position
+costs `D * 1.001`. The first is smaller than the second for every `D`, because the surplus is only
+40 MUSD. **Consuming a whole Trove always costs more MUSD than a self funded account can spare, so
+doing it live means stranding a position**, which is the outcome MK-052 was just fixed to prevent.
+
+What would close it: **21.22 MUSD transferred from an account that already holds MUSD it does not
+need for its own close.** Not another draw.
+
+**What stands in the meantime.** The fork evidence is a real send against the real deployment's
+bytecode, with the delay varied, and it bounds the margin at both ends
+(`packages/core/test/redeem-boundary.fork.test.ts`). What a live run would add is the shared mempool
+and a moving oracle, which is MK-049's territory and is documented separately.
 
 ### MK-049, found while verifying MK-048
 

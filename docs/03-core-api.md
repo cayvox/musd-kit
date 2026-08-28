@@ -455,6 +455,20 @@ it sizes your lot (`:366`, then `:1218-1221`), so by the time your transaction e
 owes more than you read, and an offer of exactly `D` arrives as a partial that leaves dust. Use
 `nextViableAmount`, which already carries `G`, rather than computing the net debt yourself.
 
+**`nextViableAmount` is good for about ten minutes.** `G` is 600 seconds of interest, and that
+window was measured at both ends on a fork with only the delay varied:
+
+| delay before the transaction lands | `netDebt` | `nextViableAmount` |
+|---|---|---|
+| 1 second | reverts | works |
+| 60 seconds | reverts | works |
+| 600 seconds | reverts | works |
+| 1 hour | reverts | **reverts** |
+
+One second is enough to make the bare net debt fail. If you expect to be slower than ten minutes,
+add to the figure: overshooting spills to the next Trove and cannot cost you the call, because
+`:406-408` only requires that something was drawn.
+
 **The binding quantity is another account's headroom, not your balance**, which is why no amount of
 inspecting your own position tells you the answer. From `mezo-org/musd`, `TroveManager.sol`:
 `:1218-1221` hands the whole requested amount to that Trove, `:1299-1306` cancels the partial if the

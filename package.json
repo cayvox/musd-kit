@@ -26,7 +26,8 @@
     "check:links": "node scripts/check-links.mjs",
     "check:paths": "node scripts/check-paths.mjs",
     "testnet:e2e": "tsx scripts/testnet-e2e.ts",
-    "facts": "tsx scripts/onchain-facts.ts"
+    "facts": "tsx scripts/onchain-facts.ts",
+    "gate:packaging": "node scripts/packaging-gate.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

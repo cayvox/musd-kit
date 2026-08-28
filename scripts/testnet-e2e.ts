@@ -74,6 +74,8 @@ const ALLOW_REDEEM = process.env.E2E_ALLOW_REDEEM === '1'
  * fraction of the balance was fine when nothing depended on the balance afterwards; it is not
  * fine now.
  */
+/** Sentinel: the redeem step already recorded its own reason, so the catch must not overwrite it. */
+const RECORDED_ALREADY = 'redeem did not mine on either attempt'
 const REDEEM_OVERRIDE = process.env.E2E_REDEEM_MUSD
   ? parseMusd(process.env.E2E_REDEEM_MUSD)
   : undefined
@@ -273,25 +275,49 @@ async function main(): Promise<void> {
    * run that had already opened a position, which is the failure mode this script exists to
    * avoid, so absence is retried and only a genuine revert or a real timeout is fatal.
    */
-  const waitOk = async (hash: `0x${string}`, label: string): Promise<void> => {
+  /**
+   * `fatal: false` returns the outcome instead of exiting (MK-052).
+   *
+   * The redeem step is wrapped in a `try` and its comment promises that a failure there is
+   * "RECORDED, NOT FATAL", because an optional step must never cost the close. That promise did not
+   * hold: a reverted receipt reached `die()`, which calls `process.exit`, so the `catch` never ran.
+   * A live run met it, the redemption reverted, and the run ended with a Trove open, which is the
+   * exact failure mode this script exists to prevent.
+   *
+   * `die()` is still right for every required step: a failed `openTrove` should stop the run. It is
+   * only wrong for the steps that opt out.
+   */
+  const waitFor = async (
+    hash: `0x${string}`,
+    label: string,
+    opts: { fatal?: boolean } = {},
+  ): Promise<{ ok: boolean; why: string }> => {
+    const fatal = opts.fatal !== false
     console.log(`  ${label}: ${hash}`)
     let lastError: unknown
     for (let attempt = 1; attempt <= 5; attempt++) {
       try {
         const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 })
         if (receipt.status !== 'success') {
-          die(`${label} reverted (status=${receipt.status}) in ${hash}`)
+          const why = `${label} reverted (status=${receipt.status}) in ${hash}`
+          if (fatal) die(why)
+          console.log(`  ${why}`)
+          return { ok: false, why }
         }
         console.log(`  ${label}: mined ✓ (block ${receipt.blockNumber})`)
-        return
+        return { ok: true, why: `mined in block ${receipt.blockNumber}` }
       } catch (e) {
         lastError = e
         console.log(`  ${label}: receipt not available yet (attempt ${attempt} of 5), retrying`)
       }
     }
-    die(
-      `${label}: no receipt for ${hash} after 5 attempts. It may still mine; check the chain before re-running. Last error: ${(lastError as Error)?.message?.split('\n')[0]}`,
-    )
+    const why = `${label}: no receipt for ${hash} after 5 attempts. It may still mine; check the chain before re-running. Last error: ${(lastError as Error)?.message?.split('\n')[0]}`
+    if (fatal) die(why)
+    return { ok: false, why }
+  }
+
+  const waitOk = async (hash: `0x${string}`, label: string): Promise<void> => {
+    await waitFor(hash, label)
   }
 
   console.log(`account     ${owner}`)
@@ -425,10 +451,17 @@ async function main(): Promise<void> {
 
   // ---- 6. maxWithdrawableCollateral + previewWithdrawCollateral + withdrawCollateral
   //
-  // The strongest single assertion in this script: the maximum the SDK reports must be
-  // ACCEPTED and one wei more must be REFUSED, on the real chain. That is the closed form and
-  // the evaluator agreeing about where the gate is, checked against the contract rather than
-  // against each other.
+  // The closed form and the evaluator agreeing about where the gate is: the maximum
+  // `maxWithdrawableCollateral` reports must be viable to `previewWithdrawCollateral` and one wei
+  // more must not.
+  //
+  // **Both calls below are the SDK's own evaluator, and this comment used to claim otherwise**
+  // (MK-051). The chain does not see either amount here; what is sent is a quarter of the max. The
+  // check still earns its place, because a closed form that drifts from its own preview is exactly
+  // what it catches. It is not evidence about the contract.
+  //
+  // The contract's own answer, and the fact that the reported max stops being withdrawable about a
+  // second later, is in `packages/core/test/withdraw-max-boundary.fork.test.ts`.
   console.log('\n--- maxWithdrawableCollateral + withdrawCollateral ---')
   const max = await musd.maxWithdrawableCollateral(owner)
   console.log(`  max ${formatBtc(max.amount)} BTC, limitedBy ${max.limitedBy}`)
@@ -453,7 +486,11 @@ async function main(): Promise<void> {
   } else {
     record('withdrawCollateral', 'skipped', 'the position had no withdrawable headroom')
   }
-  record('maxWithdrawableCollateral', 'exercised', 'max accepted, max+1 refused, on chain')
+  record(
+    'maxWithdrawableCollateral',
+    'exercised',
+    'max viable and max+1 refused, by the SDK preview rather than by the chain (MK-051)',
+  )
 
   // ---- 7. adjustTrove, both legs at once
   console.log('\n--- previewAdjustTrove (combined) + adjustTrove ---')
@@ -503,7 +540,26 @@ async function main(): Promise<void> {
   console.log('\n--- redeem ---')
   if (ALLOW_REDEEM) {
     const musdBalance = await musd.balanceOf(owner)
-    const amount = REDEEM_OVERRIDE ?? musdBalance / 10n
+    // Size the redemption from the PREVIEW's own edges, not from a fraction of the balance
+    // (MK-048).
+    //
+    // A tenth of the balance is a number about this account. What a redemption can take is a
+    // number about SOMEONE ELSE'S Trove: the first eligible one's headroom above the debt floor.
+    // The two are unrelated, and on the run that first exercised this the tenth was 221 MUSD
+    // against a headroom of 1.27, so the precheck refused it and the step recorded a skip. That
+    // is the precheck working, and it is also a redemption never exercised.
+    //
+    // So: take the preview's `maxWithoutConsuming` when the default overshoots it. Consuming the
+    // Trove whole is the other viable amount and is deliberately NOT chosen here, because it
+    // costs more MUSD than this account can hold and still close its own position.
+    const edges = await musd.previewRedeem({ redeemer: owner, amount: 1n })
+    const wanted = REDEEM_OVERRIDE ?? musdBalance / 10n
+    const amount =
+      REDEEM_OVERRIDE ?? (wanted > edges.maxWithoutConsuming ? edges.maxWithoutConsuming : wanted)
+    console.log(
+      `  first eligible Trove ${edges.firstEligibleTrove}, headroom ${formatMusd(edges.maxWithoutConsuming)} MUSD, whole ${formatMusd(edges.nextViableAmount)} MUSD`,
+    )
+    console.log(`  redeeming ${formatMusd(amount)} MUSD`)
     if (amount > 0n) {
       // The redemption acts on the LOWEST ICR Trove in the system ABOVE MCR, which belongs to
       // someone else. On testnet that is acceptable and it is stated rather than glossed:
@@ -520,8 +576,25 @@ async function main(): Promise<void> {
       const before = await musd.balanceOf(owner)
       const beforeBtc = await publicClient.getBalance({ address: owner })
       try {
-        const result = await musd.redeem({ amount })
-        await waitOk(result.hash, 'redeem')
+        // Retry once, with the amount and the hints recomputed, which is MK-049's documented
+        // mitigation: the partial hint carries an NICR derived at the price it was read at, and
+        // the contract recomputes it at the price the transaction MINES at. On a shared chain the
+        // oracle moves in between. One retry, never a loop.
+        let result = await musd.redeem({ amount })
+        let outcome = await waitFor(result.hash, 'redeem', { fatal: false })
+        if (!outcome.ok) {
+          const again = await musd.previewRedeem({ redeemer: owner, amount: 1n })
+          const retryAmount = again.maxWithoutConsuming > 0n ? again.maxWithoutConsuming : amount
+          console.log(
+            `  retrying once at ${formatMusd(retryAmount)} MUSD, hints recomputed (MK-049)`,
+          )
+          result = await musd.redeem({ amount: retryAmount })
+          outcome = await waitFor(result.hash, 'redeem (retry)', { fatal: false })
+        }
+        if (!outcome.ok) {
+          record('redeem', 'skipped', `${outcome.why}. Two attempts, hints recomputed (MK-049)`)
+          throw new Error(RECORDED_ALREADY)
+        }
         const after = await musd.balanceOf(owner)
         const afterBtc = await publicClient.getBalance({ address: owner })
         console.log(`  redemptionRate            ${result.redemptionRate}`)
@@ -537,12 +610,22 @@ async function main(): Promise<void> {
         )
       } catch (e) {
         const err = e as Error
-        console.log(`  redeem did not go through: ${err.name}: ${err.message.split('\n')[0]}`)
-        record(
-          'redeem',
-          'skipped',
-          `${err.name}: the hint went stale between computing it and sending, which is a race with other participants that only a shared chain has. Recorded, not fatal: it must not cost the close`,
-        )
+        // NEVER `return` from here. This block sits inside the main flow, so returning would skip
+        // the close and leave a position open, which is the very failure MK-052 is about.
+        if (err.message === RECORDED_ALREADY) {
+          console.log(`  ${err.message}, recorded above`)
+        } else {
+          console.log(`  redeem did not go through: ${err.name}: ${err.message.split('\n')[0]}`)
+          // Report the reason the run actually met, rather than a hardcoded one. This text used to
+          // name a stale hint (MK-049) unconditionally, and on the run that first exercised it the
+          // cause was the debt floor precheck (MK-048), so the ledger recorded a reason that
+          // contradicted the error printed two lines above it.
+          record(
+            'redeem',
+            'skipped',
+            `${err.name}: ${err.message.split('\n')[0]} Recorded, not fatal: an optional step must not cost the close`,
+          )
+        }
       }
     } else {
       record('redeem', 'skipped', 'no MUSD balance to redeem')

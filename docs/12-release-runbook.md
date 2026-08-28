@@ -18,7 +18,7 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 | 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json` | Both at the same version, and it is not already on npm |
 | 4 | The changelogs describe this release | `packages/*/CHANGELOG.md` | The top entry is the version from step 3 |
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
-| 6 | The packaged artifact is sound | `docs/07-testing.md` §4c, the four way typecheck | All four configurations exit 0 (MK-040) |
+| 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
 
 **Step 5 is the one that is easy to skip and should not be.** The fork suite proves the SDK against
 a fork; nothing but this proves it against the real deployment, the real oracle and real gas.

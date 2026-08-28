@@ -43,17 +43,26 @@ import type { MathDeps } from './deps'
  * so by the block a transaction executes in, the Trove owes more than this preview read. An offer
  * of exactly `D` is then a partial leaving dust, dust is below the floor, and it cancels.
  *
- * The line above claiming `netDebt exactly SUCCEEDS` was measured with `simulateContract`, which is
- * an `eth_call` at the current block: no block is mined, so no interest accrues, and the equality
- * holds. Sending instead of simulating shows the opposite. Measured on a fork against the real
- * deployment: offering exactly the net debt THREW, and offering one MUSD more succeeded. Only the
- * three amounts inside the gap were ever confirmed by sending.
+ * The line above claiming `netDebt exactly SUCCEEDS` was measured with the read and the evaluation
+ * at the SAME block, which is a delay no caller can have: a simulation runs at the current block
+ * and a transaction lands at least one block later. Measured on a fork with only the delay varied
+ * (`test/redeem-boundary.fork.test.ts`), from one snapshot:
  *
- * The margin is 600 seconds of interest on the Trove's entire debt, which is the contract's own
- * allowance for accrual where it bounds a partial hint (`:1276-1285`) rather than a number chosen
- * to feel safe. Offering more than the net debt is always safe: the excess spills to the next
- * Trove, and a cancellation there cannot revert the call, because the first Trove was already
- * drawn and `:406-408` only requires that something was.
+ *   delay   netDebt    netDebt + margin
+ *   0s      success    success
+ *   1s      REVERTED   success
+ *   60s     REVERTED   success
+ *   600s    REVERTED   success
+ *   3600s   REVERTED   REVERTED
+ *
+ * **One second is enough to make the bare net debt fail**, and the margin holds for exactly the
+ * window it is sized for. 600 seconds is the contract's own allowance for accrual where it bounds
+ * a partial hint (`:1276-1285`) rather than a number chosen to feel safe.
+ *
+ * **So {@link RedemptionPreview.nextViableAmount} is good for about ten minutes, and not longer.**
+ * Offering more is always safe: the excess spills to the next Trove, and a cancellation there
+ * cannot revert the call, because the first Trove was already drawn and `:406-408` only requires
+ * that something was. A caller who expects a longer delay should add to it.
  */
 
 /** Why a redemption would be refused. Machine readable, in contract call order. */
@@ -108,15 +117,21 @@ export interface RedemptionPreview {
    * At this amount the Trove is consumed whole, which takes a branch with no hint check and no
    * floor check (`TroveManager.sol:1252`). The margin is there because the contract sizes the lot
    * against the debt at EXECUTION, after interest accrues (`:366`, `:1218-1221`), so an offer of
-   * exactly the net debt read here arrives as a partial and cancels. Confirmed by sending rather
-   * than simulating: exactly the net debt reverts, one MUSD more succeeds.
+   * exactly the net debt read here arrives as a partial and cancels.
+   *
+   * **This value has a shelf life of about ten minutes.** The margin is 600 seconds of interest,
+   * and it was measured at both ends: a send at this amount succeeds after a 600 second delay and
+   * is refused after an hour. Add to it if you expect to be slower; overshooting cannot cost you
+   * the call.
    */
   nextViableAmount: bigint
   /**
    * The interest the first eligible Trove accrues in 600 seconds, which is what
    * {@link nextViableAmount} adds on top of the net debt.
    *
-   * 600 is the contract's own staleness window for accrual (`TroveManager.sol:1276-1285`).
+   * 600 is the contract's own staleness window for accrual (`TroveManager.sol:1276-1285`). Exposed
+   * rather than folded in silently so a caller who needs a different window can scale it: this is
+   * 600 seconds of interest, so ten times it is 6000 seconds of interest.
    */
   accrualMargin: bigint
   /** The live `minNetDebt()` floor the cancellation compares against. */

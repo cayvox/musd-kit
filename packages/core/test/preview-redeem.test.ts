@@ -24,10 +24,18 @@ const GAS_COMP = 200n * MUSD
  * mines a block first, `:366` runs `_updateTroveInterest` on the target, `:1218-1221` then sizes
  * the lot against the LARGER debt, and an offer of exactly `D` arrives as a partial leaving dust.
  *
- * Measured on a fork by SENDING rather than simulating:
+ * Measured on a fork with only the DELAY varied, from one snapshot
+ * (`redeem-boundary.fork.test.ts`):
  *
- *   netDebt exactly   2008463782732775139373   THREW RedemptionFailed
- *   netDebt + 1 MUSD                           status=success
+ *   delay   netDebt    netDebt + margin
+ *   0s      success    success
+ *   1s      REVERTED   success
+ *   600s    REVERTED   success
+ *   3600s   REVERTED   REVERTED
+ *
+ * One second of delay is enough to make the bare net debt fail, and the margin holds for exactly
+ * the window it is sized for and not an hour. The zero row is why a simulation cannot see this: it
+ * evaluates at the current block, and a transaction lands at least one block later.
  *
  * `G` is 600 seconds of interest on the Trove's entire debt, which is the contract's own allowance
  * for accrual where it bounds a partial hint (`:1276-1285`), rather than a number chosen to feel
