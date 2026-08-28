@@ -89,7 +89,9 @@ claim about it was not).
 | MK-051 | `maxWithdrawableCollateral` reports a figure that stops being withdrawable one second later, and the ledger recorded a preview-against-preview check as chain verification | S3 | open, documented, deferred to 0.2.1. The provenance claim is corrected |
 | MK-052 | The live run's optional redeem step could kill the run and leave a position open, because a reverted receipt reached `process.exit` instead of the `catch` that promised to absorb it | S2 | fixed. It happened, on a real run, and cost a close |
 | MK-053 | The post publish verification gate had never executed once, for either release, while being presented as part of the supply chain posture | S2 | fixed and proven by running it. The never executed audit it generalizes to is in the entry |
-| MK-054 | The landing page's live widget says it reads through the shipped package; it bundles the workspace build | S3 | open, documented. The false claims in the workflow header and the widget caption are corrected |
+| MK-054 | The landing page's live widget says it reads through the shipped package; it bundles the workspace build | S3 | **fixed.** The landing now depends on `npm:@musd-kit/core@0.2.0`, so the build resolves the registry copy and fails when the version is not published |
+| MK-056 | A deploy workflow that had never run and could not run, sitting beside a site that deploys automatically some other way | S3 | fixed by removing it and establishing how the site actually ships |
+| MK-057 | Landing page copy asserted a live keeper event, a test count and a gas figure the repository could not back | S2 | fixed. The keeper claim described a fork run with a moved oracle as if it had happened on chain |
 | MK-055 | The runbook tells you to push a `v*` tag after publishing, and the release workflow triggers on `v*` tags, so the documented path re-runs the publish | S3 | fixed in the workflow, and the interaction is named in the runbook |
 
 ---
@@ -3300,6 +3302,101 @@ the workflow was briefly off and why.
 
 ---
 
+## MK-057 · The page claimed a keeper liquidated real Troves
+
+**Class** S2 · **Status** fixed · **Found by auditing the landing copy against the tree it describes**
+
+**The claim.** `landing/src/components/Proof.astro:33-34` rendered, under the heading "WHY TRUST
+IT":
+
+> **A headless keeper liquidated real Troves.** Core-only, no React. It closed two
+> under-collateralized positions and collected the **400 MUSD** reward.
+
+That is a specific factual assertion about an event. It has no transaction hashes on the page and
+none in the repository, because the event it describes never happened on any public chain.
+
+**What actually exists**, `packages/core/test/phase9-keeper.fork.test.ts`:
+
+- `:63` the test opens the position it later liquidates, `testAccount(901)`, on a **fork**
+- `:80` it then moves the oracle: `fork.setPrice((origPrice * 75n) / 100n)`, a 25 percent drop, to
+  push that position under MCR
+- `:100-103` it scans with `maxLiquidations: 2`
+- `:109` it asserts `result.liquidated.length` is **at least 1**, not two
+- `:113` it asserts only that the keeper's balance grew, not that it grew by 400
+
+So: not real Troves, not a real chain, not necessarily two, and the reward is not asserted. The
+transaction hashes in the run output are anvil-local and resolve nowhere.
+
+**And the event could not be reproduced live, which the record already said.** The live ledger lists
+`liquidate` and `batchLiquidate` as unreachable: "Need a Trove below MCR to exist. Creating one
+requires moving the oracle, which is not possible on live testnet"
+(`docs/13-live-testnet-ledger.md:164`). The page was claiming, on the strength of a fork fixture,
+something the ledger three clicks away says cannot be done.
+
+**Resolution: the claim is rewritten rather than deleted**, because what the test does is genuinely
+worth showing. It now says the keeper runs end to end **on a fork**, that the oracle is moved
+deliberately to create the precondition, that the protocol pays 200 MUSD of gas compensation per
+liquidation, and that it is not reproducible on live testnet. Reproducing it live was considered and
+rejected on the evidence: it needs oracle control that testnet does not offer.
+
+### Two more tiles in the same block, same class
+
+**The test count.** The tile read `80+ tests across a forked-Mezo suite`. Measured on this tree: 168
+unit tests and 104 fork tests with 1 skipped. The number was stale, and any number there will go
+stale again, so it is replaced with something that does not drift: the differential sweep's
+**1000 generated cases**, which is a pinned parameter with a pinned seed rather than a count that
+grows.
+
+**The gas figure.** The tile read `Δ 0 gas versus near-exact insertion hints on the live sorted
+list`. **No instrument for that comparison exists in the repository**, which by
+`docs/08-conventions.md` §10 step 10 makes it uncitable. It also predates the gas work: every write
+now goes out with a margin. Replaced with the **25 percent margin**, whose derivation and whose
+limits are both recorded under MK-035, including which leg of it is `observed once, unlinked` and
+which is `unestablished`.
+
+**And a rendering bug found while reading that component.** `landing/src/components/Nav.astro:25`
+guarded the star badge with `stars === null`, so a repository the GitHub API reported at 0 stars
+rendered a literal `star 0`. Zero is falsy as a number and truthy as a string, so the later
+`{starLabel && ...}` checks did not catch it either. An empty social proof is worse than none. The
+guard is now `stars === null || stars <= 0`.
+
+---
+
+## MK-056 · A deploy workflow that had never run, beside a site that deploys itself
+
+**Class** S3 · **Status** fixed by removal, with the real mechanism established as far as evidence
+from outside the Cloudflare panel allows · **Found by MK-053's never executed audit, then chased**
+
+`.github/workflows/deploy-site.yml` had **zero runs** in its history and could not have run: it
+needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and `gh secret list` shows only
+`MEZO_TESTNET_RPC_URL` and `NPM_TOKEN`. `docs/12-release-runbook.md` §4 told a maintainer to run it.
+
+**Meanwhile the site is live and current.** PR 29 merged at `2026-08-28T14:51:02Z` and touched five
+files under `docs/`. The live page `musdkit.xyz/docs/12-release-runbook` carries strings that exist
+only in that commit: the SHA `371d5d9953f7f305cba0b4cfd2599e451f91aea8`, the run id `33176886491`,
+and `MK-055`. Nobody deployed it.
+
+**What is established:**
+
+| | |
+|---|---|
+| DNS | `musdkit.xyz` NS is `tani.ns.cloudflare.com`, `kayden.ns.cloudflare.com`; A records are Cloudflare anycast |
+| Serving | `server: cloudflare`, HTML `cache-control: public, max-age=0, must-revalidate`, `/_astro/` assets `max-age=14400`, which is the Cloudflare Pages static shape |
+| Repository | no `wrangler.toml`, no `netlify.toml`, no `vercel.json`, no `_headers`; the build config is not here |
+| GitHub | `gh api repos/cayvox/musd-kit/deployments` returns 0, no Environments, no Pages site |
+
+**What is NOT established**, and stated as such: that the mechanism is specifically a Cloudflare
+Pages git integration. It is the only explanation consistent with every row above, and confirming it
+needs the panel. The `musdkit.pages.dev` probe is worthless in both directions here: the resolver on
+this network answers every nonexistent name with `213.14.227.50`, and `1.1.1.1` was unreachable.
+
+**Removed rather than wired**, because wiring it means putting Cloudflare credentials into CI so
+GitHub can do a build Cloudflare already does on the same push. Two mechanisms for one deploy drift,
+and the one that drifts is the one nobody runs. The ordering the workflow existed to enforce, publish
+before deploy, is now enforced by the dependency itself (MK-054).
+
+---
+
 ## MK-054 · The site says it reads the published package, and it bundles the local build
 
 **Class** S3 · **Status** open, documented. The claims are corrected where they are made; the build
@@ -3330,14 +3427,36 @@ What is wrong is the claim about provenance: a reader is told the page is exerci
 the registry, and it is exercising a local build that happens to be identical. That is the same
 class as MK-053, one layer up: a property asserted rather than arranged.
 
-**What would close it.** Point the landing at the published range rather than the workspace, so the
-deployed page genuinely resolves `@musd-kit/core` from the registry, and let the deploy fail when the
-version it names is not published yet. That inverts the current order of operations and is a change
-to how the site is built, so it is not a release preparation edit. Deferred with MK-050 and MK-051.
+### Fixed
 
-**Corrected now, because they are false claims rather than design choices**: the workflow header
-says what actually happens, and the widget caption is left for the same wave that fixes the build,
-recorded here so it is not forgotten.
+`landing/package.json:16` now reads `"@musd-kit/core": "npm:@musd-kit/core@0.2.0"`. The `npm:` alias
+forces registry resolution regardless of pnpm's `link-workspace-packages` default, which a bare
+`0.2.0` would not: pnpm would have linked the workspace copy anyway and the fix would have been
+cosmetic.
+
+Verified rather than assumed. `pnpm-lock.yaml:1971` now carries a tarball integrity hash,
+`sha512-V63rwFHlh+sYFSkL6JCC54UjBdIPrN5mBEmOOMApY9HY2DgL22irCMNVmRo4dQreeY0RM6DDFksKukQdDiy50A==`,
+which exists only for a registry download. Resolving from inside `landing/`:
+
+`require.resolve('@musd-kit/core')` from inside `landing/` now lands in pnpm's content addressed
+store, in the directory keyed `@musd-kit+core@0.2.0`, rather than in `packages/core`. The path is
+described rather than pasted because `pnpm check:paths` forbids that literal form in tracked files,
+and the guardrail is right to: it cannot tell a quoted path from an import, and weakening it to
+quote one would be the wrong trade.
+
+The widget's exact data path, run against the same public RPC the deployed page uses, through that
+copy:
+
+```
+getOraclePrice -> 77469.065 USD/BTC
+previewOpen(1 BTC, 30000 MUSD)
+  fee 30   entireDebt 30230   icr 2.562655143896791266   liq 33253   meetsMinimum true
+  computeICR and computeLiquidationPrice agree with the client: true, true
+```
+
+**The property this buys is not that the bytes changed.** It is that the site can no longer advertise
+a version that does not exist: if the version named in `landing/package.json` is not on the registry,
+the install fails and the deploy fails with it. The claim is arranged now instead of asserted.
 
 ---
 
