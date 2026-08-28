@@ -3367,8 +3367,13 @@ here the caller's own position is the constraint and the error is accurate.
 **What would close it.** The same treatment MK-048's upper edge got, with the sign reversed: report
 the figure alongside the window it is good for, or subtract a margin so the reported number survives
 a stated delay. `maxWithdrawableCollateral` returning a number good for one block is defensible only
-if the docstring says so. Deferred to 0.2.1 with MK-050: changing a published field's value is not a
-release preparation edit, and the error path already protects the caller.
+if the docstring says so.
+
+**Deferred to 0.2.1 with MK-050**, and on the same corrected reasoning: not because the field is
+published, since it is not (see MK-050, `maxWithdrawableCollateral` is absent from the 0.1.0
+tarball), but because the SDK already refuses the amount before sending, so the caller loses
+nothing, and because a margin plus its tests and a sweep is a wave rather than a release
+preparation edit.
 
 **Corrected now, because it is a false claim rather than a design choice**: the script's comment and
 its record, and the ledger's row, say what was actually checked.
@@ -3421,11 +3426,24 @@ generator's work queue rather than as prose.
 to exactly the reported figure and expects a refusal.
 
 **Deferred to 0.2.1, deliberately, and the reasoning is recorded here so the next wave does not have
-to rediscover it.** It is derived from source and not yet observed executing. It affects only a
-close funded to exactly the edge, which is a narrow path. And changing a published field's value is
-not a release preparation edit: `musdRequired` shipped in 0.2.0 with a stated meaning, and altering
-what it returns belongs in a release where the change is the point. The docstring already carries
-the warning, so a caller reading the API today is not misled.
+to rediscover it.**
+
+**One earlier reason given for the deferral was wrong, and is withdrawn.** It said that changing a
+published field's value is not a release preparation edit, because `musdRequired` shipped in 0.2.0.
+It did not ship. npm carries `@musd-kit/core@0.1.0` and nothing else, and the 0.1.0 tarball's
+`dist/index.d.ts` contains no `previewClose`, no `musdRequired` and no `maxWithdrawableCollateral`:
+all three are new in 0.2.0, which is unpublished. **Changing any of them before the publish would
+break no consumer, because there are none.** Checked by unpacking the published tarball rather than
+by remembering.
+
+The reasons that survive:
+
+- It is derived from source and **not yet observed executing**. Nothing has been measured failing.
+- It affects only a close funded to **exactly** the edge, which is a narrow path, and the docstring
+  already warns about it, so a caller reading the API today is not misled.
+- Closing it properly is a wave, not an edit: a new field, its tests, a `closeBand` in the
+  generator, and a sweep to prove it. Doing that between a green tip and a publish is how a release
+  acquires an unmeasured change.
 
 **Repayment is NOT affected, and that was checked rather than assumed.** `_adjustTrove:769` accrues
 first as well, but the checks that follow move in the safe direction: `:859`
