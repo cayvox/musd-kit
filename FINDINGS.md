@@ -83,6 +83,7 @@ claim about it was not).
 | MK-045 | A Trove cannot be closed with only the MUSD it drew, so a self funded run cannot end clean | S3 | documented, protocol property |
 | MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
+| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper ignores the debt floor | **S2** | open, documented |
 
 ---
 
@@ -2984,6 +2985,91 @@ collateral in one call, an adjustment that requests nothing, a debt increase of 
 that was closed rather than never opened. The first three are input validation the SDK prechecks
 separately; the fourth is blocked by MK-045, because the harness cannot obtain the fee needed to
 close a seeded position.
+
+---
+
+## MK-048 · `truncatedAmount` reports redeemable amounts the chain refuses
+
+**Class** S2 · **Status** open, documented · **Found by the live testnet run, on the only chain where
+another account's Trove sits near the debt floor**
+
+**What happens.** `redeem` reports `truncatedAmount`, taken from the protocol's own
+`getRedemptionHints`, as the amount that will be redeemed. On live Mezo testnet that number is wrong
+for anything above a few MUSD, and the transaction reverts.
+
+Measured at head, with hints computed fresh for each amount immediately before simulating:
+
+| requested | `truncatedAmount` says | chain |
+|---|---|---|
+| 50 MUSD | 50.00 | **`TroveManager: Unable to redeem any amount`** |
+| 20 MUSD | 20.00 | **`TroveManager: Unable to redeem any amount`** |
+| 5 MUSD | 5.00 | succeeds |
+| 1 MUSD | 1.00 | succeeds |
+
+**Not a race, and that was the first hypothesis.** It reverts in `eth_call` at head with hints
+computed in the same breath, deterministically, and it reproduced across two live runs and a
+simulation sweep.
+
+**The mechanism, from `mezo-org/musd`, `TroveManager.sol`.** A redemption that does not consume a
+whole Trove is a PARTIAL against the first eligible one, and `_redeemCollateralFromTrove` cancels a
+partial when any of three conditions holds (`:1299-1306`):
+
+```solidity
+if (
+    _partialRedemptionHintNICR < vars.newNICR ||
+    _partialRedemptionHintNICR > vars.upperBoundNICR ||
+    _getNetDebt(vars.newDebt) < redeemCollateralVars.minNetDebt    // <- this one
+) {
+    singleRedemption.cancelledPartial = true;
+    return singleRedemption;
+}
+```
+
+A cancelled partial `break`s the redemption loop (`:392`), which leaves `totalCollateralDrawn` at
+zero, which fails `require(totals.totalCollateralDrawn > 0, "TroveManager: Unable to redeem any
+amount")` (`:406-408`). **So the whole redemption reverts, rather than redeeming less.**
+
+The binding quantity is the target Trove's headroom above the debt floor. Measured on the trove the
+hints pointed at, `0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08`:
+
+```
+entireDebt   2007.516876 MUSD
+netDebt      1807.516876 MUSD   (entireDebt - 200 reserve)
+minNetDebt   1800.000000 MUSD
+HEADROOM        7.516876 MUSD   <- the most that can be partially redeemed from it
+```
+
+7.52 sits exactly between the 5 that works and the 20 that does not.
+
+**`getRedemptionHints` does not model that cancellation.** It reported the full amount as
+redeemable at every size tested, including sizes the same block refuses.
+
+**Whose defect is it.** The over-reporting is the protocol's hint helper, not arithmetic this SDK
+performs. What is ours is that the SDK **passes that number through as a result field** and its
+docstring understates the consequence: `RedeemResult.truncatedAmount` says "the ACTUAL redeemed
+amount can be less when a partial of the last Trove is skipped". The actual amount is not less here,
+it is **zero, and the transaction reverts**. A caller who sizes a redemption from `truncatedAmount`
+pays gas for a revert.
+
+**Why no fork case caught it.** The differential harness has no redemption case at all: `redeem` is
+one of the three surfaces with no preview to compare a verdict against, which `docs/09` §3 already
+records. And the condition needs another account's Trove to be sitting within a few MUSD of the debt
+floor, which is a property of a shared chain with real users rather than of a seeded fixture.
+
+**Blast radius.** A reverted transaction and its gas. Nothing is silently wrong: `mapRevert` turns it
+into `RedemptionFailed` with an accurate message, and no number reaches a user as money. It is S2
+rather than S3 because the SDK returns a figure the chain contradicts, which is the same class as
+MK-014 and MK-047 even though the source of the wrong number is upstream.
+
+**Not fixed here.** The fix is a `previewRedeem` that walks the sorted list the way the contract does
+and reports the amount that will actually redeem, plus a corrected docstring on `truncatedAmount`.
+That is a preview surface, and this programme's rule since MK-042 is that a preview ships with the
+sweep coverage that would have caught it, which means the generator must first be able to construct
+a Trove near the floor. That is a wave.
+
+**Its cost while carried:** documented on `redeem` in `docs/03-core-api.md`, so a caller sizing a
+redemption knows to expect a revert rather than a smaller redemption, and knows the binding quantity
+is the target Trove's headroom above `minNetDebt` rather than their own balance.
 
 ---
 

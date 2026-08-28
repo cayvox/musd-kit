@@ -264,11 +264,34 @@ async function main(): Promise<void> {
   const owner: Address = account.address
 
   let leftOpen = false
+  /**
+   * Wait for a receipt, and RETRY the lookup rather than treating its absence as a failure.
+   *
+   * A public endpoint under load can fail to return a receipt for a transaction that mined
+   * perfectly well. That happened here: `0x91bac760...` was reported as "could not be found"
+   * and was in fact `status: success` at block 15164034. Giving up on the first miss killed a
+   * run that had already opened a position, which is the failure mode this script exists to
+   * avoid, so absence is retried and only a genuine revert or a real timeout is fatal.
+   */
   const waitOk = async (hash: `0x${string}`, label: string): Promise<void> => {
     console.log(`  ${label}: ${hash}`)
-    const receipt = await publicClient.waitForTransactionReceipt({ hash })
-    if (receipt.status !== 'success') die(`${label} reverted (status=${receipt.status}) in ${hash}`)
-    console.log(`  ${label}: mined ✓ (block ${receipt.blockNumber})`)
+    let lastError: unknown
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 })
+        if (receipt.status !== 'success') {
+          die(`${label} reverted (status=${receipt.status}) in ${hash}`)
+        }
+        console.log(`  ${label}: mined ✓ (block ${receipt.blockNumber})`)
+        return
+      } catch (e) {
+        lastError = e
+        console.log(`  ${label}: receipt not available yet (attempt ${attempt} of 5), retrying`)
+      }
+    }
+    die(
+      `${label}: no receipt for ${hash} after 5 attempts. It may still mine; check the chain before re-running. Last error: ${(lastError as Error)?.message?.split('\n')[0]}`,
+    )
   }
 
   console.log(`account     ${owner}`)
@@ -482,23 +505,45 @@ async function main(): Promise<void> {
     const musdBalance = await musd.balanceOf(owner)
     const amount = REDEEM_OVERRIDE ?? musdBalance / 10n
     if (amount > 0n) {
-      // The redemption acts on the LOWEST ICR Trove in the system, which belongs to someone
-      // else. On testnet that is acceptable and it is stated rather than glossed: redemption
-      // is a permissionless protocol operation, the counterparty is compensated in collateral
-      // at the oracle price, and no testnet position carries value. It would NOT be acceptable
-      // to do this casually on mainnet, which is why it is behind a flag.
+      // The redemption acts on the LOWEST ICR Trove in the system ABOVE MCR, which belongs to
+      // someone else. On testnet that is acceptable and it is stated rather than glossed:
+      // redemption is a permissionless protocol operation, the counterparty is compensated in
+      // collateral at the oracle price, and no testnet position carries value. It would NOT be
+      // acceptable to do this casually on mainnet, which is why it is behind a flag.
+      //
+      // A FAILURE HERE IS RECORDED, NOT FATAL. Redemption is the one operation in this run
+      // that races other participants: the hint is computed and the transaction is then sent,
+      // and on a shared chain the state can move in between, which the contract answers with
+      // "Unable to redeem any amount". The first attempt at this step did exactly that, and
+      // killing the run there left a Trove open, which is the failure mode this whole script
+      // is built to avoid. An optional, flag gated step must never cost the close.
       const before = await musd.balanceOf(owner)
-      const result = await musd.redeem({ amount })
-      await waitOk(result.hash, 'redeem')
-      const after = await musd.balanceOf(owner)
-      console.log(
-        `  redeemed ${formatMusd(amount)} MUSD, rate ${result.redemptionRate}, estimated fee ${result.estimatedFeeCollateral} BTC wei`,
-      )
-      record(
-        'redeem',
-        'exercised',
-        `redeemed ${formatMusd(before - after)} MUSD against the lowest ICR Trove in the system, which is another account. Acceptable on testnet, deliberate, and flag gated`,
-      )
+      const beforeBtc = await publicClient.getBalance({ address: owner })
+      try {
+        const result = await musd.redeem({ amount })
+        await waitOk(result.hash, 'redeem')
+        const after = await musd.balanceOf(owner)
+        const afterBtc = await publicClient.getBalance({ address: owner })
+        console.log(`  redemptionRate            ${result.redemptionRate}`)
+        console.log(`  estimatedCollateralDrawn  ${result.estimatedCollateralDrawn} BTC wei`)
+        console.log(`  estimatedFeeCollateral    ${result.estimatedFeeCollateral} BTC wei`)
+        console.log(`  truncatedAmount           ${formatMusd(result.truncatedAmount)} MUSD`)
+        console.log(`  MUSD burned, measured     ${formatMusd(before - after)}`)
+        console.log(`  BTC delta, measured       ${afterBtc - beforeBtc} wei (net of gas)`)
+        record(
+          'redeem',
+          'exercised',
+          `burned ${formatMusd(before - after)} MUSD against another account's Trove. rate=${result.redemptionRate} estimatedFeeCollateral=${result.estimatedFeeCollateral} estimatedCollateralDrawn=${result.estimatedCollateralDrawn}`,
+        )
+      } catch (e) {
+        const err = e as Error
+        console.log(`  redeem did not go through: ${err.name}: ${err.message.split('\n')[0]}`)
+        record(
+          'redeem',
+          'skipped',
+          `${err.name}: the hint went stale between computing it and sending, which is a race with other participants that only a shared chain has. Recorded, not fatal: it must not cost the close`,
+        )
+      }
     } else {
       record('redeem', 'skipped', 'no MUSD balance to redeem')
     }

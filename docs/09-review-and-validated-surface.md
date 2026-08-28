@@ -89,7 +89,7 @@ evidence for what it actually exercises.
 | `previewBorrow`, `previewRefinance` | Fork exercised end to end against the contract's own gates, plus exhaustive chain-free tests of the verdict as a pure function | **Verdict and fee validated; not yet compared against a reverting write for every reason** |
 | Insertion hints on every existing-trove write path | Pinned on a fork against `getNominalICR` after the write, including a repay at, below and above interest owed | Full for the paths exercised |
 | The PACKAGED artifact, not the workspace | The packed tarball is installed into a scratch project and a consumer file is typechecked against it under four module configurations, plus ESM and CJS runtime imports | **Manual, at release preparation, not automated.** This is what found MK-040, a broken `exports` map that a workspace typecheck cannot see because path mapping hides it. Automating it needs a pack, an install and a `tsc` run, which is its own job |
-| Live testnet lifecycle, end to end | `scripts/testnet-e2e.ts`, **run against live Mezo testnet**, chain 31611, blocks 15153708 to 15153787. Every write and every preview, each asserting the preview's verdict and numbers against what the chain did. The full ledger is `docs/13-live-testnet-ledger.md` | **It found MK-047, MK-046 and MK-045**, none of which a fork could produce. Not reached: `liquidate` and `batchLiquidate` (need a Trove below MCR, uncreatable on live testnet), `claim` (needs a surplus), `close` (MK-045) |
+| Live testnet lifecycle, end to end | `scripts/testnet-e2e.ts`, **run against live Mezo testnet**, chain 31611, blocks 15163946 to 15164162. **20 surfaces exercised, 3 skipped**, each asserting the preview's verdict and numbers against what the chain did, and the redemption checked field by field against the authoritative `Redemption` event. The full ledger is `docs/13-live-testnet-ledger.md` | **It found MK-045, MK-046, MK-047 and MK-048**, none of which a fork can produce. Not reached: `liquidate` and `batchLiquidate` (need a Trove below MCR, uncreatable on live testnet) and `claim` (needs a surplus) |
 
 **The fork sweep and the live run prove different things, and the table lists them separately for
 that reason.**
@@ -99,10 +99,23 @@ each snapshot isolated, comparing every preview verdict against the chain outcom
 prove is anything that depends on wall clock time passing, because anvil mines on demand, and
 anything its generator cannot construct.
 
-The live run proves **reality**: one ordered lifecycle against the real deployment, the real oracle
-and real gas. It is one path, not a thousand, and its value is that the path is real. Both of the
-findings a fork structurally could not produce came from it: MK-046, whose cause is elapsed time, and
-MK-047, whose cause was a state the generator could not express.
+The live run proves **reality**: one ordered lifecycle against the real deployment, the real oracle,
+real gas, and other people's positions moving underneath. It is one path, not a thousand, and its
+value is that the path is real.
+
+**Every finding a fork structurally could not produce came from it**, and each names a different
+thing a fork cannot be:
+
+| Finding | What a fork cannot reproduce |
+|---|---|
+| MK-046 | **Elapsed time.** anvil mines on demand, so no wall clock passes between a write and the read after it, and the interest drift is always zero |
+| MK-047 | **A state the generator could not build.** Every generated open case used a fresh account |
+| MK-048 | **Other people's positions.** It needs a third party's Trove sitting within a few MUSD of the debt floor |
+| MK-045 | Reproducible on a fork once looked for, and nobody looked until a real run had to leave an account clean |
+
+That is the case for keeping the live run as a release gate rather than treating the sweep as
+sufficient. A thousand cases against a fork and one ordered path against a real chain are not the
+same evidence, and the second found four things the first could not.
 
 **What the sweep's generator can and cannot construct**, which is the honest boundary of what a
 thousand cases prove (MK-047):
