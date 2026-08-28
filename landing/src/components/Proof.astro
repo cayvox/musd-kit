@@ -5,8 +5,8 @@
 const tiles = [
   { n: '0', label: 'hardcoded governable values. Min debt, fees, interest and redemption rate are read on-chain.' },
   { n: 'wei', label: 'preview to on-chain parity. previewOpen equals what the contract does, exactly.' },
-  { n: 'Δ 0', label: 'gas versus near-exact insertion hints on the live sorted list.' },
-  { n: '80', suffix: '+', count: 80, label: 'tests across a forked-Mezo suite. Ships ESM and CJS, MIT.' },
+  { n: '25', suffix: '%', count: 25, label: 'gas margin on every write, derived from measured growth rather than convention.' },
+  { n: '1000', count: 1000, label: 'generated cases, each preview verdict checked against a real transaction on a Mezo fork. Zero disagreements.' },
 ]
 
 // The fiddly hard parts the SDK handles, each verified in the shipped source: computeHints on
@@ -30,8 +30,8 @@ const checks = [
     d: 'A real read returns the live BTC/USD price and the system TCR through the shipped package. The calculator above runs it.',
   },
   {
-    t: 'A headless keeper liquidated real Troves',
-    d: 'Core-only, no React. It closed two under-collateralized positions and collected the __400 MUSD__ reward.',
+    t: 'A headless keeper runs end to end, on a fork',
+    d: 'Core-only, no React. On a fork of real Mezo it opens a position, drops the oracle under MCR, scans the sorted list and collects the __200 MUSD__ gas compensation the protocol pays per liquidation. Not reproducible on live testnet, which has no oracle you can move.',
   },
 ]
 const mark = (s: string) => s.replace(/__([^_]+)__/g, '<span class="proof__num">$1</span>')

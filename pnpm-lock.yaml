@@ -128,8 +128,8 @@ importers:
         specifier: 0.0.1
         version: 0.0.1(viem@2.22.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
       '@musd-kit/core':
-        specifier: workspace:*
-        version: link:../packages/core
+        specifier: npm:@musd-kit/core@0.2.0
+        version: 0.2.0(viem@2.22.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
       viem:
         specifier: ^2.22.8
         version: 2.22.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
@@ -1967,6 +1967,11 @@ packages:
   '@motionone/vue@10.16.4':
     resolution: {integrity: sha512-z10PF9JV6SbjFq+/rYabM+8CVlMokgl8RFGvieSGNTmrkQanfHn+15XBrhG3BgUfvmTeSeyShfOHpG0i9zEdcg==}
     deprecated: Motion One for Vue is deprecated. Use Oku Motion instead https://oku-ui.com/motion
+
+  '@musd-kit/core@0.2.0':
+    resolution: {integrity: sha512-V63rwFHlh+sYFSkL6JCC54UjBdIPrN5mBEmOOMApY9HY2DgL22irCMNVmRo4dQreeY0RM6DDFksKukQdDiy50A==}
+    peerDependencies:
+      viem: ^2.22.8
 
   '@noble/curves@1.2.0':
     resolution: {integrity: sha512-oYclrNgRaM9SsBUBVbb8M6DTV7ZHRTKugureoYEncY5c65HOmRzvSiTE3y5CYaPYJA/GVkrhXEoF0M3Ya9PMnw==}
@@ -9566,6 +9571,11 @@ snapshots:
     dependencies:
       '@motionone/dom': 10.18.0
       tslib: 2.8.1
+
+  '@musd-kit/core@0.2.0(viem@2.22.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))':
+    dependencies:
+      '@mezo-org/chains': 0.0.1(viem@2.22.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76))
+      viem: 2.22.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@3.25.76)
 
   '@noble/curves@1.2.0':
     dependencies:

@@ -22,7 +22,16 @@ try {
 } catch {
   /* private/unavailable → omit gracefully */
 }
-const starLabel = stars === null ? null : stars >= 1000 ? `${(stars / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(stars)
+// Zero is omitted as well as null. The guard used to be `stars === null`, so a repository the
+// API reported at 0 stars rendered a literal "star 0" badge: an empty social proof, which reads
+// worse than no badge at all. `0` is also falsy as a number and truthy as a string, so the later
+// `{starLabel && ...}` checks did not catch it either.
+const starLabel =
+  stars === null || stars <= 0
+    ? null
+    : stars >= 1000
+      ? `${(stars / 1000).toFixed(1).replace(/\.0$/, '')}k`
+      : String(stars)
 
 const GH_REPO = 'https://github.com/cayvox/musd-kit'
 const NPM_PKG = 'https://www.npmjs.com/package/@musd-kit/core'

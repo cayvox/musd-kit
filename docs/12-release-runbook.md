@@ -126,23 +126,57 @@ a warning; the version stays installable, which is the point. Deprecation is rev
 
 ---
 
-## 4. Deploy the site, AFTER publishing
+## 4. The site deploys itself, and there is nothing to run here
 
-```sh
-gh workflow run deploy-site.yml -f confirm=deploy
-```
+**There used to be a `gh workflow run deploy-site.yml` command here. It never worked and it has been
+removed (MK-056).** That workflow had zero runs in its entire history, and it could not have run: it
+needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and neither secret exists on the
+repository. Meanwhile musdkit.xyz has been live the whole time and is current.
 
-**Why after, and not before:** the landing page's hero shows an `npm install` command and its live
-widget reads through the published package. Deploying first means the site tells a visitor to
-install a version that does not exist yet, and the widget reads an older one. The order is the whole
-reason this workflow is manual.
+**What actually happens: a build connected to this repository publishes the site automatically after
+a push to `main`.** Established rather than assumed:
 
-**Prerequisites:** the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets, and a Cloudflare
-Pages project mapped to the domain. `PUBLIC_MEZO_TESTNET_RPC_URL` is optional.
+- PR 29 merged at `2026-08-28T14:51:02Z` and changed five files under `docs/`. The live page
+  `musdkit.xyz/docs/12-release-runbook` now contains strings that exist only in that commit,
+  including the commit SHA `371d5d9953f7f305cba0b4cfd2599e451f91aea8`, the release run id
+  `33176886491` and the identifier `MK-055`. **Nobody deployed it, so something did.**
+- `dig musdkit.xyz NS` returns `tani.ns.cloudflare.com` and `kayden.ns.cloudflare.com`, the A records
+  are Cloudflare anycast, and the responses carry `server: cloudflare` with
+  `cache-control: public, max-age=0, must-revalidate` on HTML and `max-age=14400` on
+  `/_astro/` assets, which is the Cloudflare Pages static shape.
+- The repository contains no `wrangler.toml`, no `netlify.toml`, no `vercel.json` and no
+  `_headers`, so the build configuration lives outside this repository.
+- `gh api repos/cayvox/musd-kit/deployments` returns **0**, there are no Environments, and there is
+  no GitHub Pages site. So whatever builds it does not record GitHub Deployments.
 
-**What to check:** the site loads, the hero install command names the new version, the docs are at
-`/docs/`, and the live widget returns a price rather than a fallback. Locally you can preview the
-identical build with `pnpm preview:site`.
+**A Cloudflare Pages git integration is the only mechanism consistent with all of the above, and it
+is not confirmed.** Confirming it needs the Cloudflare panel, which is not reachable from here.
+`musdkit.pages.dev` could not be resolved either, because the network used for this check has an ISP
+resolver that answers every nonexistent name with `213.14.227.50`, and `1.1.1.1` was unreachable, so
+that probe proves nothing in both directions.
+
+**Three things to read off the Cloudflare Pages panel, once, and write into this section:**
+
+1. the **connected repository and branch** (expected: `cayvox/musd-kit`, `main`)
+2. the **build command and output directory** (expected: `bash scripts/build-site.sh` and
+   `landing/dist`, matching `scripts/build-site.sh`)
+3. the **commit and timestamp of the last build** (expected: at or after `31fbccc`)
+
+**Why removed rather than wired to the real mechanism.** Wiring it would mean putting Cloudflare
+credentials into CI so that GitHub can do a build Cloudflare already does on the same push. Two
+mechanisms for one deploy is a thing that drifts, and the one that drifts is always the one nobody
+runs. A workflow that has never run, cannot run, and sits beside a site that deploys another way is
+the same false artifact as MK-053's gate: **it was believed because it existed.**
+
+**The ordering the old section existed to enforce still matters, and is now enforced somewhere
+better.** The landing declares `"@musd-kit/core": "npm:@musd-kit/core@0.2.0"`, so the build resolves
+the PUBLISHED package. If the version named there is not on the registry, the install fails and the
+deploy fails with it. Publish first, then bump that dependency: the site can no longer advertise a
+version that does not exist, because it cannot build against one (MK-054).
+
+**What to check after a deploy**, by fetching the served page rather than reading a build log: the
+docs at `/docs/` carry the newest commit's text, the hero install command names the published
+version, and the live widget returns a price rather than its static fallback.
 
 ---
 

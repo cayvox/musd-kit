@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@mezo-org/chains": "0.0.1",
-    "@musd-kit/core": "workspace:*",
+    "@musd-kit/core": "npm:@musd-kit/core@0.2.0",
     "viem": "^2.22.8"
   },
   "devDependencies": {
