@@ -85,6 +85,7 @@ claim about it was not).
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
 | MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | fixed, previewed and prechecked |
 | MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | open, documented, needs retry |
+| MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented |
 
 ---
 
@@ -3183,6 +3184,60 @@ redemption targets the lowest ICR Trove system wide and a fixture cannot reliabl
 `AT_NET_DEBT` exists only because of the correction above: it offers exactly the net debt as read,
 which must be refused, and keeps that pinned against the chain rather than against the evaluator's
 own arithmetic.
+
+---
+
+## MK-050 · `previewClose.musdRequired` is short by the interest that accrues before the close lands
+
+**Class** S3 · **Status** open, documented. **Registered rather than fixed**, because it is outside
+MK-048's scope and changing a shipped field's value is not a release prep edit · **Found by asking
+whether MK-048's mechanism has siblings, then reading `BorrowerOperations.sol`**
+
+**The same shape as MK-048, in a different method.** MK-048's defect was a figure read at one block
+and handed back to a contract that accrues interest before it reads the same figure. `_closeTrove`
+does exactly that, in the same order:
+
+```solidity
+function _closeTrove(address _borrower, address _caller, address _recipient) internal {
+    ITroveManager troveManagerCached = troveManager;
+    troveManagerCached.updateSystemAndTroveInterest(_borrower);          // :945  accrues FIRST
+    ...
+    uint256 debt = troveManagerCached.getTroveDebt(_borrower);           // :958  reads AFTER
+    _requireSufficientMUSDBalance(_caller, debt - MUSD_GAS_COMPENSATION); // :963
+    ...
+    musdTokenCached.burn(_caller, debt - MUSD_GAS_COMPENSATION);         // :997
+}
+```
+
+`previewClose` reports `musdRequired = entireDebt - MUSD_GAS_COMPENSATION` at the block it reads
+(`previewClose.ts:94`). By the block the close executes in, `debt` at `:958` is larger. **A caller
+who acquires exactly `musdShortfall` and then closes is refused at `:963`.**
+
+**Why it is S3 and not higher.** It is a revert, not a loss: `:963` fails before anything is burned
+or removed, so the position is untouched and the cost is gas. The overwhelming case is a caller who
+holds comfortably more than the figure, for whom nothing is wrong. It bites the caller who mints or
+buys the exact shortfall, which is a narrow path.
+
+**It is not hypothetical on this programme.** The live funding run in `docs/13-live-testnet-ledger.md`
+minted MUSD to cover a computed shortfall for exactly this operation. It succeeded because the
+figure was recomputed at the point of use rather than reused, which is the right habit and not a
+property of the API.
+
+**Why the sweep did not find it.** `closeCase` seeds a position and the account keeps whatever the
+open drew, which is far more than the shortfall, so the harness has never held exactly
+`musdRequired`. `docs/09-review-and-validated-surface.md` now carries this as a row in the
+generator's work queue rather than as prose.
+
+**What would close it.** The same treatment MK-048 got: a margin field alongside `musdRequired`
+rather than a change to it, plus a `closeBand` in the generator that funds an account to exactly the
+reported figure and expects a refusal. Not done here, deliberately.
+
+**Repayment is NOT affected, and that was checked rather than assumed.** `_adjustTrove:769` accrues
+first as well, but the checks that follow move in the safe direction: `:859`
+`_requireValidMUSDRepayment(vars.debt, vars.netDebtChange)` compares against a debt that has grown,
+so a repay sized from a stale read is still valid, and `:860` checks the balance against the
+caller's own chosen amount rather than against a re-read total. A stale read makes a repay smaller
+relative to the debt, never larger.
 
 ---
 

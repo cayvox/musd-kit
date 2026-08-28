@@ -134,7 +134,7 @@ thousand cases prove (MK-047):
 | **A Trove closed rather than never opened** | **No.** Blocked by MK-045: the harness cannot close a seeded position, because it cannot obtain the fee |
 | A redemption on either side of a Trove's headroom above the debt floor | **Yes, since MK-048.** `RedeemBand`: `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP`, `AT_NET_DEBT`, `WHOLE_TROVE`, computed from the REAL first eligible Trove at run time. `AT_NET_DEBT` was added after the sweep caught the preview putting the upper edge one accrual too low |
 | **A moving oracle between a hint and a block** | **No, and it cannot be.** anvil holds the price still, so MK-049's condition has no fork expression at all |
-| **A preview figure that accrues between the read and the block it lands in** | **Yes for redemption, since the MK-048 correction.** `AT_NET_DEBT` offers exactly the figure as read, which the chain refuses. **Not yet for `previewClose.musdRequired` or a full `repay`**, where the same shape of question is open |
+| **A preview figure that accrues between the read and the block it lands in** | **Yes for redemption, since the MK-048 correction.** `AT_NET_DEBT` offers exactly the figure as read, which the chain refuses. **No for `previewClose.musdRequired`**: `closeCase` funds an account from the seeding open, so it has never held exactly the reported figure, which is how MK-050 survived. Repayment was checked from source and is not exposed |
 
 **This list is a work queue, not a disclaimer.** It has produced two findings, MK-047 and MK-048,
 and each was closed by teaching the generator the state FIRST and fixing the code second. The rows
