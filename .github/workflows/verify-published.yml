@@ -1,0 +1,164 @@
+# Install the PUBLISHED packages from the registry and prove they work (MK-053).
+#
+# **This is the check that never ran.** It lived inside `release.yml` as a `verify-published`
+# job with `needs: publish`, which meant it could only ever execute as the tail of a real
+# publish. It was written before 0.2.0, so it did not exist for the 0.1.0 release, and on its
+# first and only execution it failed in `Setup Node` before a single verification step ran.
+# Two releases shipped with a post publish gate that had never once produced a verdict.
+#
+# It is a reusable workflow now, for one reason: a gate that can only run as part of the thing
+# it gates cannot be tested. `release.yml` calls it with `needs: publish`, and it can also be
+# dispatched by hand against any published version, which is how it was finally proven.
+#
+# **No pnpm here, deliberately.** The whole value of this job is that it resolves nothing
+# through the workspace: it installs from the registry with npm into an empty directory
+# outside the checkout. `actions/setup-node` defaults `package-manager-cache` to true, detects
+# the repository's pnpm lockfile and then fails because pnpm is not installed. Adding
+# `pnpm/action-setup` would fix the symptom by installing a tool this job must not use, so the
+# cache is turned off instead.
+name: Verify published
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'Published version to verify'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published version to verify, blank to use packages/core/package.json'
+        required: false
+        default: ''
+
+jobs:
+  verify:
+    name: Post-publish install from the registry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # RUNTIME: declared here, NOT inherited from `.nvmrc`, so that a change to the
+      # development pin can never silently change the runtime that verifies a published
+      # artifact (MK-029).
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Resolve the version to verify
+        id: ver
+        run: |
+          set -euo pipefail
+          V='${{ inputs.version }}'
+          if [ -z "$V" ]; then
+            V="$(node -p "require('./packages/core/package.json').version")"
+            echo "no version given, using packages/core/package.json: $V"
+          else
+            echo "verifying the version passed in: $V"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      # npm's registry read path is eventually consistent, so a fresh version can 404 for a
+      # short while after publish. Poll rather than sleep a fixed amount.
+      - name: Wait for the version to be visible on the registry
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          for i in $(seq 1 30); do
+            if npm view "@musd-kit/core@$V" version >/dev/null 2>&1 \
+               && npm view "@musd-kit/react@$V" version >/dev/null 2>&1; then
+              echo "both packages visible at $V"
+              exit 0
+            fi
+            echo "attempt $i: not visible yet, waiting"
+            sleep 10
+          done
+          echo "FAIL: @musd-kit/core@$V / @musd-kit/react@$V never became visible" >&2
+          exit 1
+
+      # An empty directory OUTSIDE the checkout, so nothing resolves through the workspace.
+      - name: Install from the registry into a clean project
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          mkdir -p "$RUNNER_TEMP/postpublish"
+          cd "$RUNNER_TEMP/postpublish"
+          echo '{ "name": "postpublish-check", "private": true, "version": "0.0.0" }' > package.json
+          npm install --no-audit --no-fund \
+            "@musd-kit/core@$V" "@musd-kit/react@$V" \
+            viem@2.22.8 react@18.2.0 react-dom@18.2.0 wagmi@2.5.12 @tanstack/react-query@5.28.4
+
+      - name: Import the published packages (ESM + CJS)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/postpublish"
+          node --input-type=module -e "
+          import { createMusdClient, MusdError, MusdErrorCode } from '@musd-kit/core'
+          import { useTrove, useOpenTrove } from '@musd-kit/react'
+          if (typeof createMusdClient !== 'function') throw new Error('core ESM export missing')
+          if (typeof useTrove !== 'function' || typeof useOpenTrove !== 'function') throw new Error('react ESM hooks missing')
+          if (typeof MusdError !== 'function' || !MusdErrorCode.BELOW_MINIMUM_DEBT) throw new Error('core errors missing')
+          console.log('  published ESM ok')
+          "
+          node -e "
+          const core = require('@musd-kit/core')
+          if (typeof core.createMusdClient !== 'function') throw new Error('core CJS export missing')
+          if (!core.MusdErrorCode || !core.MusdErrorCode.ICR_BELOW_MCR) throw new Error('core CJS errors missing')
+          console.log('  published CJS ok')
+          "
+
+      - name: Confirm the installed version is the published one
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          cd "$RUNNER_TEMP/postpublish"
+          for p in core react; do
+            INSTALLED="$(node -p "require('./node_modules/@musd-kit/$p/package.json').version")"
+            [ "$INSTALLED" = "$V" ] || { echo "FAIL: @musd-kit/$p resolved $INSTALLED, expected $V" >&2; exit 1; }
+          done
+          echo "post-publish verification PASSED at $V"
+
+      # The published FILE LIST against the allowlist, and PROVENANCE against this repository.
+      # Neither was checked before: the job proved the package imports, not that it shipped the
+      # right files or that anything attested to where it came from.
+      - name: Check the published file list and provenance
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          cd "$RUNNER_TEMP/postpublish"
+          EXPECTED='package/LICENSE
+          package/README.md
+          package/dist/index.cjs
+          package/dist/index.cjs.map
+          package/dist/index.d.cts
+          package/dist/index.d.ts
+          package/dist/index.js
+          package/dist/index.js.map
+          package/package.json'
+          for p in core react; do
+            npm view "@musd-kit/$p@$V" dist.tarball -s | xargs curl -sL -o "$p.tgz"
+            ACTUAL="$(tar tzf "$p.tgz" | sort)"
+            if [ "$ACTUAL" != "$(echo "$EXPECTED" | sed 's/^ *//')" ]; then
+              echo "FAIL: @musd-kit/$p@$V file list does not match the allowlist" >&2
+              echo "$ACTUAL" >&2
+              exit 1
+            fi
+            echo "  @musd-kit/$p@$V file list matches the allowlist"
+            REPO="$(curl -sL "https://registry.npmjs.org/-/npm/v1/attestations/@musd-kit%2f$p@$V" \
+              | node -e "
+              let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{
+                const j=JSON.parse(s);
+                const a=(j.attestations||[]).find(x=>x.predicateType==='https://slsa.dev/provenance/v1');
+                if(!a){console.log('NONE');return}
+                const pl=JSON.parse(Buffer.from(a.bundle.dsseEnvelope.payload,'base64').toString());
+                console.log(pl.predicate.buildDefinition.externalParameters.workflow.repository);
+              })")"
+            [ "$REPO" = "https://github.com/${{ github.repository }}" ] || {
+              echo "FAIL: @musd-kit/$p@$V provenance names $REPO, expected this repository" >&2; exit 1; }
+            echo "  @musd-kit/$p@$V provenance attests to $REPO"
+          done
