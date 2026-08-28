@@ -1,0 +1,85 @@
+# Deprecate a superseded version of both published packages, from CI (MK-053's sibling).
+#
+# **Why a workflow and not a shell command.** `npm deprecate` writes to the registry, so it needs
+# a publish-capable token. The one place this project keeps one is the `NPM_TOKEN` repository
+# secret; putting it in a maintainer's shell to run two commands means a publish credential
+# living somewhere it is not tracked, not rotated with the secret, and not visible in any log.
+# `docs/12-release-runbook.md` §3 recorded the two commands and nothing ran them.
+#
+# **The messages are in the workflow, not in an input.** They are the exact strings the runbook
+# records, one per package, and they differ. An input would let this deprecate anything with any
+# text, which is a much larger capability than the job needs.
+#
+# **No pnpm.** This uses npm against the registry and resolves nothing through the workspace, so
+# `package-manager-cache` is off for the reason MK-053 records.
+name: Deprecate a published version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version to deprecate, for example 0.1.0'
+        required: true
+      confirm:
+        description: 'Type "deprecate" to confirm a registry write'
+        required: true
+        default: ''
+
+concurrency:
+  group: deprecate
+  cancel-in-progress: false
+
+jobs:
+  deprecate:
+    if: ${{ github.event.inputs.confirm == 'deprecate' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # RUNTIME: declared here, NOT inherited from `.nvmrc` (MK-029).
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Refuse to deprecate the version that is currently `latest`
+        run: |
+          set -euo pipefail
+          V='${{ github.event.inputs.version }}'
+          for p in core react; do
+            LATEST="$(npm view "@musd-kit/$p" dist-tags.latest)"
+            if [ "$LATEST" = "$V" ]; then
+              echo "FAIL: @musd-kit/$p@$V is the current latest. Point latest elsewhere first." >&2
+              exit 1
+            fi
+            echo "  @musd-kit/$p latest is $LATEST, deprecating $V is safe"
+          done
+
+      - name: Deprecate both packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          V='${{ github.event.inputs.version }}'
+          npm deprecate "@musd-kit/core@$V" "0.1.0 returns wrong numbers on seven surfaces, three of them silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
+          npm deprecate "@musd-kit/react@$V" "Depends on @musd-kit/core@0.1.0, which returns wrong numbers on seven surfaces. See docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
+
+      # The write is not the result. Read it back from the registry, in a step that carries no
+      # credential, so a silent no-op cannot pass for a deprecation.
+      - name: Verify both deprecations from the registry
+        run: |
+          set -euo pipefail
+          V='${{ github.event.inputs.version }}'
+          for p in core react; do
+            for i in $(seq 1 12); do
+              MSG="$(npm view "@musd-kit/$p@$V" deprecated 2>/dev/null || true)"
+              [ -n "$MSG" ] && break
+              echo "  attempt $i: @musd-kit/$p@$V not showing deprecated yet, waiting"
+              sleep 10
+            done
+            [ -n "$MSG" ] || { echo "FAIL: @musd-kit/$p@$V is not deprecated on the registry" >&2; exit 1; }
+            echo "  @musd-kit/$p@$V deprecated: $MSG"
+          done
