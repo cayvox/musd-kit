@@ -147,6 +147,10 @@ building a close button will meet it.
 
 Added after the lifecycle run, once `previewRedeem` existed. **Both directions, on Mezo testnet.**
 
+**Everything below is the LOWER edge**, the headroom above the debt floor, and it stands unchanged.
+The upper edge of the gap was later corrected from `D` to `D + G`; what that correction could and
+could not be verified against is at the end of this section.
+
 **The boundary, at pinned block 15164949**, with `getRedemptionHints`'s answer beside each. The
 first eligible Trove was `0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08` with net debt
 `1802519016881414909779` against a floor of `1800000000000000000000`, so the edge was
@@ -179,8 +183,34 @@ musd.redeem()   RedemptionBreachesDebtFloor [REDEMPTION_BREACHES_DEBT_FLOOR]
 nonce before 37, after 37   ->  NO TRANSACTION WAS SENT, no gas spent
 ```
 
+That message is quoted as it was printed on the day. It has since gained a sentence naming the
+accrual margin, and the `at least` figure it reports now carries that margin, for the reason below.
+
 There is no transaction hash for the refusal, and that is the point of the precheck rather than a
 gap in the evidence: the chain's own refusal is the pinned-block simulation above.
+
+### The upper edge, and what could not be verified live
+
+The differential sweep later found the preview's UPPER edge wrong: it reported `D`, the first
+eligible Trove's net debt as read, and the chain refuses that amount. `TroveManager.sol:366` accrues
+interest on the target before `:1218-1221` sizes the lot, so an offer of exactly `D` arrives as a
+partial and cancels. `nextViableAmount` now carries a 600 second accrual margin. Full detail is in
+`FINDINGS.md`, MK-048.
+
+**That correction is verified on a fork by SENDING, and it is not verified live.** Two things are in
+the way, and both are stated rather than worked around:
+
+| what is needed | what the end to end account holds |
+|---|---|
+| `~1801 MUSD` to consume the current first eligible Trove whole | `42.710869016637255886 MUSD` at block 15165691 |
+| the account's key, to sign | not present in the session that made the correction |
+
+Minting the shortfall is possible, since MUSD only exists by opening a Trove, and it is what the
+earlier funding run did. It is roughly 1758 MUSD short, which is another Trove of its own and a
+second overcollateralised position on the same account. **The fork evidence is a real send against
+the real deployment's bytecode at a pinned block, which is the same experiment the live run would
+be, minus the shared mempool.** So the gap here is the mempool and the oracle moving, which is
+MK-049's territory and already documented, rather than the arithmetic being unchecked.
 
 ### MK-049, found while verifying MK-048
 

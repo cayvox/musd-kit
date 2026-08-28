@@ -132,18 +132,28 @@ thousand cases prove (MK-047):
 | **An adjustment that requests nothing** | **No.** `NO_CHANGE_REQUESTED` is unreachable |
 | **A debt increase of zero** | **No.** `ZERO_DEBT_INCREASE` is unreachable |
 | **A Trove closed rather than never opened** | **No.** Blocked by MK-045: the harness cannot close a seeded position, because it cannot obtain the fee |
-| A redemption on either side of a Trove's headroom above the debt floor | **Yes, since MK-048.** `RedeemBand`: `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP`, `WHOLE_TROVE`, computed from the REAL first eligible Trove at run time |
+| A redemption on either side of a Trove's headroom above the debt floor | **Yes, since MK-048.** `RedeemBand`: `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP`, `AT_NET_DEBT`, `WHOLE_TROVE`, computed from the REAL first eligible Trove at run time. `AT_NET_DEBT` was added after the sweep caught the preview putting the upper edge one accrual too low |
 | **A moving oracle between a hint and a block** | **No, and it cannot be.** anvil holds the price still, so MK-049's condition has no fork expression at all |
+| **A preview figure that accrues between the read and the block it lands in** | **Yes for redemption, since the MK-048 correction.** `AT_NET_DEBT` offers exactly the figure as read, which the chain refuses. **Not yet for `previewClose.musdRequired` or a full `repay`**, where the same shape of question is open |
 
 **This list is a work queue, not a disclaimer.** It has produced two findings, MK-047 and MK-048,
 and each was closed by teaching the generator the state FIRST and fixing the code second. The rows
 still marked **No** are the next candidates.
 
 The first three are input validation the SDK also prechecks. The fourth is blocked by a protocol
-property rather than an oversight. The last cannot be closed at all: a fork has one oracle and it
-does not move on its own, so MK-049 belongs to the live gate rather than to the sweep. **Any
+property rather than an oversight. The oracle row cannot be closed at all: a fork has one oracle and
+it does not move on its own, so MK-049 belongs to the live gate rather than to the sweep. **Any
 operation whose precondition the generator cannot construct is untested no matter how many cases
 run.**
+
+**The last row is the newest and the one that cost the most.** MK-048's upper edge was derived from
+source, then measured with `simulateContract`, and the measurement agreed. It agreed because an
+`eth_call` mines no block, so no interest accrues, so a figure read at the head is still exact when
+the call runs. A real send accrues first and then reads. **A simulation and a send are not the same
+experiment against a contract that mutates state before it reads it**, and every quantity this SDK
+reports which a caller then hands back to the chain is exposed to that difference. Redemption is
+now covered by a band; the two named above are not, and that is a live entry rather than a closed
+one.
 | Preview verdict against actual transaction outcome, swept | **Reproducible:** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, two slices via `MK_DIFF_FROM`. **The sweep covers eight operations since MK-042**, up from three: open, borrow, refinance, addCollateral, repay, withdrawCollateral, adjust and close. **Redemption joined it in MK-048**, with a `RedeemBand` per case; it does NOT reach liquidation or
 claim, which have no preview to compare. 1000 generated cases from seed `20260826`, boundary weighted 60/20/20, each snapshot isolated. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws** | **A fact about the sweep, not proof of correctness.** The 1000 case figure is from the three operation sweep; the eight operation sweep is newer and its counts are in MK-042. What it still does NOT cover: liquidation and claim, neither of which has a preview to compare. 41 of the 1000 were skipped because the fixture open was itself not viable |
 | Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | **Observed executing**, P8: capacity `140092922400000000000000` at open, unchanged after a price rise, `70046461200000000000000` after withdrawing half the collateral | Full. The obligation is discharged (MK-002) |

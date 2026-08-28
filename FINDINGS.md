@@ -3066,32 +3066,74 @@ MK-014 and MK-047 even though the source of the wrong number is upstream.
 ### The complete rule, derived from source and verified to the wei
 
 Reading the whole path rather than the two lines first cited changes the shape of the answer. **It is
-a GAP, not a cap.** For the first eligible Trove with net debt `D` and floor `M`:
+a GAP, not a cap.** For the first eligible Trove with net debt `D` **as read**, floor `M`, and the
+interest `G` that Trove accrues between the read and the block the transaction lands in:
 
 | amount | outcome | why |
 |---|---|---|
 | `A <= D - M` | succeeds | a partial inside the headroom |
-| `D - M < A < D` | **REVERTS** | `:1218-1221` hands the whole amount to that Trove, `:1299-1306` cancels, `:392` breaks, `:406-408` reverts |
-| `A >= D` | succeeds | the Trove is consumed WHOLE via `:1252`, a branch with **no hint check and no floor check at all** |
+| `D - M < A < D + G` | **REVERTS** | `:1218-1221` hands the whole amount to that Trove, `:1299-1306` cancels, `:392` breaks, `:406-408` reverts |
+| `A >= D + G` | succeeds | the Trove is consumed WHOLE via `:1252`, a branch with **no hint check and no floor check at all** |
+
+The `G` in that table is the correction the sweep forced, and it is recorded in full below. The
+first version of this table said the upper edge was `D`, and that was wrong.
 
 **Full consumption behaving differently was the open question, and this is the answer.** `:1252` is
 `if (vars.newDebt == MUSD_GAS_COMPENSATION)`, which holds exactly when the offered amount covers the
 Trove's entire net debt. That branch calls `_redeemCloseTrove` and `_closeTrove(Status.closedByRedemption)`
 and never reaches the cancellation. A whole consumption can never be cancelled.
 
-Verified on a fork against the real deployment, with the helper's answer beside each:
+Simulated on a fork against the real deployment, with the helper's answer beside each:
 
 ```
 headroom exactly  208463779941643739864   hint said the same   SUCCEEDS
 headroom + 1 wei                          hint said the same   REVERT
 netDebt / 2                               hint said the same   REVERT
 netDebt - 1 wei                           hint said the same   REVERT
-netDebt exactly  2008463779941643739864   hint said the same   SUCCEEDS
-netDebt + 1 wei                           hint said the same   SUCCEEDS
+netDebt exactly  2008463779941643739864   hint said the same   SUCCEEDS   <- ARTEFACT, see below
+netDebt + 1 wei                           hint said the same   SUCCEEDS   <- ARTEFACT, see below
 ```
+
+The three REVERT rows and the headroom row were later reconfirmed by sending. The last two were not,
+and they do not hold; why is the next section.
 
 And again on LIVE testnet at pinned block 15164949, where `edge - 1` and `edge` succeed while
 `edge + 1 wei` and `edge + 1 MUSD` revert.
+
+### The correction the sweep forced: the upper edge is `D + G`, not `D`
+
+The rule above was derived from source and then measured, and the measurement of the upper edge was
+**wrong because of how it was taken**. The fork evidence used `simulateContract`, which is an
+`eth_call` at the current block: no block is mined, so no time passes, so no interest accrues, and
+`mUSDLot = min(A, totalDebt - GAS_COMP)` at `A = D` is an exact equality that consumes the Trove.
+
+A real send does not work that way. `:366` runs `_updateTroveInterest(currentBorrower)` before the
+lot is sized, and `:1218-1221` then reads `_getTotalDebt` on the UPDATED Trove. By the block a
+transaction executes in, the Trove owes more than the preview read, so an offer of exactly `D`
+arrives as a **partial** leaving dust, dust is far below `minNetDebt`, and it cancels.
+
+The 1000 case sweep found it as two `FALSE_VIABLE` mismatches, both `redeemBand=WHOLE_TROVE`, which
+is exactly the band added in this wave to cover full consumption. Probed directly on a fork by
+sending rather than simulating:
+
+```
+PROBE target=0xDA04759E54728B6636Fe48F7c9795c7B609bAaAa netDebt(read)=2008463782732775139373
+PROBE preview at whole: viable=true redeemable=2008463782732775139373
+PROBE SEND whole            -> THREW RedemptionFailed
+PROBE SEND whole + 1 MUSD   -> status=success
+```
+
+**So the preview was wrong, and its own harness caught it before a user did.** `nextViableAmount`
+now carries `G`, sized as 600 seconds of interest on the Trove's entire debt at its rate. 600 is not
+a number chosen to feel safe: it is the contract's own allowance for accrual where it bounds a
+partial hint (`:1276-1285`). Overshooting costs nothing, because the excess spills to the next Trove
+and a cancellation there cannot revert the call once the first Trove has been drawn (`:406-408`).
+
+**The methodological finding is the durable one.** A simulation and a send are not the same
+experiment against a contract that mutates state before it reads it, and this whole programme had
+been treating them as interchangeable. Every remaining redemption claim in this file was re-checked
+against that distinction; the three REVERT rows above and the live pair below were all taken by
+sending, so they stand.
 
 ### Is the helper wrong, or only our use of it
 
@@ -3109,8 +3151,9 @@ amount.** So the fix is ours entirely, and it is not a workaround for a protocol
 
 `previewRedeem` walks the sorted list the way the LOOP does, and reports what a single call will
 actually redeem, with both edges of the gap named so a caller can move to either side:
-`maxWithoutConsuming` is `D - M` and `nextViableAmount` is `D`. `PARTIAL_BREACHES_DEBT_FLOOR` is
-the reason that had no field before.
+`maxWithoutConsuming` is `D - M` and `nextViableAmount` is `D + G`. `PARTIAL_BREACHES_DEBT_FLOOR` is
+the reason that had no field before, and `accrualMargin` reports `G` so the offset is inspectable
+rather than folded silently into a total.
 
 **The write path prechecks it**, which is a deliberate exception to the usual judgment. Everywhere
 else a revert the caller could have inspected is tolerable. Here **the blocking condition lives in
@@ -3134,9 +3177,12 @@ edge + 1 MUSD: RedemptionBreachesDebtFloor, nonce 37 before and after
 ```
 
 **And the generator can now construct the state**, which is the rule since MK-042: cases carry a
-`RedeemBand` of `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP` or `WHOLE_TROVE`, computed from the
-REAL first eligible Trove at run time rather than a seeded fixture, because a redemption targets the
-lowest ICR Trove system wide and a fixture cannot reliably be that one.
+`RedeemBand` of `WITHIN_HEADROOM`, `AT_HEADROOM`, `IN_THE_GAP`, `AT_NET_DEBT` or `WHOLE_TROVE`,
+computed from the REAL first eligible Trove at run time rather than a seeded fixture, because a
+redemption targets the lowest ICR Trove system wide and a fixture cannot reliably be that one.
+`AT_NET_DEBT` exists only because of the correction above: it offers exactly the net debt as read,
+which must be refused, and keeps that pinned against the chain rather than against the evaluator's
+own arithmetic.
 
 ---
 

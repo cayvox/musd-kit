@@ -441,13 +441,19 @@ the payload diff that established it: `FINDINGS.md`, MK-037.
 ### Sizing a redemption: use `previewRedeem`, not `truncatedAmount` (MK-048)
 
 **The amounts a redemption accepts are not an interval. There is a gap.** For the first eligible
-Trove, the one with the lowest ICR at or above MCR, with net debt `D` and the live floor `M`:
+Trove, the one with the lowest ICR at or above MCR, with net debt `D` as read, the live floor `M`,
+and the interest `G` that Trove accrues before your transaction lands:
 
 | amount | outcome |
 |---|---|
 | `A <= D - M` | **works.** A partial inside that Trove's headroom |
-| `D - M < A < D` | **reverts.** The whole call, not a smaller redemption |
-| `A >= D` | **works.** The Trove is consumed whole, a branch with no floor check |
+| `D - M < A < D + G` | **reverts.** The whole call, not a smaller redemption |
+| `A >= D + G` | **works.** The Trove is consumed whole, a branch with no floor check |
+
+**`D` itself is inside the gap, not above it.** The contract accrues interest on that Trove before
+it sizes your lot (`:366`, then `:1218-1221`), so by the time your transaction executes the Trove
+owes more than you read, and an offer of exactly `D` arrives as a partial that leaves dust. Use
+`nextViableAmount`, which already carries `G`, rather than computing the net debt yourself.
 
 **The binding quantity is another account's headroom, not your balance**, which is why no amount of
 inspecting your own position tells you the answer. From `mezo-org/musd`, `TroveManager.sol`:
@@ -459,7 +465,8 @@ was drawn. Consuming the Trove whole takes `:1252` instead, which never reaches 
 const p = await musd.previewRedeem({ redeemer, amount });
 if (!p.viable && p.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR') {
   p.maxWithoutConsuming; // the largest amount below the gap
-  p.nextViableAmount;    // the smallest amount above it, the Trove's whole net debt
+  p.nextViableAmount;    // the smallest amount above it: net debt PLUS the accrual margin
+  p.accrualMargin;       // the margin itself, if you want to see the offset
 }
 p.redeemable;            // what a single call will ACTUALLY redeem
 ```

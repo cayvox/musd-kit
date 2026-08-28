@@ -296,7 +296,7 @@ export class RedemptionBreachesDebtFloor extends MusdError {
     super(
       Codes.REDEMPTION_BREACHES_DEBT_FLOOR,
       known
-        ? `Redeeming ${context.requested ?? 'this amount'} would take the first eligible Trove's net debt below the minimum, so the contract cancels the partial and the whole call reverts. Redeem at most ${context.maxWithoutConsuming}, or at least ${context.nextViableAmount} to consume that Trove whole. The limit is that Trove's headroom above the debt floor, not your balance.`
+        ? `Redeeming ${context.requested ?? 'this amount'} would take the first eligible Trove's net debt below the minimum, so the contract cancels the partial and the whole call reverts. Redeem at most ${context.maxWithoutConsuming}, or at least ${context.nextViableAmount} to consume that Trove whole. The larger figure already carries a margin for the interest that Trove accrues before this lands, so offering exactly its net debt is NOT enough. The limit is that Trove's headroom above the debt floor, not your balance.`
         : 'This redemption would take the first eligible Trove below the minimum net debt, which cancels the partial and reverts the call.',
       context ? { context } : {},
     )

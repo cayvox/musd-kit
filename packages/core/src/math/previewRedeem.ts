@@ -36,6 +36,24 @@ import type { MathDeps } from './deps'
  *
  * That gap is what no field in this SDK expressed, and it is why a caller could not foresee the
  * revert: the blocking condition lives in SOMEONE ELSE'S position.
+ *
+ * **The upper edge is not `D`, it is `D` plus an accrual margin, and that correction came from the
+ * sweep rather than from reading.** `_redeemCollateralFromTrove` sizes the lot against
+ * `_getTotalDebt` read AFTER `_updateTroveInterest` has run on the target (`:366`, `:1218-1221`),
+ * so by the block a transaction executes in, the Trove owes more than this preview read. An offer
+ * of exactly `D` is then a partial leaving dust, dust is below the floor, and it cancels.
+ *
+ * The line above claiming `netDebt exactly SUCCEEDS` was measured with `simulateContract`, which is
+ * an `eth_call` at the current block: no block is mined, so no interest accrues, and the equality
+ * holds. Sending instead of simulating shows the opposite. Measured on a fork against the real
+ * deployment: offering exactly the net debt THREW, and offering one MUSD more succeeded. Only the
+ * three amounts inside the gap were ever confirmed by sending.
+ *
+ * The margin is 600 seconds of interest on the Trove's entire debt, which is the contract's own
+ * allowance for accrual where it bounds a partial hint (`:1276-1285`) rather than a number chosen
+ * to feel safe. Offering more than the net debt is always safe: the excess spills to the next
+ * Trove, and a cancellation there cannot revert the call, because the first Trove was already
+ * drawn and `:406-408` only requires that something was.
  */
 
 /** Why a redemption would be refused. Machine readable, in contract call order. */
@@ -84,10 +102,23 @@ export interface RedemptionPreview {
    */
   maxWithoutConsuming: bigint
   /**
-   * `firstTroveNetDebt`. **The smallest amount above the gap that works**, because at exactly this
-   * the Trove is consumed whole and the floor check does not run (`TroveManager.sol:1252`).
+   * **The smallest amount above the gap that works**, which is `firstTroveNetDebt` PLUS
+   * {@link accrualMargin} and NOT the net debt itself.
+   *
+   * At this amount the Trove is consumed whole, which takes a branch with no hint check and no
+   * floor check (`TroveManager.sol:1252`). The margin is there because the contract sizes the lot
+   * against the debt at EXECUTION, after interest accrues (`:366`, `:1218-1221`), so an offer of
+   * exactly the net debt read here arrives as a partial and cancels. Confirmed by sending rather
+   * than simulating: exactly the net debt reverts, one MUSD more succeeds.
    */
   nextViableAmount: bigint
+  /**
+   * The interest the first eligible Trove accrues in 600 seconds, which is what
+   * {@link nextViableAmount} adds on top of the net debt.
+   *
+   * 600 is the contract's own staleness window for accrual (`TroveManager.sol:1276-1285`).
+   */
+  accrualMargin: bigint
   /** The live `minNetDebt()` floor the cancellation compares against. */
   minNetDebt: bigint
   /** The caller's MUSD balance, which the contract checks at `:320`. */
@@ -111,6 +142,8 @@ export interface PreviewRedeemParams {
 /** One eligible Trove, as the walk found it. */
 export interface EligibleTrove {
   owner: Address
+  /** Live entire debt, principal plus accrued interest. Sizes the accrual margin. */
+  entireDebt: bigint
   /** Entire debt minus the 200 MUSD gas reserve. */
   netDebt: bigint
 }
@@ -122,11 +155,23 @@ export interface EvaluateRedeemInput {
   minNetDebt: bigint
   tcr: bigint
   price: bigint
+  /** The redeemer's interest rate in basis points, used only to size the accrual margin. */
+  interestRateBps: bigint
   /**
    * Eligible Troves in the order the loop visits them, lowest ICR first, with those below MCR
    * already skipped exactly as `:341-349` and `:375-378` skip them.
    */
   eligible: EligibleTrove[]
+}
+
+/** The divisor the protocol's interest accrual uses. */
+const SECONDS_PER_YEAR = 365n * 24n * 3600n
+/** The contract's own allowance for accrual when it bounds a partial hint (`:1276-1285`). */
+const ACCRUAL_WINDOW_SECONDS = 600n
+
+/** Interest a Trove accrues over the margin window, at the given rate. */
+function marginFor(entireDebt: bigint, interestRateBps: bigint): bigint {
+  return (entireDebt * interestRateBps * ACCRUAL_WINDOW_SECONDS) / (10_000n * SECONDS_PER_YEAR)
 }
 
 /**
@@ -137,11 +182,16 @@ export interface EvaluateRedeemInput {
  * only the amounts a fork happens to produce.
  */
 export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
-  const { amount, musdBalance, minNetDebt, tcr, price, eligible } = input
+  const { amount, musdBalance, minNetDebt, tcr, price, interestRateBps, eligible } = input
 
   const first = eligible[0]
   const firstTroveNetDebt = first?.netDebt ?? 0n
   const maxWithoutConsuming = firstTroveNetDebt > minNetDebt ? firstTroveNetDebt - minNetDebt : 0n
+  // The Trove owes more by the block this lands in, so consuming it whole costs more than the net
+  // debt read here. Without this the upper edge is off by exactly the accrual, and the sweep
+  // caught it as a FALSE_VIABLE twice in a thousand cases.
+  const accrualMargin = marginFor(first?.entireDebt ?? 0n, interestRateBps)
+  const nextViableAmount = firstTroveNetDebt > 0n ? firstTroveNetDebt + accrualMargin : 0n
 
   const reasons: RedeemBlockReason[] = []
   // In the order `redeemCollateral` checks them (`:318`, `:319`, `:320`), so the binding
@@ -159,13 +209,14 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   for (let i = 0; i < eligible.length && remaining > 0n; i++) {
     const trove = eligible[i]
     if (trove === undefined) break
-    const lot = remaining < trove.netDebt ? remaining : trove.netDebt
-    if (lot < trove.netDebt) {
-      // A partial. It cancels when the resulting net debt falls below the floor.
-      if (trove.netDebt - lot < minNetDebt) {
-        if (i === 0) cancelledOnFirst = true
-        break
-      }
+    // Consuming a Trove whole needs its net debt PLUS the margin, because the contract compares
+    // against the debt at execution rather than the debt read here. Anything short of that is a
+    // partial, and a partial that leaves less than the floor cancels and BREAKS.
+    const consumesWhole = remaining >= trove.netDebt + marginFor(trove.entireDebt, interestRateBps)
+    const lot = consumesWhole ? trove.netDebt : remaining
+    if (!consumesWhole && trove.netDebt - lot < minNetDebt) {
+      if (i === 0) cancelledOnFirst = true
+      break
     }
     redeemed += lot
     remaining -= lot
@@ -185,7 +236,8 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
     firstEligibleTrove: first?.owner ?? null,
     firstTroveNetDebt,
     maxWithoutConsuming,
-    nextViableAmount: firstTroveNetDebt,
+    nextViableAmount,
+    accrualMargin,
     minNetDebt,
     musdBalance,
     tcr,
@@ -216,7 +268,7 @@ export async function previewRedeem(
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
   const st = { address: addresses.sortedTroves, abi: sortedTrovesAbi } as const
 
-  const [tcr, musdBalance, minNetDebt] = await Promise.all([
+  const [tcr, musdBalance, minNetDebt, interestRateBps] = await Promise.all([
     publicClient.readContract({ ...tm, functionName: 'getTCR', args: [price] }),
     publicClient.readContract({
       address: addresses.musd,
@@ -225,6 +277,14 @@ export async function previewRedeem(
       args: [redeemer],
     }),
     deps.getMinNetDebt(),
+    // The system rate, read off the redeemer's own Trove when there is one. Every Trove in this
+    // deployment carries the same rate; this only sizes a safety margin, so the fallback below is
+    // the protocol default rather than a computation that could fail the whole preview.
+    publicClient
+      .readContract({ ...tm, functionName: 'getTroveInterestRate', args: [redeemer] })
+      // `uint16` on the ABI, so it arrives as a number and has to be widened deliberately.
+      .then((rate) => (BigInt(rate) > 0n ? BigInt(rate) : 100n))
+      .catch(() => 100n),
   ])
 
   // Start at the tail, the lowest ICR, and skip everything under MCR exactly as `:341-349` does.
@@ -242,6 +302,7 @@ export async function previewRedeem(
     if (icr >= MCR) {
       eligible.push({
         owner: cursor,
+        entireDebt,
         netDebt: entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n,
       })
       // Stop as soon as the accumulated net debt covers the request: nothing beyond it can
@@ -252,5 +313,13 @@ export async function previewRedeem(
     cursor = await publicClient.readContract({ ...st, functionName: 'getPrev', args: [cursor] })
   }
 
-  return evaluateRedeem({ amount, musdBalance, minNetDebt, tcr, price, eligible })
+  return evaluateRedeem({
+    amount,
+    musdBalance,
+    minNetDebt,
+    tcr,
+    price,
+    interestRateBps,
+    eligible,
+  })
 }

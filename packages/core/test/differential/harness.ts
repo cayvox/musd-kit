@@ -176,7 +176,9 @@ async function redeemCase(
         ? headroom
         : c.redeemBand === 'IN_THE_GAP'
           ? headroom + 1n
-          : whole
+          : c.redeemBand === 'AT_NET_DEBT'
+            ? probe.firstTroveNetDebt
+            : whole
   if (amount <= 0n) {
     return {
       case: c,
@@ -200,7 +202,7 @@ async function redeemCase(
   const mismatch = compare(
     preview.viable,
     attempt,
-    `band=${c.redeemBand} amount=${amount} headroom=${headroom} whole=${whole} reasons=[${preview.reasons.join(',')}]`,
+    `band=${c.redeemBand} amount=${amount} headroom=${headroom} netDebt=${probe.firstTroveNetDebt} whole=${whole} margin=${probe.accrualMargin} reasons=[${preview.reasons.join(',')}]`,
   )
   return {
     case: c,

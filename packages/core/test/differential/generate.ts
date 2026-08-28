@@ -60,7 +60,14 @@ export type RedeemBand =
   | 'AT_HEADROOM'
   /** One wei past the headroom. The first amount in the gap, which REVERTS. */
   | 'IN_THE_GAP'
-  /** Exactly the Trove's whole net debt. Consumes it, via a branch with no floor check. */
+  /**
+   * Exactly the Trove's net debt as READ. The upper edge the first derivation put the boundary at,
+   * and the band that proved it wrong: the debt accrues before the transaction lands, so this
+   * arrives as a partial and REVERTS. Kept as its own band so the correction stays pinned against
+   * the chain rather than only against the evaluator's unit tests.
+   */
+  | 'AT_NET_DEBT'
+  /** The preview's reported upper edge, net debt plus the accrual margin. Consumes the Trove. */
   | 'WHOLE_TROVE'
 
 export type Precondition =
@@ -241,7 +248,13 @@ export function generateCases(
     // the ratio and capacity boundaries the bands were weighted for.
     // MK-048. Every band is generated, weighted evenly, because each lands on a different side
     // of the gap and the one that mattered was a single wei wide.
-    const bands: RedeemBand[] = ['WITHIN_HEADROOM', 'AT_HEADROOM', 'IN_THE_GAP', 'WHOLE_TROVE']
+    const bands: RedeemBand[] = [
+      'WITHIN_HEADROOM',
+      'AT_HEADROOM',
+      'IN_THE_GAP',
+      'AT_NET_DEBT',
+      'WHOLE_TROVE',
+    ]
     const redeemBand = bands[Math.floor(rnd() * bands.length)] as RedeemBand
     const mismatched = rnd() < 0.2
     const precondition: Precondition =
