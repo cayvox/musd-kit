@@ -1,11 +1,10 @@
 import { http, createWalletClient } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { createMusdClient, getAddresses, troveManagerAbi } from '../src'
+import { createMusdClient } from '../src'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
 import { testAccount } from './harness/openTroveRaw'
 
-const T = getAddresses(31611)
 const MUSD = 10n ** 18n
 const BTC = 10n ** 18n
 
@@ -38,7 +37,6 @@ describe('MK-051, the withdrawable maximum against the chain and against time', 
       publicClient: fork.publicClient,
       walletClient: wallet,
     })
-    const tm = { address: T.troveManager, abi: troveManagerAbi } as const
 
     const outer = await fork.testClient.snapshot()
     try {
