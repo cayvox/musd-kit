@@ -83,7 +83,7 @@ claim about it was not).
 | MK-045 | A Trove cannot be closed with only the MUSD it drew, so a self funded run cannot end clean | S3 | documented, protocol property |
 | MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
-| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | fixed, previewed and prechecked |
+| MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | **closed.** Previewed, prechecked, and the preview agrees with the chain in both directions across 83 executed redemption cases |
 | MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | open, documented, needs retry |
 | MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented |
 
@@ -2992,9 +2992,15 @@ close a seeded position.
 
 ## MK-048 · `truncatedAmount` reports redeemable amounts the chain refuses
 
-**Class** S2 · **Status** fixed. Previewed by `previewRedeem`, prechecked on the write path, and
-verified live in both directions · **Found by the live testnet run, on the only chain where another
-account's Trove sits near the debt floor**
+**Class** S2 · **Status** CLOSED. Previewed by `previewRedeem`, prechecked on the write path,
+verified live at the lower edge, and confirmed in both directions by a sweep that first proved the
+upper edge wrong · **Found by the live testnet run, on the only chain where another account's Trove
+sits near the debt floor**
+
+**The bar for closing it was that the preview agrees with the chain in both directions, and it now
+does**: across 83 executed redemption cases from seed `20260826`, zero FALSE_VIABLE and zero
+FALSE_BLOCKED, including 19 that offer exactly the net debt as read and are refused. The numbers are
+in full at the end of this entry.
 
 **What happens.** `redeem` reports `truncatedAmount`, taken from the protocol's own
 `getRedemptionHints`, as the amount that will be redeemed. On live Mezo testnet that number is wrong
@@ -3184,6 +3190,46 @@ redemption targets the lowest ICR Trove system wide and a fixture cannot reliabl
 `AT_NET_DEBT` exists only because of the correction above: it offers exactly the net debt as read,
 which must be refused, and keeps that pinned against the chain rather than against the evaluator's
 own arithmetic.
+
+### The sweep that closes it
+
+**Seed `20260826`, 1000 cases, four slices of 250, a fresh anvil per slice at pinned block
+15043414.** Reported by direction, because a preview that says go when the chain refuses and one
+that says stop when the chain would accept are different defects:
+
+| slice | ran | skipped | FALSE_VIABLE | FALSE_BLOCKED | NUMBERS | threw | exit |
+|---|---|---|---|---|---|---|---|
+| 0..250 | 250 | 21 | 0 | 0 | 0 | 0 | 0 |
+| 250..500 | 250 | 22 | 0 | 0 | 0 | 0 | 0 |
+| 500..750 | 250 | 27 | 0 | 0 | 0 | 0 | 0 |
+| 750..1000 | 250 | 19 | 0 | 0 | 0 | 0 | 0 |
+
+**And a fifth run over the redemption cases alone, from the same generated set**, because the
+headline count could not answer the question that mattered. A skip carries a reason and not an
+operation, so "1000 cases, 89 skipped" does not say how many REDEMPTIONS reached the chain, and a
+band that never ran proves nothing:
+
+```
+MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+
+ran=123  skipped=40   FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0  exit=0
+  AT_NET_DEBT      ran=19  skipped=10
+  AT_HEADROOM      ran=19  skipped=6
+  WITHIN_HEADROOM  ran=17  skipped=12
+  WHOLE_TROVE      ran=17  skipped=6
+  IN_THE_GAP       ran=11  skipped=6
+```
+
+**The 19 in the `AT_NET_DEBT` row is the evidence that closes this.** Nineteen times the preview
+said the net debt as read is NOT redeemable and nineteen times the chain agreed, on a chain where
+the previous version of this preview would have said the opposite.
+
+**Why 40 of 123 skipped, which is a high rate and is not hidden.** Redemption skips for a reason no
+other operation has. At the extreme band's price multipliers of 25 and 50 percent, and at the
+boundary band's 66, every Trove in the fork's list falls below MCR, so the loop finds nothing, there
+is no first eligible Trove, and there is no headroom for a band to sit either side of. The rest are
+the ordinary fixture skips the whole sweep has: a seeding open that was not itself viable, or an
+account that does not hold what the band needs.
 
 ---
 
