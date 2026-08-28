@@ -438,6 +438,32 @@ estimate fails against a cap it supplied itself, while the write succeeds. It no
 with the address. Same answer, one fewer round trip, no self imposed cap. Full mechanism and
 the payload diff that established it: `FINDINGS.md`, MK-037.
 
+### A redemption can be refused for an amount the hints call redeemable (MK-048)
+
+`redeem` returns `truncatedAmount`, taken from the protocol's `getRedemptionHints`. **It reports
+amounts the chain then refuses**, and the whole redemption reverts rather than redeeming less.
+
+Measured on live Mezo testnet, hints computed fresh for each amount immediately before simulating:
+
+| requested | `truncatedAmount` says | chain |
+|---|---|---|
+| 50 MUSD | 50.00 | `TroveManager: Unable to redeem any amount` |
+| 20 MUSD | 20.00 | `TroveManager: Unable to redeem any amount` |
+| 5 MUSD | 5.00 | succeeds |
+
+**The binding quantity is not your balance, it is the target Trove's headroom above the debt floor.**
+A redemption that does not consume a whole Trove is a partial against the first eligible one, and
+`_redeemCollateralFromTrove` cancels a partial when the resulting net debt would fall below
+`minNetDebt` (`TroveManager.sol:1299-1306`). A cancelled partial breaks the loop (`:392`), leaving
+nothing drawn, which reverts (`:406-408`). On the trove the hints pointed at, that headroom was
+**7.52 MUSD**, which sits exactly between the 5 that worked and the 20 that did not.
+
+`getRedemptionHints` does not model that cancellation, so `truncatedAmount` over-reports.
+
+**What to do about it today:** size redemptions small, or be ready to catch `RedemptionFailed` and
+retry smaller. There is no preview for `redeem` yet; building one that walks the list the way the
+contract does is tracked as MK-048.
+
 ### Closing costs more MUSD than the position ever gave you (MK-045)
 
 **A Trove cannot be closed with only the MUSD it drew.** This is a property of the protocol, not of
