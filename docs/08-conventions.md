@@ -155,6 +155,7 @@ selected window.
 | 8 | **Read the CI run for the branch.** `gh run list --branch <branch> --workflow CI` then `gh run view --job <id> --log` for every job that is not green | The run link, its conclusion, and the first real failure in any red job. Local green does not stand in for this |
 | 9 | **Read the CI run on `main` after the merge, WAITING for it to exist.** `gh run list --branch main --workflow CI --limit 5 --json conclusion,headSha` and match the `headSha` against `git rev-parse HEAD`. An absent run means **not yet**, not never: poll until it appears, and only report absence as a finding if it persists | The run link, its conclusion, and that its `headSha` is the tip rather than an ancestor. **A red `main` blocks the next wave**: repair it first, and register the cause before fixing it |
 | 10 | **Commit the instrument for every measurement you intend to cite**, before citing it. A number quoted in a finding, a pull request body or the documentation is only citable if the code that produced it is in the repository and someone else can run it, and the command is recorded beside the number | The command, verbatim, next to every number. A measurement whose instrument is not committed is not reportable as a measurement; see the labels below |
+| 11 | **A boundary that moves with time is established by SENDING, across the delay a caller will actually have, and is reported with that delay.** A simulation evaluates at the current block; a transaction executes in a later one. So a value read at block N and simulated at block N is an exact equality that passes, and the same value sent is refused, because the contract accrues before it reads (`TroveManager.sol:366` then `:1218-1221`). Vary the elapsed time, hold the method constant, and state the window the answer holds for. **A number obtained by simulation is labelled `simulated` wherever it is cited** and cannot be cited as chain behaviour | The ladder: the amount, the delays tried, and the outcome at each. A margin sized for a window is asserted at BOTH ends, the delay it covers and the delay it does not |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
@@ -247,6 +248,7 @@ is written down rather than left to the reader:
 | **Reproducible** | The instrument is committed and anyone can re-run it | The exact command, next to the number. `MK_GAS_LAB=1 pnpm test:fork` is a command; "measured on a fork" is not |
 | **Observed once** | A specific execution that by its nature cannot be repeated: a CI run, a traced transaction, a chain read at a block | A link or an identifier that pins it. A run URL, a transaction hash, a block number. The words **observed once** appear in the text |
 | **Observed once, unlinked** | The same, but the artifact was never preserved: a local run whose log is gone, a trace nobody saved | Say that it cannot be re-checked, in place. **Admissible only for observations recorded before this rule existed.** A new observation is preserved when it is made, or it is not citable |
+| **Simulated** | Produced by `simulateContract`, `eth_call`, `estimateGas` or any other read that mines no block | The word **simulated**, in the same sentence as the number, and the block it ran at. Admissible for what a call returns at a block; **not** admissible as chain behaviour for anything the contract mutates before it reads (step 11) |
 | **Unestablished** | Inferred, or its instrument is gone, or its premise turned out to be wrong | Say so, in place, and keep the number rather than deleting it. A reader has to be able to see what was believed and why it is not evidence |
 
 The fourth label exists because the audit that first applied this rule found real, load bearing
@@ -264,6 +266,34 @@ buys is that a reader can tell it apart from a rate, which is a claim about a po
 an instrument. In MK-035 the traced growth is **observed once** and still justifies the margin,
 while the 2 in 40 rate built on top of it is **unestablished**. One entry, two labels, and the
 difference is the whole point.
+
+**The fifth label is MK-048's, and it cost a whole wave.** The redemption gap's upper edge was
+derived from `TroveManager.sol:1252`, measured on a fork with `simulateContract`, and the
+measurement agreed. `packages/core/test/redeem-boundary.fork.test.ts` is the instrument that shows
+why, and it was built because the first explanation offered for the failure was too broad to be
+useful. Every row starts from the same snapshot, with only the delay between the read and the
+execution varied:
+
+```
+warp      0s  netDebt           simulate=ACCEPTED send=success
+warp      1s  netDebt           simulate=REFUSED  send=reverted
+warp     60s  netDebt           simulate=REFUSED  send=reverted
+warp    600s  netDebt           simulate=REFUSED  send=reverted
+warp   3600s  netDebt           simulate=REFUSED  send=reverted
+```
+
+**The first framing of this rule said a simulation and a send are not the same experiment, and the
+ladder shows that is not quite it.** At one second they agree: both refuse. At zero they agree the
+other way: both accept. The variable is the elapsed time, not the method.
+
+What makes the method matter is structural rather than semantic. **A simulation evaluates at the
+current block, and a transaction cannot.** It lands at least one block later, so the delay a
+simulation reports on is a delay no caller can have. That is why a boundary measured by simulating
+at the block the value was read at is not wrong about anything except the only question worth
+asking.
+
+The label is what makes this survive review: a reader who sees `simulated` beside a boundary knows
+to ask what happens a block later, and a reader who sees a bare number does not.
 
 **Do not soften a finding because its number turned out to be weaker than it read.** The finding
 stands on the evidence that remains. The record only has to say what that evidence is.

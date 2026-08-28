@@ -286,23 +286,49 @@ Then write one file importing a value, a type and a hook from each package, and 
 
 **The first row is the one that matters**, and it is the only one MK-040 failed.
 
-**All four rows assume `skipLibCheck: true`, and that was an unstated precondition until it was
-measured.** With `skipLibCheck: false` the CommonJS rows do not pass, and the reason is upstream
-rather than ours: `viem` is ESM only, so a `.d.cts` that references its types produces `TS1479`
-under `moduleResolution: node16`, and the same run reports `TS1542` from `@mezo-org/chains` and a
-long tail from `ox`, which is one of viem's own dependencies. Measured on the 0.2.0 tarballs:
+**The gate is a script now, and it prints the configuration it ran under beside every result.**
 
-```
-skipLibCheck: true   all four rows exit 0
-skipLibCheck: false  cjs/node16 fails, 2 errors in @musd-kit dist/index.d.cts, the rest upstream
+```sh
+pnpm gate:packaging                        # the four gated rows
+node scripts/packaging-gate.mjs --strict   # the same, plus skipLibCheck:false, reported not gated
 ```
 
-Nothing here is fixable inside this repository without dropping the CommonJS build, and
-`skipLibCheck: true` is what the TypeScript starter templates and every framework preset set. It is
-recorded because a gate that says "all four exit 0" without naming the configuration is a gate that
-claims more than it checked.
+It builds, packs the real tarballs, installs them into a throwaway consumer outside the workspace,
+typechecks a probe that touches a value, a type and a hook from each package, then reports runtime
+resolution and the tarball contents. Measured on the 0.2.0 tarballs:
 
-Also confirm both runtimes resolve, since a types fix must not break them:
+```
+configuration: skipLibCheck=true, strict=true, target=es2022
+  (absent, CommonJS)  node16  node16    PASS
+  (absent, CommonJS)  esnext  bundler   PASS
+  module              node16  node16    PASS
+  module              esnext  bundler   PASS
+GATE PASSED, under the configuration printed above.
+
+configuration: skipLibCheck=false, strict=true, target=es2022
+  (absent, CommonJS)  node16  node16    FAIL   TS1542 from @mezo-org/chains
+  (absent, CommonJS)  esnext  bundler   PASS
+  module              node16  node16    FAIL   TS1542 from @mezo-org/chains
+  module              esnext  bundler   PASS
+```
+
+**All four gated rows assume `skipLibCheck: true`, and that was an unstated precondition until the
+script was written to print it.** A gate that says "all four exit 0" without naming the
+configuration claims more than it checked.
+
+**What fails without it is both `node16` rows, not the CommonJS ones**, and that distinction decides
+the question below. `@mezo-org/chains@0.0.1` ships no `type` field and no `exports` map, so
+`moduleResolution: node16` resolves its types as CommonJS, and they import from `viem`, which is ESM
+only. That is `TS1542`, and it happens whatever the consumer sets `type` to. This package
+contributes `TS1479` from its own `dist/index.d.cts` for the same upstream reason.
+
+**The CommonJS build is worth keeping, and the reason is that it is not what fails.** `require()`
+resolves and exports 100 names. The failing axis is `moduleResolution`, not output format, so
+dropping the CommonJS build would not turn a single failing row green and would break every
+`require()` consumer. The upstream fix is `@mezo-org/chains` shipping dual types, or viem's types
+becoming resolvable under `node16`, and neither is ours. **Decision recorded, not acted on.**
+
+Also confirm both runtimes resolve, which the script does for you:
 
 ```sh
 node -e "console.log(Object.keys(require('@musd-kit/core')).length)"

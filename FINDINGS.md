@@ -85,7 +85,9 @@ claim about it was not).
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
 | MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | **closed.** Previewed, prechecked, and the preview agrees with the chain in both directions across 83 executed redemption cases |
 | MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | open, documented, needs retry |
-| MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented |
+| MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented, deferred to 0.2.1 |
+| MK-051 | `maxWithdrawableCollateral` reports a figure that stops being withdrawable one second later, and the ledger recorded a preview-against-preview check as chain verification | S3 | open, documented, deferred to 0.2.1. The provenance claim is corrected |
+| MK-052 | The live run's optional redeem step could kill the run and leave a position open, because a reverted receipt reached `process.exit` instead of the `catch` that promised to absorb it | S2 | fixed. It happened, on a real run, and cost a close |
 
 ---
 
@@ -3101,8 +3103,9 @@ netDebt exactly  2008463779941643739864   hint said the same   SUCCEEDS   <- ART
 netDebt + 1 wei                           hint said the same   SUCCEEDS   <- ARTEFACT, see below
 ```
 
-The three REVERT rows and the headroom row were later reconfirmed by sending. The last two were not,
-and they do not hold; why is the next section.
+The three REVERT rows and the headroom row were later reconfirmed by sending. The last two were
+taken with the read and the evaluation at the SAME block, which is a delay no caller can have; why
+that matters is the next section.
 
 And again on LIVE testnet at pinned block 15164949, where `edge - 1` and `edge` succeed while
 `edge + 1 wei` and `edge + 1 MUSD` revert.
@@ -3120,27 +3123,49 @@ transaction executes in, the Trove owes more than the preview read, so an offer 
 arrives as a **partial** leaving dust, dust is far below `minNetDebt`, and it cancels.
 
 The 1000 case sweep found it as two `FALSE_VIABLE` mismatches, both `redeemBand=WHOLE_TROVE`, which
-is exactly the band added in this wave to cover full consumption. Probed directly on a fork by
-sending rather than simulating:
+is exactly the band added in this wave to cover full consumption. The first probe of it went through
+`client.redeem`, which simulates before it sends, so it could not separate a refusal by the
+simulation from a refusal by the chain, and the explanation first written from it was too broad.
+
+**The instrument is committed**: `packages/core/test/redeem-boundary.fork.test.ts`, run with
+`pnpm test:fork packages/core/test/redeem-boundary.fork.test.ts`. Every row starts from the same
+snapshot and varies only the delay between reading the net debt and executing:
 
 ```
-PROBE target=0xDA04759E54728B6636Fe48F7c9795c7B609bAaAa netDebt(read)=2008463782732775139373
-PROBE preview at whole: viable=true redeemable=2008463782732775139373
-PROBE SEND whole            -> THREW RedemptionFailed
-PROBE SEND whole + 1 MUSD   -> status=success
+                                  simulate  send
+warp      0s  netDebt             ACCEPTED  success
+warp      0s  netDebt + margin    ACCEPTED  success
+warp      1s  netDebt             REFUSED   reverted
+warp      1s  netDebt + margin    ACCEPTED  success
+warp     60s  netDebt             REFUSED   reverted
+warp     60s  netDebt + margin    ACCEPTED  success
+warp    600s  netDebt             REFUSED   reverted
+warp    600s  netDebt + margin    ACCEPTED  success
+warp   3600s  netDebt             REFUSED   reverted
+warp   3600s  netDebt + margin    REFUSED   reverted
+warp  86400s  netDebt             REFUSED   reverted
+warp  86400s  netDebt + margin    REFUSED   reverted
 ```
 
-**So the preview was wrong, and its own harness caught it before a user did.** `nextViableAmount`
-now carries `G`, sized as 600 seconds of interest on the Trove's entire debt at its rate. 600 is not
-a number chosen to feel safe: it is the contract's own allowance for accrual where it bounds a
-partial hint (`:1276-1285`). Overshooting costs nothing, because the excess spills to the next Trove
-and a cancellation there cannot revert the call once the first Trove has been drawn (`:406-408`).
+**One second of delay is enough to make the bare net debt fail.** That is why `nextViableAmount`
+carries `G`, sized as 600 seconds of interest on the Trove's entire debt at its rate. 600 is the
+contract's own allowance for accrual where it bounds a partial hint (`:1276-1285`), and the ladder
+bounds the claim at both ends: **the margin holds to 600 seconds and does NOT hold at an hour.** A
+caller who expects a longer delay should offer more, and overshooting costs nothing, because the
+excess spills to the next Trove and a cancellation there cannot revert the call once the first Trove
+has been drawn (`:406-408`).
 
-**The methodological finding is the durable one.** A simulation and a send are not the same
-experiment against a contract that mutates state before it reads it, and this whole programme had
-been treating them as interchangeable. Every remaining redemption claim in this file was re-checked
-against that distinction; the three REVERT rows above and the live pair below were all taken by
-sending, so they stand.
+The `warp 0s` row is reported and deliberately not asserted on: it depends on how many milliseconds
+the harness spends between the read and the send, and it has been observed both ways. **That
+instability is the finding rather than noise. A caller cannot reach zero elapsed time**, so the
+amount that works there is not an amount anyone can use.
+
+**The methodological finding is the durable one, and its first version was too broad.** It is not
+that a simulation and a send are different experiments: at one second they agree, and at zero they
+agree the other way. It is that **a simulation evaluates at the current block and a transaction
+cannot**, so a boundary measured by simulating at the block the value was read at answers a question
+no caller can ask. `docs/08-conventions.md` §10 step 11 is the rule this produced, and the
+`simulated` evidence label is what makes it visible in review.
 
 ### Is the helper wrong, or only our use of it
 
@@ -3233,6 +3258,123 @@ account that does not hold what the band needs.
 
 ---
 
+## MK-052 · The live run's "not fatal" redeem step was fatal, and it left a Trove open
+
+**Class** S2 · **Status** fixed · **Found by running it**, on the live testnet run that this wave
+was asked to redo
+
+**The promise.** `scripts/testnet-e2e.ts` wraps its optional redemption in a `try` and says so in
+capitals: a failure there is "RECORDED, NOT FATAL", because redemption is the one step that races
+other participants on a shared chain, and "an optional, flag gated step must never cost the close."
+
+**The mechanism that broke it.** `waitOk` called `die()` on a reverted receipt, and `die()` calls
+`process.exit`. **`process.exit` is not an exception, so the `catch` never ran.** The comment
+described an intent the code could not carry out, and nothing tested the path, because until this
+wave the redemption step had never actually reverted mid-run.
+
+**It is not hypothetical.** It happened, on run 2 of 3 in this wave:
+
+```
+--- redeem ---
+  redeeming 1.269631779139279519 MUSD
+  redeem: 0x53da91c25b894fbec18561e58b7c19af8ef640d123caea8f4b9e7913b08fa7b9
+✗ redeem reverted (status=reverted) in 0x53da91c25b894fbec18561e58b7c19af8ef640d123caea8f4b9e7913b08fa7b9
+E2E_EXIT=1
+```
+
+The run ended there with a Trove open, carrying `2377.660551680821364149` MUSD of debt and
+`0.043515238411514662` BTC of collateral. It was recoverable, because the account happened to hold
+more MUSD than the close required, and run 3 closed it first
+(`0xd7dfb2725df0f86d813966eb7108c0d689dc95c71765069e2969c0843ef94ea5`, block 15168917). **Had the
+balance been tighter it would not have been**, because MK-045 means a Trove cannot be closed with
+only the MUSD it drew.
+
+**Why S2.** No money was lost and nothing was silently wrong. But this script is a release
+precondition, its whole design goal is that a run never strands a position, and it stranded one. A
+gate that fails in the specific way it advertises it cannot fail is worth more than an S3.
+
+**The fix.** `waitFor(hash, label, { fatal: false })` returns the outcome instead of exiting, and
+the redeem step uses it. `die()` is unchanged for every required step: a failed `openTrove` should
+still stop the run.
+
+Two things were fixed alongside it, both found while fixing this one:
+
+- **The step retries once**, with the amount and the hints recomputed, which is MK-049's documented
+  mitigation rather than a new idea. Never a loop.
+- **The `catch` must not `return`.** The first draft of the fix returned from the catch, which sits
+  in the main flow, so it would have skipped the close and reproduced this finding in a new place.
+  Caught before it ran; the code now carries a comment saying why.
+
+**And the redemption was sized wrongly, which is why the step had never exercised.** It asked for a
+tenth of the account's balance, which is a number about this account, when what a redemption can
+take is a number about someone else's Trove. On run 1 that was 221 MUSD against a headroom of 1.27,
+so the MK-048 precheck refused it and the step recorded a skip. It now sizes from
+`previewRedeem.maxWithoutConsuming`, and run 3 exercised a real redemption for the first time.
+
+---
+
+## MK-051 · The withdrawable maximum expires in a second, and the ledger overstated how it was checked
+
+**Class** S3 · **Status** open, documented, deferred to 0.2.1. The false provenance claim is
+corrected now · **Found by the provenance audit that followed MK-048**, asking which numbers in the
+record were established by simulation and cited as chain behaviour
+
+**Two defects, and the smaller one is the reason the larger one went unnoticed.**
+
+### The provenance claim was wrong
+
+`scripts/testnet-e2e.ts:426-431` calls this "the strongest single assertion in this script: the
+maximum the SDK reports must be ACCEPTED and one wei more must be REFUSED, on the real chain ...
+checked against the contract rather than against each other."
+
+`:435-439` then calls `previewWithdrawCollateral` twice, at the max and at the max plus one wei, and
+checks the verdicts. **Both are the SDK's own evaluator.** The chain saw neither amount: what was
+actually sent, at `:441`, is `max.amount / 4n`. The record at `:456` said "max accepted, max+1
+refused, on chain" and `docs/13-live-testnet-ledger.md` repeated it.
+
+The check is worth something. It is the closed form and the evaluator agreeing, which is what
+catches a closed form that drifts from its own preview. It is not the contract agreeing with either.
+
+### The quantity expires, which is MK-048's shape with the sign flipped
+
+The max is bounded by ICR against a debt that GROWS with interest, so unlike a redemption headroom,
+which grows and therefore only gets safer, this figure SHRINKS. Sent rather than previewed, from one
+snapshot, with only the delay varied
+(`packages/core/test/withdraw-max-boundary.fork.test.ts`, `pnpm test:fork`):
+
+```
+reported max=1711334453538389459 limitedBy=ICR
+
+warp      0s  half=success  max=success                        max+1wei=threw(InsufficientCollateral)
+warp      1s  half=success  max=threw(InsufficientCollateral)  max+1wei=threw(InsufficientCollateral)
+warp     60s  half=success  max=threw(InsufficientCollateral)  max+1wei=threw(InsufficientCollateral)
+warp    600s  half=success  max=threw(InsufficientCollateral)  max+1wei=threw(InsufficientCollateral)
+warp   3600s  half=success  max=threw(InsufficientCollateral)  max+1wei=threw(InsufficientCollateral)
+warp  86400s  half=success  max=threw(InsufficientCollateral)  max+1wei=threw(InsufficientCollateral)
+```
+
+The `half` column is a control, so a column of refusals cannot be read as a boundary when it is
+really the fixture failing. **One second is enough.** The reported maximum is accurate for the block
+it was computed at and for no block a caller can reach.
+
+**Why S3 rather than S2, and this is the material difference from MK-048.** The SDK refuses it
+BEFORE sending: the row says `threw(InsufficientCollateral)`, which is a typed error from the
+simulate-before-send path, not a mined revert. **No gas is spent and nothing is silently wrong.** A
+caller who offers the reported max gets an error naming the reason. MK-048 was S2 because the
+blocking condition lived in a Trove the caller could not inspect and the SDK had no field for it;
+here the caller's own position is the constraint and the error is accurate.
+
+**What would close it.** The same treatment MK-048's upper edge got, with the sign reversed: report
+the figure alongside the window it is good for, or subtract a margin so the reported number survives
+a stated delay. `maxWithdrawableCollateral` returning a number good for one block is defensible only
+if the docstring says so. Deferred to 0.2.1 with MK-050: changing a published field's value is not a
+release preparation edit, and the error path already protects the caller.
+
+**Corrected now, because it is a false claim rather than a design choice**: the script's comment and
+its record, and the ledger's row, say what was actually checked.
+
+---
+
 ## MK-050 · `previewClose.musdRequired` is short by the interest that accrues before the close lands
 
 **Class** S3 · **Status** open, documented. **Registered rather than fixed**, because it is outside
@@ -3274,9 +3416,16 @@ open drew, which is far more than the shortfall, so the harness has never held e
 `musdRequired`. `docs/09-review-and-validated-surface.md` now carries this as a row in the
 generator's work queue rather than as prose.
 
-**What would close it.** The same treatment MK-048 got: a margin field alongside `musdRequired`
-rather than a change to it, plus a `closeBand` in the generator that funds an account to exactly the
-reported figure and expects a refusal. Not done here, deliberately.
+**What would close it, and when.** The same treatment MK-048 got: a margin field alongside
+`musdRequired` rather than a change to it, plus a `closeBand` in the generator that funds an account
+to exactly the reported figure and expects a refusal.
+
+**Deferred to 0.2.1, deliberately, and the reasoning is recorded here so the next wave does not have
+to rediscover it.** It is derived from source and not yet observed executing. It affects only a
+close funded to exactly the edge, which is a narrow path. And changing a published field's value is
+not a release preparation edit: `musdRequired` shipped in 0.2.0 with a stated meaning, and altering
+what it returns belongs in a release where the change is the point. The docstring already carries
+the warning, so a caller reading the API today is not misled.
 
 **Repayment is NOT affected, and that was checked rather than assumed.** `_adjustTrove:769` accrues
 first as well, but the checks that follow move in the safe direction: `:859`
