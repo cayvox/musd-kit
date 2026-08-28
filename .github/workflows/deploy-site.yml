@@ -1,8 +1,24 @@
 # Deploy the combined musdkit.xyz site (Astro landing at / + VitePress docs at /docs).
 #
-# MANUAL ONLY (workflow_dispatch), this never runs on push. Go-live is Anıl's step,
-# AFTER the matching npm publish, so the hero `npm install` is real and the live widget
-# reads through the published package. 0.1.0 shipped this way; 0.2.0 follows the same order.
+# MANUAL ONLY (workflow_dispatch), this never runs on push. Go-live is the maintainer's step,
+# AFTER the matching npm publish, so the hero `npm install` refers to a version that exists.
+#
+# TWO CLAIMS THAT USED TO BE HERE WERE FALSE, and they are corrected rather than deleted so the
+# correction is legible (MK-053's audit, and MK-054).
+#
+#   "0.1.0 shipped this way."  It did not. This workflow has ZERO runs in its history, so nothing
+#   has ever shipped through it. musdkit.xyz answers HTTP 200 and is served by Cloudflare, so the
+#   site reaches production by some other route, most likely the Pages git integration. Neither
+#   0.1.0 nor 0.2.0 was deployed by this file.
+#
+#   "The live widget reads through the published package."  It does not, and it cannot as written.
+#   `landing/package.json` declares `"@musd-kit/core": "workspace:*"`, so Astro bundles the LOCAL
+#   build into the page at build time. The deployed bundle contains SDK symbols inline and fetches
+#   nothing from npm. The widget's own visible caption says "via the shipped @musd-kit/core", which
+#   is the same overstatement in the user-facing copy. See MK-054.
+#
+# This workflow ALSO cannot run today: it needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID and
+# neither secret exists on the repository.
 #
 # Prerequisites (repo secrets) before the first manual run:
 #   CLOUDFLARE_API_TOKEN, Pages:Edit token

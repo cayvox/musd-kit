@@ -87,8 +87,18 @@ enforced rather than asserted.
 
 **Pre-publish is not post-publish.** `scripts/release-smoke.sh` installs from locally
 packed tarballs and never contacts the registry; it says so in its own header. It cannot
-catch a bad publish. The post-publish row above is a separate job in
-`.github/workflows/release.yml` that runs only after the publish step.
+catch a bad publish. The post-publish check is `.github/workflows/verify-published.yml`,
+called by the release workflow after the publish step **and** dispatchable on its own
+against any published version:
+
+```sh
+gh workflow run verify-published.yml --ref main -f version=0.2.0
+```
+
+**It is dispatchable because it never ran otherwise** (MK-053). As a job welded to
+`needs: publish` it could only execute by publishing, so it went two releases without once
+producing a verdict, and its first execution failed in `Setup Node` before any step ran. A
+gate that can only run as part of the thing it gates cannot be tested.
 
 **No mocks for protocol truth.** Mocks are permitted only for wallet-client
 plumbing in React tests. Anything asserting protocol behavior runs on the fork.

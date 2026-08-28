@@ -7,6 +7,30 @@ check** so you can tell it worked, rather than assuming it did.
 
 ---
 
+## The 0.2.0 release, as it actually ran
+
+**Published 2026-08-28.** `@musd-kit/core@0.2.0` and `@musd-kit/react@0.2.0`, from commit
+`371d5d9953f7f305cba0b4cfd2599e451f91aea8`, by
+[release run 33176886491](https://github.com/cayvox/musd-kit/actions/runs/33176886491), tagged
+`v0.2.0`, with SLSA provenance naming this repository and that commit.
+
+| Precondition | Evidence at the time of publishing |
+|---|---|
+| 1, `main` green at its tip | [run 33175435351](https://github.com/cayvox/musd-kit/actions/runs/33175435351), `headSha` equal to the tip |
+| 2, no open S1 | MK-001, 002, 003, 004, 005, 014, 018, all `fixed` |
+| 3, versions intended | core and react at 0.2.0; the registry held only 0.1.0 |
+| 4, changelogs | top entry `## 0.2.0` in both |
+| 5, live testnet run | `GO`, exit 0, 20 surfaces, position closed. `docs/13-live-testnet-ledger.md` |
+| 6, packaged artifact | `pnpm gate:packaging`, `GATE PASSED` under `skipLibCheck: true` |
+
+**What went wrong, and it was the gate rather than the artifact.** The post publish verification job
+failed before running a single check, and had never run for either release (MK-053). It was
+repaired and then executed against the already published 0.2.0:
+[run 33179723315](https://github.com/cayvox/musd-kit/actions/runs/33179723315), every step green.
+0.1.0 was deprecated by [run 33180504234](https://github.com/cayvox/musd-kit/actions/runs/33180504234).
+
+---
+
 ## 0. Preconditions
 
 Each of these is a gate. If one fails, stop: the next step assumes it passed.
@@ -160,5 +184,15 @@ truth; unpublishing pretends the release did not occur.
 
 - The tag, if you published from a manual dispatch rather than a tag, so the commit that produced
   the artifact is findable: `git tag v0.2.0 <sha> && git push origin v0.2.0`.
+
+  **Read this before you do it (MK-055).** §1 says the release workflow triggers on a `v*` tag, and
+  this step tells you to push one after publishing by dispatch. Those two instructions contradict
+  each other: the tag push fires the release workflow again, which tries to publish a version that
+  already exists. The workflow now refuses that case rather than failing on it, but **a tag push
+  runs the workflow file at the TAG's commit, not the one on `main`**, so tagging a commit from
+  before that guard still attempts a republish. For `v0.2.0` the workflow was disabled for the
+  duration of the push (`gh workflow disable release.yml`, tag, `gh workflow enable release.yml`)
+  and confirmed re-enabled afterwards. For a future release, tag a commit that carries the guard and
+  none of this applies.
 - Announce, if you are announcing. The migration guide is the link that matters to anyone already
   running the previous version: `docs/11-migration-0.1-to-0.2.md`.
