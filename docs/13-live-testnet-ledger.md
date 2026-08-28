@@ -143,6 +143,60 @@ building a close button will meet it.
 
 ---
 
+## The MK-048 verification, live
+
+Added after the lifecycle run, once `previewRedeem` existed. **Both directions, on Mezo testnet.**
+
+**The boundary, at pinned block 15164949**, with `getRedemptionHints`'s answer beside each. The
+first eligible Trove was `0x4799e9fB361Fb6a85473bB08dA00A4012E02Cf08` with net debt
+`1802519016881414909779` against a floor of `1800000000000000000000`, so the edge was
+`2519016881414909779`:
+
+| amount | hint said | chain |
+|---|---|---|
+| edge - 1 wei | the same | **SUCCEEDS** |
+| edge exactly | the same | **SUCCEEDS** |
+| edge + 1 wei | the same | **REVERT** `TroveManager: Unable to redeem any amount` |
+| edge + 1 MUSD | the same | **REVERT** |
+
+**The success direction, as a real transaction:**
+
+```
+previewRedeem said redeemable  1259575681295202401
+chain burned                   1259575681295202401     EXACT
+0xbb205c5b2482d12c2eb949d9c322580b6cc2aa965debc98c7a192c7e9e7f7f13, block 15165003, success
+```
+
+**The refusal direction, as a precheck:**
+
+```
+amount = edge + 1 MUSD = 2259601684480781131
+previewRedeem   viable=false  binding=PARTIAL_BREACHES_DEBT_FLOOR  redeemable=0
+musd.redeem()   RedemptionBreachesDebtFloor [REDEMPTION_BREACHES_DEBT_FLOOR]
+                "Redeem at most 1259606123698194478, or at least 1801259606123698194478
+                 to consume that Trove whole. The limit is that Trove's headroom above the
+                 debt floor, not your balance."
+nonce before 37, after 37   ->  NO TRANSACTION WAS SENT, no gas spent
+```
+
+There is no transaction hash for the refusal, and that is the point of the precheck rather than a
+gap in the evidence: the chain's own refusal is the pinned-block simulation above.
+
+### MK-049, found while verifying MK-048
+
+The first attempt at the success direction **mined and reverted**. Investigated rather than retried
+blindly: at 90% of the headroom the floor has roughly 190,000 seconds of interest as margin, so the
+floor condition cannot be what fired, and the identical amount succeeded on the next attempt.
+
+The partial hint carries an NICR derived at the price the hint was read at
+(`HintHelpers.sol:148`); the contract derives the same quantity at the price when the transaction
+MINES (`TroveManager.sol:1224-1226`). **When the oracle moves in between, the partial cancels**
+(`:1299-1301`). The 600 second band at `:1276-1285` covers interest accrual, not the oracle.
+
+**Registered separately rather than folded into MK-048**, because they are different things: one is
+a state a preview can read, the other is a race a preview cannot. Retry is the mitigation and the
+SDK deliberately does not do it for you.
+
 ## Final state of both accounts
 
 At block 15164178:
