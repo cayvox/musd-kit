@@ -112,7 +112,15 @@ correctness.
   **pre-publish** pack smoke on every push (`scripts/release-smoke.sh`, from locally
   packed tarballs, no registry contact), and the release workflow runs a
   **post-publish** check that installs the published version from the registry into an
-  empty directory and imports it. See `07-testing` §2.
+  empty directory, imports it, diffs the published file list against the `files` allowlist
+  and reads the provenance predicate. See `07-testing` §2.
+
+  **That second check did not work until 2026-08-28, and the claim above was false for two
+  releases** (MK-053). It was written as a job inside the release workflow that could only
+  run as the tail of a publish, it did not exist at all for 0.1.0, and on its first execution
+  it failed before any verification step ran. It is a dispatchable workflow now,
+  `.github/workflows/verify-published.yml`, so it can be run against any published version
+  without publishing. **A gate that has never executed is a comment.**
 
 ---
 

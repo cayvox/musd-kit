@@ -27,9 +27,17 @@ Everything in the register is restated in our own words against public ground tr
 
 ## 2. Fitness for purpose
 
-Stated plainly, and kept current. **This is the verdict at 0.2.0**, written at release preparation
-rather than mid remediation: every S1 in the register is closed, and the two S2 entries still open
-are limits an integrator designs around rather than bugs they hit by accident.
+Stated plainly, and kept current. **This is the verdict at 0.2.0, which is published**: both
+packages went to npm on 2026-08-28 from commit `371d5d9953f7f305cba0b4cfd2599e451f91aea8`, tagged
+`v0.2.0`, with SLSA provenance attesting to this repository. Every S1 in the register is closed, and
+the S2 entries still open are limits an integrator designs around rather than bugs they hit by
+accident.
+
+**One thing about that release is worth carrying into this verdict rather than burying in the
+register.** The post publish gate that was supposed to decide whether 0.2.0 stood had never executed
+once, for either release (MK-053). It was repaired and then run against the already published
+0.2.0, which passed on every axis. So the verdict below rests on a check that now exists in fact and
+not only in a workflow file.
 
 | Use | Verdict |
 |---|---|

@@ -93,7 +93,26 @@ jobs:
         id: ver
         run: echo "version=$(node -p "require('./packages/core/package.json').version")" >> "$GITHUB_OUTPUT"
 
+      # MK-055. This workflow triggers on a `v*` tag AND the runbook tells you to push such a tag
+      # after publishing by dispatch, so the documented happy path re-runs the publish on a version
+      # that already exists. That is a failed run rather than a bad publish, but a red release run
+      # in the history is exactly the kind of thing nobody reads twice. Skip instead, and let the
+      # verification job run, which turns a tag push into a re-verification of what shipped.
+      - name: Is this version already on the registry?
+        id: exists
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          if npm view "@musd-kit/core@$V" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "@musd-kit/core@$V is already published, skipping the publish step"
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+            echo "@musd-kit/core@$V is not on the registry, publishing"
+          fi
+
       - name: Publish to npm (provenance)
+        if: steps.exists.outputs.already != 'true'
         run: pnpm publish -r --access public --provenance --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

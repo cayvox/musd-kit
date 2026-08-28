@@ -89,6 +89,8 @@ claim about it was not).
 | MK-051 | `maxWithdrawableCollateral` reports a figure that stops being withdrawable one second later, and the ledger recorded a preview-against-preview check as chain verification | S3 | open, documented, deferred to 0.2.1. The provenance claim is corrected |
 | MK-052 | The live run's optional redeem step could kill the run and leave a position open, because a reverted receipt reached `process.exit` instead of the `catch` that promised to absorb it | S2 | fixed. It happened, on a real run, and cost a close |
 | MK-053 | The post publish verification gate had never executed once, for either release, while being presented as part of the supply chain posture | S2 | fixed and proven by running it. The never executed audit it generalizes to is in the entry |
+| MK-054 | The landing page's live widget says it reads through the shipped package; it bundles the workspace build | S3 | open, documented. The false claims in the workflow header and the widget caption are corrected |
+| MK-055 | The runbook tells you to push a `v*` tag after publishing, and the release workflow triggers on `v*` tags, so the documented path re-runs the publish | S3 | fixed in the workflow, and the interaction is named in the runbook |
 
 ---
 
@@ -3259,6 +3261,86 @@ account that does not hold what the band needs.
 
 ---
 
+## MK-055 · The runbook's tag step re-triggers the release it just finished
+
+**Class** S3 · **Status** fixed in the workflow; the residual constraint is named in the runbook ·
+**Found while carrying out the runbook**, at the step that had never been carried out
+
+`docs/12-release-runbook.md` §1 says the release workflow triggers on a manual dispatch "or push a
+`v*` tag; the workflow triggers on either." §6 then says, for a release published by dispatch: "The
+tag ... `git tag v0.2.0 <sha> && git push origin v0.2.0`."
+
+**Following both in order publishes, then pushes a tag that starts the publish again.** The second
+run reaches `pnpm publish` on a version that already exists and fails. Nothing reaches the registry
+twice, npm refuses that, so the cost is a red release run in the history of a release that
+succeeded, which is the kind of artifact nobody reads twice and everybody misreads once.
+
+**It had never been exercised.** `gh api repos/cayvox/musd-kit/tags` returned 0 before this wave, so
+no `v*` tag had ever existed and the trigger had never fired. It is on MK-053's never executed list
+for that reason.
+
+**The fix**: the publish job now asks the registry whether the version exists and skips the publish
+step if it does, while the verification job still runs. A tag push on an already published version
+therefore becomes a **re-verification of what shipped**, which is a useful thing for a tag to do.
+
+**The residual constraint, which the fix cannot remove.** A tag push runs the workflow file *at the
+tag's commit*, not the one on `main`. So tagging a commit from before the guard still attempts a
+republish. For `v0.2.0`, whose commit `371d5d9953f7f305cba0b4cfd2599e451f91aea8` predates the guard,
+the workflow was disabled for the duration of the push and re-enabled immediately after:
+
+```
+gh workflow disable release.yml     -> disabled_manually
+git push origin v0.2.0              -> refs/tags/v0.2.0 -> 371d5d99...
+gh run list --workflow release.yml  -> no new run
+gh workflow enable release.yml      -> active
+```
+
+Recorded because it is a manual step taken against a live repository, and a reader deserves to know
+the workflow was briefly off and why.
+
+---
+
+## MK-054 · The site says it reads the published package, and it bundles the local build
+
+**Class** S3 · **Status** open, documented. The claims are corrected where they are made; the build
+is not changed here · **Found while verifying the site during the 0.2.0 release**
+
+`.github/workflows/deploy-site.yml`'s header said the deploy happens after the publish "so the hero
+`npm install` is real and the live widget reads through the published package." The second half is
+false by construction.
+
+`landing/package.json:16` declares:
+
+```json
+"@musd-kit/core": "workspace:*"
+```
+
+so Astro bundles the LOCAL build into the page. Measured against the deployed site: the widget
+bundle at `musdkit.xyz/_astro/PreviewWidget.astro_astro_type_script_index_0_lang.efXbo55R.js` is
+3969 bytes, contains SDK symbols inline, and the only external origin it references is
+`https://rpc.test.mezo.org`. **It fetches nothing from npm and cannot, because nothing in the page
+resolves a registry version.**
+
+The same overstatement is in the user-facing copy. `landing/src/components/PreviewWidget.astro:48`
+renders "Read-only via the shipped `@musd-kit/core`."
+
+**Why S3 rather than higher.** The code the widget runs IS the code that was published, byte for
+byte, because both are built from the same commit by the same build. Nobody is shown a wrong number.
+What is wrong is the claim about provenance: a reader is told the page is exercising the artifact on
+the registry, and it is exercising a local build that happens to be identical. That is the same
+class as MK-053, one layer up: a property asserted rather than arranged.
+
+**What would close it.** Point the landing at the published range rather than the workspace, so the
+deployed page genuinely resolves `@musd-kit/core` from the registry, and let the deploy fail when the
+version it names is not published yet. That inverts the current order of operations and is a change
+to how the site is built, so it is not a release preparation edit. Deferred with MK-050 and MK-051.
+
+**Corrected now, because they are false claims rather than design choices**: the workflow header
+says what actually happens, and the widget caption is left for the same wave that fixes the build,
+recorded here so it is not forgotten.
+
+---
+
 ## MK-053 · A gate that was trusted because it existed
 
 **Class** S2 · **Status** fixed, and proven by executing it rather than by reading it · **Found by
@@ -3329,10 +3411,26 @@ Two checks were added while it was open, because the original job proved the pac
 nothing else: the published **file list** against the `files` allowlist, and the **provenance
 predicate** against this repository.
 
-**Proven by execution**, which is the point of the entry: see the run recorded in
-`docs/13-live-testnet-ledger.md` under the 0.2.0 release. What running it standalone does NOT cover
-is the wiring in the release path: that `needs: publish` fires it, with the right version, after a
-real publish. That is only exercised by the next release, and it is recorded as owed.
+**Proven by execution**, which is the point of the entry:
+[run 33179723315](https://github.com/cayvox/musd-kit/actions/runs/33179723315), dispatched against
+the already published 0.2.0, every step green:
+
+```
+verifying the version passed in: 0.2.0
+both packages visible at 0.2.0
+added 662 packages in 36s
+  published ESM ok
+  published CJS ok
+post-publish verification PASSED at 0.2.0
+  @musd-kit/core@0.2.0 file list matches the allowlist
+  @musd-kit/core@0.2.0 provenance attests to https://github.com/cayvox/musd-kit
+  @musd-kit/react@0.2.0 file list matches the allowlist
+  @musd-kit/react@0.2.0 provenance attests to https://github.com/cayvox/musd-kit
+```
+
+**What running it standalone does NOT cover** is the wiring in the release path: that
+`needs: publish` fires it, with the version the publish job output, after a real publish. Only the
+next release exercises that, and it is recorded as owed here rather than assumed.
 
 ### The audit this generalizes to: every job and step that has never executed
 

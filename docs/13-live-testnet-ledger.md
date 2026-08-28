@@ -9,6 +9,28 @@ someone who was not present can read what was exercised, what was not, and what 
 
 ---
 
+## The 0.2.0 release
+
+**Published 2026-08-28**, and recorded here because this file is where this project keeps the things
+it actually did rather than the things it arranged to do.
+
+| | |
+|---|---|
+| Packages | [`@musd-kit/core@0.2.0`](https://www.npmjs.com/package/@musd-kit/core/v/0.2.0), [`@musd-kit/react@0.2.0`](https://www.npmjs.com/package/@musd-kit/react/v/0.2.0) |
+| From commit | `371d5d9953f7f305cba0b4cfd2599e451f91aea8` |
+| Tag | `v0.2.0`, annotated, pointing at that commit |
+| Release run | [33176886491](https://github.com/cayvox/musd-kit/actions/runs/33176886491), `publish` succeeded |
+| Provenance | SLSA v1, attesting `https://github.com/cayvox/musd-kit`, `.github/workflows/release.yml`, `refs/heads/main`, commit `371d5d99…` |
+| Post publish verification | [33179723315](https://github.com/cayvox/musd-kit/actions/runs/33179723315), every step green, run AFTER the fact because the gate had never worked (MK-053) |
+| 0.1.0 deprecated | [33180504234](https://github.com/cayvox/musd-kit/actions/runs/33180504234), both packages, each with its own message |
+| Site | **not deployed by this project's workflow**, which has never run and lacks its secrets (MK-053's audit, MK-054) |
+
+**The release did not go cleanly, and the interesting part is where it did not.** The artifact was
+correct on every axis checked. What failed was the machinery that was supposed to check it: the post
+publish gate had never executed once, for either release. The full account is MK-053.
+
+---
+
 ## The run that describes what ships
 
 **Re-run on 2026-08-28 against `main` at `82fc7e7`**, because the ledger below it was produced
