@@ -8,10 +8,7 @@
   "engines": {
     "node": ">=20.20.2"
   },
-  "workspaces": [
-    "packages/*",
-    "examples/*"
-  ],
+  "workspaces": ["packages/*", "examples/*"],
   "scripts": {
     "lint": "biome check .",
     "format": "biome format --write .",
@@ -47,8 +44,6 @@
     "vitest": "2.1.8"
   },
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
+    "onlyBuiltDependencies": ["esbuild"]
   }
 }

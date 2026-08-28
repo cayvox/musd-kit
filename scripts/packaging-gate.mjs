@@ -85,8 +85,9 @@ writeFileSync(join(CONSUMER, 'probe.ts'), PROBE)
 const tscFor = (row, skipLibCheck) => {
   const pkgPath = join(CONSUMER, 'package.json')
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-  if (row.type) pkg.type = row.type
-  else delete pkg.type
+  // `undefined` rather than `delete`: JSON.stringify omits undefined values, so the key is absent
+  // in the written file either way, and biome's noDelete rule is satisfied.
+  pkg.type = row.type ?? undefined
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2))
   writeFileSync(
     join(CONSUMER, 'tsconfig.json'),
