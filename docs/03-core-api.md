@@ -438,6 +438,41 @@ estimate fails against a cap it supplied itself, while the write succeeds. It no
 with the address. Same answer, one fewer round trip, no self imposed cap. Full mechanism and
 the payload diff that established it: `FINDINGS.md`, MK-037.
 
+### Closing costs more MUSD than the position ever gave you (MK-045)
+
+**A Trove cannot be closed with only the MUSD it drew.** This is a property of the protocol, not of
+this SDK, and it surprises people, so plan for it before you build a "close position" button.
+
+Read from `mezo-org/musd`, `BorrowerOperations.sol`:
+
+- The borrowing fee is **minted to the PCV**, not to you: `_triggerBorrowingFee` is
+  `_musd.mint(pcvAddress, fee)` (`:602-611`).
+- You receive the bare draw: `_withdrawMUSD(..., _recipient, _debtAmount, ...)` (`:716-720`).
+- Closing requires `entireDebt - MUSD_GAS_COMPENSATION` in your hands (`:963`).
+
+So you receive `draw`, you owe `draw + fee + 200`, and you must hold `draw + fee` to close. **You are
+short by exactly the fee, plus whatever interest has accrued since.**
+
+Measured on a fork: a 2000 MUSD draw delivered 2000 and required 2002 to close. Measured on live
+Mezo testnet after a full lifecycle: a shortfall of `2.300590672576505785` MUSD.
+
+**And a position at the debt floor cannot repay its way out.** `_requireAtLeastMinNetDebt` (`:856`)
+forbids taking the net debt below `minNetDebt`, so a Trove opened at the floor can repay only the
+few MUSD of headroom above it.
+
+**What this means for a user who borrowed the maximum:** they cannot close without acquiring MUSD
+from somewhere else. Their collateral is not lost, it is just not retrievable through `close` until
+they hold the fee.
+
+`previewClose` tells you before you send, with the exact number:
+
+```ts
+const p = await musd.previewClose(owner);
+if (!p.viable && p.bindingConstraint === 'INSUFFICIENT_MUSD_BALANCE') {
+  // p.musdShortfall is what the user must acquire. p.musdRequired is the full amount.
+}
+```
+
 ### Which writes have a preview, which have prechecks, and which have neither
 
 Read from the contract for the 0.2.x preview wave, not carried forward: part of an earlier version

@@ -80,6 +80,9 @@ claim about it was not).
 | MK-042 | Five exposed writes had no preview, so a caller could only discover the contract's answer by sending | S2 | fixed |
 | MK-043 | Two contract reverts mapped to no typed error, and three Recovery Mode reverts shared one wrong message | S2 | fixed |
 | MK-044 | Two runtime versions CI executes were still resolved by a moving label, one of them end of life | S3 | fixed |
+| MK-045 | A Trove cannot be closed with only the MUSD it drew, so a self funded run cannot end clean | S3 | documented, protocol property |
+| MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
+| MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
 
 ---
 
@@ -2821,6 +2824,166 @@ maintainers, or the first time an action does change a result.
 receiving fixes until someone bumps it, and nothing here will remind you. That is the trade, taken
 deliberately: **a stale pin fails visibly when you bump it; a floating label fails invisibly under a
 commit that changed nothing.** Recorded in the checklist beside the runtime rule.
+
+---
+
+## MK-045 · A Trove cannot be closed with only the MUSD it drew
+
+**Class** S3 · **Status** documented. **This is a property of the protocol, not a defect in this
+SDK** · **Found by preparing the live testnet run**
+
+**What happens.** The borrowing fee is added to the debt and minted to the PCV, never handed to the
+borrower (`BorrowerOperations.sol:637-643` on open, `:813-818` on a debt increase). Closing requires
+`entireDebt - MUSD_GAS_COMPENSATION` in hand (`:963`). So a borrower who spends nothing and holds
+every MUSD they drew is still short by **exactly the accumulated fees plus accrued interest**.
+
+**Measured on a fork, not reasoned:**
+
+```
+draw=2000 MUSD  ->  musdHeld=2000  entireDebt=2202  (2000 draw + 2 fee + 200 reserve)
+previewClose: viable=false required=2002 held=2000 shortfall=2  [INSUFFICIENT_MUSD_BALANCE]
+```
+
+The shortfall is the 2 MUSD fee, to the wei. Confirmed again on **live testnet**, where after a full
+lifecycle the position reported a shortfall of `2.300590672576505785` MUSD.
+
+**And the position cannot repay its way out.** `_requireAtLeastMinNetDebt` (`:856`, `:1239-1244`)
+forbids taking the net debt below the floor, so a Trove opened at the floor can repay almost nothing.
+At the live run's position the repayable amount was under 2 MUSD.
+
+**What it means, and what it does not.** `previewClose` reports it correctly, with the exact number,
+which is the SDK behaving as designed: this entry is not a bug report against the SDK. What it means
+is operational: **a self funded testnet account cannot end a lifecycle run with no Trove.** It needs
+MUSD from outside the position, and on testnet there is no source but another funded party.
+
+**What changed because of it.** `scripts/testnet-e2e.ts` no longer promises to leave the account
+closed. It attempts the close, reports the exact shortfall, records `close` as skipped with the
+reason, and states plainly at the end that the account holds an open Trove. It also continues
+against a carried position rather than dying, because otherwise the script is single use: the second
+invocation on any account always finds a Trove it cannot close.
+
+---
+
+## MK-046 · The live script compared a preview to a read taken later
+
+**Class** S3 · **Status** fixed · **Found on the first live run, which failed on it**
+
+**What happened.** The first live invocation died here:
+
+```
+✗ entireDebt after open: chain says 2001800001903035502288, the preview said 2001800000000000000000
+```
+
+A difference of `1903035502288` wei. At 100 bps on 2001.8 MUSD that is **3.00 seconds** of interest,
+computed rather than eyeballed:
+
+```
+per year = 2001.8 * 0.01      = 20.018 MUSD
+per second                    = 6.3477e-7 MUSD
+1.903035502288e-6 / 6.3477e-7 = 3.00 seconds
+```
+
+**The preview was right.** It predicts the debt at the moment the operation lands. The assertion
+compared it against `getTrove` read afterwards, which includes interest accrued since. Those are two
+different quantities, and on a live chain the gap is never zero.
+
+**Why no fork test caught it.** anvil mines on demand, so no wall clock time passes between a write
+and the read after it, and the same assertion is exactly true there. The differential harness makes
+the identical comparison in `openCase` and found zero mismatches in 1000 cases. **A fork cannot
+surface a defect whose cause is the passage of time**, which is a limit of fork testing worth naming
+rather than a gap in the sweep.
+
+**Fixed** by `assertDebtEq`, which requires the drift to be positive, since debt only grows with
+time, and no larger than 120 seconds of interest at the live rate. It prints the drift and its
+equivalent in seconds, so a reader sees the number rather than a pass. The completed run reported
+9 seconds on two steps.
+
+---
+
+## MK-047 · `previewOpen` says viable for an account that already has a Trove
+
+**Class** S2 · **Status** fixed, in the preview AND in the generator that could not express it ·
+**Found by the live testnet run, which is the only place it could have been found**
+
+**A preview verdict that disagrees with the contract.** `previewOpen` returns
+`viable: true, reasons: []` for an owner who already holds an active Trove. The contract refuses:
+
+```
+PROBE trove exists=true entireDebt=2202000000000000000000
+PROBE previewOpen viable=true reasons=[] binding=null
+PROBE raw openTrove simulate REVERTED: BorrowerOps: Trove is active
+```
+
+Observed first on live testnet, in the completed run, as
+`previewOpen on an account that already has a Trove: viable=true []`, then reproduced on a fork with
+the raw contract call above so the revert string is on the record.
+
+**Ground truth.** `_openTrove` calls `_requireTroveisNotActive` at `BorrowerOperations.sol:633`,
+defined at `:1140-1149` as `require(status != Status.active, "BorrowerOps: Trove is active")`. It is
+the FIRST gate on the open path.
+
+**What the SDK models.** `OpenBlockReason` is three values (`packages/core/src/math/previewOpen.ts:28`):
+`BELOW_MINIMUM_DEBT`, `ICR_BELOW_THRESHOLD`, `TCR_BELOW_CCR`. The module never reads
+`getTroveStatus`: a grep for it returns zero. Its own docstring at `:33-35` claims the verdict is
+"True only when every condition `_openTrove` enforces is satisfied", and that is not true.
+
+**Every other preview reads the status.** `previewBorrow`, `previewAdjustTrove` and `previewClose`
+all emit `TROVE_NOT_ACTIVE`. `previewOpen` is the only one missing its status gate, and it is the
+INVERSE gate: the Trove must NOT be active.
+
+**Why the 1000 case sweep never caught it.** `openCase` in
+`packages/core/test/differential/harness.ts` uses `testAccount(500_000 + c.index)`, a fresh account
+per case. **No generated case has ever previewed an open against an account that already holds a
+Trove**, so the sweep's coverage of `previewOpen` has a hole exactly the shape of this defect. That
+is the finding behind the finding: a sweep proves what its generator can express.
+
+**Blast radius.** The write path is protected: `openTrove` prechecks with
+`if (pos.entireDebt > 0n) throw new TroveAlreadyExists(...)`
+(`packages/core/src/trove/index.ts:296`), so no gas is wasted and no transaction reverts. What is
+wrong is the **verdict a UI renders**: an interface that enables its open button from
+`previewOpen.viable` shows "you can open a position" to someone who already has one, and the call
+then throws. That is the same class as MK-005, and it is why this is S2 rather than S3.
+
+**The fix, and the order it was done in.** The generator first, then the preview, because shipping a
+preview change without the coverage that would have caught it is the mistake this programme has spent
+waves removing.
+
+`previewOpen` now reads `getTroveStatus` when an account is supplied and emits
+`TROVE_ALREADY_ACTIVE`. The reason is named for what the contract actually tests: `:1146` compares
+against `Status.active`, so a Trove closed by the owner, by liquidation or by redemption does NOT
+block a reopen. Calling it `TROVE_ALREADY_EXISTS`, which was the obvious name, would have been wrong.
+
+**With no account supplied the gate is not evaluated and the absence is reported**, via
+`troveStatus: undefined`, on exactly the rule `feeExempt` already used: without an account there is
+nobody to ask about, and guessing is worse than saying so.
+
+**The docstring was corrected too**, and that is not cosmetic. It claimed the verdict was "true only
+when every condition `_openTrove` enforces is satisfied" while the code checked three of four. A test
+now pins the reason list against the contract's gate list in call order, so the claim and the code
+cannot drift apart silently again.
+
+**Proved by mutation**, three ways, each failing a different test: removing the gate, blocking on any
+non zero status instead of `active`, and moving the gate out of call order.
+
+### The larger finding: what the generator could not express
+
+Fixing the preview would have left the hole that hid it. The generator now carries a `precondition`
+of `FRESH` or `OCCUPIED`, and one case in five runs against the state OPPOSITE to the one its
+operation expects. One in five rather than one in two, because a mismatched state short circuits
+every later gate, so a higher rate would spend the sweep proving one reason repeatedly instead of
+probing the boundaries the bands were weighted for.
+
+**The same blind spot existed in the other direction, for four more previews.** Every non open case
+called `seedPosition` first, so `previewBorrow`, `previewRefinance`, `previewAdjustTrove` and
+`previewClose` all list `TROVE_NOT_ACTIVE` and no generated case could ever produce it. Both status
+gates were unreachable, in opposite directions, and only one of them happened to be wrong.
+
+**What the generator still cannot construct** is recorded in
+`docs/09-review-and-validated-surface.md` §3 rather than left implied: adding and withdrawing
+collateral in one call, an adjustment that requests nothing, a debt increase of zero, and a Trove
+that was closed rather than never opened. The first three are input validation the SDK prechecks
+separately; the fourth is blocked by MK-045, because the harness cannot obtain the fee needed to
+close a seeded position.
 
 ---
 

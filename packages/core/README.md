@@ -90,6 +90,12 @@ resulting ratio, not whether you improved, so a position already under MCR canno
 by adding collateral. `previewAdjustTrove` returns `icrIsAbsolute` and
 `minimumCollateralToClearIcr`, the figure that would actually work.
 
+**Closing costs more MUSD than the position gave you (MK-045).** The borrowing fee is minted to the
+PCV, not to you (`BorrowerOperations.sol:602-611`), while closing needs `entireDebt` minus the 200
+MUSD reserve in hand (`:963`). So you are short by exactly the fee plus accrued interest, and a user
+who borrowed the maximum cannot close without acquiring MUSD elsewhere. A protocol property, not a
+gap here. `previewClose` reports the exact shortfall before you send.
+
 **The one thing it cannot do: enforce a fee cap on chain (MK-011).** No MUSD write path takes a fee
 cap parameter, so `maxFeePercentage` is read, compared and then the transaction is sent. That is a
 property of the protocol, not a gap here, and no SDK can close it.

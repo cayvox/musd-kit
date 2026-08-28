@@ -95,13 +95,26 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
   if (c.elapsedSeconds > 0) await fork.warpTime(c.elapsedSeconds)
   await fork.mineBlocks(1)
 
-  if (c.op === 'open') return await openCase(fork, client, account, c)
-  // Every other op needs a position first. Opening one is a fixture step, not the case: if it
-  // fails, the case is skipped rather than counted as a mismatch, because the thing under
-  // test never ran.
-  const seeded = await seedPosition(fork, client, c)
-  if (seeded !== undefined)
-    return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
+  // MK-047. The account state is now part of the case, so a status gate can be reached at all.
+  // `open` against OCCUPIED and everything else against FRESH are the two states no generated
+  // case could construct before, and the first of them is where MK-047 lived.
+  if (c.op === 'open') {
+    if (c.precondition === 'OCCUPIED') {
+      const seeded = await seedPosition(fork, client, c)
+      if (seeded !== undefined)
+        return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
+    }
+    return await openCase(fork, client, account, c)
+  }
+  // Every other op is previewed against a position. Opening one is a fixture step, not the
+  // case: if it fails, the case is skipped rather than counted as a mismatch, because the
+  // thing under test never ran. A FRESH case deliberately skips the seeding, so the preview is
+  // asked about an owner with no Trove and the TROVE_NOT_ACTIVE gate is exercised.
+  if (c.precondition === 'OCCUPIED') {
+    const seeded = await seedPosition(fork, client, c)
+    if (seeded !== undefined)
+      return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
+  }
   switch (c.op) {
     case 'borrow':
       return await borrowCase(fork, client, account, c)
@@ -235,6 +248,8 @@ async function openCase(
   account: PrivateKeyAccount,
   c: DiffCase,
 ): Promise<CaseResult> {
+  // `account` is passed so the preview can evaluate the fee exemption AND, since MK-047, the
+  // TROVE_ALREADY_ACTIVE gate. Without it the preview is asked a question it cannot answer.
   const preview = await client.previewOpen({
     collateral: c.collateral,
     debt: c.debt,
