@@ -134,6 +134,7 @@ place. A count of numerals would be larger and would mean less.
 | Chain constants and the fee exempt scan at both pinned blocks | MK-014, MK-018, `docs/09` §6 | `pnpm facts --stdout` |
 | Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
 | The zero debt sentinel value | MK-017 | `pnpm test:unit` |
+| Every pin added for MK-058, MK-059, MK-060 and MK-065 fails with its fix removed | MK-058 through MK-065 | `node scripts/mutation-check.mjs` |
 | The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
 
 **One caveat on the flake rates, stated once rather than eight times.** The instrument is committed

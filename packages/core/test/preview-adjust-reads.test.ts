@@ -326,16 +326,36 @@ describe('MK-042, prechecks fire before simulate, with the right typed error', (
     ).rejects.toBeInstanceOf(MusdError)
   })
 
-  it('MK-060: adjustTrove refuses a zero borrow leg instead of sending `(0, true)`', async () => {
+  it('MK-060: adjustTrove refuses a zero borrow leg BEFORE it reads the chain', async () => {
     // `trove/index.ts` reads `_isDebtIncrease` from PRESENCE, so `borrow: 0n` used to put
     // `(_mUSDChange = 0, _isDebtIncrease = true)` on the wire, which `:785-787` refuses. The
     // preview could not see it, because the evaluator read the flag from VALUE and therefore
     // scored the call as a pure top-up. Both halves are fixed; this is the write half.
+    //
+    // **The assertion is "before any read", not just "throws".** With the evaluator half fixed
+    // the preview also refuses this call, so a test that only asserted the error type passed
+    // with the validation removed. Verified by removing it: the type assertion alone did not
+    // fail. `assertPositiveAmount` runs before the first `readContract`, and the guard below
+    // is what tells the two apart.
+    const noReads = (): WriteDeps => {
+      const d = writeDeps()
+      return {
+        ...d,
+        publicClient: {
+          readContract: async () => {
+            throw new Error('reached a chain read: the amount guard did not fire')
+          },
+          simulateContract: async () => {
+            throw new Error('reached simulate: the precheck did not fire')
+          },
+        } as unknown as PublicClient,
+      }
+    }
     await expect(
-      adjustTrove(writeDeps(), { borrow: 0n, addCollateral: BTC / 100n }),
+      adjustTrove(noReads(), { borrow: 0n, addCollateral: BTC / 100n }),
     ).rejects.toBeInstanceOf(InvalidAmount)
     // And with no collateral leg either, so the failure cannot come from somewhere else.
-    await expect(adjustTrove(writeDeps(), { borrow: 0n })).rejects.toBeInstanceOf(InvalidAmount)
+    await expect(adjustTrove(noReads(), { borrow: 0n })).rejects.toBeInstanceOf(InvalidAmount)
   })
 
   it('MK-060: and the preview half sees the same call the same way', async () => {
