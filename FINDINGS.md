@@ -135,6 +135,8 @@ place. A count of numerals would be larger and would mean less.
 | Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
 | The zero debt sentinel value | MK-017 | `pnpm test:unit` |
 | Every pin added for MK-058, MK-059, MK-060 and MK-065 fails with its fix removed | MK-058 through MK-065 | `node scripts/mutation-check.mjs` |
+| Recovery Mode borrows in the sweep, 17 of 105, per band, 0 mismatches | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` |
+| The Recovery Mode threshold at the pinned block, TCR 2.7731, so 45.9 percent | MK-059 | `cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemColl()" --rpc-url https://rpc.test.mezo.org --block 15043414`, and the same for `getEntireSystemDebt()` |
 | The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
 
 **One caveat on the flake rates, stated once rather than eight times.** The instrument is committed
@@ -3353,6 +3355,19 @@ absolutely than it holds is how the next reader gets it wrong. Pinned by
 `preview-verdicts.test.ts`, "the exception is truncation, which the SDK inherits rather than
 invents".
 
+**And one thing this fix newly depends on, checked rather than assumed.** The rule is
+`newICR >= oldICR`, so the fix is only right if the SDK's `currentIcr` is the contract's `oldICR`.
+The contract computes `oldICR` from `getTroveColl` and `getTroveDebt` (`BorrowerOperations.sol:816-817`,
+`:827`), which are the STORED values; the SDK computes it from `getEntireDebtAndColl`, which adds
+pending redistribution on top (`TroveManager.sol:796-801`). Those are different numbers in general.
+
+They are the same here, and the reason is one line up the call chain: `_adjustTrove` calls
+`updateSystemAndTroveInterest(_borrower)` at `:769`, which is `TroveManager.sol:641-644`, whose
+`_updateTroveInterest` ends with `_applyPendingRewards(activePool, defaultPool, _borrower)`
+(`TroveManager.sol:884`). So by the time `:816` reads the stored values, the pending redistribution
+has been folded into them. **The SDK's basis and the contract's basis agree**, and they agree
+because of a call the contract makes rather than by coincidence.
+
 **Pinned by** `packages/core/test/preview-verdicts.test.ts`, the `MK-058, MK-059: the Recovery Mode
 rules` block, and `packages/core/test/preview-agreement.test.ts`. **And by the sweep**, which
 could not construct a Recovery Mode borrow at all until this wave: see MK-059's entry.
@@ -3439,6 +3454,44 @@ cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemDebt()" \
 
 The generator uses 50, 60 and 70 percent, all of which clear that threshold with room, since the
 seeded position moves the system TCR slightly.
+
+### And the sweep now reaches them, counted
+
+Two runs, both from the wave's tree, both **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 threw,
+exit 0**. Seed `20260826`, pinned block 15043414, oracle seeded from chain at
+`answer=77051107320000000000000`.
+
+```
+MK_DIFF_CASES=60 pnpm test:fork          (differential.fork.test.ts only)
+  ran=60 skipped=6  bands: boundary=33 extreme=16 middle=11
+  recovery mode: reached=13 of 60   asked for a drawdown=11
+  recovery mode by op: addCollateral 2  adjust 2  refinance 3  repay 3  withdrawCollateral 2
+  recovery mode BORROWS by band: NONE
+
+MK_DIFF_OP=borrow MK_DIFF_CASES=1000 pnpm test:fork
+  ran=105 skipped=6  bands: boundary=62 extreme=17 middle=26
+  recovery mode: reached=17 of 105  asked for a drawdown=14
+  recovery mode BORROWS by band: boundary ran=7  extreme ran=7  middle ran=3
+```
+
+**The first run is why the second exists, and it is the point of counting rather than assuming.**
+Sixty mixed cases reached Recovery Mode thirteen times and reached a Recovery Mode BORROW zero
+times, because one operation in nine times one case in five is about 1.3 expected at that sample
+size. A run that says "the sweep reached Recovery Mode" would have been true and would have proved
+nothing about the defect. The `MK_DIFF_OP=borrow` slice over the full thousand case generation, the
+same instrument MK-048 added for redemption bands, gives 17 Recovery Mode borrows across all three
+bands.
+
+`reached` exceeds `asked for a drawdown` in both runs because the pre-seed `pricePercent` can also
+land the system under CCR on its own, which is read from the chain rather than inferred.
+
+**Cost, reported because it does not match what `docs/07-testing.md` says.** These two runs came in
+at **36.7 and 32.4 seconds per case**, against a documented 3 to 4 seconds. The second run's fork
+cache was warm (`fork state warmed in 33ms`), so it is not the cold cache. The drawdown adds a
+`setPrice`, a `mineBlocks` and a `getSystemState` per case, which is real but is not plausibly a
+tenfold difference. **It is not attributed**, and a clean A against B is not available: adding the
+dimension changed the generator's PRNG stream, so the same seed no longer produces the same tuples
+on the two sides. Recorded as measured, on this machine, with the commands above.
 
 ### And the one Recovery Mode borrow test that existed
 
