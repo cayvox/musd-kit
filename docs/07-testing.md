@@ -184,6 +184,28 @@ wei either side.
 **Every case runs in its own `evm_snapshot` and reverts.** Cases must not see each other, or a
 failure becomes a function of everything before it and the seed stops reproducing it.
 
+**Recovery Mode is reachable, and it was not** (MK-058, MK-059). The generator's `pricePercent` is
+applied BEFORE the fixture is seeded, so any multiplier low enough to put the system under CCR was
+also a multiplier at which the seeding open was refused: every Recovery Mode case the generator
+could express was a case it also skipped. `recoveryDrawdownPercent` is applied AFTER the fixture
+exists, which is the whole difference. The sizes are read from the chain rather than picked: at the
+pinned block the system TCR is 2.7731, so Recovery Mode needs the price below `CCR / TCR`, a
+drawdown of 45.9 percent, and the generator uses 50, 60 and 70.
+
+**And it is COUNTED, not assumed.** `CaseResult.isRecoveryMode` is read from the chain at the moment
+the preview is taken, and the sweep reports Recovery Mode cases per operation and, for borrows, per
+band. This matters more than it sounds: a 60 case run reached Recovery Mode 13 times and reached a
+Recovery Mode BORROW zero times, because one operation in nine times one case in five is about 1.3
+expected at that sample size. "The sweep reached Recovery Mode" would have been true and would have
+proved nothing about the defect it was added for. Use `MK_DIFF_OP=borrow` over the full generation
+to get a usable sample:
+
+```sh
+MK_DIFF_OP=borrow MK_DIFF_CASES=1000 pnpm test:fork   # 105 borrow cases, 17 in Recovery Mode
+```
+
+**A mode that never ran proves nothing**, which is MK-048's rule about bands applied to a mode.
+
 ```sh
 pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
 MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep
@@ -237,6 +259,27 @@ slices of 250.
 **The fork state cache applies**, verified rather than assumed: these runs used
 `~/.foundry/cache/rpc/31611/15043414` like every other fork test, and the harness warm up
 reported the usual `fork state warmed in 5xms (230 sorted Troves)` rather than a cold refetch.
+
+## 4a-bis. Agreement tests, where one question has two answers
+
+`packages/core/test/preview-agreement.test.ts`. Chain free, and it exists because a rule
+implemented twice diverges (`08-conventions` §11).
+
+`previewBorrow` and `previewAdjustTrove` are two questions about the same call: on chain
+`withdrawMUSD` IS `_adjustTrove` with `_collWithdrawal = 0` and `_isDebtIncrease = true`
+(`BorrowerOperations.sol:243-257`). This file asserts they agree on the verdict, on `reasons` in
+order, on `bindingConstraint` and on every shared number, **in both modes and on both sides of the
+MCR, CCR, TCR and capacity boundaries**, and then again end to end through the reads against a fake
+chain.
+
+The delegation makes agreement structural. This file is what keeps it structural: it fails the
+moment anyone puts a decision back into `previewBorrow`. Three rules had already drifted before it
+existed (MK-058, MK-059, MK-065), and each of them fails on the first case in the matrix.
+
+**It also guards its own matrix**, with an assertion that the generated case count has not silently
+shrunk and that every reason a borrow can reach is actually produced by some case. A matrix that
+quietly got smaller would make every other assertion in the file pass while proving less, which is
+MK-047's lesson about what a case count means.
 
 ## 4b. The gas variance lab (MK-039)
 
