@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CollateralWithdrawalBlocked,
   InsufficientCollateral,
+  InvalidAmount,
   MusdError,
   RecoveryModeRestriction,
   SystemRatioBelowCCR,
@@ -323,6 +324,37 @@ describe('MK-042, prechecks fire before simulate, with the right typed error', (
     await expect(
       borrow(writeDeps({ checkRecoveryMode: true }), { amount: 100n * MUSD }),
     ).rejects.toBeInstanceOf(MusdError)
+  })
+
+  it('MK-060: adjustTrove refuses a zero borrow leg instead of sending `(0, true)`', async () => {
+    // `trove/index.ts` reads `_isDebtIncrease` from PRESENCE, so `borrow: 0n` used to put
+    // `(_mUSDChange = 0, _isDebtIncrease = true)` on the wire, which `:785-787` refuses. The
+    // preview could not see it, because the evaluator read the flag from VALUE and therefore
+    // scored the call as a pure top-up. Both halves are fixed; this is the write half.
+    await expect(
+      adjustTrove(writeDeps(), { borrow: 0n, addCollateral: BTC / 100n }),
+    ).rejects.toBeInstanceOf(InvalidAmount)
+    // And with no collateral leg either, so the failure cannot come from somewhere else.
+    await expect(adjustTrove(writeDeps(), { borrow: 0n })).rejects.toBeInstanceOf(InvalidAmount)
+  })
+
+  it('MK-060: and the preview half sees the same call the same way', async () => {
+    // `increaseDebt: 0n` is a debt increase OF ZERO, which is a different input from no debt
+    // leg at all. The first is refused at `:786`; the second is an ordinary top-up.
+    const zero = await previewAdjustTrove(fakeDeps(), {
+      owner: OWNER,
+      increaseDebt: 0n,
+      addCollateral: BTC / 100n,
+    })
+    expect(zero.viable).toBe(false)
+    expect(zero.bindingConstraint).toBe('ZERO_DEBT_INCREASE')
+
+    const absent = await previewAdjustTrove(fakeDeps(), {
+      owner: OWNER,
+      addCollateral: BTC / 100n,
+    })
+    expect(absent.viable).toBe(true)
+    expect(absent.reasons).toEqual([])
   })
 })
 

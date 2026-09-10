@@ -47,6 +47,22 @@ import { isBorrowingFeeCharged } from './fee'
  *     ungated in Recovery Mode, and gated in normal mode.
  */
 
+/**
+ * The live borrowing capacity picture for one owner (MK-002).
+ *
+ * Declared here rather than beside `previewBorrow` since MK-060: the capacity gate
+ * (`:850-852`) is an adjust path gate, and borrowing is a point on the adjust path rather than
+ * a sibling of it. `previewBorrow` re-exports this type, so the public name is unchanged.
+ */
+export interface BorrowingCapacity {
+  /** `maxBorrowingCapacity` as stored on chain. Fixed at open, ratchets only downward. */
+  capacity: bigint
+  /** The Trove's live entire debt, principal plus accrued interest, as the gate sees it. */
+  entireDebt: bigint
+  /** `capacity - entireDebt`, floored at zero. The headroom for `draw + fee`, not for the draw. */
+  remaining: bigint
+}
+
 /** Why an adjust preview came back not viable. Machine readable, stable strings. */
 export type AdjustBlockReason =
   /** `_requireTroveisActive` (`:790`, `:1179-1189`). */
@@ -98,6 +114,12 @@ export interface AdjustPreview {
   fee: bigint
   /** The debt change the gates compare, the draw plus its fee, or the repayment. */
   netDebtChange: bigint
+  /**
+   * Capacity, live entire debt, and the remaining headroom, so `EXCEEDS_BORROWING_CAPACITY`
+   * arrives with the numbers behind it rather than as a bare reason (MK-060). Reported on
+   * every adjustment; only enforced when the debt increases (`:850-852`).
+   */
+  capacity: BorrowingCapacity
   /** The Trove's collateral after this adjustment. */
   resultingCollateral: bigint
   /** The Trove's entire debt after this adjustment. */
@@ -158,6 +180,17 @@ export interface EvaluateAdjustInput {
   withdrawCollateral: bigint
   increaseDebt: bigint
   repayDebt: bigint
+  /**
+   * `_adjustTrove`'s own `_isDebtIncrease` parameter (`BorrowerOperations.sol:757`), which the
+   * contract takes **independently of `_mUSDChange`** and then reconciles at `:785-787`.
+   *
+   * MK-060. Deriving it from `increaseDebt > 0n` instead, as this evaluator used to, makes
+   * `(true, 0)` inexpressible, and `(true, 0)` is exactly the input `_requireNonZeroDebtChange`
+   * (`:1351-1356`) exists to refuse. It is also the input the write path constructs, because
+   * `trove/index.ts` reads the flag from PRESENCE. Optional so existing callers keep the old
+   * derivation; `previewAdjustTrove` passes presence, which is what the write path passes.
+   */
+  isDebtIncrease?: boolean
   isRecoveryMode: boolean
   price: bigint
   systemColl: bigint
@@ -190,13 +223,21 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
     systemDebt,
   } = input
 
-  const isDebtIncrease = increaseDebt > 0n
+  // MK-060. Presence when the caller states it, value otherwise. The value fallback is the old
+  // behaviour and is kept only so an input built before this field existed still evaluates the
+  // way it did; it cannot express `(true, 0)`, which is the whole defect.
+  const isDebtIncrease = input.isDebtIncrease ?? increaseDebt > 0n
   // `netDebtChange` is the draw PLUS its fee on the increase path (`:810-817`), and the bare
   // repayment on the decrease path.
   const netDebtChange = isDebtIncrease ? increaseDebt + fee : repayDebt
   const resultingCollateral = collateral + addCollateral - withdrawCollateral
   const resultingEntireDebt = isDebtIncrease ? entireDebt + netDebtChange : entireDebt - repayDebt
 
+  const capacityPicture: BorrowingCapacity = {
+    capacity,
+    entireDebt,
+    remaining: capacity > entireDebt ? capacity - entireDebt : 0n,
+  }
   const currentIcr = computeICR({ collateral, entireDebt, price })
   // Clamp the collateral at zero so a withdrawal larger than the balance produces a number
   // rather than a negative, and let WITHDRAWAL_EXCEEDS_COLLATERAL be the reason reported.
@@ -268,6 +309,7 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
     icrIsAbsolute,
     fee,
     netDebtChange,
+    capacity: capacityPicture,
     resultingCollateral,
     resultingEntireDebt,
     currentIcr,
@@ -353,6 +395,10 @@ export async function previewAdjustTrove(
     withdrawCollateral,
     increaseDebt,
     repayDebt,
+    // MK-060. PRESENCE, matching `trove/index.ts`'s `brw !== undefined` and the contract's
+    // separate `_isDebtIncrease` parameter. `increaseDebt: 0n` is a debt increase of zero,
+    // which the contract refuses at `:786`, and is a different input from no debt leg at all.
+    isDebtIncrease: params.increaseDebt !== undefined,
     isRecoveryMode,
     price,
     systemColl,

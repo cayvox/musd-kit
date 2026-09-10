@@ -148,9 +148,33 @@ true.
 `blockNumber` and `price` are on the result so you can check it rather than take our word:
 re-read `getCurrentICR(address, trove.price)` at `trove.blockNumber` and you get `trove.icr`.
 
-The preview functions (`previewOpen`, `previewBorrow`, `previewRefinance`,
-`getBorrowingPower`) still read the price in their own round trip and make no single block
-claim.
+**The previews do NOT get this property, and the list of them was two waves out of date.** Each of
+the nine below evaluates against a price read in a separate round trip, then runs the reads that
+depend on it in a second, and none of them claims a single block snapshot anywhere. Eight distinct
+read sites: two of the nine inherit another's.
+
+| Function | Where the price is read | Note |
+|---|---|---|
+| `previewOpen` | `math/previewOpen.ts:132-137` | skipped when the caller passes `price` |
+| `previewBorrow` | via `previewAdjustTrove`, below | it is a projection of the adjust preview |
+| `previewAdjustTrove` | `math/previewAdjust.ts:295-299` | |
+| `previewWithdrawCollateral` | via `previewAdjustTrove` | |
+| `maxWithdrawableCollateral` | `math/previewAdjust.ts:410-414` | |
+| `previewClose` | `math/previewClose.ts:139-143` | |
+| `previewRedeem` | `math/previewRedeem.ts:278-282` | |
+| `previewRefinance` | `math/previewRefinance.ts:155-159` | |
+| `getBorrowingPower` | `math/getBorrowingPower.ts:96-103` | skipped when the caller passes `price` |
+
+**What that costs you.** The oracle can move between the two round trips, so a preview's `price`
+and the ratios computed from it are consistent with each other but not pinned to a block the way
+`getTrove` is. `price` is on every one of these results for exactly that reason: it is the value
+the verdict was computed against, and it is checkable. This was disclosed in the register
+(MK-013's scope note) and named four functions here while the real number had grown to nine as
+`previewAdjustTrove`, `previewWithdrawCollateral`, `maxWithdrawableCollateral`, `previewClose` and
+`previewRedeem` were added.
+**Moving them is deliberately not done**, on MK-013's original reasoning: it is a larger change to
+the math layer's shape than the finding calls for, and none of them makes a claim it does not
+keep. It is stated here so a caller reads the limit where the API is documented.
 
 ---
 
@@ -549,20 +573,22 @@ Read from the contract for the 0.2.x preview wave, not carried forward: part of 
 of this table was reasoned rather than read, and was wrong (MK-038). Line numbers are
 `mezo-org/musd`, `BorrowerOperations.sol` unless stated.
 
-**Ten of eleven writes have a preview. The eleventh has no condition to preview.**
+**Nine of the twelve exposed writes have a preview** (MK-061). Counted from `createMusdClient`'s
+own surface rather than from an earlier revision of this table, which carried "ten of eleven" and
+could not be reconstructed from the tree. The three without one are in the last three rows.
 
 | Write | Preview | Prechecked before simulate | Gates the contract enforces |
 |---|---|---|---|
 | `openTrove` | **`previewOpen`** | amounts, fee cap, floor, ratios | not active `:633`; `minNetDebt` `:645`; recovery ICR>=CCR `:655`; normal ICR>=MCR `:657`, TCR>=CCR `:665` |
 | `addCollateral` | **`previewAdjustTrove`** | **all of them** | active `:790`; **normal** ICR>=MCR `:1201`, TCR>=CCR `:1209`; **recovery: none** |
-| `borrow` | **`previewBorrow`**, **`previewAdjustTrove`** | **all of them** | active; **normal** ICR>=MCR, TCR>=CCR; **recovery** ICR>=CCR `:1272`, newICR>=oldICR `:1273`; capacity `:851` |
+| `borrow` | **`previewBorrow`**, which since MK-058 IS `previewAdjustTrove` with a debt increase | **all of them** | active; **normal** ICR>=MCR, TCR>=CCR; **recovery** ICR>=CCR `:1272`, newICR>=oldICR `:1273`, **and no TCR gate**; capacity `:851` |
 | `repay` | **`previewAdjustTrove`** | **all of them** | active; **normal** ICR>=MCR, TCR>=CCR; **recovery: none**; `minNetDebt` `:856`; repay <= debt-200 `:859`; balance `:860` |
 | `withdrawCollateral` | **`previewWithdrawCollateral`**, **`maxWithdrawableCollateral`** | **all of them** | active; `assert(amt <= coll)` `:837`; **recovery: no withdrawal at all** `:1270`; **normal** ICR>=MCR, TCR>=CCR |
 | `adjustTrove` | **`previewAdjustTrove`** | **all of them** | every row above, by combination; singular coll change `:788` |
 | `close` | **`previewClose`** | **all of them** | active `:951`; *if `canMint`* not recovery `:954`; balance >= debt-200 `:963`; *if `canMint`* TCR>=CCR `:972` |
 | `refinance` | **`previewRefinance`** | Trove active, Recovery Mode | not recovery `:1023`; active `:1024`; ICR>=MCR **after the fee** `:1058`; TCR>=CCR `:1059` |
 | `claim` | **none, and none is possible** | matches one revert, rethrows the rest | **none.** `_claimCollateral` (`:1119-1124`) reads the surplus pool and sends |
-| `redeem` | none | positive, MUSD balance, rate cap | `TroveManager.sol`: TCR>=MCR `:318`; amount>0 `:319`; balance `:320` |
+| `redeem` | **`previewRedeem`** | positive, MUSD balance, rate cap, **and the debt floor gap** | `TroveManager.sol`: TCR>=MCR `:318`; amount>0 `:319`; balance `:320`; a partial that would leave a Trove under `minNetDebt` `:1299-1306` |
 | `liquidate`, `batchLiquidate` | none, permissionless by design | none | `TroveManager.sol`: non empty `:657`; something liquidatable `:690` |
 
 ### Four rules that are not what a Liquity reader expects

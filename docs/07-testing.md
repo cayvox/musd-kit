@@ -213,13 +213,15 @@ Measured on the declared Node at the pinned block, not estimated:
 |---|---|
 | per case, fresh anvil | **about 3 seconds** |
 | per case, late in a long run | **about 20 seconds** |
-| 1000 cases | **about 96 minutes**, across two slices |
+| 1000 cases | **about 96 minutes**, across four slices of 250 |
 
 **The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
 seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
 cases against a fresh anvil came back to 3 seconds each. So the cost grows with the LIFE of the
-anvil process, not with the case index, which is why `MK_DIFF_FROM` exists: it slices the same
-generated set across runs rather than generating a different set.
+anvil process, not with the case index, which is why `MK_DIFF_FROM` and `MK_DIFF_TO` exist: they
+slice the same generated set across runs rather than generating a different set. `MK_DIFF_FROM`
+alone could only cut a tail, so the slice needs a bound at both ends and the sweep is run as four
+slices of 250.
 
 **The split, and the reasoning.**
 

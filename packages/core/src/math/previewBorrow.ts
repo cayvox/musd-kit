@@ -1,14 +1,39 @@
 import type { Address } from 'viem'
-import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { CCR, MCR } from '../constants'
-import { computeICR } from './compute'
+import { troveManagerAbi } from '../clients'
 import type { MathDeps } from './deps'
-import { isBorrowingFeeCharged } from './fee'
+import {
+  type AdjustBlockReason,
+  type AdjustPreview,
+  type BorrowingCapacity,
+  evaluateAdjust,
+  previewAdjustTrove,
+} from './previewAdjust'
 
 /**
  * MK-002. Borrowing against an EXISTING Trove, which `getBorrowingPower` never modeled.
  *
- * The contract's rules, read from `mezo-org/musd`:
+ * **This file no longer decides anything (MK-058, MK-059, MK-060, MK-065).** It projects the
+ * adjust preview onto the borrow shape, because on chain a borrow IS an adjustment:
+ *
+ * ```solidity
+ * function withdrawMUSD(uint256 _amount, address _upperHint, address _lowerHint) external {
+ *     _adjustTrove(msg.sender, msg.sender, msg.sender, 0, _amount, true, _upperHint, _lowerHint);
+ * }                                        // BorrowerOperations.sol:243-257
+ * ```
+ *
+ * `_collWithdrawal = 0`, no `msg.value`, `_isDebtIncrease = true`. Every gate a borrow meets is
+ * an `_adjustTrove` gate, and there is no gate a borrow meets that an adjustment does not.
+ *
+ * **Why it is written this way rather than as a second evaluator with the missing rules added.**
+ * It WAS a second evaluator, and it drifted from the first on three rules at once: it omitted
+ * `_requireNewICRisAboveOldICR` (`:1273`), which no non zero Recovery Mode borrow can satisfy
+ * because this path sends no collateral; it applied `_requireNewTCRisAboveCCR` in Recovery Mode,
+ * where the contract has exactly four call sites for it (`:665`, `:972`, `:1059`, `:1209`) and
+ * none is on this path; and it reported the capacity gate (`:850-852`) ahead of the ratio gates
+ * (`:840-845`), which is not the order the chain checks them in. Two implementations of one rule
+ * set diverge. MK-001 was the same defect and its lesson is now in `docs/08-conventions.md` §11.
+ *
+ * The contract facts that made this preview necessary at all are unchanged and still hold:
  *
  *   - Capacity is set ONCE, at open, from the OPENING price:
  *     `maxBorrowingCapacity = coll * price / (110 * 1e16)`
@@ -25,32 +50,52 @@ import { isBorrowingFeeCharged } from './fee'
  *     (`:769`), so it is current to the block and INCLUDES accrued interest. The SDK
  *     therefore compares against the live entire debt from `getEntireDebtAndColl`, not the
  *     stored `getTroveDebt`, which is stale until someone triggers an update.
- *   - A debt increase is additionally gated on the resulting ratios by
- *     `_requireValidAdjustmentInCurrentMode` (`:840-845`).
  */
 
-/** The live borrowing capacity picture for one owner. */
-export interface BorrowingCapacity {
-  /** `maxBorrowingCapacity` as stored on chain. Fixed at open, ratchets only downward. */
-  capacity: bigint
-  /** The Trove's live entire debt, principal plus accrued interest, as the gate sees it. */
-  entireDebt: bigint
-  /** `capacity - entireDebt`, floored at zero. The headroom for `draw + fee`, not for the draw. */
-  remaining: bigint
-}
+/**
+ * The live borrowing capacity picture for one owner.
+ *
+ * Re-exported. The declaration moved to `previewAdjust.ts` with MK-060, since the gate it
+ * describes is an adjust path gate; the public name and shape are unchanged.
+ */
+export type { BorrowingCapacity }
 
-/** Why a borrow preview came back not viable. Machine readable, stable strings. */
-export type BorrowBlockReason =
+/**
+ * Why a borrow preview came back not viable. Machine readable, stable strings.
+ *
+ * **Widened by MK-058, MK-059 and MK-060**, and deliberately expressed as a subset of
+ * {@link AdjustBlockReason} rather than as a free standing union: `Extract` makes the compiler
+ * reject any member that stops existing on the adjust side, so the two cannot drift apart
+ * silently again. The members listed are exactly the ones a call with
+ * `_collWithdrawal = 0`, no `msg.value` and `_isDebtIncrease = true` can reach.
+ *
+ * The three that were not here before 0.2.1:
+ *
+ *   - `ICR_NOT_IMPROVED_IN_RECOVERY_MODE` (`:1273`), which is reported for **every** non zero
+ *     Recovery Mode borrow, because this path adds debt and adds no collateral.
+ *   - `ZERO_DEBT_INCREASE` (`:786`), a draw of zero.
+ *   - `NO_CHANGE_REQUESTED` (`:789`), which a draw of zero also satisfies. Both are reported;
+ *     `bindingConstraint` is `ZERO_DEBT_INCREASE`, which is the one the chain reaches first.
+ *
+ * `TCR_BELOW_CCR` remains, and is now reported **only in normal mode**, which is the only mode
+ * the contract checks it in on this path.
+ */
+export type BorrowBlockReason = Extract<
+  AdjustBlockReason,
   | 'TROVE_NOT_ACTIVE'
-  | 'EXCEEDS_BORROWING_CAPACITY'
+  | 'ZERO_DEBT_INCREASE'
+  | 'NO_CHANGE_REQUESTED'
   | 'ICR_BELOW_THRESHOLD'
+  | 'ICR_NOT_IMPROVED_IN_RECOVERY_MODE'
   | 'TCR_BELOW_CCR'
+  | 'EXCEEDS_BORROWING_CAPACITY'
+>
 
 /** Result of {@link previewBorrow}. Raw numbers included so callers render their own copy. */
 export interface BorrowPreview {
   /** True only when every constraint the contract enforces is satisfied. */
   viable: boolean
-  /** Every reason it is not viable, in a fixed order. Empty when `viable`. */
+  /** Every reason it is not viable, **in the order `_adjustTrove` checks them**. Empty when `viable`. */
   reasons: BorrowBlockReason[]
   /** The single constraint that binds first, or `null` when viable. */
   bindingConstraint: BorrowBlockReason | null
@@ -62,11 +107,21 @@ export interface BorrowPreview {
   capacity: BorrowingCapacity
   /** The Trove's entire debt after this borrow. */
   resultingEntireDebt: bigint
+  /**
+   * The Trove's ICR BEFORE this borrow, at the current price.
+   *
+   * Added with MK-058, because `ICR_NOT_IMPROVED_IN_RECOVERY_MODE` cannot be interpreted
+   * without it: the gate is `newICR >= oldICR` and this is `oldICR`.
+   */
+  currentIcr: bigint
   /** The Trove's ICR after this borrow, at the current price. */
   resultingIcr: bigint
   /** The threshold `resultingIcr` is measured against: MCR normally, CCR in Recovery Mode. */
   icrThreshold: bigint
-  /** The system TCR after this borrow. */
+  /**
+   * The system TCR after this borrow. **Reported in both modes, enforced only in normal mode**
+   * (MK-059): `_requireNewTCRisAboveCCR` has no call site on the Recovery Mode adjust path.
+   */
   resultingTcr: bigint
   /** Whether the system is in Recovery Mode right now. */
   isRecoveryMode: boolean
@@ -112,9 +167,14 @@ export async function getBorrowingCapacity(
  * Preview borrowing `amount` against an existing Trove, returning a verdict, the binding
  * constraint, and every raw number behind it (MK-002).
  *
- * Covers the three things the contract actually checks on a debt increase: the borrowing
- * capacity gate, the resulting individual ratio against the mode correct threshold, and
- * the resulting system ratio where the contract enforces it.
+ * A thin wrapper over {@link previewAdjustTrove} with a debt increase and nothing else, so the
+ * two previews cannot disagree about the same call (MK-058, MK-059, MK-060, MK-065). The
+ * agreement is asserted rather than assumed, in `packages/core/test/preview-agreement.test.ts`.
+ *
+ * **The one cost of delegating, stated rather than hidden.** `previewAdjustTrove` also reads the
+ * caller's MUSD balance and `minNetDebt()`, which only the repayment gates use and a borrow never
+ * reaches. Both ride in the same `Promise.all`, so this adds two reads and no round trip, and the
+ * alternative is a second copy of the read set to go with the second copy of the rules.
  *
  * This is the counterpart to `getBorrowingPower`, which is an OPEN time calculator and is
  * documented as such. Use this one for a Trove that already exists.
@@ -123,60 +183,9 @@ export async function previewBorrow(
   deps: MathDeps,
   params: PreviewBorrowParams,
 ): Promise<BorrowPreview> {
-  const { publicClient, addresses } = deps
-  const { owner, amount } = params
-
-  const price = await publicClient.readContract({
-    address: addresses.priceFeed,
-    abi: priceFeedAbi,
-    functionName: 'fetchPrice',
-  })
-  const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
-
-  const [status, entire, capacityRaw, isRecoveryMode] = await Promise.all([
-    publicClient.readContract({ ...tm, functionName: 'getTroveStatus', args: [owner] }),
-    publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [owner] }),
-    publicClient.readContract({
-      ...tm,
-      functionName: 'getTroveMaxBorrowingCapacity',
-      args: [owner],
-    }),
-    publicClient.readContract({ ...tm, functionName: 'checkRecoveryMode', args: [price] }),
-  ])
-
-  const collateral = entire[0]
-  const entireDebt = entire[1] + entire[2]
-
-  // The fee is skipped in Recovery Mode and for fee exempt accounts, exactly as on open
-  // (`BorrowerOperations.sol:810-818`). Reading exemption rather than assuming nobody is
-  // exempt is MK-018's rule applied here too: the exempt cohort is non empty on mainnet.
-  const exempt = await deps.isAccountFeeExempt(owner)
-  const fee = !isBorrowingFeeCharged(isRecoveryMode, exempt)
-    ? 0n
-    : await publicClient.readContract({
-        address: addresses.borrowerOperations,
-        abi: borrowerOperationsAbi,
-        functionName: 'getBorrowingFee',
-        args: [amount],
-      })
-
-  const [systemColl, systemDebt] = await Promise.all([
-    publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
-    publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
-  ])
-
-  return evaluateBorrow({
-    status,
-    collateral,
-    entireDebt,
-    capacity: capacityRaw,
-    fee,
-    amount,
-    isRecoveryMode,
-    price,
-    systemColl,
-    systemDebt,
-  })
+  return projectBorrow(
+    await previewAdjustTrove(deps, { owner: params.owner, increaseDebt: params.amount }),
+  )
 }
 
 /** Everything {@link evaluateBorrow} needs, already read from the chain. */
@@ -200,57 +209,62 @@ export interface EvaluateBorrowInput {
 /**
  * The decision itself, as a pure function of values already read from the chain.
  *
- * Split out from {@link previewBorrow} deliberately: the verdict is the part worth testing
- * exhaustively, and as a pure function it can be, in the chain-free unit project, across
- * every combination of reasons rather than only the combinations a fork happens to produce.
+ * **Delegates to {@link evaluateAdjust} rather than deciding** (MK-058, MK-059, MK-060, MK-065).
+ * The input shape is unchanged, so an existing caller is unaffected; what changed is that the
+ * rules behind it are now the adjust path's rules, which are the contract's.
  */
 export function evaluateBorrow(input: EvaluateBorrowInput): BorrowPreview {
-  const {
-    status,
-    collateral,
-    entireDebt,
-    capacity: capacityRaw,
-    fee,
-    amount,
-    isRecoveryMode,
-    price,
-    systemColl,
-    systemDebt,
-  } = input
+  return projectBorrow(
+    evaluateAdjust({
+      status: input.status,
+      collateral: input.collateral,
+      entireDebt: input.entireDebt,
+      capacity: input.capacity,
+      // The repayment gates (`:855-861`) are guarded by `!isDebtIncrease && repayDebt > 0n` and
+      // this call satisfies neither half, so neither of these two is ever read. They are passed
+      // as zero rather than made optional so the adjust input keeps one shape.
+      musdBalance: 0n,
+      minNetDebt: 0n,
+      fee: input.fee,
+      addCollateral: 0n,
+      // `withdrawMUSD` passes `_collWithdrawal = 0` and no `msg.value` (`:243-257`). That is
+      // exactly why no Recovery Mode borrow can clear `_requireNewICRisAboveOldICR` (`:1273`).
+      withdrawCollateral: 0n,
+      increaseDebt: input.amount,
+      repayDebt: 0n,
+      // `withdrawMUSD` passes `true` unconditionally, whatever `_amount` is, which is what makes
+      // a draw of zero reachable and refused at `:786` rather than silently a no-op (MK-060).
+      isDebtIncrease: true,
+      isRecoveryMode: input.isRecoveryMode,
+      price: input.price,
+      systemColl: input.systemColl,
+      systemDebt: input.systemDebt,
+    }),
+  )
+}
 
-  const netDebtChange = amount + fee
-  const capacity: BorrowingCapacity = {
-    capacity: capacityRaw,
-    entireDebt,
-    remaining: capacityRaw > entireDebt ? capacityRaw - entireDebt : 0n,
-  }
-  const resultingEntireDebt = entireDebt + netDebtChange
-  const resultingIcr = computeICR({ collateral, entireDebt: resultingEntireDebt, price })
-  const icrThreshold = isRecoveryMode ? CCR : MCR
-  const resultingTcr = computeICR({
-    collateral: systemColl,
-    entireDebt: systemDebt + netDebtChange,
-    price,
-  })
-
-  const reasons: BorrowBlockReason[] = []
-  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
-  if (capacityRaw < resultingEntireDebt) reasons.push('EXCEEDS_BORROWING_CAPACITY')
-  if (resultingIcr < icrThreshold) reasons.push('ICR_BELOW_THRESHOLD')
-  if (resultingTcr < CCR) reasons.push('TCR_BELOW_CCR')
-
+/**
+ * The adjust verdict, narrowed to the borrow shape.
+ *
+ * The narrowing is a projection and never a decision: `viable`, `reasons` and their order come
+ * through untouched. The cast is safe by construction, since a call with no collateral leg and
+ * no repayment leg cannot produce any of the reasons `BorrowBlockReason` leaves out, and the
+ * assertion below is what keeps that true if the adjust evaluator ever changes.
+ */
+function projectBorrow(p: AdjustPreview): BorrowPreview {
   return {
-    viable: reasons.length === 0,
-    reasons,
-    bindingConstraint: reasons[0] ?? null,
-    fee,
-    netDebtChange,
-    capacity,
-    resultingEntireDebt,
-    resultingIcr,
-    icrThreshold,
-    resultingTcr,
-    isRecoveryMode,
-    price,
+    viable: p.viable,
+    reasons: p.reasons as BorrowBlockReason[],
+    bindingConstraint: p.bindingConstraint as BorrowBlockReason | null,
+    fee: p.fee,
+    netDebtChange: p.netDebtChange,
+    capacity: p.capacity,
+    resultingEntireDebt: p.resultingEntireDebt,
+    currentIcr: p.currentIcr,
+    resultingIcr: p.resultingIcr,
+    icrThreshold: p.icrThreshold,
+    resultingTcr: p.resultingTcr,
+    isRecoveryMode: p.isRecoveryMode,
+    price: p.price,
   }
 }

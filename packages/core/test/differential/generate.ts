@@ -70,6 +70,32 @@ export type RedeemBand =
   /** The preview's reported upper edge, net debt plus the accrual margin. Consumes the Trove. */
   | 'WHOLE_TROVE'
 
+/**
+ * A price drawdown applied AFTER the fixture is seeded, as a percentage of the fork's live
+ * price. `0` means no second move.
+ *
+ * **This is what makes Recovery Mode reachable at all** (MK-058, MK-059). The generator's
+ * existing `pricePercent` is applied BEFORE the position is opened, so a multiplier low enough
+ * to strain the system also makes the seeding open non viable, and the case is skipped before
+ * the operation under test ever runs. Every Recovery Mode case the sweep could express was
+ * therefore a case it also skipped, which is why a thousand cases never asked a preview about a
+ * Recovery Mode borrow and two rules stayed wrong for the life of the file.
+ *
+ * **The sizes are measured, not guessed.** At the pinned fork block 15043414 the live system is
+ * `getEntireSystemColl` 15413255840429888850496 wei against `getEntireSystemDebt`
+ * 428255179495157716095502713 wei at 77051.10732 USD/BTC, which is a TCR of 2.7731. Recovery
+ * Mode is `TCR < CCR`, so it needs the price below `CCR / TCR = 54.09%` of that, a drawdown of
+ * at least 45.9 percent. The three values below all clear it with room, since the seeded
+ * position moves the system TCR slightly.
+ *
+ *   read at the pinned block with:
+ *     cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemColl()" \
+ *       --rpc-url https://rpc.test.mezo.org --block 15043414
+ *     cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemDebt()" \
+ *       --rpc-url https://rpc.test.mezo.org --block 15043414
+ */
+export const RECOVERY_DRAWDOWNS = [50, 60, 70] as const
+
 export type Precondition =
   /** No Trove. The only state `open` could reach before, and the only one the others could not. */
   | 'FRESH'
@@ -100,6 +126,11 @@ export interface DiffCase {
   precondition: Precondition
   /** Only meaningful when `op` is `redeem` (MK-048). */
   redeemBand: RedeemBand
+  /**
+   * Percent to drop the price by AFTER the fixture is seeded, `0` for no second move
+   * (MK-058, MK-059). See {@link RECOVERY_DRAWDOWNS}.
+   */
+  recoveryDrawdownPercent: number
 }
 
 /**
@@ -256,6 +287,12 @@ export function generateCases(
       'WHOLE_TROVE',
     ]
     const redeemBand = bands[Math.floor(rnd() * bands.length)] as RedeemBand
+    // MK-058, MK-059. One case in five is put through a post-seed drawdown, on the same
+    // reasoning MK-047's precondition uses: enough to exercise the mode reliably, not so much
+    // that the sweep spends its budget proving one branch. A drawdown short circuits nothing,
+    // unlike a mismatched precondition, so the two dimensions are independent.
+    const recoveryDrawdownPercent =
+      rnd() < 0.2 ? (RECOVERY_DRAWDOWNS[Math.floor(rnd() * RECOVERY_DRAWDOWNS.length)] ?? 0) : 0
     const mismatched = rnd() < 0.2
     const precondition: Precondition =
       op === 'open' ? (mismatched ? 'OCCUPIED' : 'FRESH') : mismatched ? 'FRESH' : 'OCCUPIED'
@@ -270,6 +307,7 @@ export function generateCases(
       elapsedSeconds,
       precondition,
       redeemBand,
+      recoveryDrawdownPercent,
     })
   }
   return cases
@@ -288,5 +326,6 @@ export function describeCase(c: DiffCase): string {
     `elapsedSeconds=${c.elapsedSeconds}`,
     `precondition=${c.precondition}`,
     `redeemBand=${c.redeemBand}`,
+    `recoveryDrawdownPercent=${c.recoveryDrawdownPercent}`,
   ].join(' ')
 }

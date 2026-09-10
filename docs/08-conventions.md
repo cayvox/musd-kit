@@ -305,3 +305,21 @@ to ask what happens a block later, and a reader who sees a bare number does not.
 
 **Do not soften a finding because its number turned out to be weaker than it read.** The finding
 stands on the evidence that remains. The record only has to say what that evidence is.
+
+## 11. One rule, one implementation
+
+**A rule the protocol has once is implemented here once.** When two functions answer the same
+question, they will diverge, and the divergence will be invisible because both of them pass their
+own tests. That is not a prediction: it has now happened twice with the same root cause. MK-001
+was `isLiquidatable` applying a Recovery Mode widening the protocol does not have while
+`getTrove` applied the correct rule, so the same predicate answered differently depending on which
+API you reached for. MK-058, MK-059 and MK-065 were `evaluateBorrow` and `evaluateAdjust`
+disagreeing on three separate rules about the same call, in a file written months **after** MK-001
+closed and its lesson was recorded.
+
+So the fix is one implementation, never two that agree today. If a second surface needs the same
+answer in a different shape, it projects the first rather than restating it: `previewBorrow` is
+`previewAdjustTrove` with a debt increase, because on chain `withdrawMUSD` is `_adjustTrove` with
+a debt increase. **And where a projection is not possible, the agreement is a test**, asserted
+across both modes and both sides of every boundary, not left to review. Two implementations with
+no such test is the shape this rule exists to refuse, whatever the tests on each half say.

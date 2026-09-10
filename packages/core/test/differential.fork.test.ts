@@ -144,6 +144,50 @@ describe('Differential harness, preview verdict against chain outcome', () => {
           .join('  ')}`,
       )
     }
+    // MK-058, MK-059. Recovery Mode coverage, counted rather than assumed, and per operation
+    // because "the sweep reached Recovery Mode" is not the claim that matters. The claim that
+    // matters is that it reached Recovery Mode BORROWS, which is where the two wrong rules
+    // lived and which the sweep could not construct at all before the post-seed drawdown
+    // existed. A mode that never ran proves nothing, exactly as MK-048's bands established.
+    const rm = results.filter((r) => r.isRecoveryMode === true)
+    const rmByOp = new Map<string, { ran: number; skipped: number }>()
+    for (const r of rm) {
+      const row = rmByOp.get(r.case.op) ?? { ran: 0, skipped: 0 }
+      if (r.skipped !== undefined) row.skipped++
+      else row.ran++
+      rmByOp.set(r.case.op, row)
+    }
+    console.log(
+      `[differential] recovery mode: reached=${rm.length} of ${results.length}` +
+        `  asked for a drawdown=${results.filter((r) => r.case.recoveryDrawdownPercent > 0).length}`,
+    )
+    console.log(
+      `[differential] recovery mode by op: ${
+        [...rmByOp.entries()]
+          .sort()
+          .map(([op, row]) => `${op} ran=${row.ran} skipped=${row.skipped}`)
+          .join('  ') || 'NONE'
+      }`,
+    )
+    // And the borrow rows split by band, which is the specific gap MK-058 and MK-059 came
+    // through. A borrow in Recovery Mode is the case that used to preview as viable and be
+    // refused by the chain on every single amount.
+    const rmBorrows = rm.filter((r) => r.case.op === 'borrow')
+    const borrowBands = new Map<string, { ran: number; skipped: number }>()
+    for (const r of rmBorrows) {
+      const row = borrowBands.get(r.case.band) ?? { ran: 0, skipped: 0 }
+      if (r.skipped !== undefined) row.skipped++
+      else row.ran++
+      borrowBands.set(r.case.band, row)
+    }
+    console.log(
+      `[differential] recovery mode BORROWS by band: ${
+        [...borrowBands.entries()]
+          .sort()
+          .map(([band, row]) => `${band} ran=${row.ran} skipped=${row.skipped}`)
+          .join('  ') || 'NONE'
+      }`,
+    )
     for (const s of skipped.slice(0, 5)) {
       console.log(`[differential] skipped ${describeCase(s.case)} :: ${s.skipped}`)
     }

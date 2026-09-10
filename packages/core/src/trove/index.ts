@@ -526,8 +526,16 @@ export async function adjustTrove(
 
   const collWithdrawal = wd ?? 0n
   const collAdd = add ?? 0n
+  // MK-060. PRESENCE, which is what `_adjustTrove`'s `_isDebtIncrease` parameter means: the
+  // contract takes it independently of `_mUSDChange` and reconciles the pair at
+  // `BorrowerOperations.sol:785-787`. The evaluator derived the same flag from VALUE, so the
+  // two disagreed about `borrow: 0n`; it now takes presence too, from `previewAdjustTrove`.
   const isDebtIncrease = brw !== undefined
   const debtChange = brw ?? rpy ?? 0n
+  // And validate the leg the way `borrow` does (`assertPositiveAmount` above), which this path
+  // never did. Without it a zero draw was sent as `(0, true)` and refused on chain at `:786`
+  // after a preview that had called it viable.
+  if (brw !== undefined) assertPositiveAmount('borrow', brw)
 
   const owner = wallet.account.address
   let fee = 0n
