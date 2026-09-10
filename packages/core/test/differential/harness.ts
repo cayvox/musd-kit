@@ -109,6 +109,15 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
   // MK-047. The account state is now part of the case, so a status gate can be reached at all.
   // `open` against OCCUPIED and everything else against FRESH are the two states no generated
   // case could construct before, and the first of them is where MK-047 lived.
+  // MK-067. The maximum solver, swept the only way a maximum CAN be: ask for it, then attempt
+  // it. No seeding, because it sizes an open and needs an account with no Trove.
+  if (c.op === 'borrowingPower') {
+    await applyDrawdown(fork, c, basePrice)
+    return {
+      ...(await borrowingPowerCase(fork, client, account, c)),
+      isRecoveryMode: await inRm(client),
+    }
+  }
   if (c.op === 'open') {
     if (c.precondition === 'OCCUPIED') {
       const seeded = await seedPosition(fork, client, c)
@@ -353,6 +362,68 @@ async function seedPosition(
   } catch (error) {
     return `fixture: seed open threw ${(error as Error).name}`
   }
+}
+
+/**
+ * One borrowing power case (MK-067, MK-069).
+ *
+ * **The shape is inverted from every other case here.** Elsewhere the generator picks an
+ * amount and the harness compares a verdict against an outcome. A maximum has no verdict, so
+ * the SDK supplies the amount and the chain supplies the verdict, and the assertion is the
+ * boundary property: the reported maximum must OPEN, and one wei more must not.
+ *
+ * The refusal is attempted FIRST, deliberately. It changes no state, so it cannot move the
+ * system out of Recovery Mode before the acceptance is tried, and a reverted open leaves the
+ * account free to reuse.
+ *
+ * A maximum of zero is a skip rather than a pass: it means no valid open exists for this
+ * collateral at all, which is a real answer and not one this case can check anything against.
+ */
+async function borrowingPowerCase(
+  fork: ForkConnection,
+  client: MusdClient,
+  account: PrivateKeyAccount,
+  c: DiffCase,
+): Promise<CaseResult> {
+  const price = await client.getOraclePrice()
+  const max = await client.getBorrowingPower({
+    collateral: c.collateral,
+    price,
+    account: account.address,
+  })
+  if (max === 0n) {
+    return {
+      case: c,
+      previewViable: false,
+      chainSucceeded: false,
+      skipped: 'no valid open exists for this collateral',
+    }
+  }
+
+  // One wei more must be refused. A success here is a FALSE_VIABLE in the strict sense: the
+  // solver named a maximum that was not the maximum.
+  const over = await attemptWrite(fork, () =>
+    client.openTrove({ collateral: c.collateral, debt: max + 1n }),
+  )
+  if (over.ok) {
+    return {
+      case: c,
+      previewViable: false,
+      chainSucceeded: true,
+      mismatch: {
+        direction: 'FALSE_VIABLE',
+        detail: `getBorrowingPower said ${max} is the maximum, but ${max + 1n} also opened`,
+      },
+    }
+  }
+
+  // And the maximum itself must go through.
+  const at = await attemptWrite(fork, () =>
+    client.openTrove({ collateral: c.collateral, debt: max }),
+  )
+  const mismatch = compare(true, at, `getBorrowingPower=${max}`)
+  if (mismatch) return { case: c, previewViable: true, chainSucceeded: at.ok, mismatch }
+  return { case: c, previewViable: true, chainSucceeded: at.ok }
 }
 
 async function openCase(

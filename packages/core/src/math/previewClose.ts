@@ -1,5 +1,5 @@
 import type { Address } from 'viem'
-import { musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
+import { musdAbi, priceFeedAbi, sortedTrovesAbi, troveManagerAbi } from '../clients'
 import { CCR, MUSD_GAS_COMPENSATION } from '../constants'
 import { computeICR } from './compute'
 import type { MathDeps } from './deps'
@@ -15,12 +15,20 @@ import type { MathDeps } from './deps'
  *   :953-955  `if (canMint) _requireNotInRecoveryMode(price);`        -> :1133
  *   :963      `_requireSufficientMUSDBalance(_caller, debt - MUSD_GAS_COMPENSATION);` -> :1229
  *   :964-973  `if (canMint) { ... _requireNewTCRisAboveCCR(newTCR); }` -> :1344
+ *   :976      `troveManagerCached.closeTrove(_borrower)`, which is `TroveManager.sol:472-475`
+ *             and reaches `TroveManager._closeTrove:1390-1399`, where the SAME `canMint` flag
+ *             gates `_requireMoreThanOneTroveInSystem` (`TroveManager.sol:1488-1496`)
  *
- * **Two of the four gates are conditional on a runtime chain read**, `canMint`, and that is
+ * **There are FIVE gates, not four** (MK-074). The fifth lives one contract away, which is why
+ * it was missed: it is not in `BorrowerOperations._closeTrove` at all, it is inside the
+ * `closeTrove` call on the last line of it.
+ *
+ * **Three of the five gates are conditional on a runtime chain read**, `canMint`, and that is
  * the part worth stating rather than assuming. `mintList` is a governable mapping on the MUSD
- * token; if BorrowerOperations is not on it, closing is permitted in Recovery Mode and the
- * TCR check does not run at all. This preview reads it rather than assuming it is true,
- * because assuming a governable value is exactly the class of defect MK-012 and MK-018 were.
+ * token; if BorrowerOperations is not on it, closing is permitted in Recovery Mode, the TCR
+ * check does not run at all, and neither does the last Trove check. This preview reads it
+ * rather than assuming it is true, because assuming a governable value is exactly the class of
+ * defect MK-012 and MK-018 were.
  *
  * **The balance requirement is the whole debt minus the gas compensation** (`:963`), not the
  * net debt and not the principal. A caller who repaid down to the floor still needs that
@@ -37,6 +45,15 @@ export type CloseBlockReason =
   | 'INSUFFICIENT_MUSD_BALANCE'
   /** `_requireNewTCRisAboveCCR` (`:972`). Only enforced when `canMint`. */
   | 'TCR_BELOW_CCR'
+  /**
+   * `_requireMoreThanOneTroveInSystem` (`TroveManager.sol:1398`, `:1488-1496`), reached through
+   * `closeTrove` at `BorrowerOperations.sol:976` (MK-074).
+   *
+   * The LAST gate, and conditional on the same `canMint` as the two above. It requires
+   * `TroveOwners.length > 1 && sortedTroves.getSize() > 1`, so the final Trove in a system
+   * cannot be closed and the chain refuses with "TroveManager: Only one trove in the system".
+   */
+  | 'LAST_TROVE_IN_SYSTEM'
 
 /** Result of {@link previewClose}. */
 export interface ClosePreview {
@@ -86,6 +103,14 @@ export interface EvaluateCloseInput {
   price: bigint
   systemColl: bigint
   systemDebt: bigint
+  /**
+   * `TroveManager.getTroveOwnersCount()` and `SortedTroves.getSize()`, for the last Trove gate
+   * (MK-074). Both optional on the same rule `previewOpen.troveStatus` follows (MK-047):
+   * `undefined` is "not asked", not "there is one", so the gate is simply not evaluated and
+   * not reported. `previewClose` always supplies them.
+   */
+  troveOwnersCount?: bigint | undefined
+  sortedTrovesSize?: bigint | undefined
 }
 
 /** The verdict, as a pure function of values already read from the chain. */
@@ -100,6 +125,8 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
     price,
     systemColl,
     systemDebt,
+    troveOwnersCount,
+    sortedTrovesSize,
   } = input
 
   const musdRequired = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
@@ -116,6 +143,17 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
   if (canMint && isRecoveryMode) reasons.push('RECOVERY_MODE')
   if (musdShortfall > 0n) reasons.push('INSUFFICIENT_MUSD_BALANCE')
   if (canMint && resultingTcr < CCR) reasons.push('TCR_BELOW_CCR')
+  // MK-074. LAST, because the contract reaches it last: `BorrowerOperations.sol:976` calls
+  // `closeTrove` only after the balance and TCR checks have passed. Evaluated only when both
+  // counts were supplied, and only when `canMint`, which is the flag the contract gates it on.
+  if (
+    canMint &&
+    troveOwnersCount !== undefined &&
+    sortedTrovesSize !== undefined &&
+    (troveOwnersCount <= 1n || sortedTrovesSize <= 1n)
+  ) {
+    reasons.push('LAST_TROVE_IN_SYSTEM')
+  }
 
   return {
     viable: reasons.length === 0,
@@ -144,20 +182,37 @@ export async function previewClose(deps: MathDeps, owner: Address): Promise<Clos
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
   const musd = { address: addresses.musd, abi: musdAbi } as const
 
-  const [status, entire, isRecoveryMode, musdBalance, canMint, systemColl, systemDebt] =
-    await Promise.all([
-      publicClient.readContract({ ...tm, functionName: 'getTroveStatus', args: [owner] }),
-      publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [owner] }),
-      publicClient.readContract({ ...tm, functionName: 'checkRecoveryMode', args: [price] }),
-      publicClient.readContract({ ...musd, functionName: 'balanceOf', args: [owner] }),
-      publicClient.readContract({
-        ...musd,
-        functionName: 'mintList',
-        args: [addresses.borrowerOperations],
-      }),
-      publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
-      publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
-    ])
+  const [
+    status,
+    entire,
+    isRecoveryMode,
+    musdBalance,
+    canMint,
+    systemColl,
+    systemDebt,
+    troveOwnersCount,
+    sortedTrovesSize,
+  ] = await Promise.all([
+    publicClient.readContract({ ...tm, functionName: 'getTroveStatus', args: [owner] }),
+    publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [owner] }),
+    publicClient.readContract({ ...tm, functionName: 'checkRecoveryMode', args: [price] }),
+    publicClient.readContract({ ...musd, functionName: 'balanceOf', args: [owner] }),
+    publicClient.readContract({
+      ...musd,
+      functionName: 'mintList',
+      args: [addresses.borrowerOperations],
+    }),
+    publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
+    publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
+    // MK-074. Both halves of `_requireMoreThanOneTroveInSystem`, read rather than inferred from
+    // each other: the contract requires BOTH to exceed one and they are different structures.
+    publicClient.readContract({ ...tm, functionName: 'getTroveOwnersCount' }),
+    publicClient.readContract({
+      address: addresses.sortedTroves,
+      abi: sortedTrovesAbi,
+      functionName: 'getSize',
+    }),
+  ])
 
   return evaluateClose({
     status,
@@ -169,5 +224,7 @@ export async function previewClose(deps: MathDeps, owner: Address): Promise<Clos
     price,
     systemColl,
     systemDebt,
+    troveOwnersCount,
+    sortedTrovesSize,
   })
 }

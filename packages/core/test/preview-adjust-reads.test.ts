@@ -46,6 +46,11 @@ function fakeDeps(over: Partial<Record<string, unknown>> = {}): MathDeps {
     mintList: true,
     getEntireSystemColl: 1_000n * BTC,
     getEntireSystemDebt: 20_000_000n * MUSD,
+    // MK-074. Both halves of `_requireMoreThanOneTroveInSystem` (`TroveManager.sol:1488-1496`),
+    // which `previewClose` now reads. A populated system, so the gate does not fire by default
+    // and the tests below stay about the reasons they name.
+    getTroveOwnersCount: 42n,
+    getSize: 42n,
     getBorrowingFee: 10n * MUSD,
     governableVariables: '0x0000000000000000000000000000000000000001',
     // The deployment verification multicall (MK-008) and the constants read.

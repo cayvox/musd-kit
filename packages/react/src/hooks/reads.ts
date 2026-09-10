@@ -69,11 +69,25 @@ export function useLiquidationPrice({
  */
 export function useBorrowingPower({
   collateral,
-}: { collateral: bigint | undefined }): UseQueryResult<bigint, Error> {
+  account,
+}: {
+  collateral: bigint | undefined
+  /**
+   * The account that would open (MK-067). Pass the connected address whenever you have one:
+   * the borrowing fee is skipped entirely for a fee exempt account
+   * (`BorrowerOperations.sol:637-643`), so for such a caller the true maximum is larger than
+   * the figure returned without it. Omitted, the answer assumes not exempt.
+   */
+  account?: Address | undefined
+}): UseQueryResult<bigint, Error> {
   const chainId = useChainId()
   return useMusdQuery<bigint>({
-    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n),
-    fetch: (client) => client.getBorrowingPower({ collateral: collateral as bigint }),
+    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, account),
+    fetch: (client) =>
+      client.getBorrowingPower({
+        collateral: collateral as bigint,
+        ...(account !== undefined ? { account } : {}),
+      }),
     // Zero is disabled rather than queried: `getBorrowingPower` now rejects a non-positive
     // collateral with `InvalidAmount` instead of searching over it (MK-010), and an empty
     // text input parsing to `0n` is the ordinary state of a calculator being typed into, not

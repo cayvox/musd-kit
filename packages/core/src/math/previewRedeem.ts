@@ -1,6 +1,6 @@
 import type { Address } from 'viem'
 import { musdAbi, priceFeedAbi, sortedTrovesAbi, troveManagerAbi } from '../clients'
-import { MCR, MUSD_GAS_COMPENSATION } from '../constants'
+import { MCR, MUSD_GAS_COMPENSATION, SECONDS_PER_YEAR } from '../constants'
 import type { MathDeps } from './deps'
 
 /**
@@ -179,8 +179,12 @@ export interface EvaluateRedeemInput {
   eligible: EligibleTrove[]
 }
 
-/** The divisor the protocol's interest accrual uses. */
-const SECONDS_PER_YEAR = 365n * 24n * 3600n
+// MK-071. `SECONDS_PER_YEAR` is IMPORTED, not redeclared. This file used to shadow it with
+// `365n * 24n * 3600n`, which is 31_536_000, under a docstring calling it the protocol's
+// divisor. The protocol's divisor is `InterestRateMath.SECONDS_IN_A_YEAR = 31_556_952`
+// (`InterestRateMath.sol:9`, the Gregorian year), and `constants.ts:22-23` names 31_536_000
+// explicitly as the value it is NOT. The shadow made the margin 0.0664 percent too large,
+// which is conservative on `nextViableAmount` and wrong on the `consumesWhole` split below.
 /** The contract's own allowance for accrual when it bounds a partial hint (`:1276-1285`). */
 const ACCRUAL_WINDOW_SECONDS = 600n
 

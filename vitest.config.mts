@@ -89,11 +89,25 @@ export default defineConfig({
        * closest to its floor, several of its remaining branches are fork-path dependent,
        * and a ratchet that has to be argued down later was set too tight. Functions stays
        * at 99 for the same reason, the measured 99.27 rounds down to 99.
+       *
+       * Re-measured after the P13 wave (MK-067 through MK-077), same block:
+       *   statements 98.62 · branches 92.98 · functions 100 · lines 98.62
+       *
+       * **Branches moves 91 to 92**, which is the measured number rounded down and is the
+       * first time this metric has had room to spare: it was 92.83 last wave and 92.98 now,
+       * so 92 is not a knife edge. Statements and lines stay at 98, since 98.62 rounds down
+       * to 98.
+       *
+       * **Functions stays at 99 although it measures exactly 100**, and that is a choice
+       * rather than an oversight. A floor of 100 turns any newly added, not yet exercised
+       * function into a red build, which is a different and much sharper control than the one
+       * this ratchet is. Raising it is defensible and should be argued on its own rather than
+       * slipped in beside eleven findings.
        */
       thresholds: {
         lines: 98,
         functions: 99,
-        branches: 91,
+        branches: 92,
         statements: 98,
       },
     },

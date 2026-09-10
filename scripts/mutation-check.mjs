@@ -75,6 +75,80 @@ const MUTATIONS = [
       to: '  if (!isDebtIncrease && repayDebt > 0n) {',
     },
   },
+
+  // --- P13. One rule implemented five times, and the tests that could only agree. -----------
+
+  {
+    id: 'MK-067',
+    what: 'charge the borrowing fee unconditionally in getBorrowingPower again',
+    file: 'packages/core/src/math/getBorrowingPower.ts',
+    from: '  const chargesFee = isBorrowingFeeCharged(isRecoveryMode, feeExempt)',
+    to: '  const chargesFee = true',
+  },
+  {
+    id: 'MK-067 exemption',
+    what: 'stop reading the exemption, so an exempt account gets the non-exempt maximum',
+    file: 'packages/core/src/math/getBorrowingPower.ts',
+    from:
+      '  const feeExempt =\n' +
+      '    !isRecoveryMode && params.account !== undefined\n' +
+      '      ? await deps.isAccountFeeExempt(params.account)\n' +
+      '      : false',
+    to: '  const feeExempt = false',
+  },
+  {
+    id: 'MK-068',
+    what: 'send the open path back to the raw fee getter',
+    file: 'packages/core/src/trove/index.ts',
+    from: '  const fee = await effectiveBorrowingFee(deps, wallet.account.address, debt)',
+    to: '  const fee = await getBorrowingFee(deps, debt)',
+  },
+  {
+    id: 'MK-071',
+    what: 'restore the shadowed 365 day year in the redemption margin',
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: '  return (entireDebt * interestRateBps * ACCRUAL_WINDOW_SECONDS) / (10_000n * SECONDS_PER_YEAR)',
+    to: '  return (entireDebt * interestRateBps * ACCRUAL_WINDOW_SECONDS) / (10_000n * 365n * 24n * 3600n)',
+  },
+  {
+    id: 'MK-074 close',
+    what: 'drop the last Trove gate from the close preview',
+    file: 'packages/core/src/math/previewClose.ts',
+    from: "    reasons.push('LAST_TROVE_IN_SYSTEM')",
+    to: '    void 0',
+  },
+  {
+    id: 'MK-074 liquidate',
+    what: 'let the last Trove be reported liquidatable again',
+    file: 'packages/core/src/math/compute.ts',
+    from: '  if (troveOwnersCount !== undefined && troveOwnersCount <= 1n) return false',
+    to: '  void troveOwnersCount',
+  },
+  {
+    id: 'MK-075',
+    what: 'report the refinance reasons in the order the contract does not use',
+    file: 'packages/core/src/math/previewRefinance.ts',
+    from:
+      "  if (isRecoveryMode) reasons.push('RECOVERY_MODE')\n" +
+      "  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')",
+    to:
+      "  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')\n" +
+      "  if (isRecoveryMode) reasons.push('RECOVERY_MODE')",
+  },
+  {
+    id: 'MK-076',
+    what: 'call every zero withdrawal an ICR limit again',
+    file: 'packages/core/src/math/previewAdjust.ts',
+    from: "  const limitedBy = byIcr <= bySystem ? 'ICR' : 'TCR'",
+    to: "  const limitedBy = amount === 0n || byIcr <= bySystem ? 'ICR' : 'TCR'",
+  },
+  {
+    id: 'MK-077',
+    what: 'silently drop the repayment leg again',
+    file: 'packages/core/src/math/previewAdjust.ts',
+    from: "  if (increaseDebt > 0n && repayDebt > 0n) reasons.push('DEBT_INCREASE_AND_REPAY')",
+    to: '  void 0',
+  },
 ]
 
 /** Run the chain-free unit project and return the failing test names. */

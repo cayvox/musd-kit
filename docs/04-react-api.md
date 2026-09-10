@@ -37,7 +37,9 @@ happened to arrive together.
 
 ```tsx
 // A borrowing-power calculator, no live position needed (preview math)
-const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05') });
+// Pass `account` whenever you have one (MK-067): the borrowing fee is skipped for a fee exempt
+// account, so the maximum is LARGER for such a caller than the figure returned without it.
+const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05'), account });
 // `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
 ```
 

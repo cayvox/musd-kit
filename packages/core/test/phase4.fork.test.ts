@@ -161,6 +161,15 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       // getBorrowingFee every step. Kept here rather than in src so the comparison is
       // against the implementation this replaced, not against a shared helper that could
       // drift with it.
+      //
+      // MK-070. **That intent was right and the execution reproduced the very thing it was
+      // guarding against.** This reference called `getBorrowingFee` unconditionally, exactly as
+      // the implementation did, so it was a copy of MK-067 rather than an independent check and
+      // the comparison could only ever agree. It stays independent of `src`, which is the whole
+      // point of keeping it here, but the fee condition is now the CONTRACT's, written out:
+      // `!isRecoveryMode && !isAccountFeeExempt(borrower)` (`BorrowerOperations.sol:637-643`).
+      // Importing `isBorrowingFeeCharged` would have made this half a tautology, which is the
+      // opposite of what a reference implementation is for.
       const [isRecoveryMode, systemColl, systemDebt, minNetDebt] = await Promise.all([
         publicClient.readContract({
           address: T.troveManager,
@@ -181,13 +190,21 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
         musd.getConstants().then((c) => c.minNetDebt),
       ])
       const target = isRecoveryMode ? CCR : MCR
-      const feeOf = (draw: bigint) =>
-        publicClient.readContract({
-          address: T.borrowerOperations,
-          abi: borrowerOperationsAbi,
-          functionName: 'getBorrowingFee',
-          args: [draw],
-        })
+      // `getBorrowingPower` is called below without an account, so the comparison is the not
+      // exempt one; the exempt branch is covered chain free in
+      // `borrowing-power-agreement.test.ts`, where an exempt account can be constructed without
+      // impersonating the council.
+      const feeExempt = false
+      const chargesFee = !isRecoveryMode && !feeExempt
+      const feeOf = async (draw: bigint) =>
+        chargesFee
+          ? await publicClient.readContract({
+              address: T.borrowerOperations,
+              abi: borrowerOperationsAbi,
+              functionName: 'getBorrowingFee',
+              args: [draw],
+            })
+          : 0n
       const feasible = async (draw: bigint) => {
         const entireDebt = draw + (await feeOf(draw)) + GAS
         if (computeICR({ collateral, entireDebt, price }) < target) return false
@@ -324,12 +341,53 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       })
       expect((await c.getTrove(testAccount(361).address)).exists).toBe(true)
 
-      // Borrowing power in RM binds on CCR (lower draw than it would at MCR).
+      // MK-070. Borrowing power in Recovery Mode, checked against the CHAIN rather than against
+      // this calculator's own arithmetic.
+      //
+      // This assertion used to be `computeICR(coll, bpRM + getBorrowingFee(bpRM) + GAS, p) >=
+      // CCR - 1n`, which rebuilds the projected debt with the same unconditional fee the
+      // implementation used, so it could only ever agree with it. It never opened anything. It
+      // therefore passed while MK-067 was live AND would have FAILED once MK-067 was fixed,
+      // because the corrected maximum consumes the whole CCR ceiling and adding a fee back on
+      // top of it overshoots. A test that goes red when a defect is removed is worse than no
+      // test, which is why this now sends transactions.
+      //
+      // In Recovery Mode the contract charges NO borrowing fee (`BorrowerOperations.sol:637-643`),
+      // so the entire debt is `draw + 200` and `_requireICRisAboveCCR` (`:1337-1342`) makes the
+      // ceiling exactly `coll * price / CCR`.
       const bpRM = await c.getBorrowingPower({ collateral: coll, price: p })
-      const entireAtBp = bpRM + (await c.getBorrowingFee(bpRM)) + GAS
-      expect(
-        computeICR({ collateral: coll, entireDebt: entireAtBp, price: p }),
-      ).toBeGreaterThanOrEqual(CCR - 1n)
+      expect(bpRM, 'a maximum of zero would make everything below vacuous').toBeGreaterThan(0n)
+      console.log(`[phase4] borrowingPower(RM, ${coll}) = ${bpRM}`)
+
+      // The REFUSAL first, because it changes no state and therefore cannot move the system out
+      // of Recovery Mode before the acceptance is checked.
+      const pvOver = await c.previewOpen({ collateral: coll, debt: bpRM + 1n, price: p })
+      expect(pvOver.viable, 'one wei above the maximum must not be viable').toBe(false)
+      expect(pvOver.reasons).toContain('ICR_BELOW_THRESHOLD')
+      await expect(
+        openTroveRaw(fork, {
+          collateralBtc: coll,
+          debtMusd: bpRM + 1n,
+          account: testAccount(363),
+          numTrials: 15,
+        }),
+        'the chain must refuse one wei above the reported maximum',
+      ).rejects.toThrow()
+
+      // And the ACCEPTANCE, on chain, which is the half that was never checked at all.
+      expect((await c.getSystemState()).isRecoveryMode, 'still in RM for the open below').toBe(true)
+      await openTroveRaw(fork, {
+        collateralBtc: coll,
+        debtMusd: bpRM,
+        account: testAccount(362),
+        numTrials: 15,
+      })
+      const opened = await c.getTrove(testAccount(362).address)
+      expect(opened.exists, 'the reported maximum must OPEN').toBe(true)
+      expect(opened.icr, 'and land at or above CCR').toBeGreaterThanOrEqual(CCR)
+      // No fee was charged, so the stored debt is the bare draw plus the gas reserve.
+      expect(opened.entireDebt, 'no borrowing fee is charged in Recovery Mode').toBe(bpRM + GAS)
+      console.log(`[phase4] RM open at max: entireDebt=${opened.entireDebt} icr=${opened.icr}`)
     } finally {
       await fork.setPrice(original)
     }

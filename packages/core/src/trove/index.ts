@@ -28,6 +28,9 @@ import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/map
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
 import type { MathDeps } from '../math/deps'
+// MK-069. The one copy of `BorrowerOperations.sol:637-643` and `:810-818`. Every place on this
+// path that decides whether the borrowing fee applies goes through it.
+import { isBorrowingFeeCharged } from '../math/fee'
 import {
   type AdjustPreview,
   type PreviewAdjustParams,
@@ -105,14 +108,19 @@ async function effectiveBorrowingFee(
       functionName: 'governableVariables',
     }),
   ])
-  if (isRecoveryMode) return 0n
-  const exempt = await deps.publicClient.readContract({
-    address: governableVariables,
-    abi: governableVariablesAbi,
-    functionName: 'isAccountFeeExempt',
-    args: [owner],
-  })
-  if (exempt) return 0n
+  // MK-069. The decision is `isBorrowingFeeCharged` (`math/fee.ts:15-17`), the single copy of
+  // `BorrowerOperations.sol:637-643` and `:810-818`, rather than a conjunction re-derived here.
+  // The exemption read is skipped when the mode alone already settles it, which saves a round
+  // trip and cannot change the answer because the rule is an AND.
+  const feeExempt = isRecoveryMode
+    ? false
+    : await deps.publicClient.readContract({
+        address: governableVariables,
+        abi: governableVariablesAbi,
+        functionName: 'isAccountFeeExempt',
+        args: [owner],
+      })
+  if (!isBorrowingFeeCharged(isRecoveryMode, feeExempt)) return 0n
   return getBorrowingFee(deps, debt)
 }
 
@@ -297,7 +305,13 @@ export async function openTrove(deps: WriteDeps, params: OpenTroveParams): Promi
   const { collateral, debt } = params
   assertPositiveAmount('collateral', collateral)
   assertPositiveAmount('debt', debt)
-  const fee = await getBorrowingFee(deps, debt)
+  // MK-068. The fee the contract will ACTUALLY charge, the same helper `borrow` and
+  // `adjustTrove` use. This called the raw `getBorrowingFee` until MK-068, which put a fee the
+  // contract skips into three separate places on this path: the cap check on the next line
+  // refused an open in Recovery Mode where the protocol charges nothing, the `minNetDebt`
+  // floor below was measured against `debt + fee` where the contract measures `debt`
+  // (`BorrowerOperations.sol:645`), and the hint named a position that would not exist.
+  const fee = await effectiveBorrowingFee(deps, wallet.account.address, debt)
   assertFeeWithinCap(debt, fee, params.maxFeePercentage)
   // Pre-send guards (fail fast, fully-typed): min-net-debt floor + no existing Trove.
   const [minNetDebt, pos] = await Promise.all([
@@ -368,6 +382,14 @@ function adjustReasonToError(p: AdjustPreview, owner: Address): MusdError {
     case 'COLLATERAL_ADD_AND_WITHDRAW':
       return new InvalidAdjustment(
         'Cannot add and withdraw collateral in one call (BorrowerOperations.sol:1367-1375).',
+      )
+    case 'DEBT_INCREASE_AND_REPAY':
+      // MK-077. No contract citation, deliberately: `_adjustTrove` takes one debt leg
+      // (`BorrowerOperations.sol:757-758`), so this is the SDK refusing an input the chain
+      // cannot express, not a gate the chain enforces. `adjustTrove` also refuses it earlier
+      // and on presence rather than value.
+      return new InvalidAdjustment(
+        'Cannot borrow and repay in one call: adjustTrove takes a single debt leg.',
       )
     case 'ZERO_DEBT_INCREASE':
       return new InvalidAmount('increaseDebt', 0n)
@@ -661,13 +683,17 @@ async function refinancingFee(
     abi: borrowerOperationsAbi,
     functionName: 'governableVariables',
   })
-  const exempt = await deps.publicClient.readContract({
+  const feeExempt = await deps.publicClient.readContract({
     address: governableVariables,
     abi: governableVariablesAbi,
     functionName: 'isAccountFeeExempt',
     args: [owner],
   })
-  if (exempt) return 0n
+  // MK-069. Through the one rule here too. The mode half is always satisfied on this path,
+  // because `_requireNotInRecoveryMode` (`BorrowerOperations.sol:1023`) is the FIRST thing
+  // `_refinance` does, so a refinance that reaches the fee is a refinance in normal mode. That
+  // is why `false` is passed rather than a read: it is a contract guarantee, not an assumption.
+  if (!isBorrowingFeeCharged(false, feeExempt)) return 0n
   const percentage = await deps.publicClient.readContract({
     address: deps.addresses.borrowerOperations,
     abi: borrowerOperationsAbi,

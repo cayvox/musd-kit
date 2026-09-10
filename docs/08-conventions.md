@@ -323,3 +323,23 @@ answer in a different shape, it projects the first rather than restating it: `pr
 a debt increase. **And where a projection is not possible, the agreement is a test**, asserted
 across both modes and both sides of every boundary, not left to review. Two implementations with
 no such test is the shape this rule exists to refuse, whatever the tests on each half say.
+
+**It happened a third time, and the third one was wider.** MK-067 through MK-070: the borrowing
+fee rule was decided in eight places and four of them were wrong the same way, including a test
+reference implementation and the fixture every fork test opens with. A projection was not
+available, because `getBorrowingPower` solves for a maximum while `evaluateOpen` judges a
+candidate, so it took the other half of this rule: the solver's predicate IS the evaluator, and
+`borrowing-power-agreement.test.ts` is the pin. **Test code counts.** A reference implementation
+that carries the same defect as the thing it references is not a second opinion, and the fixture
+that opens every position is production code for the purposes of this section.
+
+## 12. Closing a finding means enumerating the rule, not the defect
+
+**Before a finding can be marked fixed, list every place the rule it concerns is decided, and
+say for each whether it is correct.** The list goes in the entry. Fixing the location the entry's
+own **SDK location** field names is not closing the finding; it is closing one instance of it.
+
+This is mechanical on purpose: grep for the rule's inputs across `packages/`, `scripts/` and
+`examples/`, including tests and harnesses, and account for every hit. MK-004, MK-017, MK-018 and
+MK-065 were each remediated exactly where they were observed and each left live copies behind,
+which is how one fee rule survived four releases in four wrong implementations.

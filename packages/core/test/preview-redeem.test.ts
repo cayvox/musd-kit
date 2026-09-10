@@ -51,9 +51,20 @@ const ENTIRE1 = D1 + GAS_COMP
 const HEADROOM = D1 - M // 208 MUSD
 const RATE_BPS = 100n
 
-/** The margin recomputed here rather than imported, so a change to either side shows up. */
+/**
+ * The margin recomputed here rather than imported, so a change to either side shows up.
+ *
+ * **MK-071. The divisor is the CONTRACT's**, `InterestRateMath.SECONDS_IN_A_YEAR = 31_556_952`
+ * (`InterestRateMath.sol:9`, 365.2425 days), written out as the literal it is rather than
+ * imported from `constants.ts`, so this stays an INDEPENDENT statement of the rule rather than
+ * a tautology. It used to read `365n * 24n * 3600n`, which is 31_536_000: the very value
+ * `constants.ts:22-23` names as the wrong one, and the same wrong value the source carried. Two
+ * copies of one mistake agree, so the assertion could only ever confirm the defect. That is
+ * MK-070's shape, in a chain free test.
+ */
+const SECONDS_IN_A_YEAR = 31_556_952n
 const marginOf = (entireDebt: bigint) =>
-  (entireDebt * RATE_BPS * 600n) / (10_000n * 365n * 24n * 3600n)
+  (entireDebt * RATE_BPS * 600n) / (10_000n * SECONDS_IN_A_YEAR)
 const G1 = marginOf(ENTIRE1)
 
 const base = {

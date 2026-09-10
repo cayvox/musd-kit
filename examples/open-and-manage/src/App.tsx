@@ -81,13 +81,16 @@ function SystemBar() {
   )
 }
 
-function OpenCard() {
+function OpenCard({ address }: { address: Address }) {
   const [coll, setColl] = useState('0.05')
   const [debt, setDebt] = useState('2500')
   const collateral = parse18(coll)
   const draw = parse18(debt)
 
-  const { data: maxBorrowable } = useBorrowingPower({ collateral })
+  // MK-067. The account is passed, not omitted: the borrowing fee is skipped entirely for a fee
+  // exempt account, so without it an exempt caller is shown a smaller maximum than the protocol
+  // allows. `usePreviewOpen` has always taken it for the same reason.
+  const { data: maxBorrowable } = useBorrowingPower({ collateral, account: address })
   const { data: preview } = usePreviewOpen(collateral, draw)
   const { openTrove, isPending, error, hash } = useOpenTrove()
 
@@ -186,7 +189,7 @@ export function App() {
       ) : (
         <>
           <SystemBar />
-          <OpenCard />
+          <OpenCard address={address} />
           <PositionCard address={address} />
         </>
       )}

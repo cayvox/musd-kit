@@ -110,8 +110,10 @@ the surface.
 ### Maturity
 
 Single author, unaudited, pre 1.0, with a public register of every known correctness gap. It has a
-fork harness against real Mezo contracts, a differential sweep of every preview against real
-transaction outcomes, and a coverage ratchet. It has not had an external audit and has not been run
+fork harness against real Mezo contracts, a differential sweep of ten operations against real
+transaction outcomes, and a coverage ratchet. **That said "every preview" until the P13 wave, and
+the sweep covered nine operations and not the open time maximum solver** (MK-069): the claim was
+broader than the instrument, and a defect lived in the difference (MK-067). It has not had an external audit and has not been run
 at scale by anyone but its author. That is the whole of it: use it on testnet, evaluate it against
 your own cases, and read the register before you depend on it.
 

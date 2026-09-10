@@ -4,9 +4,11 @@ export {
   computeLiquidationPrice,
   getHealthFactor,
   computeEntireDebt,
+  isTroveLiquidatable,
   type ComputeICRParams,
   type ComputeLiquidationPriceParams,
   type ComputeEntireDebtParams,
+  type IsTroveLiquidatableParams,
 } from './compute'
 export {
   previewOpen,

@@ -196,7 +196,9 @@ drawdown of 45.9 percent, and the generator uses 50, 60 and 70.
 the preview is taken, and the sweep reports Recovery Mode cases per operation and, for borrows, per
 band. This matters more than it sounds: a 60 case run reached Recovery Mode 13 times and reached a
 Recovery Mode BORROW zero times, because one operation in nine times one case in five is about 1.3
-expected at that sample size. "The sweep reached Recovery Mode" would have been true and would have
+expected at that sample size. (That arithmetic was right for the nine operation generator it was
+measured on; the P13 wave added a tenth, `borrowingPower`, so the same sample now expects about
+1.2.) "The sweep reached Recovery Mode" would have been true and would have
 proved nothing about the defect it was added for. Use `MK_DIFF_OP=borrow` over the full generation
 to get a usable sample:
 

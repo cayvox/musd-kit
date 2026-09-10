@@ -41,6 +41,44 @@ export function computeLiquidationPrice({
   return (MCR * entireDebt) / collateral
 }
 
+/** Inputs to {@link isTroveLiquidatable}: a live ICR and, optionally, the system's Trove count. */
+export interface IsTroveLiquidatableParams {
+  /** `TroveManager.getCurrentICR(borrower, price)`. */
+  icr: bigint
+  /**
+   * `TroveManager.getTroveOwnersCount()`, or `undefined` when it was not read (MK-074).
+   *
+   * `_liquidate` returns an empty result without liquidating when `TroveOwners.length <= 1`
+   * (`TroveManager.sol:1058-1060`), so `batchLiquidateTroves` accumulates nothing and reverts
+   * at `:690-693` with "TroveManager: nothing to liquidate". **The last Trove in a system is
+   * never liquidatable, whatever its ICR.** Note this is the count ALONE: unlike the close
+   * path's `_requireMoreThanOneTroveInSystem` (`:1488-1496`), the liquidation path does not
+   * also consult `sortedTroves.getSize()`.
+   *
+   * `undefined` is "not asked", not "there is more than one", so the condition is skipped.
+   */
+  troveOwnersCount?: bigint | undefined
+}
+
+/**
+ * Whether a Trove can actually be liquidated right now (MK-001, MK-074).
+ *
+ * **One implementation, because two callers ask it**: `read/getTrove.ts` for the `isLiquidatable`
+ * field and `read/system.ts` for the standalone predicate. MK-001 was those two disagreeing, and
+ * `docs/08-conventions.md` §11 is the rule that says the fix is one copy rather than two that
+ * agree today. They both used to inline `icr < MCR`, which is why MK-074's condition had to be
+ * added in two places before this existed.
+ *
+ * `ICR < MCR` in BOTH modes: `TroveManager.sol:1148` is the only ratio gate, and this fork
+ * removed stock Liquity's Recovery Mode widening entirely.
+ */
+export function isTroveLiquidatable({ icr, troveOwnersCount }: IsTroveLiquidatableParams): boolean {
+  if (icr >= MCR) return false
+  // The last Trove cannot be liquidated even at an ICR of zero.
+  if (troveOwnersCount !== undefined && troveOwnersCount <= 1n) return false
+  return true
+}
+
 /**
  * The ICR {@link computeICR} returns for a position with no debt: the contract's own
  * "infinite CR" convention, `2^256 - 1`.
