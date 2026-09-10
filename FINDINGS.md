@@ -3485,13 +3485,32 @@ bands.
 `reached` exceeds `asked for a drawdown` in both runs because the pre-seed `pricePercent` can also
 land the system under CCR on its own, which is read from the chain rather than inferred.
 
-**Cost, reported because it does not match what `docs/07-testing.md` says.** These two runs came in
-at **36.7 and 32.4 seconds per case**, against a documented 3 to 4 seconds. The second run's fork
-cache was warm (`fork state warmed in 33ms`), so it is not the cold cache. The drawdown adds a
-`setPrice`, a `mineBlocks` and a `getSystemState` per case, which is real but is not plausibly a
-tenfold difference. **It is not attributed**, and a clean A against B is not available: adding the
-dimension changed the generator's PRNG stream, so the same seed no longer produces the same tuples
-on the two sides. Recorded as measured, on this machine, with the commands above.
+**Cost, and the first explanation offered for it was wrong.** These two runs came in at **36.7 and
+32.4 seconds per case**, against the 3 to 4 seconds `docs/07-testing.md` documents. The first
+reading of that was that the drawdown had made the sweep expensive, and the evidence offered
+against the cold cache was the harness line `fork state warmed in 33ms`.
+
+**That line does not mean what it was read to mean.** It times globalSetup's `findInsertPosition`
+traversal of the sorted list (MK-021) and nothing else. It says the LIST is cached. It says nothing
+about the state a generated case touches when it opens a Trove at a price no earlier case used, and
+that state is fetched from upstream one slot at a time the first time any case reaches it.
+
+Settled by the five run window, which runs the SAME 24 cases five times:
+
+```
+run 1  differential.fork.test.ts   847329ms    35.3 s/case
+run 2  differential.fork.test.ts   151759ms     6.3 s/case
+```
+
+Both runs report `fork state warmed in` about 30ms. Identical cases, identical seed, **5.6x apart**,
+and the only thing that changed between them is anvil's on disk RPC cache for the state those cases
+touch. So the per case figure in a fresh sweep is dominated by cold upstream fetches for state that
+case is the first to reach, which is also why a thousand distinct cases stay slow throughout: every
+one of them is a first touch.
+
+**What this means for the push path, which is the part that matters.** `ci.yml:199` caches
+`~/.foundry/cache/rpc/31611/$MEZO_FORK_BLOCK` between runs, and the push subset is the same 24 cases
+every time, so CI is on the run 2 side of that table rather than the run 1 side.
 
 ### And the one Recovery Mode borrow test that existed
 

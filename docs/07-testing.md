@@ -224,6 +224,22 @@ test's own 90 minute timeout part way through and takes its results with it. A f
 slice holds the per case cost near the first figure. `MK_DIFF_TO` exists for exactly this: without
 an upper bound `MK_DIFF_FROM` can only cut a tail.
 
+**And the per case figure depends on the RPC cache far more than on anything else**, which is worth
+knowing before quoting one. From the MK-058 wave's five run window, the SAME 24 cases at the same
+seed:
+
+```
+run 1  differential.fork.test.ts   847329ms    35.3 s/case    cold for the state these cases touch
+run 2  differential.fork.test.ts   151759ms     6.3 s/case    warm
+```
+
+**`fork state warmed in Nms` does not tell you which side you are on.** That line times globalSetup's
+sorted-list traversal (MK-021) and nothing else; it is about 30ms in both rows above. The state a
+case touches when it opens a Trove at a price no earlier case used is fetched one slot at a time on
+first touch, and that is what the 35 seconds is. A thousand distinct cases stay near the cold figure
+throughout, because every one of them is a first touch. The push subset is the same 24 cases every
+time and `ci.yml:199` caches the fork state between runs, so CI sits on the run 2 row.
+
 **The seed is printed on every run, passing or failing.** A seed only visible on failure is a
 seed nobody has when they need it.
 
