@@ -3631,9 +3631,11 @@ The audit was the point of the decision, and it was not empty. Three of the elev
 | Unit layer runs with no chain | "8 files passing" | **16 files, 256 tests**, `anvil` off `PATH` and `MEZO_TESTNET_RPC_URL` unset. Two waves stale |
 | Previews cover the trove lifecycle | "ten of eleven writes" | Not reconstructible from the tree. Counted from `createMusdClient`: **nine of twelve**. `redeem` gained `previewRedeem` under MK-048 and the row was never moved; `liquidate` and `batchLiquidate` have `isLiquidatable` rather than a preview |
 
-The third had a second copy, in `docs/03-core-api.md`'s writes table, whose `redeem` row still read
-"none" in the preview column. Both are corrected, and `redeem`'s gate row now cites
-`TroveManager.sol:1299-1306`, the partial that would leave a Trove under `minNetDebt`.
+The third had **two** more copies, found by searching the tree for the claim rather than for the
+row: `docs/03-core-api.md`'s writes table, whose `redeem` row still read "none" in the preview
+column and whose headline said "ten of eleven", and `README.md`'s "What this SDK does", which said
+the same. All three are corrected, and `redeem`'s gate row now cites `TroveManager.sol:1299-1306`,
+the partial that would leave a Trove under `minNetDebt`.
 
 **The unit file count is now stated as of a wave rather than as a standing fact**, because a bare
 number in a table that promises to be trustworthy standalone is a claim with an expiry date and no

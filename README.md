@@ -77,12 +77,14 @@ quietly carried, and a correctness report is treated with the same seriousness a
 
 ### What this SDK does
 
-**Every write you can call, you can ask about first.** Ten of the eleven exposed writes have a
-preview returning a verdict, the reasons behind it, the constraint that binds first, and the raw
-numbers, so a UI can render its own message and grey out its own button. The eleventh, `claim`, has
-no preview because `_claimCollateral` (`BorrowerOperations.sol:1119-1124`) has no condition to
-check. Every write with a constraint a preview can evaluate also prechecks it before sending, and
-fails with a typed error carrying the real numbers.
+**Every write with a condition worth asking about, you can ask about first.** Nine of the twelve
+exposed writes have a preview returning a verdict, the reasons behind it, the constraint that binds
+first, and the raw numbers, so a UI can render its own message and grey out its own button. Of the
+three without one: `claim` has no condition to check, because `_claimCollateral`
+(`BorrowerOperations.sol:1119-1124`) has none; `liquidate` and `batchLiquidate` are permissionless
+and their predicate is `isLiquidatable` rather than a preview. Every write with a constraint a
+preview can evaluate also prechecks it before sending, and fails with a typed error carrying the
+real numbers.
 
 Reads come from the contract's own getters, never recomputed. Previews are validated by a
 differential harness that runs each one and then attempts the operation on chain, comparing the
