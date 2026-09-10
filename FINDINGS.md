@@ -101,6 +101,7 @@ claim about it was not).
 | MK-063 | Six S2 entries read `open` in their own header and `fixed` in the summary table | S3 | fixed for the ten entries whose body settles it. Two more contradict in the other direction and are named rather than rewritten |
 | MK-064 | An untracked agent settings directory turns `pnpm lint` red on a clean checkout, invisibly to `git status` | S3 | fixed, and the fix is verified by reproducing the failure and then removing it |
 | MK-065 | `evaluateBorrow` orders its reasons so `bindingConstraint` names a gate the contract checks later than the one that actually binds | S2 | fixed by the same delegation, and the test that pinned the wrong order is corrected |
+| MK-066 | Two error paths were covered only by whichever cases the sweep's generator happened to draw, so an unrelated dimension moved the coverage ratchet | S3 | fixed by covering them deterministically |
 
 ---
 
@@ -3512,6 +3513,21 @@ one of them is a first touch.
 `~/.foundry/cache/rpc/31611/$MEZO_FORK_BLOCK` between runs, and the push subset is the same 24 cases
 every time, so CI is on the run 2 side of that table rather than the run 1 side.
 
+**And the drawdown itself costs nothing measurable**, which is the question the per case figure
+raised. Measured with `scratchpad`'s A against B, 12 cases each side, the SAME tuples on both sides
+because the override keeps every `rnd()` draw, and each side run twice so only the warm rows are
+compared:
+
+```
+with the drawdown,    warm    114629ms    recovery mode: reached=3 of 12
+drawdown neutralised, warm    119341ms    recovery mode: reached=2 of 12
+```
+
+The version carrying the drawdown is the FASTER of the two by 4 percent, which is to say the
+difference is noise and the dimension is free. The `reached=2` on the neutralised side is the
+pre-seed `pricePercent` landing the system under CCR on its own, which is why the mode is read from
+the chain rather than inferred from the tuple.
+
 ### And the one Recovery Mode borrow test that existed
 
 `preview-verdicts.test.ts` had exactly one, and it asserted only that `icrThreshold` switches from
@@ -3879,6 +3895,61 @@ A second assertion was added beside it for the case a caller actually meets: wit
 cleared and both capacity and the ratio breached, `bindingConstraint` is now the ratio. That matters
 because capacity never rises (`BorrowerOperations.sol:879-897`), so naming it as the single thing to
 fix tells a user to do something impossible.
+
+---
+
+## MK-066 · Coverage rested on which cases the generator happened to draw
+
+**Class** S3, harness · **Status** fixed · **Found by us, by breaking it, while fixing MK-058**
+
+**What happened.** Adding `recoveryDrawdownPercent` to the differential generator shifted its PRNG
+stream, which is unavoidable when a dimension is added: the same seed produces different tuples
+afterwards. The coverage ratchet then went **from 98.50 to 97.83** on lines and statements, and
+functions from 100 to 96.42, with **no change to either file that lost coverage**.
+
+Measured on both sides rather than inferred, `pnpm test:coverage`:
+
+| | `main` at `e0e9d43` | this branch, before the fix |
+|---|---|---|
+| `src/errors/index.ts` | 99.33 lines, 100 funcs, uncovered `106,300` | 95.68 lines, 96.42 funcs, uncovered `106,293-304` |
+| `src/redemption/redeem.ts` | 96.42 lines, uncovered `181-182,217` | 89.28 lines, uncovered `...78,181-182,217` |
+| All files | **98.50** | **97.83**, below the 98 floor |
+
+**The mechanism.** `redeem`'s precheck throw (`redemption/redeem.ts:172-178`) and
+`RedemptionBreachesDebtFloor`'s populated message (`errors/index.ts:288-304`) had **no test of
+their own**. They were reached only when the 24 case push subset happened to draw a redemption case
+in the `IN_THE_GAP` band. After the shift it drew `AT_NET_DEBT` twice, both skipped for want of an
+eligible Trove, and `WITHIN_HEADROOM` once, which does not reach the throw. The run 1 log says so
+directly: `redeem bands: AT_NET_DEBT ran=0 skipped=2  WITHIN_HEADROOM ran=1 skipped=0`.
+
+**Why this is a finding and not a chore.** The gate was green for two releases on a path nothing
+tested, and the only reason anyone found out is that an unrelated change moved the dice. **Coverage
+that depends on which cases a seeded generator draws is a lottery ticket, not a gate**, and it fails
+in the direction that looks like someone else's fault: the files that lost coverage were untouched.
+It is the same shape as MK-047 one level up, where the count of cases said nothing about what the
+generator could express; here the coverage percentage said nothing about what was deliberately
+tested.
+
+**Decision.** Do NOT restore the draw, and do not lower the floor, which
+`docs/08-conventions.md` §10 forbids anyway. Cover both paths deterministically and let the sweep go
+on proving what only a sweep can prove.
+
+### Fixed
+
+`packages/core/test/preview-redeem.test.ts` gains a chain free block driving `redeem` into the
+precheck against a fake chain holding one eligible Trove: the gap amount throws
+`RedemptionBreachesDebtFloor` before simulate with both edges on the error, the bare constructor arm
+is exercised, and an amount inside the headroom is asserted NOT to be refused, so the test is about
+the gap rather than about the precheck firing on everything.
+
+```
+before  All files  97.83 stmts  92.57 branch  99.37 funcs  97.83 lines   FAILS the 98 floor
+after   All files  98.55 stmts  92.83 branch   100 funcs   98.55 lines   exit 0
+main    All files  98.50 stmts  91.76 branch   100 funcs   98.50 lines
+```
+
+Every metric now sits at or above `main`'s, which is what the ratchet requires: it is not enough to
+climb back over the floor if the wave still left the number lower than it found it.
 
 ---
 

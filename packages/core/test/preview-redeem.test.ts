@@ -1,5 +1,8 @@
+import type { PublicClient, WalletClient } from 'viem'
 import { describe, expect, it } from 'vitest'
-import { MCR, evaluateRedeem } from '../src'
+import { MCR, RedemptionBreachesDebtFloor, evaluateRedeem, getAddresses } from '../src'
+import type { WriteDeps } from '../src/internal/write'
+import { redeem } from '../src/redemption/redeem'
 
 const MUSD = 10n ** 18n
 const PRICE = 80_000n * MUSD
@@ -168,5 +171,94 @@ describe('MK-048, the gap the debt floor creates', () => {
       'only the net debt plus the margin works',
     ).toBe(true)
     expect(evaluateRedeem({ ...atFloor, amount: 1n }).maxWithoutConsuming).toBe(0n)
+  })
+})
+
+/**
+ * The WRITE half of MK-048's precheck, chain free.
+ *
+ * **Why this exists is worth reading, because it is a coverage lesson rather than a new rule.**
+ * `redeem`'s throw at `redemption/redeem.ts:172-178` and `RedemptionBreachesDebtFloor`'s populated
+ * message at `errors/index.ts:288-304` were covered only by the differential sweep, and only when
+ * its generator happened to produce a redemption case in the `IN_THE_GAP` band inside the 24 case
+ * push subset. Adding the Recovery Mode dimension (MK-058) shifted the generator's PRNG stream,
+ * that case stopped being drawn, and the coverage ratchet went from 98.5 to 97.83 with no change
+ * to either file.
+ *
+ * **Coverage that depends on which cases a seeded generator happens to draw is a lottery ticket,
+ * not a gate.** The fix is not to restore the draw. It is to cover the path deterministically here
+ * and let the sweep go on proving what only a sweep can prove.
+ */
+describe('MK-048, the precheck as a typed throw rather than a revert', () => {
+  const ZERO = '0x0000000000000000000000000000000000000000' as const
+  const OWNER = '0x000000000000000000000000000000000000dEaD' as const
+  const T = getAddresses(31611)
+
+  /** A chain holding exactly one eligible Trove, the fixture the evaluator tests above use. */
+  function writeDeps(): WriteDeps {
+    const answers: Record<string, unknown> = {
+      fetchPrice: PRICE,
+      getTCR: 2n * MUSD,
+      balanceOf: 1_000_000n * MUSD,
+      getTroveInterestRate: Number(RATE_BPS),
+      getLast: '0x00000000000000000000000000000000000000aa',
+      getPrev: ZERO,
+      getCurrentICR: 2n * MUSD,
+      getEntireDebtAndColl: [10n * MUSD, ENTIRE1, 0n, 0n, 0n, 0n],
+      redemptionRate: 7_500_000_000_000_000n,
+    }
+    const publicClient = {
+      readContract: async ({ functionName }: { functionName: string }) => {
+        if (!(functionName in answers)) throw new Error(`unstubbed read: ${functionName}`)
+        return answers[functionName]
+      },
+      simulateContract: async () => {
+        throw new Error('reached simulate: the precheck did not fire')
+      },
+    } as unknown as PublicClient
+    return {
+      publicClient,
+      walletClient: {
+        account: { address: OWNER, type: 'json-rpc' },
+        writeContract: async () => '0xhash',
+      } as unknown as WalletClient,
+      addresses: T,
+      ensureVerified: async () => {},
+      getMinNetDebt: async () => M,
+      isAccountFeeExempt: async () => false,
+      gasMarginPercent: 0,
+    }
+  }
+
+  it('an amount in the gap is refused BEFORE simulate, with the two edges on the error', async () => {
+    // One wei past the headroom is the first amount in the gap (`TroveManager.sol:1299-1306`).
+    const error = await redeem(writeDeps(), { amount: HEADROOM + 1n }).catch((e) => e)
+    expect(error).toBeInstanceOf(RedemptionBreachesDebtFloor)
+    expect(error.code).toBe('REDEMPTION_BREACHES_DEBT_FLOOR')
+    // The populated message, not the bare one: both edges are known here, and a caller needs
+    // them because the gap has no smaller amount that works, only a larger one.
+    expect(error.message).toContain(String(HEADROOM))
+    expect(error.message).toContain(String(D1 + G1))
+    expect(error.context).toMatchObject({
+      requested: HEADROOM + 1n,
+      maxWithoutConsuming: HEADROOM,
+      nextViableAmount: D1 + G1,
+    })
+  })
+
+  it('and the bare message is what you get when the edges are not known', () => {
+    // The other arm of the same constructor: a caller who builds this error without the figures
+    // still gets a sentence that says what happened rather than an empty one.
+    const bare = new RedemptionBreachesDebtFloor()
+    expect(bare.message).toContain('minimum net debt')
+    expect(bare.message).not.toContain('undefined')
+    expect(bare.context).toBeUndefined()
+  })
+
+  it('an amount inside the headroom is NOT refused by this precheck', async () => {
+    // The negative case, so the assertion above is about the gap and not about the precheck
+    // firing on everything. It reaches simulate, which the fake refuses loudly.
+    const error = await redeem(writeDeps(), { amount: HEADROOM / 2n }).catch((e) => e)
+    expect(error).not.toBeInstanceOf(RedemptionBreachesDebtFloor)
   })
 })
