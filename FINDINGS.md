@@ -93,6 +93,14 @@ claim about it was not).
 | MK-056 | A deploy workflow that had never run and could not run, sitting beside a site that deploys automatically some other way | S3 | fixed by removing it and establishing how the site actually ships |
 | MK-057 | Landing page copy asserted a live keeper event, a test count and a gas figure the repository could not back | S2 | fixed. The keeper claim described a fork run with a moved oracle as if it had happened on chain |
 | MK-055 | The runbook tells you to push a `v*` tag after publishing, and the release workflow triggers on `v*` tags, so the documented path re-runs the publish | S3 | fixed in the workflow, and the interaction is named in the runbook |
+| MK-058 | `evaluateBorrow` omits the Recovery Mode rule that a debt increase must not lower the Trove's ICR, so every Recovery Mode borrow previews as viable when the contract accepts none | S1 | open |
+| MK-059 | `evaluateBorrow` applies a TCR gate unconditionally, and the contract has no TCR gate on the Recovery Mode adjust path | S1 | open |
+| MK-060 | The debt increase flag is read from presence in the write path and from value in the evaluator, so `ZERO_DEBT_INCREASE` is unreachable and a zero borrow reaches the contract as a debt increase | S2 | open |
+| MK-061 | The claims table says the post publish gate has never run, and MK-053 and the same document's own verdict say it has | S3 | open |
+| MK-062 | The provenance index's differential sweep row misreports the skip count and the slice count | S3 | open |
+| MK-063 | Six S2 entries read `open` in their own header and `fixed` in the summary table | S3 | open |
+| MK-064 | An untracked agent settings directory turns `pnpm lint` red on a clean checkout, invisibly to `git status` | S3 | open |
+| MK-065 | `evaluateBorrow` orders its reasons so `bindingConstraint` names a gate the contract checks later than the one that actually binds | S2 | open |
 
 ---
 
@@ -3260,6 +3268,352 @@ boundary band's 66, every Trove in the fork's list falls below MCR, so the loop 
 is no first eligible Trove, and there is no headroom for a band to sit either side of. The rest are
 the ordinary fixture skips the whole sweep has: a seeding open that was not itself viable, or an
 account that does not hold what the band needs.
+
+---
+
+## MK-058 · `evaluateBorrow` omits the Recovery Mode rule that a debt increase must not lower ICR
+
+**Class** S1 · **Status** open · **Found by the external reviewers verifying the MK-042 remediation**
+
+**Ground truth.** `_adjustTrove` routes every mode decision through
+`_requireValidAdjustmentInCurrentMode` (`BorrowerOperations.sol:840-845`, defined `:1212-1227`). The
+Recovery Mode arm is `_requireValidAdjustmentInRecoveryMode` (`:1265-1275`):
+
+```solidity
+_requireNoCollWithdrawal(_collWithdrawal);      // :1270
+if (_isDebtIncrease) {
+    _requireICRisAboveCCR(_vars.newICR);                          // :1272
+    _requireNewICRisAboveOldICR(_vars.newICR, _vars.oldICR);      // :1273
+}
+```
+
+and `_requireNewICRisAboveOldICR` (`:1395-1403`) is `require(_newICR >= _oldICR, "BorrowerOps:
+Cannot decrease your Trove's ICR in Recovery Mode")`.
+
+**SDK location.** `packages/core/src/math/previewBorrow.ts:236-240`. `evaluateBorrow` pushes four
+reasons and none of them is this one. `BorrowBlockReason`
+(`packages/core/src/math/previewBorrow.ts:43-47`) has no member that could carry it.
+
+**Why every Recovery Mode borrow is affected, not a corner of them.** `withdrawMUSD(amount, upper,
+lower)` (`BorrowerOperations.sol:243-257`) calls `_adjustTrove` with `_collWithdrawal = 0` and no
+`msg.value`, so a borrow adds debt and adds no collateral. `ICR = coll * price / debt` with `coll`
+held constant and `debt` strictly increasing gives `newICR < oldICR` for every `amount > 0`. The
+requirement is `>=`, so the only borrow that could satisfy it is one of zero, which `:786` refuses
+separately. **In Recovery Mode there is no borrow amount the contract will accept**, and the preview
+reports `viable: true` for the whole range whenever capacity and CCR happen to clear.
+
+**Blast radius.** A wrong verdict on a read only API. `previewBorrow` is exported from
+`packages/core/src/index.ts:93` and reachable as `client.previewBorrow`
+(`packages/core/src/client/createMusdClient.ts:414`). **No write path consumes it**: `borrow`
+(`packages/core/src/trove/index.ts:441`) prechecks through `assertAdjustViable`, which runs
+`evaluateAdjust`, and that evaluator does model the rule
+(`packages/core/src/math/previewAdjust.ts:233`). So a caller who sends through the SDK is refused
+correctly with `RecoveryModeRestriction`; a caller who asks the preview and then acts on it, or
+renders it, is told the opposite of what the contract will do.
+
+**Why it is S1 rather than S2.** Nothing reverts and nothing is loud. The caller is handed a
+`viable: true` with a full set of plausible numbers behind it, and every one of those numbers is
+correct except the verdict.
+
+**Same shape as MK-001, in the other direction.** MK-001 was a Recovery Mode rule the protocol does
+not have. This is a Recovery Mode rule the protocol does have and the evaluator does not, in code
+written after MK-001 closed.
+
+**Reproduction.** Call `evaluateBorrow` with `isRecoveryMode: true` and any collateral and debt that
+clear CCR after the draw. The verdict is `viable: true`; `evaluateAdjust` on the same position with
+`increaseDebt` set returns `ICR_NOT_IMPROVED_IN_RECOVERY_MODE`.
+
+**Decision.** Fix now, and not by adding a fifth `if`. See MK-059: the two defects have one cause.
+
+---
+
+## MK-059 · `evaluateBorrow` applies a TCR gate the contract does not apply in Recovery Mode
+
+**Class** S1 · **Status** open · **Found by the external reviewers verifying the MK-042 remediation**
+
+**Ground truth.** `_requireNewTCRisAboveCCR` is defined at `BorrowerOperations.sol:1344-1349` and
+called from **exactly four sites**, counted in the source rather than recalled:
+
+| Line | Path | Condition |
+|---|---|---|
+| `:665` | `_openTrove` | inside the `else` of `if (isRecoveryMode)`, so **normal mode only** |
+| `:972` | the close path | inside `if (canMint)` |
+| `:1059` | `refinance` | unconditional on that path |
+| `:1209` | `_requireValidAdjustmentInNormalMode` | **normal mode only**, by definition of the arm |
+
+`_requireValidAdjustmentInRecoveryMode` (`:1265-1275`) does not call it, and neither does anything
+it calls. **The adjust path has no TCR gate in Recovery Mode.**
+
+**SDK location.** `packages/core/src/math/previewBorrow.ts:240`,
+`if (resultingTcr < CCR) reasons.push('TCR_BELOW_CCR')`, outside any mode branch.
+
+**Why it fires on nearly every Recovery Mode borrow rather than rarely.** Recovery Mode is *defined*
+as `TCR < CCR` (`checkRecoveryMode`). So in Recovery Mode `resultingTcr < CCR` is true before the
+borrow is even considered, and adding debt cannot raise it. The reason is therefore reported for
+essentially every Recovery Mode borrow, and it is not a rule the contract has.
+
+**Blast radius.** The same read only surface as MK-058, and the two are opposite errors that partly
+mask each other: MK-059 makes the preview say no where the contract has no such rule, MK-058 makes
+it say yes where the contract does. Which one a caller sees depends on the numbers. `reasons` and
+`bindingConstraint` are wrong in both cases.
+
+**This is MK-001's shape, reintroduced after MK-001 closed.** MK-001 was `isLiquidatable` applying
+`CCR` where the protocol only has `MCR`. This is a Recovery Mode constraint the protocol does not
+have, written into a file created during the MK-002 remediation, months after MK-001 was fixed and
+its lesson recorded. The adjust evaluator gets it right and says so in its own docstring
+(`packages/core/src/math/previewAdjust.ts:45-47`); the borrow evaluator, written first and never
+reconciled, does not.
+
+**Reproduction.** `evaluateBorrow({ isRecoveryMode: true, ... })` with any system state.
+`resultingTcr < CCR` holds by construction, so `TCR_BELOW_CCR` appears in `reasons`.
+`evaluateAdjust` on the same inputs does not report it (`previewAdjust.ts:235-238`).
+
+**Decision.** Fix now, at the cause rather than at the symptom. See MK-060's decision block.
+
+---
+
+## MK-060 · The debt increase flag is read from presence in the write path and from value in the evaluator
+
+**Class** S2 · **Status** open · **Found by the external reviewers verifying the MK-042 remediation**
+
+**Ground truth.** `_adjustTrove` takes `_isDebtIncrease` as a `bool` parameter independent of
+`_mUSDChange`, and refuses the contradictory combination explicitly
+(`BorrowerOperations.sol:785-787`):
+
+```solidity
+if (_isDebtIncrease) {
+    _requireNonZeroDebtChange(_mUSDChange);   // :1351-1356, require(_debtChange > 0)
+}
+```
+
+So `(_isDebtIncrease = true, _mUSDChange = 0)` is a reachable, refused input, and it is refused
+before every other gate.
+
+**SDK location, both halves.**
+
+- Write path, `packages/core/src/trove/index.ts:529`: `const isDebtIncrease = brw !== undefined`.
+  **Presence.**
+- Evaluator, `packages/core/src/math/previewAdjust.ts:193`: `const isDebtIncrease = increaseDebt > 0n`.
+  **Value.**
+
+**Two consequences, and they point in opposite directions.**
+
+1. **`ZERO_DEBT_INCREASE` is unreachable.** The guard is
+   `if (isDebtIncrease && increaseDebt === 0n)` (`previewAdjust.ts:216`), and `isDebtIncrease` is
+   *defined* as `increaseDebt > 0n`. The two conditions are mutually exclusive, so the branch is
+   dead. The reason is declared (`previewAdjust.ts:59`), documented against `:1351-1356`, mapped to
+   a typed error (`trove/index.ts:372-373`), and can never be produced.
+2. **A zero borrow reaches the contract as a debt increase.** `adjustTrove({ borrow: 0n, addCollateral: x })`
+   passes `brw !== undefined`, so `isDebtIncrease` is `true` and `debtChange` is `0n`
+   (`trove/index.ts:529-530`). The precheck at `trove/index.ts:554-559` forwards `increaseDebt: 0n`,
+   the evaluator sees `isDebtIncrease === false`, treats the call as a pure top-up, finds it viable,
+   and the send at `trove/index.ts:566-572` puts `(0, true)` on the wire, where `:786` refuses it.
+   `adjustTrove` also never validates the borrow leg: `borrow` does
+   (`trove/index.ts:430`, `assertPositiveAmount`), `adjustTrove` does not.
+
+**Blast radius.** An avoidable failed transaction on `adjustTrove` with an explicit zero borrow leg,
+and a declared reason that no input can ever produce. Neither is a wrong number, which is why this
+is S2 and MK-058 and MK-059 are S1.
+
+**Reproduction.** `previewAdjustTrove({ owner, increaseDebt: 0n, addCollateral: 1n })` returns
+`viable: true`; `adjustTrove({ borrow: 0n, addCollateral: 1n })` sends and reverts with
+`BorrowerOps: Debt increase requires non-zero debtChange`.
+
+**Decision, covering MK-058, MK-059, MK-060 and MK-065 together.** These are one defect wearing four
+faces: **one question has two evaluators.** That is exactly what MK-001 was, and patching the
+missing rules into `evaluateBorrow` would leave the second copy free to drift again. `withdrawMUSD`
+IS `_adjustTrove` with `_collWithdrawal = 0` and `_isDebtIncrease = true`
+(`BorrowerOperations.sol:243-257`), so borrowing is not a sibling of the adjust path, it is a point
+on it. `previewBorrow` becomes a projection of the adjust preview and `evaluateBorrow` becomes a
+projection of `evaluateAdjust`, with the reason set narrowed to the ones a borrow can actually
+reach. The flag is made consistent by deriving it from presence on both sides, which is what the
+contract's parameter means, and `adjustTrove` validates its borrow leg the way `borrow` does.
+
+---
+
+## MK-061 · The claims table still says the post publish gate has never run, and MK-053 says it has
+
+**Class** S3 · **Status** open · **Found by the external reviewers auditing the record**
+
+**What is wrong.** `docs/09-review-and-validated-surface.md` §5 carries the row:
+
+> | Post publish install verification | **Corrected: not verified.** `release.yml` `verify-published` exists and has never run, because publishing is out of bounds for this programme. It is verified by reading, not by execution |
+
+Three places in the current tree contradict it:
+
+- `FINDINGS.md` MK-053's summary row: "**fixed and proven by running it**".
+- `docs/09-review-and-validated-surface.md` §2, twenty three lines above the table: "It was
+  repaired and then run against the already published 0.2.0, which passed on every axis. So the
+  verdict below rests on a check that now exists in fact and not only in a workflow file."
+- The premise "publishing is out of bounds for this programme" is itself no longer true: 0.2.0 was
+  published on 2026-08-28, as §2 states in the same document.
+
+**Why it matters more than a stale sentence normally would.** The table's own preamble is:
+
+> Every row ends at **true** or **corrected**. None points at an open finding: the point of this
+> table is that a reader can trust it without cross referencing the register.
+
+A table that promises to be trustworthy standalone, and then contradicts the register on the one row
+about whether a supply chain gate has ever executed, is worse than no table. It is the exact defect
+MK-053 is about, one layer up: a property asserted rather than checked.
+
+**Decision.** Correct the row, and audit every other row in the table against the tree rather than
+fixing only the one that was reported.
+
+---
+
+## MK-062 · The provenance index's sweep row is two waves stale
+
+**Class** S3 · **Status** open · **Found by the external reviewers auditing the record**
+
+**What is wrong.** `FINDINGS.md`, "The reproducible set, and the command for each", carries:
+
+> | The 1000 case differential sweep, 0 mismatches, 41 skipped | MK-016, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` (two slices, see `MK_DIFF_FROM`) |
+
+Two numbers in that row are wrong against the current record:
+
+| Field | Provenance index | `docs/09` §3 and MK-048 | 
+|---|---|---|
+| Skipped | 41 | **89** |
+| Slices | two | **four**, of 250 |
+
+`docs/09-review-and-validated-surface.md:165` and `FINDINGS.md`'s MK-048 entry both say "four slices
+of 250" and "89 of the 1000 skipped". The index row was written when the sweep covered fewer
+operations and was never updated when MK-042 added five and MK-048 added redemption.
+
+**Why it matters.** This row is the entry in the register that exists specifically so a reader can
+re-run a number. A provenance index that misreports the number it is indexing fails at the one job
+it has, and the failure is invisible because the number looks like a number.
+
+**Decision.** Correct both fields, and check whether either figure is repeated anywhere else in the
+tree before assuming this is the only copy.
+
+---
+
+## MK-063 · Six S2 entries say `open` in their own header and `fixed` in the summary table
+
+**Class** S3 · **Status** open · **Found by the external reviewers auditing the record**
+
+**What is wrong.** `FINDINGS.md` states its own rule at the top: statuses are the record, and the
+summary table is the index into it. Six S2 entries contradict themselves across those two places.
+
+| ID | Summary table | Section header | Body |
+|---|---|---|---|
+| MK-007 | `fixed` | `**Status** open` | "**Fixed, P4 wave.**" |
+| MK-008 | `fixed` | `**Status** open` | "**Fixed, P4 wave.**" |
+| MK-009 | `fixed` | `**Status** open` | "**Fixed, P4 wave.**" |
+| MK-010 | `fixed` | `**Status** open` | "**Fixed, P4 wave.**" |
+| MK-012 | `fixed` | `**Status** open` | "**Fixed, P4 wave.**" |
+| MK-013 | `fixed` | `**Status** open` | "**Fixed, P4 wave.**" |
+
+In all six the body records the fix and the header was never moved off its original value.
+
+**What the same audit found beyond the six reported.** Auditing every entry rather than the six
+named, by comparing each section's `**Status**` against its summary row:
+
+- **MK-011** (S2): summary `documented`, header `open`, body "**Done, P4 wave. No code change, by
+  design.**" Same defect, different target value.
+- **MK-015** and **MK-017** (S3): summary `fixed`, header `open`, bodies "**Fixed, P9 wave.**"
+- **MK-054** (S3): summary `fixed`, header `open, documented`, body carries a `### Fixed` section.
+  The summary was corrected in `109c435` and the header was not.
+- **MK-027** (S3) and **MK-035** (S2) contradict in the other direction: the summary says `fixed`
+  and the body argues it is not. MK-027's body ends "This entry stays open until that is done" and
+  the work it names is not all done. MK-035's body ends "**Decision.** Report, do not fix", and the
+  gas margin it is about was fixed later under MK-037 without this entry being revisited. **These
+  two are not stale headers and are not fixed here**: deciding which side is right is a judgment
+  about the work, not a bookkeeping correction, and doing it inside a bookkeeping commit is how the
+  six above happened.
+
+**Decision.** Move the header to match the body for the ten entries where the body settles it
+(MK-007, MK-008, MK-009, MK-010, MK-011, MK-012, MK-013, MK-015, MK-017, MK-054). Leave MK-027 and
+MK-035 and record here that they are open contradictions with a named reason.
+
+---
+
+## MK-064 · An untracked agent settings directory turns `pnpm lint` red on a clean checkout
+
+**Class** S3 · **Status** open · **Found by the external reviewers on a fresh clone**
+
+**What is wrong.** `.gitignore` has no entry for `.claude/`. `biome.json` sets
+`"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true }`, and biome's
+`useIgnoreFile` reads the **repository's** `.gitignore` only. It does not read the user's global
+excludes file. So any contributor whose tooling writes `.claude/settings.local.json` into the
+working tree has `pnpm lint` descend into it.
+
+**Reproduced, not reasoned about.** A fresh `git clone` of `main` at `e0e9d43`, with a
+`.claude/settings.local.json` of the ordinary shape written into it, and the repository's own biome
+1.9.4:
+
+```
+$ biome check .
+./.claude/settings.local.json format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+    3   │ - ····"allow":·[
+    4   │ - ······"Bash(pnpm·test:*)"
+    5   │ - ····],
+      3 │ + ····"allow":·["Bash(pnpm·test:*)"],
+
+Checked 132 files in 48ms.
+Found 1 error.
+```
+
+Against the same checkout with the directory absent: `Checked 131 files in 38ms. No fixes applied.`
+
+**Why nobody saw it.** This machine's global excludes file, `~/.config/git/ignore`, contains
+`**/.claude/settings.local.json`, confirmed with `git check-ignore -v`. So `git status` is clean
+locally and the directory is invisible, while biome, which does not consult that file, lints it. The
+defect is therefore **only** visible to someone whose git configuration differs from the author's,
+which is every contributor and every CI runner that ever writes such a file.
+
+**Blast radius.** `pnpm lint` is `ci.yml:99` and `release.yml:61`. A red gate on a working tree that
+`git status` calls clean is the worst shape a gate failure can have, because the first thing anyone
+does is look at `git status`.
+
+**Decision.** Ignore the directory in the repository's own `.gitignore`, following the `.secrets/`
+precedent already in that file: ignore the whole directory rather than one filename, with the reason
+written beside it.
+
+---
+
+## MK-065 · `evaluateBorrow` reports its reasons in an order the contract does not use
+
+**Class** S2 · **Status** open · **Found by us while fixing MK-058 and MK-059**
+
+**Ground truth.** `_adjustTrove` checks in this order:
+
+| Line | Gate |
+|---|---|
+| `:790` | `_requireTroveisActive` |
+| `:840-845` | `_requireValidAdjustmentInCurrentMode`, which is `_requireICRisAboveMCR` (`:1201`) then `_requireNewTCRisAboveCCR` (`:1209`) in normal mode |
+| `:850-852` | `_requireHasBorrowingCapacity` |
+
+So the capacity gate is checked **after** the ratio gates, and a revert names the ratio first.
+
+**SDK location.** `packages/core/src/math/previewBorrow.ts:236-240` pushes
+`TROVE_NOT_ACTIVE`, `EXCEEDS_BORROWING_CAPACITY`, `ICR_BELOW_THRESHOLD`, `TCR_BELOW_CCR`, putting
+capacity second.
+
+**Why it is wrong rather than merely different.** `bindingConstraint` is documented as "The single
+constraint that binds first" (`previewBorrow.ts:55-56`), and the adjust evaluator states the
+contract's ordering as the reason its own list is ordered the way it is
+(`previewAdjust.ts:214-215`): "so `bindingConstraint` is the one the chain would actually report
+first". For a borrow that breaches both capacity and the ratio, `previewBorrow` names capacity and
+the chain names the ratio. A caller who renders `bindingConstraint` as the single thing to fix is
+told to add capacity, which is impossible: `maxBorrowingCapacity` never rises
+(`BorrowerOperations.sol:879-897`).
+
+**Pinned wrong by a passing test.** `packages/core/test/preview-verdicts.test.ts:240-245` asserts
+the incorrect order exactly, which is why it survived. Same failure mode as MK-001, where a passing
+test enshrined the wrong rule.
+
+**Blast radius.** `bindingConstraint` and the order of `reasons` on `previewBorrow` only. `viable`
+is unaffected, since it is `reasons.length === 0`. The adjust evaluator, and therefore every write
+precheck, already has the correct order.
+
+**Decision.** Fixed by the same delegation as MK-058, MK-059 and MK-060: the adjust evaluator's
+ordering is the contract's, so a projection of it inherits the ordering for free. The test that
+pinned the wrong order is corrected rather than deleted.
 
 ---
 
