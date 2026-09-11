@@ -154,7 +154,7 @@ selected window.
 | # | Command | What must be reported |
 |---|---|---|
 | 1 | `pnpm test:unit`, with `MEZO_TESTNET_RPC_URL` unset and `anvil` off `PATH` | The pass count, and evidence the chain was genuinely absent |
-| 2 | `pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
+| 2 | `MEZO_FORK_BLOCK=15043414 pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0). **The block is not optional**: unset, anvil forks at `latest` and the byte identity this row demands cannot hold (MK-082) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
 | 3 | `pnpm test:coverage` | All four metrics against the ratchet. A metric below its floor is fixed with tests, never by lowering the floor |
 | 4 | `pnpm typecheck` | Clean |
 | 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
@@ -346,8 +346,8 @@ which is how one fee rule survived four releases in four wrong implementations.
 
 ## 13. A published measurement names what it measured, and its unit
 
-**State the quantity and the unit precisely enough that a reader can tell the figure apart from
-the adjacent quantity it could be mistaken for.** Where two nearby quantities both have a claim on
+**State the quantity, the unit, and the machine precisely enough that a reader can tell the figure
+apart from the adjacent quantity it could be mistaken for.** Where two nearby quantities both have a claim on
 the name, publish both and label each; where only one is published, the label says which it is.
 
 The test is mechanical: for any number about to be published, name one plausible neighbouring
@@ -364,6 +364,10 @@ claimed:
   the same 24 cases at the same seed. `fork state warmed in Nms` was offered as evidence it was
   warm; that line times globalSetup's sorted list traversal (MK-021) and nothing else, and reads
   about 30ms on both sides. **One warm-up's duration, published as the fork's cache state.**
+- **The push subset's warm cost** (MK-081, one commit after this rule was written). 158 seconds
+  was published as what CI sits on. It is the mean of a developer laptop's five run window; CI runs
+  the same 24 cases in about 60. Cache state was named because cache state was the variable that
+  had burned us before, and the machine went unexamined. **A laptop's duration, published as CI's.**
 - **The full sweep duration** (P15, corrected in P16). 111 minutes was published; that is the sum
   of the four `[differential] done in` values, and the recipe a person runs takes 116, the
   difference being the fork suite each slice also runs. **The sweep's own duration, published as

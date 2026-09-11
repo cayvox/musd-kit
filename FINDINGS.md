@@ -114,6 +114,8 @@ claim about it was not).
 | MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
 | MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 116 minutes of wall clock. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
+| MK-081 | The push subset's warm cost was published as CI's, from a measurement taken on a developer machine. CI is 2.4 times faster | S3 | fixed. Both figures published, each naming the machine it was measured on |
+| MK-082 | The wave checklist's five run command does not pin the fork, and the same checklist requires the five answers to be byte identical | S3 | fixed. The checklist row and the recipe both carry `MEZO_FORK_BLOCK` now |
 | MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
 | MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open.** The defect is deliberately not fixed and no `packages/*/src` file is implicated. The sweep no longer fails on it: it is registered in `packages/core/test/differential/expected.ts` and prints as `EXPECTED MK-079`, so a red sweep is a mismatch no finding explains |
 
@@ -5054,6 +5056,79 @@ indices are recorded in `knownAt`, scoped to the seed and count they were measur
 only for the disappearance report. The predicate itself requires an `adjust` op, a `FALSE_BLOCKED`
 direction, `ZERO_DEBT_INCREASE` in the reason, and `case.debt < 4n`, which is precisely the band
 where `adjustDebt` yields a zero leg. **Nothing about registering it makes this finding less open.**
+
+---
+
+## MK-081 · A developer machine's warm figure was published as CI's, one commit after the rule against it
+
+**Class** S3 · **Status** fixed · **Found by the CI run that proved the commit which introduced
+it**, which is the only reason it was caught at all
+
+Commit `c3e1b6b` added `docs/08-conventions.md` §13, the rule that a published measurement names
+what it measured, and in the same commit rewrote the push subset's cost as:
+
+> **About 158 seconds with the RPC cache warm**, which is what CI sits on because `ci.yml` caches
+> the fork state between runs
+
+The 158 seconds is real and the cache state is correctly named. **The machine is not.** It is the
+mean of a five run window on a developer laptop. The CI runs of that very commit, all three with
+`Cache hit for: anvil-fork-31611-15043414` in the log, so genuinely warm:
+
+```
+34599589828   [differential] done in 50690ms    24 cases    2.1 s/case
+34595233656   [differential] done in 62539ms    24 cases    2.6 s/case
+34599594210   [differential] done in 65412ms    24 cases    2.7 s/case
+```
+
+**Mean 59.5 seconds, against the 158 published as CI's. A factor of 2.4.** A reader budgeting the
+push path from that sentence would have been wrong by more than the figure itself.
+
+**The register was careful where the documentation was not.** MK-058's entry says only that "CI is
+on the run 2 side of that table rather than the run 1 side", which is a claim about the cache state
+and says nothing about the duration. The documentation turned a qualitative claim into a
+quantitative one across a machine boundary.
+
+**This is §13's own failure mode, one commit after §13.** The rule says to name a plausible
+neighbouring quantity and check the wording rules it out. The neighbour here is not a different
+cache state, which the sentence handles; it is the same measurement on a different machine. Cache
+state was the variable that had burned this programme before (`949d361`), so it was the one that
+got named, and the machine went unexamined.
+
+**Fixed by** publishing both, each naming its machine, and by adding the machine to §13's list of
+things a figure has to name.
+
+---
+
+## MK-082 · The checklist demands five byte identical answers from a command that does not pin the fork
+
+**Class** S3, process · **Status** fixed · **Found by following the checklist literally**, which
+cost a 53 minute run
+
+`docs/08-conventions.md` §10 row 2 requires:
+
+> `pnpm test:fork`, five consecutive runs ... The seeded answer, which must be byte identical
+> across all five
+
+**Run exactly as written, it cannot be.** The harness reads `MEZO_FORK_BLOCK` and passes it to
+anvil as `--fork-block-number` (`packages/core/test/harness/anvil.ts:83-91`); with the variable
+unset there is no `--fork-block-number` and anvil forks at `latest`. The oracle shim is then seeded
+from the fork's own block (MK-020), so the seeded price is whatever the chain was doing at that
+second. `docs/07-testing.md:27` says so plainly, "Locally, leaving it unset forks at `latest`", but
+the checklist row that demands the identity does not carry the variable, and neither does the recipe
+block at `docs/07-testing.md:219-221`.
+
+**Observed, not reasoned.** A window started without it reported
+`[harness] anvil fork ready at http://127.0.0.1:57114, block 15465775` against the pinned
+`15043414`, took 3187 seconds for 24 cases because no cached state existed for a block nothing had
+ever forked at, and ended in a viem `TimeoutError`. The four runs after it failed in `startFork`.
+
+**Why it matters beyond the wasted hour.** CI sets the block (`ci.yml`), so CI is pinned and green
+while a local window is measuring a different chain state. Every figure taken from an unpinned
+window is a figure about one moment on testnet, and MK-078 is what that costs when it reaches the
+register.
+
+**Fixed by** putting `MEZO_FORK_BLOCK` in the checklist row and in the recipe, with the consequence
+of omitting it stated where the command is, rather than a section earlier.
 
 ---
 

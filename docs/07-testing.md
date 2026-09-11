@@ -216,7 +216,13 @@ that they are printed.
 
 **A mode that never ran proves nothing**, which is MK-048's rule about bands applied to a mode.
 
+**Set `MEZO_FORK_BLOCK` for every one of these.** Unset, the harness passes no
+`--fork-block-number` and anvil forks at `latest` (`test/harness/anvil.ts:83-91`), which makes the
+run non reproducible, uncached and slow, and seeds the oracle shim from whatever the chain was
+doing at that second (MK-020, MK-082). CI sets it; your shell does not.
+
 ```sh
+export MEZO_FORK_BLOCK=15043414                   # REQUIRED, see above
 pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
 MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep; use the four slices below
 MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
@@ -270,7 +276,8 @@ the RPC cache cold for the state they touch and 6.3 s/case warm.
 
 | | |
 |---|---|
-| per case, **RPC cache warm** | **6.6 seconds**, mean of the five run window, 24 cases each |
+| per case, **RPC cache warm, developer laptop** | **6.6 seconds**, mean of the P15 five run window, 24 cases each |
+| per case, **RPC cache warm, CI** | **2.5 seconds**, mean of three `ubuntu-latest` runs of `c3e1b6b`, cache hit confirmed in each log (MK-081) |
 | per case, **RPC cache cold** | **35.3 seconds** (`949d361`); a thousand distinct cases stay near this, since each is a first touch |
 | per case, late in a long run, cache warm | **about 20 seconds** |
 | per case, `borrowingPower`, RPC counted | **3.0s, 32 JSON-RPC requests**, of which the solver accounts for 0.2s and 9 of them, all `eth_call` |
@@ -301,13 +308,13 @@ a sweep suddenly costs an order of magnitude more, **check the network before bl
 
 **The split, and the reasoning.**
 
-- **On every push: 24 cases**, the default. **About 158 seconds with the RPC cache warm**, which
-  is what CI sits on because `ci.yml` caches the fork state between runs; about 847 seconds cold
-  (`949d361`). Mean of the P15 five run window. It is deterministic from a fixed seed, so it is a
-  gate rather than a lottery, and it sits beside **about 62 seconds** of fork suite, which is the
-  suite with the differential test taken out. The whole fork job, sweep included, is about 220
-  seconds warm. Three quantities, three numbers, because a reader budgeting CI needs to know
-  which one they are looking at (§13).
+- **On every push: 24 cases**, the default. **On CI, about 60 seconds**, mean of three runs of
+  commit `c3e1b6b`, each with `Cache hit for: anvil-fork-31611-15043414` in the log: 50.7s, 62.5s,
+  65.4s. **On a developer machine with the cache warm, about 158 seconds**, mean of the P15 five
+  run window; about 847 seconds cold (`949d361`). **The machine is part of the figure and CI is
+  2.4 times faster than the laptop** (MK-081), so quote the row you mean. It is deterministic from
+  a fixed seed, so it is a gate rather than a lottery, and it sits beside **about 62 seconds** of
+  fork suite on the laptop, which is the suite with the differential test taken out.
 - **The full 1000 case sweep: weekly and on demand, never on push.**
   `.github/workflows/sweep.yml` runs the four slices every Sunday at 03:00 UTC and on
   `workflow_dispatch`. It costs **about 116 minutes of wall clock, of which 111 is the sweep
