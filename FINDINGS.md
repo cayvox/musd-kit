@@ -5094,8 +5094,19 @@ cache state, which the sentence handles; it is the same measurement on a differe
 state was the variable that had burned this programme before (`949d361`), so it was the one that
 got named, and the machine went unexamined.
 
-**Fixed by** publishing both, each naming its machine, and by adding the machine to §13's list of
-things a figure has to name.
+**And the laptop figure is a range, not a point.** The P16 five run window, same laptop, same
+seed, same pinned block, all five exit 0 and all five reporting the identical seeded price:
+
+```
+113630ms  117440ms  113792ms  123305ms  117880ms     mean 117.2s, 4.9 s/case
+```
+
+against P15's mean of 158s, 6.6 s/case. **One machine varies by a third between windows**, so a
+single window's mean published as "the laptop figure" is the same error one scale down. The
+documentation now carries the range and both windows.
+
+**Fixed by** publishing every figure with its machine and as a range where two windows disagree,
+and by adding the machine to §13's list of things a figure has to name.
 
 ---
 

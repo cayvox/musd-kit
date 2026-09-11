@@ -276,7 +276,7 @@ the RPC cache cold for the state they touch and 6.3 s/case warm.
 
 | | |
 |---|---|
-| per case, **RPC cache warm, developer laptop** | **6.6 seconds**, mean of the P15 five run window, 24 cases each |
+| per case, **RPC cache warm, developer laptop** | **4.9 to 6.6 seconds**, the means of two five run windows, 24 cases each: 6.6 (P15) and 4.9 (P16). One machine, one seed, one block |
 | per case, **RPC cache warm, CI** | **2.5 seconds**, mean of three `ubuntu-latest` runs of `c3e1b6b`, cache hit confirmed in each log (MK-081) |
 | per case, **RPC cache cold** | **35.3 seconds** (`949d361`); a thousand distinct cases stay near this, since each is a first touch |
 | per case, late in a long run, cache warm | **about 20 seconds** |
@@ -310,9 +310,11 @@ a sweep suddenly costs an order of magnitude more, **check the network before bl
 
 - **On every push: 24 cases**, the default. **On CI, about 60 seconds**, mean of three runs of
   commit `c3e1b6b`, each with `Cache hit for: anvil-fork-31611-15043414` in the log: 50.7s, 62.5s,
-  65.4s. **On a developer machine with the cache warm, about 158 seconds**, mean of the P15 five
-  run window; about 847 seconds cold (`949d361`). **The machine is part of the figure and CI is
-  2.4 times faster than the laptop** (MK-081), so quote the row you mean. It is deterministic from
+  65.4s. **On a developer machine with the cache warm, between about 115 and 160 seconds**: two five
+  run windows on the SAME laptop at the same seed and block gave means of 158s (P15) and 117s
+  (P16: 113.6, 117.4, 113.8, 123.3, 117.9). About 847 seconds cold (`949d361`). **The machine is
+  part of the figure, CI is roughly 2 to 2.6 times faster than the laptop, and one laptop varies
+  by a third between windows** (MK-081), so quote the row you mean and prefer a range. It is deterministic from
   a fixed seed, so it is a gate rather than a lottery, and it sits beside **about 62 seconds** of
   fork suite on the laptop, which is the suite with the differential test taken out.
 - **The full 1000 case sweep: weekly and on demand, never on push.**
