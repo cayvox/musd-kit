@@ -225,7 +225,9 @@ MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
 # Measured P15 on the ten operation generator. Sweep only: 1593s, 1697s, 1719s, 1648s (111 min).
 # Wall clock of the four invocations: 1678s, 1768s, 1799s, 1731s (116 min), the difference
 # being the rest of the fork suite, which each slice also runs.
-# The slices exit 1 on MK-079's ten FALSE_BLOCKED, which are the harness's own defect.
+# The slices now exit 0: MK-079's ten FALSE_BLOCKED are registered in
+# packages/core/test/differential/expected.ts, so they print as EXPECTED MK-079 lines and do
+# not fail the run. A non zero exit is a mismatch NO finding explains, and is worth stopping for.
 for FROM in 0 250 500 750; do
   MK_DIFF_CASES=1000 MK_DIFF_FROM=$FROM MK_DIFF_TO=$((FROM+250)) pnpm test:fork
 done

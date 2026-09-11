@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { EXPECTED_MISMATCHES, partitionMismatches } from './differential/expected'
 import { type DiffCase, describeCase, generateCases } from './differential/generate'
 import { type CaseResult, reportFailure, runCase } from './differential/harness'
 import { connectFork } from './harness'
@@ -197,9 +198,37 @@ describe('Differential harness, preview verdict against chain outcome', () => {
     // Repeated at the end as a digest; each one was already printed when it happened.
     for (const m of mismatches) console.log(reportFailure(m))
 
+    // MK-079. Split the mismatches against the registered set before asserting, so the red this
+    // gate shows is always a red worth reading. An expected mismatch is one a finding already
+    // explains, by SHAPE rather than by case index; anything else fails, named.
+    const partition = partitionMismatches(mismatches, EXPECTED_MISMATCHES, {
+      seed: SEED,
+      cases: CASES,
+      coveredIndices: cases.map((c) => c.index),
+    })
+    for (const e of partition.expected) {
+      console.log(
+        `[differential] EXPECTED ${e.finding}: ${e.results.length} mismatch${e.results.length === 1 ? '' : 'es'} ` +
+          `at case${e.results.length === 1 ? '' : 's'} ${e.results.map((r) => r.case.index).join(', ')}`,
+      )
+      console.log(`[differential]   ${e.why}`)
+    }
+    // An expected failure that stops reproducing is information, not a pass: either the finding
+    // was fixed and this registry is stale, or the generator stopped reaching it. Reported rather
+    // than asserted, because both explanations are legitimate and they need different responses.
+    for (const d of partition.didNotReproduce) {
+      console.log(
+        `[differential] EXPECTED-BUT-ABSENT ${d.finding}: did NOT reproduce at case${d.indices.length === 1 ? '' : 's'} ${d.indices.join(', ')}. Either it is fixed and differential/expected.ts is stale, or the generator no longer reaches it. Both need a look.`,
+      )
+    }
+    console.log(
+      `[differential] mismatches: expected=${mismatches.length - partition.unexpected.length} unexpected=${partition.unexpected.length}`,
+    )
+
     expect(
-      mismatches.map((m) => `${m.mismatch?.direction} @ case ${m.case.index}`),
-      'every mismatch is a finding: register it with the seed and the tuple as its reproduction',
+      partition.unexpected.map((m) => `${m.mismatch?.direction} @ case ${m.case.index}`),
+      'an UNREGISTERED mismatch is a finding: register it in differential/expected.ts with its ' +
+        'finding ID, or fix it. The registered ones are listed above and do not fail this run.',
     ).toEqual([])
     // The timeout is sized for the job rather than for a guess. Measured at roughly 4.3
     // seconds per case, a thousand cases is about 72 minutes, and the first attempt at this

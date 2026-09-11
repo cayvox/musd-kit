@@ -142,6 +142,22 @@ const MUTATIONS = [
     from: "  const limitedBy = byIcr <= bySystem ? 'ICR' : 'TCR'",
     to: "  const limitedBy = amount === 0n || byIcr <= bySystem ? 'ICR' : 'TCR'",
   },
+  // --- P16. The gate that decides whether the sweep's red is worth reading. ------------------
+
+  {
+    id: 'MK-079 swallows (an unexpected mismatch must FAIL)',
+    what: 'match every mismatch against the first registry entry, so an unregistered one is swallowed',
+    file: 'packages/core/test/differential/expected.ts',
+    from: '    const hit = registry.find((e) => e.matches(m))',
+    to: '    const hit = registry[0]',
+  },
+  {
+    id: 'MK-079 registry (a registered mismatch must NOT fail)',
+    what: 'match nothing, so the registered mismatches go back to failing the run',
+    file: 'packages/core/test/differential/expected.ts',
+    from: '    const hit = registry.find((e) => e.matches(m))',
+    to: '    const hit = undefined',
+  },
   {
     id: 'MK-077',
     what: 'silently drop the repayment leg again',
