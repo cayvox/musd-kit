@@ -343,3 +343,28 @@ This is mechanical on purpose: grep for the rule's inputs across `packages/`, `s
 `examples/`, including tests and harnesses, and account for every hit. MK-004, MK-017, MK-018 and
 MK-065 were each remediated exactly where they were observed and each left live copies behind,
 which is how one fee rule survived four releases in four wrong implementations.
+
+## 13. A published measurement names what it measured, and its unit
+
+**State the quantity and the unit precisely enough that a reader can tell the figure apart from
+the adjacent quantity it could be mistaken for.** Where two nearby quantities both have a claim on
+the name, publish both and label each; where only one is published, the label says which it is.
+
+The test is mechanical: for any number about to be published, name one plausible neighbouring
+quantity a reader might take it for, and check the wording rules that reading out. This has gone
+wrong three times, each time producing a figure that was true of something NEXT TO what it
+claimed:
+
+- **MK-051.** `scripts/testnet-e2e.ts` called a check "the maximum the SDK reports must be
+  ACCEPTED and one wei more must be REFUSED, on the real chain, checked against the contract
+  rather than against each other", and then called `previewWithdrawCollateral` twice. The chain
+  saw neither amount. **Evaluator agreement, published as chain agreement.**
+- **The per case sweep cost** (commit `949d361`). A figure was quoted without saying whether the
+  RPC cache was cold or warm, which is the difference between 35.3 and 6.3 seconds per case on
+  the same 24 cases at the same seed. `fork state warmed in Nms` was offered as evidence it was
+  warm; that line times globalSetup's sorted list traversal (MK-021) and nothing else, and reads
+  about 30ms on both sides. **One warm-up's duration, published as the fork's cache state.**
+- **The full sweep duration** (P15, corrected in P16). 111 minutes was published; that is the sum
+  of the four `[differential] done in` values, and the recipe a person runs takes 116, the
+  difference being the fork suite each slice also runs. **The sweep's own duration, published as
+  the cost of the sweep.**

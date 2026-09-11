@@ -263,18 +263,26 @@ seed nobody has when they need it.
 
 Measured on the declared Node at the pinned block, not estimated:
 
+**Every row names its cache state**, because that is the variable that dominates and the one a
+figure here is most easily mistaken about (§13, and the correction in commit `949d361`). "Fresh
+anvil" names the anvil's age, which is NOT the same thing: the same 24 cases cost 35.3 s/case with
+the RPC cache cold for the state they touch and 6.3 s/case warm.
+
 | | |
 |---|---|
-| per case, fresh anvil | **about 3 seconds** |
-| per case, late in a long run | **about 20 seconds** |
-| per case, `borrowingPower`, RPC counted | **3.0s, 32 calls**, of which the solver is 0.2s and 9 `eth_call` |
-| per case, `borrow`, same method | **7.0s, 27 calls** (the seeding open is 6.6s of it) |
+| per case, **RPC cache warm** | **6.6 seconds**, mean of the five run window, 24 cases each |
+| per case, **RPC cache cold** | **35.3 seconds** (`949d361`); a thousand distinct cases stay near this, since each is a first touch |
+| per case, late in a long run, cache warm | **about 20 seconds** |
+| per case, `borrowingPower`, RPC counted | **3.0s, 32 JSON-RPC requests**, of which the solver accounts for 0.2s and 9 of them, all `eth_call` |
+| per case, `borrow`, same method | **7.0s, 27 JSON-RPC requests** (the seeding open is 6.6s of it) |
 | 1000 cases | **116 minutes of wall clock**, across four slices of 250, of which 111 is the sweep itself and the rest is the fork suite each slice also runs. Measured P15 |
 
-**The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
-seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
-cases against a fresh anvil came back to 3 seconds each. So the cost grows with the LIFE of the
-anvil process, not with the case index, which is why `MK_DIFF_FROM` and `MK_DIFF_TO` exist: they
+**The degradation is the interesting number, and it has two causes that are easy to conflate.**
+The first 800 cases of a sweep ran at 3 to 4 seconds each; the next hundred took 2008 seconds,
+about 20 seconds each. A separate run of 120 cases against a fresh anvil came back to 3 seconds
+each. That is anvil LIFE. Separately and larger, the RPC cache state moves the same 24 cases
+between 6.3 and 35.3 seconds each (`949d361`). **Quote neither figure without saying which of the
+two you are describing.** Anvil life is why `MK_DIFF_FROM` and `MK_DIFF_TO` exist: they
 slice the same generated set across runs rather than generating a different set. `MK_DIFF_FROM`
 alone could only cut a tail, so the slice needs a bound at both ends and the sweep is run as four
 slices of 250.
@@ -293,9 +301,13 @@ a sweep suddenly costs an order of magnitude more, **check the network before bl
 
 **The split, and the reasoning.**
 
-- **On every push: 24 cases**, the default, about 90 seconds on a fresh fork. It is deterministic
-  from a fixed seed, so it is a gate rather than a lottery, and it is small enough to sit beside
-  a fork suite that already takes about 50 seconds.
+- **On every push: 24 cases**, the default. **About 158 seconds with the RPC cache warm**, which
+  is what CI sits on because `ci.yml` caches the fork state between runs; about 847 seconds cold
+  (`949d361`). Mean of the P15 five run window. It is deterministic from a fixed seed, so it is a
+  gate rather than a lottery, and it sits beside **about 62 seconds** of fork suite, which is the
+  suite with the differential test taken out. The whole fork job, sweep included, is about 220
+  seconds warm. Three quantities, three numbers, because a reader budgeting CI needs to know
+  which one they are looking at (§13).
 - **The full 1000 case sweep: weekly and on demand, never on push.**
   `.github/workflows/sweep.yml` runs the four slices every Sunday at 03:00 UTC and on
   `workflow_dispatch`. It costs **about 116 minutes of wall clock, of which 111 is the sweep

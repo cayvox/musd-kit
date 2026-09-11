@@ -2243,7 +2243,7 @@ conclusion was wrong: `gasUsed === gasLimit` only ever detects exhaustion at the
 | gas used, failing | 710023 |
 | **work swing for the identical call** | **16%** |
 | gas limit sent | 720980, fixed |
-| **margin the SDK ships** | **1.5%** over actual, measured separately on `openTrove` |
+| **margin the send REALISED**, limit over gas used | **1.5%**, measured separately on `openTrove`. Not a setting: it is what one send's limit left over its gas used, and MK-037 is why it was that thin. The SDK now REQUESTS 25% over the node's estimate, which is a different quantity (§13) |
 
 The work varies by ten times the margin. That is the finding in one line.
 
