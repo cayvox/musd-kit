@@ -43,7 +43,7 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 | 4 | The changelogs describe this release | `packages/*/CHANGELOG.md` | The top entry is the version from step 3 |
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
 | 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
-| 7 | **A full sweep has run against THIS tree** | `gh workflow run sweep.yml --ref <the commit you are releasing>`, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion` | A run whose `headSha` **equals the commit being released**, `conclusion: success`. See below: an earlier run does not satisfy this |
+| 7 | **A full sweep has run against THIS tree** | `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status` | A run whose `headSha` **equals the commit being released**, `conclusion: success`. See below: an earlier run does not satisfy this, and `--ref` will not take a raw SHA |
 
 **Step 5 is the one that is easy to skip and should not be.** The fork suite proves the SDK against
 a fork; nothing but this proves it against the real deployment, the real oracle and real gas.
@@ -54,6 +54,16 @@ feeds the same stream, so **changing the set of operations changes which tuples 
 draws** (MK-069). The P13 wave added a tenth operation; nobody ran the full sweep against the new
 stream for two waves; when someone finally did, it surfaced MK-079, which had been reachable from
 the moment the operation landed. A sweep against an earlier tree is evidence about that tree.
+
+**`--ref` takes a branch or a tag, never a commit SHA**, so you cannot point a dispatch at an
+arbitrary commit. In practice: merge everything first, let `main` settle at the commit you intend to
+release, dispatch against `main`, and then check the run's `headSha` rather than assuming it. If
+anything lands on `main` between the dispatch and the release, the sweep is about a different tree
+and precondition 7 is not met. Tagging first and dispatching `--ref <tag>` is the alternative when
+`main` cannot be held still, at the cost of a tag that exists before the release does.
+
+**The workflow must already be on the default branch** for `workflow_dispatch` to be offered at all,
+which is why a dispatch attempted before `sweep.yml` reaches `main` returns `404 Not Found`.
 
 The weekly scheduled run (`.github/workflows/sweep.yml`, Sundays 03:00 UTC) exists so this is
 usually a recent green rather than a two hour wait, but a release almost never sits on the exact
