@@ -110,20 +110,20 @@ the surface.
 ### Maturity
 
 Single author, unaudited, pre 1.0, with a public register of every known correctness gap. It has a
-fork harness against real Mezo contracts, a differential sweep against real transaction outcomes,
-and a coverage ratchet. **The sweep declares ten operations and can currently be run only one
-operation at a time** (MK-078): the tenth costs 245 seconds per case, so the full mixed run times
-out and there is no thousand case figure for this tree. Borrowing and redemption were swept end to
-end on it and disagreed with the chain in neither direction. Before that, the claim here read "every
-preview" while the sweep covered nine operations and not the open time maximum solver (MK-069), and
-a defect lived in the difference (MK-067). It has not had an external audit and has not been run
-at scale by anyone but its author. That is the whole of it: use it on testnet, evaluate it against
+fork harness against real Mezo contracts, a differential sweep of ten operations against real
+transaction outcomes, and a coverage ratchet. The sweep was run end to end on this tree, 1000 cases
+in four slices, and found **zero cases where a preview said go and the chain refused**. It found ten
+in the other direction, and all ten are one defect in the harness's own argument mapping rather than
+in the SDK (MK-079). Before this, the claim here read "every preview" while the sweep covered nine
+operations and not the open time maximum solver (MK-069), and a defect lived in the difference
+(MK-067). It has not had an external audit and has not been run at scale by anyone but its author. That is the whole of it: use it on testnet, evaluate it against
 your own cases, and read the register before you depend on it.
 
 **No S1 is open.** Two S2 stay open. One is the fee cap above (MK-011), which is a protocol
-property rather than something this SDK can fix. The other is MK-078, which is this repository's
-own sweep being unable to run at its documented scale; it implicates the evidence base rather than
-anything the SDK returns. Every other open finding is S3 and concerns the test suite.
+property rather than something this SDK can fix. The other is MK-079, which is this repository's
+own differential harness comparing a preview of one call against execution of another; it
+implicates the instrument rather than anything the SDK returns. Every other open finding is S3 and
+concerns the test suite.
 
 ---
 

@@ -218,13 +218,12 @@ that they are printed.
 
 ```sh
 pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
-MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep, DOES NOT COMPLETE, see MK-078
+MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep; use the four slices below
 MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
 
 # The full sweep, in four slices with a fresh anvil each. One run does not fit.
-# MK-078: on the ten operation generator no slice fits either. Every one of the four below
-# exits 1 at the test's own 90 minute timeout without emitting a summary. Kept as the
-# documented recipe so the failure is reproducible, not as something that works today.
+# Measured P15 on the ten operation generator: 1593s, 1697s, 1719s, 1648s, 111 minutes total.
+# The slices exit 1 on MK-079's ten FALSE_BLOCKED, which are the harness's own defect.
 for FROM in 0 250 500 750; do
   MK_DIFF_CASES=1000 MK_DIFF_FROM=$FROM MK_DIFF_TO=$((FROM+250)) pnpm test:fork
 done
@@ -264,8 +263,9 @@ Measured on the declared Node at the pinned block, not estimated:
 |---|---|
 | per case, fresh anvil | **about 3 seconds** |
 | per case, late in a long run | **about 20 seconds** |
-| per case, `borrowingPower` | **about 245 seconds** (MK-078) |
-| 1000 cases | ~~about 96 minutes, across four slices of 250~~ **does not complete (MK-078)** |
+| per case, `borrowingPower`, RPC counted | **3.0s, 32 calls**, of which the solver is 0.2s and 9 `eth_call` |
+| per case, `borrow`, same method | **7.0s, 27 calls** (the seeding open is 6.6s of it) |
+| 1000 cases | **111 minutes**, across four slices of 250, measured P15 |
 
 **The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
 seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
@@ -275,14 +275,17 @@ slice the same generated set across runs rather than generating a different set.
 alone could only cut a tail, so the slice needs a bound at both ends and the sweep is run as four
 slices of 250.
 
-**That slice size no longer works, and this is the number that says why (MK-078).** The
-`borrowingPower` operation added in the P13 wave measures at about 245 seconds per case against
-roughly 5 for every other operation, isolated on a fresh anvil so the degradation above is not the
-explanation. A 250 case slice holds around eighteen of them, which is about 73 minutes, and the test
-gives itself 90. Every one of the four slices therefore hits its own timeout without emitting a
-summary. **Until that is fixed, the full sweep cannot be run at any slice size that also covers the
-generation**, and the usable instrument is the per operation form above, which excludes the expensive
-operation by construction.
+**The slice size still works on the ten operation generator**, measured in the P15 wave: the four
+slices took 1593s, 1697s, 1719s and 1648s, none close to the test's own 90 minute budget.
+
+**MK-078 claimed otherwise and was withdrawn.** It reported 245 seconds per `borrowingPower` case
+from a single run that was never repeated. Re-measured with the RPC counted, such a case costs 3.0
+seconds and nine chain calls, which is CHEAPER than a `borrow` case, because a borrow case has to
+seed a position first and this one does not. **anvil forks lazily from the upstream RPC**, so when
+that link degrades every uncached read stalls and the harness looks slow; the run that produced the
+245 was taken while it was failing, and the failure was caught in the act during P15 when two slices
+died inside `startFork` with a DNS error and a third finished with 19 `InternalRpcError` throws. If
+a sweep suddenly costs an order of magnitude more, **check the network before blaming the tree.**
 
 **The split, and the reasoning.**
 
@@ -291,9 +294,9 @@ operation by construction.
   a fork suite that already takes about 50 seconds.
 - **The full 1000 case sweep: on demand and on a schedule, never on push.** A ninety minute job
   on the push path would make every merge wait for it, and people would start skipping it.
-  **Currently it cannot be run at all (MK-078)**, which is worse than it being slow: nothing is
-  scheduled that would have caught this, because the schedule was never wired and the wave that
-  added the tenth operation only ever ran the 24 case default.
+  It runs in about 111 minutes on the ten operation generator (P15). **Nothing is scheduled that
+  runs it**, which is the real gap: the schedule this bullet describes was never wired, so the only
+  thing standing between a generator change and an unmeasured sweep is somebody remembering.
 - **It is not hidden either**, which is the other failure mode. `docs/08-conventions.md` §10 is
   where a wave's obligations live, and the sweep belongs in a wave's acceptance when preview or
   math code changed, with the seed reported.

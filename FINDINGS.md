@@ -113,7 +113,8 @@ claim about it was not).
 | MK-075 | `previewRefinance` reports its reasons in an order its own adjacent comment says it does not use | S3 | fixed, and given the mutation MK-065 never got |
 | MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
-| MK-078 | The tenth sweep operation costs 245s per case, so no slice of the documented 1000 case sweep finishes and the thousand case figures cannot be re-measured at all | S2 | **open.** Registered and deliberately not fixed; the figures it invalidates are removed rather than relabelled |
+| MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 111 minutes. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
+| MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open.** Registered and deliberately not fixed; no `packages/*/src` file is implicated |
 
 ---
 
@@ -143,12 +144,12 @@ place. A count of numerals would be larger and would mean less.
 |---|---|---|
 | Flake rates and run windows | MK-016, MK-021, MK-022, MK-023, MK-024, MK-025, MK-026, MK-030 | `pnpm test:fork`, `pnpm test:coverage` |
 | Coverage against the ratchet | MK-016, and the floors in `docs/07-testing.md` §4 | `pnpm test:coverage` |
-| ~~The 1000 case differential sweep, 0 mismatches, 89 skipped~~ **Not currently reproducible (MK-078)** | MK-016, MK-048, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` (four slices of 250, see `MK_DIFF_FROM` and `MK_DIFF_TO`). **Every slice times out on this tree**, so the command produces no figure. The 89 and the four slice breakdown were measured on the nine operation generator and are kept only inside MK-048's own evidence block, as history |
+| The 1000 case differential sweep on the TEN operation generator: **1000 ran, 97 skipped, 0 FALSE_VIABLE, 10 FALSE_BLOCKED (all MK-079), 0 NUMBERS, 0 throws**, 111 minutes | MK-016, MK-048, MK-079, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` in four slices of 250 via `MK_DIFF_FROM` and `MK_DIFF_TO`, fresh anvil each, block 15043414. Measured in the P15 wave. **The four slices exit 1**, on the 10 FALSE_BLOCKED, which are one harness defect and not ten. The previous 89 and its four slice breakdown were the NINE operation generator and stay inside MK-048's evidence block as history |
 | Chain constants and the fee exempt scan at both pinned blocks | MK-014, MK-018, `docs/09` §6 | `pnpm facts --stdout` |
 | Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
 | The zero debt sentinel value | MK-017 | `pnpm test:unit` |
 | Every pin added for MK-058, MK-059, MK-060 and MK-065 fails with its fix removed | MK-058 through MK-065 | `node scripts/mutation-check.mjs` |
-| Recovery Mode borrows in the sweep, **20 of 81**, per band, 0 mismatches, 0 throws | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, **re-measured on the ten operation generator in the P14 wave**, 464s, exit 0. It replaces the 17 of 105 measured on the nine operation one. This command completes because filtering to one operation excludes `borrowingPower`, which is the operation MK-078 is about |
+| Recovery Mode borrows in the sweep, **20 of 81**, per band, 0 mismatches, 0 throws | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, **re-measured on the ten operation generator in the P14 wave**, 464s, exit 0. It replaces the 17 of 105 measured on the nine operation one. It was measured with an op filter, which is a narrower instrument than the full sweep; the full sweep's own Recovery Mode borrow counts, measured in P15, are boundary 8, extreme 9, middle 3 |
 | Redemption bands in the sweep, **99 ran, 47 skipped**, per band, 0 mismatches, 0 throws | MK-048 | `MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, re-measured in the P14 wave, 1823s, exit 0 |
 | The Recovery Mode threshold at the pinned block, TCR 2.7731, so 45.9 percent | MK-059 | `cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemColl()" --rpc-url https://rpc.test.mezo.org --block 15043414`, and the same for `getEntireSystemDebt()` |
 | The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
@@ -3321,7 +3322,7 @@ said the net debt as read is NOT redeemable and nineteen times the chain agreed,
 the previous version of this preview would have said the opposite.
 
 **Re-measured in the P14 wave on the ten operation generator**, because the block above describes a
-tuple stream this tree no longer produces (MK-069, MK-078). Same seed, same command, 1823s, exit 0:
+tuple stream this tree no longer produces (MK-069). Same seed, same command, 1823s, exit 0:
 
 ```
 ran=99  skipped=47  FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0
@@ -3547,7 +3548,7 @@ MK_DIFF_OP=borrow MK_DIFF_CASES=1000 pnpm test:fork
 ```
 
 **Re-measured in the P14 wave on the ten operation generator**, because the two blocks above describe
-a tuple stream this tree no longer produces (MK-069, MK-078). Same seed, same command, 464s, exit 0:
+a tuple stream this tree no longer produces (MK-069). Same seed, same command, 464s, exit 0:
 
 ```
 MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
@@ -4789,8 +4790,10 @@ chain. Both halves are pinned, the evaluator in `p13-gates.test.ts` and the writ
 
 ## MK-078 · The tenth sweep operation makes the documented sweep unable to finish, so the thousand case figures cannot be re-measured at all
 
-**Class** S2, harness · **Status** open, registered and NOT fixed in this wave · **Found by running
-the documented recipe on the P13 tree, which is the first time anyone has**
+**Class** S2, harness · **Status** **claim-corrected in the P15 wave: this finding is WITHDRAWN.**
+The run it rests on was a measurement of a failing network, not of this repository. Read the
+correction at the end of the entry before anything above it · **Found by running the documented
+recipe on the P13 tree, which is the first time anyone has**
 
 **What was attempted.** MK-069 left `docs/09` §3 carrying 1000 case figures measured on the NINE
 operation generator, labelled as describing a stream this tree no longer produces. The P14 wave's
@@ -4898,6 +4901,134 @@ completion, so that row is supported by a measurement of a previous tree and by 
 removed rather than relabelled, and the rows that carried them say the sweep cannot currently be run
 at the documented scale and name this entry. A number a reader cannot reproduce is worse in that
 table than an absent one, which is the whole reason the P14 wave was called.
+
+---
+
+### Corrected in the P15 wave: this finding is WRONG, and the process failure that produced it matters more than the finding did
+
+**Status changes from `open` to `claim-corrected`.** Everything above describes a real run that
+really happened. The conclusion drawn from it does not hold, and every number in it is a measurement
+of a degraded network rather than of this repository.
+
+**What the re-measurement found**, on the same tree, same seed, same commands, with nothing else
+running:
+
+| measurement | P14 recorded | P15 measured |
+|---|---|---|
+| `MK_DIFF_OP=borrowingPower` over index 0..250, 18 cases | 4413s, `threw=4` | **103s, `threw=0`** |
+| Those same 18 cases through `runCase` in sequence | not measured | **110s total, 6.1s mean, 0 throws, no growth** |
+| One `borrowingPower` case, RPC counted | "245s per case" | **3.0s, 32 RPCs, solver 0.2s and 9 `eth_call`** |
+| One `borrow` case, same tree, same method | the control, 4.9s | **7.0s, 27 RPCs** |
+| Slice 0..250, full `pnpm test:fork` | exit 1 at the 90 minute timeout, no summary | **completed, 1593s, 250 ran, `threw=0`, flat 6.4s per case** |
+
+**A `borrowingPower` case is CHEAPER than a `borrow` case**, because a borrow case has to seed a
+position first and this one does not. The solver makes nine chain calls, not hundreds: the closed
+form answers and the bounded binary search never runs. The 245 was not a per case cost at all; it
+was a mean over a bimodal distribution in which four cases each burned a receipt timeout, which is
+exactly the shape `docs/08-conventions.md` §10 warns about.
+
+**What was actually wrong with the machine, established by watching it fail again.** anvil forks
+LAZILY from the upstream RPC, so any state the fork has not cached is fetched from
+`rpc.test.mezo.org` mid execution. When that link degrades, every uncached read stalls, transactions
+cannot be executed or mined, and `waitForTransactionReceipt` reaches its timeout. The P15 run caught
+the whole progression in one sitting: slice 250..500 finished but with `threw=19`, **every one an
+`InternalRpcError`** and all of them clustered in the last cases; slices 500..750 and 750..1000 then
+failed in `startFork` itself with
+
+```
+- Error #2: dns error
+- Error #3: failed to lookup address information: nodename nor servname provided, or not known
+```
+
+and exited in one and two seconds. The network recovered a few minutes later
+(`dns=0.065s http=200`) and the slices were re-run.
+
+**So the four transactions that "never confirm" are not four transactions and not a defect.** Cases
+169, 220, 222 and 230 run in 2.7s, 2.9s, 7.2s and 6.9s, and in the single case probe the `max + 1`
+attempt is refused by the SDK's own precheck (`ICRBelowMCR`, `RecoveryModeRestriction`) so no
+transaction is sent at all.
+
+**The process failure, which is the part worth keeping.** The P14 entry was written from a single
+run, taken immediately after four slices had hit test level timeouts, without checking what else was
+on the machine and without re-running the measurement once. `docs/08-conventions.md` §10 requires a
+measurement to be reproducible and the command to be recorded; the command was recorded and the
+measurement was never repeated, so the rule was met in letter and missed in substance. **A single
+run of a number that decides a release is not a measurement, it is an observation**, and this
+register already has a class for that: observed once. This entry claimed reproducible and was not.
+
+**What this cost.** The P14 wave removed correct figures from `docs/09` §3, `docs/07`, the provenance
+index and the README on the strength of a false finding, and told a reader the sweep could not be
+run. It can. The figures are restored in this wave from a run of the real thing, and what the real
+run found instead is MK-079.
+
+**Kept, not deleted.** The original entry stands above so the reasoning that produced a wrong
+conclusion is legible, which is the same treatment MK-034 and MK-036 got.
+
+---
+
+## MK-079 · The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero
+
+**Class** S2, harness · **Status** open, registered and NOT fixed in this wave · **Found by the
+first clean run of the documented sweep, which is also the run that refuted MK-078**
+
+**The mismatch, verbatim from the run that produced it:**
+
+```
+DIFFERENTIAL MISMATCH [FALSE_BLOCKED]
+  seed=20260826 case=209 band=boundary op=adjust collateral=340000000000000000 debt=0
+  pricePercent=66 elapsedSeconds=1 precondition=OCCUPIED redeemBand=AT_NET_DEBT
+  recoveryDrawdownPercent=60
+  replay with: MK_DIFF_SEED=20260826 MK_DIFF_CASE=209
+  preview.viable=false  chainSucceeded=true
+  the preview said NOT VIABLE and the chain accepted it. reasons=[ZERO_DEBT_INCREASE]
+```
+
+**Both halves of the SDK are correct. The harness asked them different questions.**
+
+`adjustCase` (`packages/core/test/differential/harness.ts`) passes its `legs` object to the preview
+**verbatim**:
+
+```ts
+const preview = await client.previewAdjustTrove({ owner: account.address, ...legs })
+```
+
+and then to the write **filtered on `> 0n`**:
+
+```ts
+...(legs.increaseDebt !== undefined && legs.increaseDebt > 0n ? { borrow: legs.increaseDebt } : {}),
+```
+
+The case is generated with `debt=0`, and `adjustDebt(c)` is `c.debt / 4n`, so `increaseDebt` is
+`0n`. On the preview side that is PRESENT, so `previewAdjustTrove` sets
+`isDebtIncrease = params.increaseDebt !== undefined` and reports `ZERO_DEBT_INCREASE`, which is
+exactly right: `_adjustTrove` with `(_mUSDChange = 0, _isDebtIncrease = true)` is refused by
+`_requireNonZeroDebtChange` (`BorrowerOperations.sol:786`, `:1351-1356`). On the write side the leg
+is dropped entirely, so `adjustTrove` sends a pure collateral top-up, which the contract accepts.
+
+**A preview of "add collateral and increase debt by zero" was compared against an execution of "add
+collateral".** Neither answer is wrong. The comparison is.
+
+**This is MK-060's distinction, never applied to the harness.** MK-060 established that
+`_isDebtIncrease` is a parameter the contract takes independently of `_mUSDChange`, and that
+presence and value are different inputs; it fixed `trove/index.ts` and `previewAdjust.ts` to both
+read presence. The harness's own mapping still reads presence on one side and value on the other,
+which is the same defect one level out, in the instrument that exists to catch defects.
+
+**Why it surfaced only now.** The tenth operation added in MK-067 shifts the generator's PRNG
+stream, so the same seed draws different tuples. `debt=0` on an `adjust` case at index 209 is a
+tuple this seed did not previously produce. That is MK-066's lesson repeating: coverage, and now
+correctness of the comparison itself, resting on which cases the generator happens to draw.
+
+**Blast radius: the instrument, not the SDK.** No `packages/*/src` file is implicated. The
+consequence is that the sweep reports a mismatch that is not a product defect, which is the worst
+thing a differential harness can do short of missing a real one: it costs the credibility of every
+zero it has ever reported. Any `adjust` case whose `debt` is under `4` wei produces
+`adjustDebt(c) === 0n` and reaches this path.
+
+**Not fixed here, on instruction.** The obvious shapes are to filter the preview legs the same way
+the write legs are filtered, or to stop filtering the write legs and let `adjustTrove` refuse the
+zero leg as MK-060 made it do. **They are not equivalent** and the choice decides what the case
+tests, so it belongs to a wave that can weigh it rather than to this one.
 
 ---
 
