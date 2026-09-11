@@ -113,7 +113,7 @@ claim about it was not).
 | MK-075 | `previewRefinance` reports its reasons in an order its own adjacent comment says it does not use | S3 | fixed, and given the mutation MK-065 never got |
 | MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
-| MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 111 minutes. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
+| MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 116 minutes of wall clock. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
 | MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open.** Registered and deliberately not fixed; no `packages/*/src` file is implicated |
 
 ---
@@ -144,7 +144,7 @@ place. A count of numerals would be larger and would mean less.
 |---|---|---|
 | Flake rates and run windows | MK-016, MK-021, MK-022, MK-023, MK-024, MK-025, MK-026, MK-030 | `pnpm test:fork`, `pnpm test:coverage` |
 | Coverage against the ratchet | MK-016, and the floors in `docs/07-testing.md` §4 | `pnpm test:coverage` |
-| The 1000 case differential sweep on the TEN operation generator: **1000 ran, 97 skipped, 0 FALSE_VIABLE, 10 FALSE_BLOCKED (all MK-079), 0 NUMBERS, 0 throws**, 111 minutes | MK-016, MK-048, MK-079, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` in four slices of 250 via `MK_DIFF_FROM` and `MK_DIFF_TO`, fresh anvil each, block 15043414. Measured in the P15 wave. **The four slices exit 1**, on the 10 FALSE_BLOCKED, which are one harness defect and not ten. The previous 89 and its four slice breakdown were the NINE operation generator and stay inside MK-048's evidence block as history |
+| The 1000 case differential sweep on the TEN operation generator: **1000 ran, 97 skipped, 0 FALSE_VIABLE, 10 FALSE_BLOCKED (all MK-079), 0 NUMBERS, 0 throws**, 116 minutes of wall clock (111 inside the sweep) | MK-016, MK-048, MK-079, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` in four slices of 250 via `MK_DIFF_FROM` and `MK_DIFF_TO`, fresh anvil each, block 15043414. Measured in the P15 wave. **The four slices exit 1**, on the 10 FALSE_BLOCKED, which are one harness defect and not ten. The previous 89 and its four slice breakdown were the NINE operation generator and stay inside MK-048's evidence block as history |
 | Chain constants and the fee exempt scan at both pinned blocks | MK-014, MK-018, `docs/09` §6 | `pnpm facts --stdout` |
 | Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
 | The zero debt sentinel value | MK-017 | `pnpm test:unit` |

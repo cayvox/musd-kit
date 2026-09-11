@@ -222,7 +222,9 @@ MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep; use the four
 MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
 
 # The full sweep, in four slices with a fresh anvil each. One run does not fit.
-# Measured P15 on the ten operation generator: 1593s, 1697s, 1719s, 1648s, 111 minutes total.
+# Measured P15 on the ten operation generator. Sweep only: 1593s, 1697s, 1719s, 1648s (111 min).
+# Wall clock of the four invocations: 1678s, 1768s, 1799s, 1731s (116 min), the difference
+# being the rest of the fork suite, which each slice also runs.
 # The slices exit 1 on MK-079's ten FALSE_BLOCKED, which are the harness's own defect.
 for FROM in 0 250 500 750; do
   MK_DIFF_CASES=1000 MK_DIFF_FROM=$FROM MK_DIFF_TO=$((FROM+250)) pnpm test:fork
@@ -265,7 +267,7 @@ Measured on the declared Node at the pinned block, not estimated:
 | per case, late in a long run | **about 20 seconds** |
 | per case, `borrowingPower`, RPC counted | **3.0s, 32 calls**, of which the solver is 0.2s and 9 `eth_call` |
 | per case, `borrow`, same method | **7.0s, 27 calls** (the seeding open is 6.6s of it) |
-| 1000 cases | **111 minutes**, across four slices of 250, measured P15 |
+| 1000 cases | **116 minutes of wall clock**, across four slices of 250, of which 111 is the sweep itself and the rest is the fork suite each slice also runs. Measured P15 |
 
 **The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
 seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
@@ -294,7 +296,7 @@ a sweep suddenly costs an order of magnitude more, **check the network before bl
   a fork suite that already takes about 50 seconds.
 - **The full 1000 case sweep: on demand and on a schedule, never on push.** A ninety minute job
   on the push path would make every merge wait for it, and people would start skipping it.
-  It runs in about 111 minutes on the ten operation generator (P15). **Nothing is scheduled that
+  It runs in about 116 minutes of wall clock on the ten operation generator (P15). **Nothing is scheduled that
   runs it**, which is the real gap: the schedule this bullet describes was never wired, so the only
   thing standing between a generator change and an unmeasured sweep is somebody remembering.
 - **It is not hidden either**, which is the other failure mode. `docs/08-conventions.md` §10 is
