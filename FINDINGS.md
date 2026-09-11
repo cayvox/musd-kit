@@ -114,6 +114,8 @@ claim about it was not).
 | MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
 | MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 116 minutes of wall clock. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
+| MK-083 | The runbook documented two shell commands for an action a workflow already performed, built to replace them for a stated security reason. The documented version never ran | S2, process | fixed. §3 is the workflow now, and the conventions checklist gained the check that detects the family |
+| MK-084 | `deprecate.yml` takes the version as an input but hardcodes 0.1.0's message text, so dispatching it for any other version writes a false message to the registry | S2 | **open.** Registered, not fixed: the workflow argues deliberately against free text message inputs and the alternative is a design choice. The runbook says to edit the strings first |
 | MK-081 | The push subset's warm cost was published as CI's, from a measurement taken on a developer machine. CI is 2.4 times faster | S3 | fixed. Both figures published, each naming the machine it was measured on |
 | MK-082 | The wave checklist's five run command does not pin the fork, and the same checklist requires the five answers to be byte identical | S3 | fixed. The checklist row and the recipe both carry `MEZO_FORK_BLOCK` now |
 | MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
@@ -5056,6 +5058,120 @@ indices are recorded in `knownAt`, scoped to the seed and count they were measur
 only for the disappearance report. The predicate itself requires an `adjust` op, a `FALSE_BLOCKED`
 direction, `ZERO_DEBT_INCREASE` in the reason, and `case.debt < 4n`, which is precisely the band
 where `adjustDebt` yields a zero leg. **Nothing about registering it makes this finding less open.**
+
+---
+
+## MK-083 · A document described an action that a workflow already performed, and the documented version never ran
+
+**Class** S2, process · **Status** fixed · **Found by auditing this runbook for preconditions
+asserted without an action**, which is a different question that kept turning up the same answer
+
+`docs/12-release-runbook.md` §3 carried two literal `npm deprecate` shell commands.
+`.github/workflows/deprecate.yml` exists to replace exactly those two commands and says so in its
+own header, in its own words:
+
+> `npm deprecate` writes to the registry, so it needs a publish-capable token. The one place this
+> project keeps one is the `NPM_TOKEN` repository secret; putting it in a maintainer's shell to run
+> two commands means a publish credential living somewhere it is not tracked, not rotated with the
+> secret, and not visible in any log. `docs/12-release-runbook.md` §3 recorded the two commands and
+> nothing ran them.
+
+**The workflow was written, it was run, and the document was never updated.** Checked rather than
+assumed:
+
+```
+gh run list --workflow deprecate.yml        ->  33180504234  success  workflow_dispatch  2026-08-28
+npm view @musd-kit/core@0.1.0 deprecated    ->  "0.1.0 returns wrong numbers on seven surfaces..."
+npm view @musd-kit/react@0.1.0 deprecated   ->  "Depends on @musd-kit/core@0.1.0, which returns..."
+```
+
+So the deprecation happened, through the workflow, while the runbook went on instructing a reader to
+obtain a publish credential and paste it into a shell. **A reader following the documentation would
+have taken the exact risk the workflow was built to remove**, and would have had no way to know,
+because the document does not mention the workflow at all: `git grep "deprecate.yml" -- docs`
+returned nothing.
+
+### What makes this family detectable, now that it has appeared three times
+
+| | the document said | where the action actually lived | what had executed |
+|---|---|---|---|
+| MK-053 | the release posture includes a post publish verification gate | a job inside `release.yml`, reachable only as the tail of a real publish | **nothing**, across two releases |
+| MK-080 | the full sweep runs "on demand and on a schedule" | the on demand half only; no `schedule:` trigger existed anywhere | the on demand half, by hand, twice in 85 commits |
+| MK-083 | run these two `npm deprecate` commands | `.github/workflows/deprecate.yml`, written to replace them | **the workflow**, once; the documented commands never |
+
+**The three share one shape and it is mechanically checkable: a document names a command, and
+something in the repository already performs that command.** That divergence is the signal, and it
+is visible without knowing anything about intent, by grepping the repository for the command a
+document tells you to run and asking what else already runs it.
+
+**The execution counts differ and that difference matters, so do not flatten it.** In MK-053 and
+MK-080 nobody ran anything, and the gap was a gate that did not exist. Here the real mechanism ran
+and worked; the gap is that the document pointed somewhere worse. **A working alternative makes the
+family harder to notice, not easier**, because nothing is failing: the deprecation is live on the
+registry, the runbook looks satisfied, and only reading both side by side reveals that the thing
+described and the thing that happened were different things.
+
+**Why S2 rather than S3.** The documented route is not merely redundant, it is the insecure one. A
+maintainer following §3 puts a publish capable npm token into their shell and their shell history,
+and this repository has already recorded what an untracked credential costs to reason about
+afterwards (MK-037's window, where the margin was silently dropped on an unknown fraction of sends
+and there is now no way to find out which).
+
+**Fixed by** replacing §3 with the workflow, its dispatch command, its two inputs, its two guards,
+and how to read the result back from the registry, keeping one sentence that says why the shell
+commands are not the route so nobody restores them. The conventions checklist gains the check that
+detects the family, `docs/08-conventions.md` §10 row 12.
+
+**Audited for other instances in the same pass, and reported rather than fixed.** `ci.yml` is not
+one: the checklist deliberately requires both the local run and the CI run, and says so. `release.yml`
+is not one: §2 dispatches the workflow and the `pnpm publish` line beneath it describes what the
+workflow does rather than instructing you. `sweep.yml` is not one: precondition 7 dispatches it and
+`docs/07-testing.md` gives the local four slice recipe for local use, with the relationship stated.
+`pnpm gate:packaging` is not one: CI does not run it, so precondition 6 is a genuinely manual gate.
+Two near misses are recorded in the wave's report: the runbook names the `verify-published` job
+without mentioning that `verify-published.yml` is dispatchable on its own, which
+`docs/07-testing.md:90-95` documents with a command; and §5 still tells you to run
+`npm dist-tag add` by hand, which carries the identical credential hazard with **no** workflow to
+supersede it, so it is an unclosed instance of the principle rather than a supersession.
+
+---
+
+## MK-084 · The deprecation workflow takes a version input and hardcodes one version's message
+
+**Class** S2 · **Status** open, registered and NOT fixed · **Found while documenting the workflow
+as the route**, by reading it rather than describing it from its header
+
+`.github/workflows/deprecate.yml` accepts `version` as a required dispatch input and interpolates it
+into both `npm deprecate` targets. **The message strings beside them are literals about 0.1.0:**
+
+```
+npm deprecate "@musd-kit/core@$V"  "0.1.0 returns wrong numbers on seven surfaces, three of them
+                                    silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md.
+                                    Upgrade to 0.2.0."
+npm deprecate "@musd-kit/react@$V" "Depends on @musd-kit/core@0.1.0, which returns wrong numbers on
+                                    seven surfaces. See docs/11-migration-0.1-to-0.2.md.
+                                    Upgrade to 0.2.0."
+```
+
+So a dispatch with `version=0.2.0` attaches the sentence "0.1.0 returns wrong numbers on seven
+surfaces" to 0.2.0 and sends the reader to the wrong migration guide. **The registry is the one
+surface where this is visible to people who are not us**, and a deprecation message is read by
+installers at install time.
+
+**The workflow's own reasoning is right and is not what is wrong here.** Its header argues that the
+messages belong in the workflow rather than in an input, because an input "would let this deprecate
+anything with any text, which is a much larger capability than the job needs". That is sound. The
+defect is that the version was parameterised and the text was not, so the two disagree for every
+input except the one they were written for.
+
+**Not fixed, on the same reasoning as MK-079.** The shapes available are a per version case in the
+workflow, a message file per version in the repository, or narrowing the input to a fixed set. They
+are not equivalent, and choosing decides how much capability the job has, which is the exact
+question the header weighed. It belongs to a wave that can weigh it rather than to a documentation
+commit.
+
+**Contained meanwhile** by `docs/12-release-runbook.md` §3, which states the constraint and says to
+edit the two strings in a commit and dispatch from that commit for any version other than 0.1.0.
 
 ---
 

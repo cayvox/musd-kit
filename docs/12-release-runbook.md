@@ -170,19 +170,69 @@ packages must publish together.
 
 ## 1. The live testnet run
 
-It needs a funded testnet account. **Compute the figure rather than guessing it**, because the
-price, the debt floor, the fee rate and the gas price are all governable:
+It needs a funded testnet account, and **this runbook used to open by sourcing a file it never told
+you how to make** (MK-083's sibling in the same audit). So: the account first, then the funding,
+then the run.
+
+### 1a. The key file, which nothing in the repository can create for you
+
+`scripts/testnet-e2e.ts` reads `MEZO_TESTNET_PRIVATE_KEY` **from the environment and from nowhere
+else**, by deliberate design: no path to a key file appears anywhere in that script. The convention
+this project uses is a one line shell file that exports it.
+
+| | |
+|---|---|
+| path | `.secrets/testnet-e2e.env`, at the repository root |
+| contents | exactly one line, `export MEZO_TESTNET_PRIVATE_KEY=0x<64 hex characters>` |
+| tracked? | **no.** `.gitignore:25` ignores `.secrets/` as a whole directory, confirmed with `git check-ignore -v .secrets/testnet-e2e.env` |
+| mode | `0600`. The directory holds a spendable key and nothing else should read it |
+
+**Generating it without the key ever reaching your scrollback or a tracked file.** `cast wallet new`
+prints the private key to stdout, which puts it in terminal history and in any transcript; the
+pipeline below writes it straight to the file and prints **only the address**, which is public:
+
+```sh
+mkdir -p .secrets
+( umask 077
+  cast wallet new --json | python3 -c '
+import json, sys
+w = json.load(sys.stdin)[0]
+open(".secrets/testnet-e2e.env", "w").write("export MEZO_TESTNET_PRIVATE_KEY=" + w["private_key"] + "\n")
+print(w["address"])
+' )
+```
+
+`umask 077` inside the subshell is what makes the file `0600`, and it is scoped to the subshell so
+it does not follow you around. Check with `stat -f '%Sp' .secrets/testnet-e2e.env`.
+
+**It will overwrite an existing file without asking.** If `.secrets/testnet-e2e.env` is already
+there it is probably a funded account from a previous release, and replacing it strands those funds.
+Check before you run the above: `ls -l .secrets/`.
+
+### 1b. Fund it
+
+**The faucet is [faucet.test.mezo.org](https://faucet.test.mezo.org/).** Checked while writing this:
+it resolves to a Cloudflare address, answers `200`, and serves a page headed "BTC MEZO" with a
+"Request Tokens" control. It was not verified by requesting funds.
+
+**Do not take an amount from this page.** The price, the debt floor, the fee rate and the gas price
+are all governable, so any number written here goes stale. Compute it:
 
 ```sh
 pnpm tsx scripts/testnet-e2e.ts --plan
 ```
 
-That needs no key and prints the required balance with its arithmetic. Fund the address from the
-Mezo testnet faucet, then:
+That needs **no key** and prints the required balance with its arithmetic. `scripts/README.md` and
+the header of `scripts/testnet-e2e.ts` carry the shape of the answer and the constraint that decides
+it: the grant is capped per day, and the script sizes the position from the chain rather than from a
+constant for exactly that reason (MK-045). If `--plan` asks for more than one grant, that is the
+signal to read `scripts/testnet-fund.ts`, which exists because MUSD has no faucet at all.
+
+### 1c. Run it
 
 ```sh
 source .secrets/testnet-e2e.env      # exports MEZO_TESTNET_PRIVATE_KEY
-pnpm tsx scripts/testnet-e2e.ts
+pnpm tsx scripts/testnet-e2e.ts      # or: pnpm testnet:e2e
 ```
 
 **What to check:** the final ledger lists every write and preview the SDK exposes, each marked
@@ -232,16 +282,63 @@ npm view @musd-kit/core dist-tags      # `latest` points at it
 
 ## 3. Deprecate the previous version
 
-Only if the previous version returns wrong numbers, which 0.1.0 does:
+Only if the previous version returns wrong numbers, which 0.1.0 does. **Deprecating is not
+unpublishing:** the version stays installable for anyone already pinned to it and everyone else
+sees a warning, which is the point, and it is reversible.
+
+**This section used to carry two `npm deprecate` shell commands. It does not any more, and they
+must not come back** (MK-083). `npm deprecate` writes to the registry, so it needs a publish
+capable credential, and the only one this project keeps is the `NPM_TOKEN` repository secret;
+running it from a maintainer's shell means that credential lives somewhere untracked, unrotated
+with the secret and invisible in any log. `.github/workflows/deprecate.yml` exists specifically to
+replace them and states that reasoning in its own header.
+
+### Run it
 
 ```sh
-npm deprecate @musd-kit/core@0.1.0 "0.1.0 returns wrong numbers on seven surfaces, three of them silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
-npm deprecate @musd-kit/react@0.1.0 "Depends on @musd-kit/core@0.1.0, which returns wrong numbers on seven surfaces. See docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
+gh workflow run deprecate.yml -f version=0.1.0 -f confirm=deprecate
 ```
 
-**What to check:** `npm view @musd-kit/core@0.1.0 deprecated` prints the message. Installers now see
-a warning; the version stays installable, which is the point. Deprecation is reversible:
-`npm deprecate <pkg>@<version> ""` clears it.
+| input | | |
+|---|---|---|
+| `version` | required | the version to deprecate, for example `0.1.0`. **Both packages are deprecated at that version**, `@musd-kit/core` and `@musd-kit/react` together |
+| `confirm` | required, default empty | the literal string `deprecate`. Anything else and the job is **skipped, not failed**, so read the job's status rather than the run's colour |
+
+Two guards are in the workflow rather than in your memory. It **refuses to deprecate whichever
+version is currently `latest`**, per package, so the release you just shipped cannot be marked
+broken by a typo in the version input. And the write is not the result: a final step with **no
+credential in its environment** reads both packages back from the registry, polling up to twelve
+times at ten second intervals, and fails if either does not report a deprecation message.
+
+### What to check afterwards
+
+The workflow proves it, and you should still read it from the registry yourself, because that is
+the only surface an installer sees:
+
+```sh
+npm view @musd-kit/core@0.1.0 deprecated
+npm view @musd-kit/react@0.1.0 deprecated
+npm view @musd-kit/core dist-tags          # `latest` must NOT be the version you deprecated
+```
+
+Each of the first two prints the message, and the messages differ per package. To clear one, the
+same hazard applies: it is a registry write, so it belongs in a workflow, and none exists for
+clearing. Today, on the live registry, both `@musd-kit/core@0.1.0` and `@musd-kit/react@0.1.0`
+report their messages and `latest` is `0.2.0`.
+
+**The workflow has run exactly once**,
+[run 33180504234](https://github.com/cayvox/musd-kit/actions/runs/33180504234), a
+`workflow_dispatch` on 2026-08-28 that produced the two deprecations above. The shell commands this
+section used to carry never ran at all, which is the whole of MK-083.
+
+### One constraint before you dispatch it for anything other than 0.1.0
+
+**The messages are hardcoded to 0.1.0's text while `version` is an input** (MK-084). The workflow
+argues, correctly, that the messages should not be a free text input, because that would let it
+write anything onto anything. What it does not do is vary them with the version, so dispatching it
+with `version=0.2.0` would attach the string "0.1.0 returns wrong numbers on seven surfaces" to
+0.2.0 and point readers at the wrong migration guide. **For any version other than 0.1.0, edit the
+two message strings in the workflow first**, in a commit, and dispatch from that commit.
 
 ---
 
