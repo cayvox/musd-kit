@@ -39,8 +39,8 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 |---|---|---|---|
 | 1 | `main` is green **at its tip** | `gh run list --branch main --limit 5 --json conclusion,headSha` then `git rev-parse origin/main` | A run whose `headSha` **equals** the tip, `conclusion: success`. A run on an ancestor is not this check (MK-036) |
 | 2 | No open S1 | `FINDINGS.md`, the index table | No row with class `S1` and a status other than `fixed` |
-| 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json` | Both at the same version, and it is not already on npm |
-| 4 | The changelogs describe this release | `packages/*/CHANGELOG.md` | The top entry is the version from step 3 |
+| 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json`. **These do not become correct by themselves: §0a is the action that sets them** | Both at the same version, and it is not already on npm |
+| 4 | The changelogs describe this release | `packages/*/CHANGELOG.md`. **Written by the same command as step 3, see §0a** | The top entry is the version from step 3 |
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
 | 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
 | 7 | **A full sweep has run against THIS tree** | `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status` | A run whose `headSha` **equals the commit being released**, `conclusion: success`. See below: an earlier run does not satisfy this, and `--ref` will not take a raw SHA |
@@ -76,6 +76,95 @@ that no register entry explains. Mismatches a finding covers are listed in
 fail the run. So a red sweep is always a real finding, and **a green one is not a claim that the
 sweep found nothing**: read the `EXPECTED` lines, and read `EXPECTED-BUT-ABSENT`, which means a
 registered mismatch stopped reproducing and the registry may be stale.
+
+---
+
+## 0a. Version the packages, which is what makes preconditions 3 and 4 true
+
+**This step had no home in this runbook until now, and that is the gap it closes.** Preconditions 3
+and 4 assert that the versions and the changelogs are right, and nothing said how they get that way.
+A check asserted without the action that satisfies it is the same shape as MK-080, where the sweep
+was documented as scheduled for 85 commits and a release while no schedule existed.
+
+**Where it goes in the order.** After every pull request for the release has merged, so that all of
+their changesets are on `main` at once, and **before preconditions 3, 4 and 7**. Before 3 and 4
+because it is what makes them pass. Before 7 because this step produces a commit, and precondition
+7 wants a sweep whose `headSha` equals the commit being released: sweep first and you have measured
+the tree one commit before the one you ship.
+
+The changesets themselves are not written here. Each is written during the wave that makes the
+change, with `pnpm changeset`, and lands in `.changeset/` as part of that wave's pull request. This
+step only consumes them.
+
+```sh
+pnpm changeset status        # read only: prints the plan without touching anything
+pnpm changeset version       # applies it
+```
+
+`.changeset/config.json` sets `"commit": false`, so **the command does not commit.** Review the diff
+and commit it yourself, then push to `main`.
+
+### What it does, for this release
+
+Computed by `pnpm changeset status` against the three changesets on the branch, rather than
+predicted:
+
+| package | from | to | bump | published? |
+|---|---|---|---|---|
+| `@musd-kit/core` | 0.2.0 | **0.3.0** | minor | yes |
+| `@musd-kit/react` | 0.2.0 | **0.3.0** | minor | yes |
+| `@musd-kit/example-keeper` | 0.0.2 | 0.0.3 | patch | no, `private` |
+| `@musd-kit/example-open-and-manage` | 0.0.2 | 0.0.3 | patch | no, `private` |
+
+The three changesets consumed are `borrow-evaluator-delegation`, `fee-rule-one-implementation` and
+`react-borrow-preview-union`.
+
+**The two examples move and that is expected.** They are `"private": true`, so `pnpm publish -r`
+skips them and nothing reaches the registry: `npm view @musd-kit/example-keeper` returns `E404`.
+Their version moving is noise in the diff, not a second release.
+
+### A minor here is a BREAKING release, and this is the thing a reader will get wrong
+
+**Both packages are on `0.x`.** `docs/08-conventions.md` §7 says so as policy: `0.x` while the
+surface stabilizes, `1.0` only when the maturity gate is met. On `0.x` there is no major slot to
+bump, **so the minor slot is where breaking changes go**, and all three changesets for this release
+describe breaking changes in so many words: a widened `BorrowBlockReason` union, a widened
+`AdjustBlockReason`, `CloseBlockReason` and reordered `RefinanceBlockReason`, and a
+`getBorrowingPower` that returns a different number in Recovery Mode. `docs/14-migration-0.2-to-0.3.md`
+is the guide, and it exists because this is a breaking release.
+
+**Do not read "minor" as "safe to pick up automatically".** The opposite is true on `0.x`, and it
+cuts both ways. Checked against the `semver` resolver this repository already installs, version
+7.8.4:
+
+```
+^0.2.0   ->  >=0.2.0 <0.3.0-0     0.3.0 satisfies it: false
+~0.2.0   ->  >=0.2.0 <0.3.0-0     0.3.0 satisfies it: false
+^1.2.0   ->  >=1.2.0 <2.0.0-0     1.3.0 satisfies it: true
+```
+
+So on `0.x` a caret behaves like a tilde. **Nobody on `^0.2.0` is upgraded by this release**, which
+is the correct outcome for a breaking change, and it also means the migration reaches people only if
+they are told: the version number will not push it to them.
+
+### What to verify after it
+
+| | |
+|---|---|
+| both versions | `grep '"version"' packages/core/package.json packages/react/package.json` reads `0.3.0` twice |
+| both changelogs | the top entry under the package heading is `## 0.3.0`, followed by `### Minor Changes` |
+| the changesets are consumed | the three `.md` files named above are gone from `.changeset/`; `README.md` and `config.json` stay |
+| nothing else moved | the diff touches only `package.json`, `CHANGELOG.md` and `.changeset/`. No source file, no lockfile |
+| the version is free | `npm view @musd-kit/core version` returns the PREVIOUS version, `0.2.0`, not `0.3.0` |
+
+Then commit, push, and let CI go green at the tip before continuing: that is precondition 1, and
+this commit is now the tip.
+
+**The internal dependency resolves at publish time, not here.** `packages/react/package.json`
+declares `"@musd-kit/core": "workspace:*"`, which pnpm replaces with the exact version when it packs.
+Verified on what actually shipped: `npm view @musd-kit/react@0.2.0 dependencies` returns
+`{ '@musd-kit/core': '0.2.0' }`. So `react@0.3.0` will depend on `core@0.3.0` exactly, and the two
+packages must publish together.
 
 ---
 
