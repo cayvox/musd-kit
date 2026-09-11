@@ -113,6 +113,7 @@ claim about it was not).
 | MK-075 | `previewRefinance` reports its reasons in an order its own adjacent comment says it does not use | S3 | fixed, and given the mutation MK-065 never got |
 | MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
+| MK-078 | The tenth sweep operation costs 245s per case, so no slice of the documented 1000 case sweep finishes and the thousand case figures cannot be re-measured at all | S2 | **open.** Registered and deliberately not fixed; the figures it invalidates are removed rather than relabelled |
 
 ---
 
@@ -142,12 +143,13 @@ place. A count of numerals would be larger and would mean less.
 |---|---|---|
 | Flake rates and run windows | MK-016, MK-021, MK-022, MK-023, MK-024, MK-025, MK-026, MK-030 | `pnpm test:fork`, `pnpm test:coverage` |
 | Coverage against the ratchet | MK-016, and the floors in `docs/07-testing.md` §4 | `pnpm test:coverage` |
-| The 1000 case differential sweep, 0 mismatches, **89 skipped** | MK-016, MK-048, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` (**four slices of 250**, see `MK_DIFF_FROM` and `MK_DIFF_TO`) |
+| ~~The 1000 case differential sweep, 0 mismatches, 89 skipped~~ **Not currently reproducible (MK-078)** | MK-016, MK-048, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` (four slices of 250, see `MK_DIFF_FROM` and `MK_DIFF_TO`). **Every slice times out on this tree**, so the command produces no figure. The 89 and the four slice breakdown were measured on the nine operation generator and are kept only inside MK-048's own evidence block, as history |
 | Chain constants and the fee exempt scan at both pinned blocks | MK-014, MK-018, `docs/09` §6 | `pnpm facts --stdout` |
 | Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
 | The zero debt sentinel value | MK-017 | `pnpm test:unit` |
 | Every pin added for MK-058, MK-059, MK-060 and MK-065 fails with its fix removed | MK-058 through MK-065 | `node scripts/mutation-check.mjs` |
-| Recovery Mode borrows in the sweep, 17 of 105, per band, 0 mismatches | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` |
+| Recovery Mode borrows in the sweep, **20 of 81**, per band, 0 mismatches, 0 throws | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, **re-measured on the ten operation generator in the P14 wave**, 464s, exit 0. It replaces the 17 of 105 measured on the nine operation one. This command completes because filtering to one operation excludes `borrowingPower`, which is the operation MK-078 is about |
+| Redemption bands in the sweep, **99 ran, 47 skipped**, per band, 0 mismatches, 0 throws | MK-048 | `MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, re-measured in the P14 wave, 1823s, exit 0 |
 | The Recovery Mode threshold at the pinned block, TCR 2.7731, so 45.9 percent | MK-059 | `cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemColl()" --rpc-url https://rpc.test.mezo.org --block 15043414`, and the same for `getEntireSystemDebt()` |
 | The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
 
@@ -3318,6 +3320,23 @@ ran=123  skipped=40   FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0  exit=
 said the net debt as read is NOT redeemable and nineteen times the chain agreed, on a chain where
 the previous version of this preview would have said the opposite.
 
+**Re-measured in the P14 wave on the ten operation generator**, because the block above describes a
+tuple stream this tree no longer produces (MK-069, MK-078). Same seed, same command, 1823s, exit 0:
+
+```
+ran=99  skipped=47  FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0
+  AT_NET_DEBT      ran=13  skipped=12
+  WITHIN_HEADROOM  ran=11  skipped=11
+  AT_HEADROOM      ran= 9  skipped=10
+  IN_THE_GAP       ran= 8  skipped= 5
+  WHOLE_TROVE      ran=11  skipped= 9
+```
+
+**Thirteen `AT_NET_DEBT` executions rather than nineteen, and the conclusion is unchanged**: every
+band still ran, the band this finding turns on still ran, and the chain still agreed with the preview
+in both directions every time. The counts are smaller because the draw moved, not because anything
+got worse. The block above is kept as the record of what closed the finding at the time.
+
 **Why 40 of 123 skipped, which is a high rate and is not hidden.** Redemption skips for a reason no
 other operation has. At the extreme band's price multipliers of 25 and 50 percent, and at the
 boundary band's 66, every Trove in the fork's list falls below MCR, so the loop finds nothing, there
@@ -3526,6 +3545,23 @@ MK_DIFF_OP=borrow MK_DIFF_CASES=1000 pnpm test:fork
   recovery mode: reached=17 of 105  asked for a drawdown=14
   recovery mode BORROWS by band: boundary ran=7  extreme ran=7  middle ran=3
 ```
+
+**Re-measured in the P14 wave on the ten operation generator**, because the two blocks above describe
+a tuple stream this tree no longer produces (MK-069, MK-078). Same seed, same command, 464s, exit 0:
+
+```
+MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+  ran=81 skipped=3  bands: boundary=47 extreme=22 middle=12
+  recovery mode: reached=20 of 81  asked for a drawdown=15
+  recovery mode BORROWS by band: boundary ran=8  extreme ran=9  middle ran=3
+  FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0
+```
+
+**Twenty Recovery Mode borrows across all three bands rather than seventeen, and none of them
+mismatched.** The argument this entry makes is unchanged and is if anything better served: the point
+was never the size of the number, it was that the count is REPORTED so a reader can tell "the sweep
+reached Recovery Mode" from "the sweep reached a Recovery Mode borrow". Both blocks are kept, the
+first as the record of what closed the finding at the time.
 
 **The first run is why the second exists, and it is the point of counting rather than assuming.**
 Sixty mixed cases reached Recovery Mode thirteen times and reached a Recovery Mode BORROW zero
@@ -4750,6 +4786,118 @@ shape earlier and on PRESENCE, which is stricter and safe: a write it rejects ne
 chain. Both halves are pinned, the evaluator in `p13-gates.test.ts` and the write path beside it.
 
 ---
+
+## MK-078 · The tenth sweep operation makes the documented sweep unable to finish, so the thousand case figures cannot be re-measured at all
+
+**Class** S2, harness · **Status** open, registered and NOT fixed in this wave · **Found by running
+the documented recipe on the P13 tree, which is the first time anyone has**
+
+**What was attempted.** MK-069 left `docs/09` §3 carrying 1000 case figures measured on the NINE
+operation generator, labelled as describing a stream this tree no longer produces. The P14 wave's
+single purpose was to replace them: run the sweep at the documented scale, in the documented slices,
+and put the current numbers in the table. **The run does not complete. There are no current numbers
+to put there.**
+
+**Every slice failed.** Seed `20260826`, 1000 cases, four slices of 250 via `MK_DIFF_FROM` and
+`MK_DIFF_TO`, `pnpm test:fork` per slice at pinned block 15043414, a fresh anvil each, exactly as
+`docs/07-testing.md` §4a documents:
+
+| slice | exit | reached | outcome |
+|---|---|---|---|
+| 0..250 | **1** | 200 of 250 at 5373s | `Test timed out in 5400000ms`, no summary emitted |
+| 250..500 | **1** | under 100 | `Test timed out in 5400000ms`, no summary emitted |
+| 500..750 | **1** | under 100 | `Test timed out in 5400000ms`, no summary emitted |
+| 750..1000 | **1** | under 100 | `Test timed out in 5400000ms`, no summary emitted |
+
+Not one slice reached its `done in` line, so not one produced a ran count, a skip count, a direction
+breakdown or a band count. **The table's own reproduction command produces nothing.**
+
+**The cost is the tenth operation, and that is measured rather than inferred.** The first slice
+timed 100 cases at 730s and 200 at 5373s, so cases 101 to 200 averaged 46.4s each against the 3 to
+4s `docs/07` §4a documents for early cases. Every harness throw in all four slices was
+`op=borrowingPower`, the operation MK-067 added, and every one was a
+`WaitForTransactionReceiptTimeoutError`. Isolating that operation over the same index window settles
+it, on a FRESH anvil so the documented "cost grows with the life of the anvil process" cannot be the
+explanation:
+
+```
+MK_DIFF_OP=borrowingPower MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 MK_DIFF_FROM=0 MK_DIFF_TO=250
+
+[differential] done in 4412710ms  ran=18 skipped=0  bands: boundary=10 extreme=1 middle=7
+[differential] mismatches: FALSE_VIABLE=0 FALSE_BLOCKED=0 NUMBERS=0
+[differential] threw=4
+```
+
+**Eighteen cases, 4413 seconds, 245 seconds each**, with four of the eighteen throwing. A 250 case
+slice holds roughly that many of them, so one operation consumes about 73 of the 90 minutes the test
+allows itself before the other nine operations have run at all. That is the whole failure.
+
+**And the control, on the same tree and the same generation, with the operation excluded.** Filtering
+to a single other operation drops `borrowingPower` from the case list entirely, and everything runs
+at the documented cost:
+
+```
+MK_DIFF_OP=borrow  MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+  exit 0, 464s wall.  ran=81 skipped=3, 4.9s per case, threw=0, and the whole fork suite green
+
+MK_DIFF_OP=redeem  MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+  exit 0, 1823s wall. ran=99 skipped=47, threw=0, and the whole fork suite green
+```
+
+4.9 seconds per case against 245. **Same tree, same seed, same generation, same anvil recipe**: the
+only variable is whether the operation MK-067 added is in the case list. That is as close to a
+controlled comparison as this harness allows, and it is why this entry attributes the failure to that
+operation rather than to machine load or to the RPC.
+
+The four that threw, with their tuples, so each is reproducible by index:
+
+```
+case=169 band=extreme   collateral=4645000000000000000000 debt=524                     pricePercent=25
+case=220 band=middle    collateral=2000000000000000000    debt=23295000000000000000000 pricePercent=127
+case=222 band=boundary  collateral=610000000000000000     debt=42528341332000000000000 pricePercent=100
+case=230 band=middle    collateral=540000000000000000     debt=30474000000000000000000 pricePercent=123
+```
+
+**Why P13 did not catch it, which is the part worth carrying forward.** MK-069 measured the new
+operation with `MK_DIFF_OP=borrowingPower MK_DIFF_CASES=400` and recorded 33 cases in 176 seconds,
+exit 0, zero mismatches. That is 5.3s per case against the 245s measured here, and the two are not
+in conflict: `MK_DIFF_CASES=400` generates a **different tuple set** from indices 0 to 250 of a 1000
+case generation, because the count is an input to the generator and not a window onto a fixed
+sequence. **The P13 measurement was real and it exercised cases that happen not to hang.** The
+default 24 case sweep that CI runs, and that the P13 five run window ran five times, draws few enough
+of them to stay inside the budget, which is why the wave went green five times over a defect that
+makes the full scale run impossible.
+
+**So the defect is latent at every scale anyone had run, and appears only at the scale the
+documentation promises.** That is the same shape as MK-053, a gate nobody had executed, and MK-066,
+coverage that rested on which cases the generator happened to draw.
+
+**A second property, named because it bears on what the table can ever claim.** The isolated probe
+above **exited 0** with `threw=4`. Throws are counted and never fatal by design
+(`differential.fork.test.ts`), so a sweep can report exit 0 and `0 FALSE_VIABLE, 0 FALSE_BLOCKED,
+0 NUMBERS` while a fifth of its cases never reached the chain. Past runs recorded `threw=0`, so this
+has not yet made a published figure wrong, but a headline of zero mismatches is a statement about the
+cases that RAN and the throw count is what says how many that was. Any replacement figure has to
+carry it.
+
+**Not diagnosed, deliberately.** Why those four transactions are sent and never confirmed is not
+established here. The tuples are extreme (4645 BTC of collateral against 524 wei of debt; 0.61 BTC
+against 42528 MUSD), which points at either the fixture's funding step or a send the SDK's precheck
+and simulate both accept and the chain then never mines, but that is a hypothesis and this entry does
+not assert it. **This wave registers and stops rather than fixing**, on instruction, so the next wave
+owns the diagnosis.
+
+**Blast radius.** No shipped code is implicated: `borrowingPower` is a test operation and every
+production path it exercises is covered by the chain free
+`borrowing-power-agreement.test.ts` and by the Recovery Mode fork assertion in `phase4`. What is
+implicated is **the evidence base**. The thousand case sweep is the instrument `docs/09` §3 leans on
+for "preview verdict against actual transaction outcome", and it cannot currently be run to
+completion, so that row is supported by a measurement of a previous tree and by nothing on this one.
+
+**What the documents say now.** Every figure that described the nine operation stream has been
+removed rather than relabelled, and the rows that carried them say the sweep cannot currently be run
+at the documented scale and name this entry. A number a reader cannot reproduce is worse in that
+table than an absent one, which is the whole reason the P14 wave was called.
 
 ---
 

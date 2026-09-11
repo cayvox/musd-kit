@@ -42,7 +42,7 @@ not only in a workflow file.
 | Use | Verdict |
 |---|---|
 | Reading positions and system state on testnet | Suitable |
-| Previews and calculators for a position that does not exist yet | **Suitable.** Every S1 this verdict was waiting on is closed: MK-001, MK-002, MK-003, MK-004, MK-005, MK-006, MK-018, MK-019. A 1000 case differential sweep of the three previews against real transaction outcomes found no disagreement |
+| Previews and calculators for a position that does not exist yet | **Suitable.** Every S1 this verdict was waiting on is closed: MK-001, MK-002, MK-003, MK-004, MK-005, MK-006, MK-018, MK-019. Per operation differential sweeps against real transaction outcomes found no disagreement in either direction, 81 borrow cases and 99 redemption cases on this tree. **The 1000 case mixed sweep that this row used to cite cannot currently be run (MK-078)**, so the breadth behind this verdict is narrower than it was |
 | Managing an existing trove: borrow, repay, adjust, refinance | **Suitable.** Every exposed write with a condition a preview can evaluate now has one, and prechecks it before sending (MK-042). That closes the limit this row carried through three revisions: it named two writes, then four, and now none. `claim` has no preview because `_claimCollateral` has no condition. The remaining limit is the fee cap, which is a protocol property rather than a gap here (MK-011) |
 | Liquidation keepers | **Suitable on testnet.** MK-001 is closed: `isLiquidatable` is `ICR < MCR` with no Recovery Mode widening, which is what the protocol does |
 | Real money on mainnet | **No.** Single author, unaudited, pre 1.0. Use it to evaluate, read, and prototype |
@@ -103,14 +103,23 @@ evidence for what it actually exercises.
 **The fork sweep and the live run prove different things, and the table lists them separately for
 that reason.**
 
-The sweep proves **breadth**: a thousand generated cases across **ten** operations, boundary
-weighted, each snapshot isolated, comparing each swept preview's verdict against the chain outcome.
-What it cannot prove is anything that depends on wall clock time passing, because anvil mines on
-demand, anything its generator cannot construct, and anything not in the list. This line read
-"eight operations" for two waves after the list held nine, and the list held nine while
-`docs/09` §3 described `getBorrowingPower` as validated (MK-067, MK-069). A count that drifts from
-the list it describes is MK-062's defect; a claim that covers a surface the list does not is worse,
-and both were true here.
+The sweep is designed to prove **breadth**: a thousand generated cases across **ten** operations,
+boundary weighted, each snapshot isolated, comparing each swept preview's verdict against the chain
+outcome. What it cannot prove is anything that depends on wall clock time passing, because anvil
+mines on demand, anything its generator cannot construct, and anything not in the list.
+
+**It cannot currently be run at that scale at all (MK-078).** The tenth operation costs 245 seconds
+per case against roughly 5 for the others, so every slice of the documented four exhausts the test's
+own 90 minute timeout before finishing. **There is therefore no thousand case figure for this tree,
+and this page carries none.** What it carries instead is the per operation evidence that can still be
+produced, because filtering to one operation excludes the expensive one. Read the rows below as
+exactly that: narrower than the sweep was meant to be, and measured on this tree rather than on a
+previous one.
+
+This line read "eight operations" for two waves after the list held nine, and the list held nine
+while this section described `getBorrowingPower` as validated (MK-067, MK-069). A count that drifts
+from the list it describes is MK-062's defect; a claim that covers a surface the list does not is
+worse; and a figure whose own reproduction command fails is worse again, which is MK-078.
 
 The live run proves **reality**: one ordered lifecycle against the real deployment, the real oracle,
 real gas, and other people's positions moving underneath. It is one path, not a thousand, and its
@@ -167,7 +176,7 @@ experiment against a contract that mutates state before it reads it**, and every
 reports which a caller then hands back to the chain is exposed to that difference. Redemption is
 now covered by a band; the two named above are not, and that is a live entry rather than a closed
 one.
-| Preview verdict against actual transaction outcome, swept | **Reproducible:** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, four slices of 250 via `MK_DIFF_FROM` and `MK_DIFF_TO`, a fresh anvil each at pinned block 15043414. **The sweep covers ten operations**: open, borrow, refinance, addCollateral, repay, withdrawCollateral, adjust, close since MK-042, redemption since MK-048, and `borrowingPower` since MK-067, which is swept inverted because a maximum has no verdict: the SDK supplies the amount and the chain supplies the verdict, so the case asserts the reported maximum OPENS and that one wei more does not. **`getBorrowingPower` was absent from this list while `docs/09` §3 called it dual validated**, which is the gap MK-067 lived in. **And since MK-058 it can reach Recovery Mode**, by dropping the price AFTER the fixture is seeded rather than before, which is what made every Recovery Mode case a skipped case for the sweep's whole life. It does NOT reach liquidation or claim, which have no preview to compare. Boundary weighted 60/20/20, each case snapshot isolated. **Every slice 0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, 0 throws, exit 0**, with 89 of the 1000 skipped. **Those four slice figures, and every per band count in this row, were measured on the NINE operation generator and describe a stream this tree no longer produces**: adding `borrowingPower` in the P13 wave shifts the PRNG the same way `recoveryDrawdownPercent` did in MK-066, so the same seed draws different tuples. They are kept, labelled, rather than restated as if they were current, because the alternative is a number that reads current and is not. The P13 measurement against the present generator is recorded in MK-069. A fifth run over the redemption cases alone, `MK_DIFF_OP=redeem`, gives the per band counts: `AT_NET_DEBT` ran 19, `AT_HEADROOM` 19, `WITHIN_HEADROOM` 17, `WHOLE_TROVE` 17, `IN_THE_GAP` 11, 40 skipped, same three zeros | **A fact about the sweep, not proof of correctness.** What it still does NOT cover: liquidation and claim, neither of which has a preview to compare. The 89 skips are a seeding open that was not itself viable, or, for redemption only, a price multiplier that puts every Trove below MCR so there is no eligible Trove at all. **The per band counts exist because the headline number could not answer the question that mattered**: a band that never ran proves nothing, and until `MK_DIFF_OP` existed nobody could tell the two apart. **Recovery Mode is now counted the same way**, per operation and, for borrows, per band: `MK_DIFF_OP=borrow MK_DIFF_CASES=1000` gives 105 borrow cases, 17 of them in Recovery Mode, boundary 7 extreme 7 middle 3, 0 mismatches. A mixed 60 case run reached Recovery Mode 13 times and reached zero Recovery Mode borrows, which is why the count is reported rather than the mode |
+| Preview verdict against actual transaction outcome, swept | **NOT currently reproducible at the documented scale (MK-078).** `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` in four slices of 250 via `MK_DIFF_FROM` and `MK_DIFF_TO`, a fresh anvil each at pinned block 15043414, is the documented recipe. **All four slices exit 1 on this tree**, each hitting `Test timed out in 5400000ms` without emitting a summary, because the `borrowingPower` operation added by MK-067 costs 245s per case against roughly 5s for the others. No ran count, skip count, direction breakdown or band count exists for this tree. The previous figures, 0 mismatches with 89 of 1000 skipped across four slices, were measured on the NINE operation generator and have been removed from this page rather than relabelled, because a number a reader cannot reproduce is worse here than an absent one. **What CAN be produced, and was, on this tree in the P14 wave**, because filtering to one operation excludes the expensive one: `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, 464s, exit 0, **ran=81 skipped=3, FALSE_VIABLE=0 FALSE_BLOCKED=0 NUMBERS=0 threw=0**, bands boundary=47 extreme=22 middle=12, Recovery Mode reached 20 of 81 with Recovery Mode BORROWS at boundary 8, extreme 9, middle 3. `MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, 1823s, exit 0, **ran=99 skipped=47, FALSE_VIABLE=0 FALSE_BLOCKED=0 NUMBERS=0 threw=0**, bands AT_NET_DEBT ran=13, WITHIN_HEADROOM ran=11, AT_HEADROOM ran=9, IN_THE_GAP ran=8, WHOLE_TROVE ran=11. The sweep still does NOT reach liquidation or claim, which have no preview to compare. Boundary weighted 60/20/20, each case snapshot isolated | **A fact about two operations, not about the sweep.** The breadth claim this row used to make is suspended until MK-078 is fixed: nine of the ten operations have never been swept together on this tree. The per operation runs above cover borrowing and redemption end to end and found nothing in either direction, which is real and is narrower than a thousand mixed cases. **A band that never ran proves nothing**, which is why every band count is printed rather than summarised, and why `recovery mode by op` is printed beside it: the redeem run reached Recovery Mode 26 times and executed a Recovery Mode REDEMPTION zero times, so it says nothing about that combination. **And `threw` is part of the headline**: throws are counted and never fatal, so a sweep can exit 0 with cases that never reached the chain. Both runs above report `threw=0`; the full scale attempt reports throws on every slice |
 | Borrowing capacity ratchet, `min(current, recalculated)` on a collateral decrease | **Observed executing**, P8: capacity `140092922400000000000000` at open, unchanged after a price rise, `70046461200000000000000` after withdrawing half the collateral | Full. The obligation is discharged (MK-002) |
 | Fee exemption on the DEBT INCREASE path, not just on open | **Observed executing**, P8: an exempt account borrowing against an existing position, `quotedFee=2000000000000000000`, `preview.fee=0`, principal added exactly the draw | Full. The obligation is discharged (MK-018) |
 | Preview verdict against actual transaction outcome | The differential harness: generated cases run the preview, then attempt the operation, then compare. Seeded, boundary weighted, snapshot isolated per case | See the sweep row below. This is the gate the "open path only" row above was waiting for |
@@ -215,7 +224,7 @@ every claim named, is under **Provenance of the numbers in this register** at th
 
 | Class | Count | On this page |
 |---|---|---|
-| **Reproducible** | 18 | the 1000 case sweep, the coverage floors, every §6 on chain fact, the gas variance fixtures |
+| **Reproducible** | 18 | the per operation sweeps, the coverage floors, every §6 on chain fact, the gas variance fixtures. **The 1000 case sweep left this class in the P14 wave**: its command no longer completes, so it is not reproducible by anyone, which is MK-078 |
 | **Observed once** | 5 | CI runs, each pinned by its run ID |
 | **Observed once, unlinked** | 3 | the traced redemption growth, and two probes from the MK-037 wave |
 | **Unestablished** | 8 | led by MK-035's nine path spread table, whose instrument was never committed |
