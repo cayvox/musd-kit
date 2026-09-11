@@ -115,7 +115,7 @@ claim about it was not).
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
 | MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 116 minutes of wall clock. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
 | MK-083 | The runbook documented two shell commands for an action a workflow already performed, built to replace them for a stated security reason. The documented version never ran | S2, process | fixed. §3 is the workflow now, and the conventions checklist gained the check that detects the family |
-| MK-084 | `deprecate.yml` takes the version as an input but hardcodes 0.1.0's message text, so dispatching it for any other version writes a false message to the registry | S2 | **open.** Registered, not fixed: the workflow argues deliberately against free text message inputs and the alternative is a design choice. The runbook says to edit the strings first |
+| MK-084 | `deprecate.yml` takes the version as an input but hardcodes 0.1.0's message text, so dispatching it for any other version writes a false message to the registry | S2 | **fixed.** The message is chosen by version from a reviewed set in `scripts/deprecation-message.mjs`, still not an input. An unknown version, and a message that does not describe its version, are both refused before any credential is in scope |
 | MK-081 | The push subset's warm cost was published as CI's, from a measurement taken on a developer machine. CI is 2.4 times faster | S3 | fixed. Both figures published, each naming the machine it was measured on |
 | MK-082 | The wave checklist's five run command does not pin the fork, and the same checklist requires the five answers to be byte identical | S3 | fixed. The checklist row and the recipe both carry `MEZO_FORK_BLOCK` now |
 | MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
@@ -5138,7 +5138,7 @@ supersede it, so it is an unclosed instance of the principle rather than a super
 
 ## MK-084 · The deprecation workflow takes a version input and hardcodes one version's message
 
-**Class** S2 · **Status** open, registered and NOT fixed · **Found while documenting the workflow
+**Class** S2 · **Status** fixed · **Found while documenting the workflow
 as the route**, by reading it rather than describing it from its header
 
 `.github/workflows/deprecate.yml` accepts `version` as a required dispatch input and interpolates it
@@ -5164,14 +5164,78 @@ anything with any text, which is a much larger capability than the job needs". T
 defect is that the version was parameterised and the text was not, so the two disagree for every
 input except the one they were written for.
 
-**Not fixed, on the same reasoning as MK-079.** The shapes available are a per version case in the
-workflow, a message file per version in the repository, or narrowing the input to a fixed set. They
-are not equivalent, and choosing decides how much capability the job has, which is the exact
-question the header weighed. It belongs to a wave that can weigh it rather than to a documentation
-commit.
+### The fix, and why this shape
 
-**Contained meanwhile** by `docs/12-release-runbook.md` §3, which states the constraint and says to
-edit the two strings in a commit and dispatch from that commit for any version other than 0.1.0.
+**The message is chosen by version from a set that lives in the repository**,
+`scripts/deprecation-message.mjs`, and the dispatch input stays a version. **The header's argument
+against a free text input is untouched:** an input would let this job write any text onto any
+version, and it still cannot. What changes is that the text now varies with the version, which is
+the half that was missing.
+
+A module rather than a `case` in the YAML, for two properties a shell branch cannot give. It is
+**importable**, so the guarantees are asserted by `packages/core/test/deprecation-message.test.ts`
+in the unit project on every push, rather than only when somebody dispatches a registry write. And
+the lookup is **one implementation**, so the string the test checks is the string the workflow
+sends, which is §11 applied to text that reaches the public.
+
+**Two refusals, both before `NODE_AUTH_TOKEN` enters any environment.** The workflow's first step
+resolves the messages by shelling out to the module; the credential appears only in the step after
+it. So a bad dispatch cannot reach the registry even in principle, rather than being caught by a
+later check:
+
+```
+node scripts/deprecation-message.mjs 0.3.0 core
+  -> exit 1: no deprecation message is written for 0.3.0. Refusing to deprecate it: a version
+     without a reviewed message would get another version's text. ... Known versions: 0.1.0, 0.2.0
+```
+
+**Failing loudly on an unknown version is the correct outcome**, and better than a plausible wrong
+message. Preparing a deprecation is now exactly "add an entry in a pull request".
+
+### The first version of the guarantee was too weak, and the test caught it before it shipped
+
+The check began as "the message must contain its version". **It does not hold.** 0.1.0's message
+ends `Upgrade to 0.2.0.`, so 0.1.0's text filed under 0.2.0 CONTAINS "0.2.0" and passed, which is
+precisely the forgery this finding is about. Recorded because the near miss is the useful part: a
+containment check on a string that legitimately names two versions is not a check at all.
+
+The guarantee is now two conditions. The message must **open** by naming the version, per package
+(`0.2.0 ` for core, `Depends on @musd-kit/core@0.2.0,` for react), so the version is the sentence's
+subject rather than an incidental mention. And its `Upgrade to X.Y.Z.` target must be a **different**
+version, because no message tells a reader to upgrade to the release it deprecates, which catches a
+message whose subject was updated and whose tail was not.
+
+### Verified without writing to the registry
+
+By dry run, and by test. The dry run is the CLI the workflow actually invokes:
+
+```
+0.1.0 core   exit 0   0.1.0 returns wrong numbers on seven surfaces, ...
+0.2.0 core   exit 0   0.2.0 is wrong on two Recovery Mode surfaces. ...
+0.3.0 core   exit 1   no deprecation message is written for 0.3.0 ...
+0.2.1 core   exit 1   ... Known versions: 0.1.0, 0.2.0
+''    core   exit 1   a version is required
+0.2.0 landing exit 1  unknown package "landing"; expected one of core, react
+```
+
+**And the 0.1.0 strings are byte identical to what is live**, checked by reading the registry rather
+than by inspection: `npm view @musd-kit/core@0.1.0 deprecated` and the react equivalent both compare
+equal to what the module produces, so a re-dispatch of 0.1.0 rewrites nothing.
+
+14 tests, and two mutations in `scripts/mutation-check.mjs` proving the two guarantees are load
+bearing rather than decorative:
+
+```
+MK-084 subject          startsWith(opening) -> includes(version)        caught by 1 test
+MK-084 unknown version  refuse -> fall back to the first entry          caught by 2 tests
+18 mutations, all caught
+```
+
+**What is NOT proven, and cannot be without a registry write.** That `npm deprecate` accepts a
+message of this length, that the equality check in the verify step passes against what npm actually
+stores, and that npm does not normalise the text. The 0.1.0 comparison is evidence for all three at
+141 and 134 characters, since those strings made the round trip intact; 0.2.0's core message is 378
+characters and has not. The next real dispatch is the first execution of that path.
 
 ---
 

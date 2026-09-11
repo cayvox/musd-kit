@@ -145,6 +145,20 @@ const MUTATIONS = [
   // --- P16. The gate that decides whether the sweep's red is worth reading. ------------------
 
   {
+    id: 'MK-084 subject (a message must OPEN by naming its version)',
+    what: 'accept any message that merely mentions the version, which is the weak check that let 0.1.0 text pass under 0.2.0',
+    file: 'scripts/deprecation-message.mjs',
+    from: '  if (!message.startsWith(opening)) {',
+    to: '  if (!message.includes(version)) {',
+  },
+  {
+    id: 'MK-084 unknown version (an unwritten version must be REFUSED)',
+    what: "fall back to some other version's entry instead of refusing, which is the defect itself",
+    file: 'scripts/deprecation-message.mjs',
+    from: '  const entry = Object.hasOwn(DEPRECATIONS, version) ? DEPRECATIONS[version] : undefined',
+    to: '  const entry = DEPRECATIONS[version] ?? Object.values(DEPRECATIONS)[0]',
+  },
+  {
     id: 'MK-079 swallows (an unexpected mismatch must FAIL)',
     what: 'match every mismatch against the first registry entry, so an unregistered one is swallowed',
     file: 'packages/core/test/differential/expected.ts',

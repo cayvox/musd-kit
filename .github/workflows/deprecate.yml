@@ -6,9 +6,19 @@
 # living somewhere it is not tracked, not rotated with the secret, and not visible in any log.
 # `docs/12-release-runbook.md` §3 recorded the two commands and nothing ran them.
 #
-# **The messages are in the workflow, not in an input.** They are the exact strings the runbook
-# records, one per package, and they differ. An input would let this deprecate anything with any
-# text, which is a much larger capability than the job needs.
+# **The messages are in the repository, not in an input.** An input would let this deprecate
+# anything with any text, which is a much larger capability than the job needs. They used to be
+# literals in the step below, which was worse than it looked: `version` was an input and the text
+# was not, so a dispatch for anything but 0.1.0 would have attached 0.1.0's sentence to a real
+# package on the public registry (MK-084). They now live in `scripts/deprecation-message.mjs`,
+# chosen by version, reviewed in a pull request like any other change, and asserted by
+# `packages/core/test/deprecation-message.test.ts` on every push rather than only when someone
+# dispatches a registry write.
+#
+# **A version with no reviewed message is refused, loudly, before any credential is in scope.**
+# That is a correct outcome and better than a plausible wrong message. So is a message that does
+# not name the version it is filed under: the resolver checks that too, because the failure this
+# finding is about is a message copied from one version and filed under another.
 #
 # **No pnpm.** This uses npm against the registry and resolves nothing through the workspace, so
 # `package-manager-cache` is off for the reason MK-053 records.
@@ -45,6 +55,19 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
+      # FIRST, and deliberately before `NODE_AUTH_TOKEN` appears in any environment: resolve the
+      # text. An unknown version, or a message that does not name its own version, fails here, in
+      # a step that could not write to the registry if it wanted to. The resolved strings are
+      # printed so the run is its own record of what was sent.
+      - name: Resolve this version's messages, with no credential in scope
+        run: |
+          set -euo pipefail
+          V='${{ github.event.inputs.version }}'
+          node scripts/deprecation-message.mjs "$V" core  > "$RUNNER_TEMP/msg-core.txt"
+          node scripts/deprecation-message.mjs "$V" react > "$RUNNER_TEMP/msg-react.txt"
+          echo "  core:  $(cat "$RUNNER_TEMP/msg-core.txt")"
+          echo "  react: $(cat "$RUNNER_TEMP/msg-react.txt")"
+
       - name: Refuse to deprecate the version that is currently `latest`
         run: |
           set -euo pipefail
@@ -64,16 +87,22 @@ jobs:
         run: |
           set -euo pipefail
           V='${{ github.event.inputs.version }}'
-          npm deprecate "@musd-kit/core@$V" "0.1.0 returns wrong numbers on seven surfaces, three of them silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
-          npm deprecate "@musd-kit/react@$V" "Depends on @musd-kit/core@0.1.0, which returns wrong numbers on seven surfaces. See docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
+          npm deprecate "@musd-kit/core@$V"  "$(cat "$RUNNER_TEMP/msg-core.txt")"
+          npm deprecate "@musd-kit/react@$V" "$(cat "$RUNNER_TEMP/msg-react.txt")"
 
       # The write is not the result. Read it back from the registry, in a step that carries no
       # credential, so a silent no-op cannot pass for a deprecation.
+      #
+      # It compares the registry's text against the resolved text rather than merely asserting
+      # that SOMETHING is there (MK-084). A non empty check would pass on a version that was
+      # already deprecated with a different message, which is exactly the state this finding is
+      # about, so the loop is only closed by an equality.
       - name: Verify both deprecations from the registry
         run: |
           set -euo pipefail
           V='${{ github.event.inputs.version }}'
           for p in core react; do
+            WANT="$(cat "$RUNNER_TEMP/msg-$p.txt")"
             for i in $(seq 1 12); do
               MSG="$(npm view "@musd-kit/$p@$V" deprecated 2>/dev/null || true)"
               [ -n "$MSG" ] && break
@@ -81,5 +110,11 @@ jobs:
               sleep 10
             done
             [ -n "$MSG" ] || { echo "FAIL: @musd-kit/$p@$V is not deprecated on the registry" >&2; exit 1; }
-            echo "  @musd-kit/$p@$V deprecated: $MSG"
+            if [ "$MSG" != "$WANT" ]; then
+              echo "FAIL: @musd-kit/$p@$V carries a message this commit did not send." >&2
+              echo "  on the registry: $MSG" >&2
+              echo "  resolved here:   $WANT" >&2
+              exit 1
+            fi
+            echo "  @musd-kit/$p@$V deprecated, and the registry text matches: $MSG"
           done

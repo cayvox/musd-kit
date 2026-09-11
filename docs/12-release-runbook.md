@@ -304,11 +304,14 @@ gh workflow run deprecate.yml -f version=0.1.0 -f confirm=deprecate
 | `version` | required | the version to deprecate, for example `0.1.0`. **Both packages are deprecated at that version**, `@musd-kit/core` and `@musd-kit/react` together |
 | `confirm` | required, default empty | the literal string `deprecate`. Anything else and the job is **skipped, not failed**, so read the job's status rather than the run's colour |
 
-Two guards are in the workflow rather than in your memory. It **refuses to deprecate whichever
-version is currently `latest`**, per package, so the release you just shipped cannot be marked
-broken by a typo in the version input. And the write is not the result: a final step with **no
-credential in its environment** reads both packages back from the registry, polling up to twelve
-times at ten second intervals, and fails if either does not report a deprecation message.
+Three guards are in the workflow rather than in your memory. It **resolves the message before any
+credential is in scope** and fails there if the version has none (see below). It **refuses to
+deprecate whichever version is currently `latest`**, per package, so the release you just shipped
+cannot be marked broken by a typo in the version input. And the write is not the result: a final
+step with **no credential in its environment** reads both packages back from the registry, polling
+up to twelve times at ten second intervals, and fails unless the text on the registry **equals**
+the text this run resolved. An equality rather than a non empty check, because a non empty check
+passes on a version that was already deprecated with somebody else's message (MK-084).
 
 ### What to check afterwards
 
@@ -331,14 +334,59 @@ report their messages and `latest` is `0.2.0`.
 `workflow_dispatch` on 2026-08-28 that produced the two deprecations above. The shell commands this
 section used to carry never ran at all, which is the whole of MK-083.
 
-### One constraint before you dispatch it for anything other than 0.1.0
+### Where the message comes from, and why you cannot send a wrong one
 
-**The messages are hardcoded to 0.1.0's text while `version` is an input** (MK-084). The workflow
-argues, correctly, that the messages should not be a free text input, because that would let it
-write anything onto anything. What it does not do is vary them with the version, so dispatching it
-with `version=0.2.0` would attach the string "0.1.0 returns wrong numbers on seven surfaces" to
-0.2.0 and point readers at the wrong migration guide. **For any version other than 0.1.0, edit the
-two message strings in the workflow first**, in a commit, and dispatch from that commit.
+**The messages live in `scripts/deprecation-message.mjs`, chosen by version** (MK-084). They are not
+a dispatch input: an input would let this job write any text onto any version, which is a much
+larger capability than it needs. They are not literals in the workflow either, which is what they
+used to be, with `version` parameterised and the text not, so a dispatch for anything but 0.1.0
+would have attached 0.1.0's sentence to a real package.
+
+Three things follow, and the third is the one that makes this safe rather than merely tidy:
+
+- **An unknown version is refused**, by name, listing the versions that do have a message. Nothing
+  is written. Preparing a deprecation means adding an entry in a pull request.
+- **A message that does not describe its version is refused.** It must OPEN by naming the version,
+  and must not tell the reader to upgrade to the version it deprecates. A substring check would not
+  do: 0.1.0's message ends "Upgrade to 0.2.0.", so it CONTAINS "0.2.0" while being entirely about
+  0.1.0, and a weaker rule would have let exactly the forged pair through.
+- **Both refusals happen in the first step, which holds no credential.** `NODE_AUTH_TOKEN` only
+  enters scope in the step after, so a bad dispatch cannot reach the registry even in principle.
+
+`packages/core/test/deprecation-message.test.ts` asserts all of this in the unit project, so it runs
+on every push rather than only when someone dispatches a registry write, and two entries in
+`scripts/mutation-check.mjs` break the two guarantees to prove the tests catch them.
+
+Check the text yourself before dispatching, without running anything that writes:
+
+```sh
+node scripts/deprecation-message.mjs 0.2.0 core
+node scripts/deprecation-message.mjs 0.2.0 react
+node scripts/deprecation-message.mjs 0.3.0 core   # expect exit 1, no message written
+```
+
+### Before dispatching for 0.2.0, which is the next real use
+
+0.2.0 carries three S1 findings, all fixed in 0.3.0: `previewBorrow` returned viable for a Recovery
+Mode borrow the contract refuses (MK-058) and reported a TCR block the contract does not apply
+(MK-059), and `getBorrowingPower` subtracted a borrowing fee the contract does not charge in
+Recovery Mode or for a fee exempt account (MK-067). The message says so and points at
+`docs/14-migration-0.2-to-0.3.md`.
+
+| check | how | what you want |
+|---|---|---|
+| 0.3.0 is published and is `latest` | `npm view @musd-kit/core dist-tags` | `{ latest: '0.3.0' }`. **The workflow refuses to deprecate the current `latest`**, so dispatching this before 0.3.0 ships fails at that guard, which is the interlock that stops a premature deprecation |
+| the message is the one you mean | `node scripts/deprecation-message.mjs 0.2.0 core` and the same for `react` | exit 0, and text that names 0.2.0 and sends readers to 0.3.0 |
+| you are dispatching the right commit | `gh workflow run deprecate.yml --ref main` after the entry is merged | the run's `headSha` carries the entry. A dispatch from a ref without it is refused as an unknown version, loudly |
+
+Then:
+
+```sh
+gh workflow run deprecate.yml --ref main -f version=0.2.0 -f confirm=deprecate
+```
+
+**Re-dispatching 0.1.0 is safe.** Its two strings are reproduced in the module byte for byte, and
+checked against the live registry, so a re-run rewrites nothing.
 
 ---
 
