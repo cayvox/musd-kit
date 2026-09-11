@@ -296,11 +296,16 @@ a sweep suddenly costs an order of magnitude more, **check the network before bl
 - **On every push: 24 cases**, the default, about 90 seconds on a fresh fork. It is deterministic
   from a fixed seed, so it is a gate rather than a lottery, and it is small enough to sit beside
   a fork suite that already takes about 50 seconds.
-- **The full 1000 case sweep: on demand and on a schedule, never on push.** A ninety minute job
-  on the push path would make every merge wait for it, and people would start skipping it.
-  It runs in about 116 minutes of wall clock on the ten operation generator (P15). **Nothing is scheduled that
-  runs it**, which is the real gap: the schedule this bullet describes was never wired, so the only
-  thing standing between a generator change and an unmeasured sweep is somebody remembering.
+- **The full 1000 case sweep: weekly and on demand, never on push.**
+  `.github/workflows/sweep.yml` runs the four slices every Sunday at 03:00 UTC and on
+  `workflow_dispatch`. It costs **about 116 minutes of wall clock, of which 111 is the sweep
+  itself** (P15, ten operation generator), which is why it is not on the push path: a two hour wait
+  on every merge would get routed around, and a gate people skip is worse than one they budget for.
+  **This bullet claimed the schedule for 85 commits and a release before one existed** (MK-080).
+- **A release cites a sweep against the tree being released**, not the last Sunday's.
+  `docs/12-release-runbook.md` §0 precondition 7 requires a run whose `headSha` equals the released
+  commit, because the operation set feeds the generator's stream and a sweep of a different tree is
+  evidence about that tree (MK-069, learned through MK-079).
 - **It is not hidden either**, which is the other failure mode. `docs/08-conventions.md` §10 is
   where a wave's obligations live, and the sweep belongs in a wave's acceptance when preview or
   math code changed, with the seed reported.

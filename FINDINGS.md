@@ -114,6 +114,7 @@ claim about it was not).
 | MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
 | MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
 | MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 116 minutes of wall clock. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
+| MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
 | MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open.** The defect is deliberately not fixed and no `packages/*/src` file is implicated. The sweep no longer fails on it: it is registered in `packages/core/test/differential/expected.ts` and prints as `EXPECTED MK-079`, so a red sweep is a mismatch no finding explains |
 
 ---
@@ -5053,6 +5054,47 @@ indices are recorded in `knownAt`, scoped to the seed and count they were measur
 only for the disappearance report. The predicate itself requires an `adjust` op, a `FALSE_BLOCKED`
 direction, `ZERO_DEBT_INCREASE` in the reason, and `case.debt < 4n`, which is precisely the band
 where `adjustDebt` yields a zero leg. **Nothing about registering it makes this finding less open.**
+
+---
+
+## MK-080 · The sweep was described as scheduled for 85 commits and a release, and no schedule existed
+
+**Class** S2, process · **Status** fixed · **Found while carrying out the P16 instruction to
+schedule the sweep**, by checking whether it was already scheduled before writing a workflow
+
+`docs/07-testing.md` §4a has read "**The full 1000 case sweep: on demand and on a schedule, never
+on push**" since commit `622bbe4`, dated 2026-08-27. The on demand half is true and documented with
+a recipe. **The other half was never built.**
+
+```
+git log --all -S "schedule:" -- .github/workflows/   ->  (no commits)
+grep -rl "schedule:" .github/workflows/              ->  (nothing, before this wave)
+git rev-list --count 622bbe4..HEAD                   ->  85
+git tag --contains 622bbe4                           ->  v0.2.0
+```
+
+**85 commits and one published release sat under a sentence describing a control that did not
+exist.** In that window the push path ran the 24 case subset and nothing ran the other 976.
+
+**This is MK-053's shape, and that is the reason it is filed rather than quietly wired.** MK-053
+was a post publish verification job that had never executed across two releases while being
+presented as part of the release posture. The failure mode is identical: a gate that is described
+but not scheduled is a claim about diligence, and a reader cannot tell the two apart from the
+documentation alone.
+
+**It was not harmless.** The tenth operation added in MK-067 shifts the generator's PRNG stream,
+so the same seed draws different tuples. Nobody ran the full sweep against the new stream for two
+waves. When the P15 wave finally did, the first clean run surfaced MK-079, which had been reachable
+from the moment the operation landed. A weekly run would have surfaced it within seven days of the
+merge instead of two waves later.
+
+**The fix, and what it deliberately does not do.** `.github/workflows/sweep.yml` runs the four
+slices on `schedule` (Sundays 03:00 UTC) and on `workflow_dispatch`. It does **not** move the sweep
+onto the push path: 116 minutes of wall clock on every merge would get skipped, and a gate people
+route around is worse than one they budget for. The fast 24 case subset stays on push in `ci.yml`,
+unchanged by this wave. The release runbook now carries the other half of the answer, since a
+weekly run is almost never against the commit being released: precondition 7 requires a sweep whose
+`headSha` equals the released commit (`docs/12-release-runbook.md` §0).
 
 ---
 
