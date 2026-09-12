@@ -1,6 +1,6 @@
 {
   "name": "@musd-kit/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The typed SDK for MUSD on Mezo (Mezo MUSD SDK), framework-agnostic core: Trove lifecycle, insertion hints, preview math, and typed errors, made correct.",
   "license": "MIT",
   "author": "Cayvox Labs <info@cayvox.com>",
@@ -27,7 +27,11 @@
   ],
   "type": "module",
   "sideEffects": false,
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": {
       "import": {
