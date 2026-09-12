@@ -241,6 +241,9 @@ MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
 # Measured P15 on the ten operation generator. Sweep only: 1593s, 1697s, 1719s, 1648s (111 min).
 # Wall clock of the four invocations: 1678s, 1768s, 1799s, 1731s (116 min), the difference
 # being the rest of the fork suite, which each slice also runs.
+# Re-run in P17 on a different machine: 919s, 1032s, 1030s, 1009s (66m30s). BOTH figures are
+# kept and both name their machine, because replacing a duration measured elsewhere with one
+# measured here is the mistake MK-081 was. NEITHER is CI's.
 # The slices now exit 0: MK-079's ten FALSE_BLOCKED are registered in
 # packages/core/test/differential/expected.ts, so they print as EXPECTED MK-079 lines and do
 # not fail the run. A non zero exit is a mismatch NO finding explains, and is worth stopping for.
@@ -292,7 +295,8 @@ the RPC cache cold for the state they touch and 6.3 s/case warm.
 | per case, late in a long run, cache warm | **about 20 seconds** |
 | per case, `borrowingPower`, RPC counted | **3.0s, 32 JSON-RPC requests**, of which the solver accounts for 0.2s and 9 of them, all `eth_call` |
 | per case, `borrow`, same method | **7.0s, 27 JSON-RPC requests** (the seeding open is 6.6s of it) |
-| 1000 cases | **116 minutes of wall clock**, across four slices of 250, of which 111 is the sweep itself and the rest is the fork suite each slice also runs. Measured P15 |
+| 1000 cases, **P15 machine** | **116 minutes of wall clock**, across four slices of 250, of which 111 is the sweep itself and the rest is the fork suite each slice also runs. Measured P15 |
+| 1000 cases, **P17 machine** | **66m30s**, four slices of 250 at 15m19s, 17m12s, 17m10s, 16m49s. Apple silicon laptop, Node v24.19.0, against public `rpc.test.mezo.org` with a warm anvil cache at block 15043414 |
 
 **The degradation is the interesting number, and it has two causes that are easy to conflate.**
 The first 800 cases of a sweep ran at 3 to 4 seconds each; the next hundred took 2008 seconds,
