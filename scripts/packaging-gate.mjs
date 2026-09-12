@@ -30,23 +30,39 @@ const CONSUMER = join(WORK, 'consumer')
 const run = (cmd, args, cwd, quiet = true) =>
   execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: quiet ? 'pipe' : 'inherit' })
 
-/** The consumer file. Touches a value, a type and a hook from each package, plus the fields the */
-/** most recent waves added, so a new export that is not actually reachable fails here. */
-const PROBE = `import { createMusdClient, evaluateRedeem, MCR, type GasDecision, type OpenPreview, type RedeemResult, type RedemptionPreview, type ClosePreview, type WriteResult } from '@musd-kit/core'
-import { useBorrowPreview, useBorrowingCapacity, useRefinancePreview } from '@musd-kit/react'
+/**
+ * The consumer file. Touches a value, a type and a hook from each package, plus the fields the
+ * most recent waves added, so a new export that is not actually reachable fails here.
+ *
+ * **This string is source that NO typecheck in the repository compiles** (MK-096). It is a
+ * template literal to `tsc`'s eyes, so `pnpm typecheck` cannot see it, and the only thing that
+ * compiles it is this gate, which CI does not run. A breaking change to the public surface
+ * therefore leaves it stale and silent until somebody reaches step 6 of the release runbook. It
+ * went stale in the P17 wave exactly that way: MK-088 removed
+ * `EvaluateRedeemInput.interestRateBps` and all four rows failed on a probe nobody had compiled
+ * since. Keep it updated with any public shape change, and read the failure as "the probe is
+ * stale" before reading it as "the package is broken".
+ */
+const PROBE = `import { createMusdClient, evaluateRedeem, accruedInterest, netDebtOf, LastTroveInSystem, MCR, type GasDecision, type OpenPreview, type RedeemResult, type RedemptionPreview, type ClosePreview, type WriteResult } from '@musd-kit/core'
+import { useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useRefinancePreview, type AdjustPreviewLegs } from '@musd-kit/react'
 const d: GasDecision = { source: 'explicit', limit: 1n }
 const w: WriteResult = { hash: '0x00', gas: d }
 declare const p: OpenPreview
 declare const r: RedeemResult
 declare const c: ClosePreview
+// MK-088. Each eligible Trove carries its OWN principal and rate; there is no shared rate.
 const rp: RedemptionPreview = evaluateRedeem({
   amount: 1n, musdBalance: 1n, minNetDebt: 1n, tcr: MCR, price: 1n,
-  interestRateBps: 100n, eligible: [],
+  eligible: [{ owner: '0x00', entireDebt: 1n, principal: 1n, netDebt: 1n, interestRateBps: 100n }],
 })
-const check: [boolean, bigint, bigint, bigint, bigint, bigint, bigint] = [
-  p.viable, p.resultingTcr, r.redemptionRate, MCR, rp.accrualMargin, rp.nextViableAmount, c.musdRequired,
+// MK-085. An absent leg stays absent, which is what the shape exists to express.
+const legs: AdjustPreviewLegs = { addCollateral: 1n }
+// MK-089, MK-094. The single-sourced protocol helpers, reachable from the package.
+const i: bigint = accruedInterest({ principal: 1n, rateBps: 100n, seconds: 600n }) + netDebtOf(1n)
+const check: [boolean, bigint, bigint, bigint, bigint, bigint, bigint, bigint] = [
+  p.viable, p.resultingTcr, r.redemptionRate, MCR, rp.accrualMargin, rp.nextViableAmount, c.musdRequired, i,
 ]
-void [createMusdClient, useBorrowPreview, useBorrowingCapacity, useRefinancePreview, w, check]
+void [createMusdClient, useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useRefinancePreview, LastTroveInSystem, legs, w, check]
 `
 
 const ROWS = [

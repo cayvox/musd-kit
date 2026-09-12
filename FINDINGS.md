@@ -131,6 +131,7 @@ claim about it was not).
 | MK-093 | MK-013's exemption is conditional on these functions making no single block snapshot claim, and `getBorrowingPower`'s docstring made one; the exemption list is also two waves stale | S2 | fixed. The claim is gone, the straddle is disclosed at every affected function, and MK-013 names all eight |
 | MK-094 | Nine protocol rules decided more than once, two of them already diverged | S2 | fixed for seven by single sourcing; two are prose with no compiler and are labelled as the weaker control they are |
 | MK-095 | The redemption accrual margin was sized for exactly the window it advertises, so it covered the read but not the block the transaction settles in. It only ever worked because the wrong base over-stated it by about 6 seconds of accrual | S2 | **fixed.** Sized for 900 seconds against an advertised 600, with the reason named and both ends of the claim still asserted on chain |
+| MK-096 | The packaging gate's consumer probe is a template literal, so no typecheck in the repository compiles it, and the only thing that does is a gate CI does not run | S2, process | **fixed.** The probe is updated and `pnpm gate:packaging` is a CI step, so a breaking public shape change fails on the commit rather than at release time by hand |
 
 ---
 
@@ -6604,6 +6605,52 @@ mistake MK-081 was.
 
 **What the sweep does NOT cover, restated because this wave is about exactly that**: it drives
 `client.*` and never renders a React hook, so MK-085 was outside it by construction. See MK-087.
+
+---
+
+## MK-096 · The packaging gate's probe is source nothing compiles, guarded by a gate CI does not run
+
+**Class** S2, process · **Status** fixed · **Found by running `pnpm gate:packaging` after the
+public surface changed, which nothing asked for**
+
+**What happened.** MK-088 removed `EvaluateRedeemInput.interestRateBps`. `pnpm typecheck` was
+clean, `pnpm lint` was clean, the full fork gate was green, the 1000 case sweep was clean, and CI
+was green on all four jobs across three Node versions. Then `pnpm gate:packaging` failed **4 of 4
+rows**:
+
+```
+  (absent, CommonJS)  node16  node16  FAIL
+      first error: probe.ts(10,3): error TS2353: Object literal may only specify known
+      properties, and 'interestRateBps' does not exist in type 'EvaluateRedeemInput'.
+```
+
+**The package was fine. The probe was stale**, and nothing could have told anyone.
+
+**Two controls stopping short of each other.** `scripts/packaging-gate.mjs` holds its consumer file
+in a `PROBE` template literal, so to `tsc` it is a string: `pnpm typecheck` cannot see it, and
+neither can lint. The only thing that compiles it is the gate itself, and the gate is not in CI. It
+is step 6 of the release runbook, run by hand, at release time. So the window between a breaking
+public shape change and anyone learning the probe had gone stale was **the whole wave**, and the
+place it would have surfaced is the last place anybody wants a surprise.
+
+**This is MK-053's shape and MK-080's shape.** A control that exists, is cited, and does not
+execute. It is also MK-040's own lesson turned one notch: MK-040 exists because a workspace
+typecheck cannot see an export map defect, and the instrument built to see it was itself placed
+where no typecheck could see it.
+
+### Fixed
+
+The probe is updated to the current surface and widened deliberately: it now touches
+`accruedInterest` and `netDebtOf` (MK-089, MK-094), `LastTroveInSystem` (MK-091),
+`AdjustPreviewLegs` and `useAdjustTrovePreview` (MK-085), and constructs an `EligibleTrove` with
+its own `principal` and `interestRateBps` (MK-088). Re-run: **GATE PASSED, four of four rows, 105
+exports by `require` and 105 by `import`.**
+
+**And `pnpm gate:packaging` is a CI step now**, in the fork gate job beside `release-smoke.sh`. It
+packs, installs into a scratch consumer and runs `tsc` four times, which is the reason it was left
+manual; the cost of leaving it manual turned out to be higher. `docs/09-review-and-validated-surface.md`
+said this row was "**Manual, at release preparation, not automated**" and that automating it "needs
+a pack, an install and a `tsc` run, which is its own job". It is automated now and that row says so.
 
 ---
 

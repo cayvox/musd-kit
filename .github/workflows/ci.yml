@@ -233,6 +233,15 @@ jobs:
       - name: Pre-publish smoke (pack + clean-install, no publish)
         run: bash scripts/release-smoke.sh
 
+      # The PACKAGED artifact's type surface, under four module resolutions (MK-040), against a
+      # probe that no other typecheck in this repository compiles (MK-096). It packs, installs
+      # into a scratch consumer and runs `tsc` four times, which is why it was left as a manual
+      # release step; the P17 wave is what showed the cost of that. A breaking public shape
+      # change left the probe stale and silent, and the only thing that would have caught it was
+      # step 6 of the release runbook, at release time, by hand. It is a CI step now.
+      - name: Packaging gate (packed tarball, four module resolutions)
+        run: pnpm gate:packaging
+
       # Build the combined site (SDK + Astro landing + TypeDoc API ref + VitePress docs assembled
       # under /docs) and run the internal-link check, which fails on any 404, including every
       # landing -> docs link. This guards the docs/API routing against future regressions.
