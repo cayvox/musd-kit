@@ -80,11 +80,11 @@ describe('Phase 3, hints/ insertion-hint module', () => {
       [10n ** 16n, 100_000n * 10n ** 18n], // tiny ratio
     ]
     for (const [coll, debt] of grid) {
-      expect(computeNICR({ collateral: coll, entireDebt: debt }), `${coll}/${debt}`).toBe(
+      expect(computeNICR({ collateral: coll, principal: debt }), `${coll}/${debt}`).toBe(
         await nominalCR(coll, debt),
       )
     }
-    expect(() => computeNICR({ collateral: 1n, entireDebt: 0n })).toThrow(RangeError)
+    expect(() => computeNICR({ collateral: 1n, principal: 0n })).toThrow(RangeError)
   })
 
   it('trialsForSize follows ceil(15·√size) clamped to [15, 2500]', () => {
@@ -98,9 +98,10 @@ describe('Phase 3, hints/ insertion-hint module', () => {
   it('computeHints (size-scaled default) returns a contract-valid insert position', async () => {
     const c = client()
     const coll = 10n ** 17n
-    const entireDebt = 2202n * 10n ** 18n
-    const { upperHint, lowerHint, nicr } = await c.computeHints({ collateral: coll, entireDebt })
-    expect(nicr).toBe(await nominalCR(coll, entireDebt))
+    // 2,000 draw + 2 fee + 200 gas reserve. At an open that is the principal (MK-090).
+    const principal = 2202n * 10n ** 18n
+    const { upperHint, lowerHint, nicr } = await c.computeHints({ collateral: coll, principal })
+    expect(nicr).toBe(await nominalCR(coll, principal))
     const valid = await connectFork().publicClient.readContract({
       address: T.sortedTroves,
       abi: sortedTrovesAbi,
@@ -161,7 +162,7 @@ describe('Phase 3, hints/ insertion-hint module', () => {
     })
 
     // Near-exact hints: full-traversal findInsertPosition from the head for the same NICR.
-    const nicr = computeNICR({ collateral: coll, entireDebt: sdk.entireDebt })
+    const nicr = computeNICR({ collateral: coll, principal: sdk.entireDebt })
     const [upperHint, lowerHint] = await fork.publicClient.readContract({
       address: T.sortedTroves,
       abi: sortedTrovesAbi,

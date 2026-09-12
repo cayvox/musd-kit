@@ -40,10 +40,10 @@ const GAS_COMP = 200n * MUSD
  * the window it is sized for and not an hour. The zero row is why a simulation cannot see this: it
  * evaluates at the current block, and a transaction lands at least one block later.
  *
- * `G` is 600 seconds of interest on the Trove's entire debt, which is the contract's own allowance
- * for accrual where it bounds a partial hint (`:1276-1285`), rather than a number chosen to feel
- * safe. Overshooting is free: the excess spills to the next Trove, and a cancellation there cannot
- * revert the call because the first Trove was already drawn.
+ * `G` is 600 seconds of interest on the Trove's PRINCIPAL at the Trove's OWN rate, which is the
+ * contract's own allowance for accrual where it bounds a partial hint (`:1276-1285`), rather than
+ * a number chosen to feel safe. Overshooting is free: the excess spills to the next Trove, and a
+ * cancellation there cannot revert the call because the first Trove was already drawn.
  */
 const M = 1_800n * MUSD
 const D1 = 2_008n * MUSD
@@ -61,10 +61,24 @@ const RATE_BPS = 100n
  * `constants.ts:22-23` names as the wrong one, and the same wrong value the source carried. Two
  * copies of one mistake agree, so the assertion could only ever confirm the defect. That is
  * MK-070's shape, in a chain free test.
+ *
+ * **MK-089. The BASE is the principal**, and this helper took `entireDebt` until the P17 wave,
+ * which is the same failure one argument over: the source accrued on the entire debt, this
+ * restated it on the entire debt, and the two agreed. Every fixture below now carries a
+ * `principal` distinct from its `entireDebt` wherever interest exists, so the base is asserted
+ * rather than coincidentally equal. `InterestRateMath.calculateInterestOwed` takes `_principal`
+ * (`InterestRateMath.sol:12-22`) and is called with `trove.principal` at
+ * `TroveManager.sol:788-793` and `:1236-1241`.
  */
 const SECONDS_IN_A_YEAR = 31_556_952n
-const marginOf = (entireDebt: bigint) =>
-  (entireDebt * RATE_BPS * 600n) / (10_000n * SECONDS_IN_A_YEAR)
+// **900, not 600** (MK-095). The margin is sized for the read-to-settlement window and a caller
+// is told 600; the 300 second difference is the settlement block, which used to be covered by the
+// entire-debt base's accidental over-estimate. Written out here rather than imported, for the same
+// independence reason as the year above.
+const marginOf = (principal: bigint, rateBps = RATE_BPS) =>
+  (principal * rateBps * 900n) / (10_000n * SECONDS_IN_A_YEAR)
+// The base fixture carries no accrued interest, so principal and entire debt coincide here. The
+// cases that separate them live in their own describe block at the bottom of this file.
 const G1 = marginOf(ENTIRE1)
 
 const base = {
@@ -72,8 +86,15 @@ const base = {
   minNetDebt: M,
   tcr: 2n * MUSD,
   price: PRICE,
-  interestRateBps: RATE_BPS,
-  eligible: [{ owner: '0xaaa' as `0x${string}`, entireDebt: ENTIRE1, netDebt: D1 }],
+  eligible: [
+    {
+      owner: '0xaaa' as `0x${string}`,
+      entireDebt: ENTIRE1,
+      principal: ENTIRE1,
+      netDebt: D1,
+      interestRateBps: RATE_BPS,
+    },
+  ],
 }
 
 describe('MK-048, the gap the debt floor creates', () => {
@@ -135,8 +156,20 @@ describe('MK-048, the gap the debt floor creates', () => {
     const two = {
       ...base,
       eligible: [
-        { owner: '0xaaa' as `0x${string}`, entireDebt: ENTIRE1, netDebt: D1 },
-        { owner: '0xbbb' as `0x${string}`, entireDebt: ENTIRE1, netDebt: D1 },
+        {
+          owner: '0xaaa' as `0x${string}`,
+          entireDebt: ENTIRE1,
+          principal: ENTIRE1,
+          netDebt: D1,
+          interestRateBps: RATE_BPS,
+        },
+        {
+          owner: '0xbbb' as `0x${string}`,
+          entireDebt: ENTIRE1,
+          principal: ENTIRE1,
+          netDebt: D1,
+          interestRateBps: RATE_BPS,
+        },
       ],
     }
     const p = evaluateRedeem({ ...two, amount: D1 + G1 + D1 / 2n })
@@ -169,7 +202,15 @@ describe('MK-048, the gap the debt floor creates', () => {
     const entire = M + GAS_COMP
     const atFloor = {
       ...base,
-      eligible: [{ owner: '0xaaa' as `0x${string}`, entireDebt: entire, netDebt: M }],
+      eligible: [
+        {
+          owner: '0xaaa' as `0x${string}`,
+          entireDebt: entire,
+          principal: entire,
+          netDebt: M,
+          interestRateBps: RATE_BPS,
+        },
+      ],
     }
     const g = marginOf(entire)
     expect(evaluateRedeem({ ...atFloor, amount: 1n }).viable, '1 wei is refused').toBe(false)
@@ -271,5 +312,110 @@ describe('MK-048, the precheck as a typed throw rather than a revert', () => {
     // firing on everything. It reaches simulate, which the fake refuses loudly.
     const error = await redeem(writeDeps(), { amount: HEADROOM / 2n }).catch((e) => e)
     expect(error).not.toBeInstanceOf(RedemptionBreachesDebtFloor)
+  })
+})
+
+/**
+ * MK-088 and MK-089. The two inputs the margin was getting from the wrong place.
+ *
+ * Neither could be seen from the fixtures above, and that is the point of putting them here.
+ * Every fixture in this file carried `principal === entireDebt` (no accrued interest) and one
+ * rate for the whole walk, so the source could read either quantity and agree with the test.
+ * Two copies of one mistake agree; the cases below separate the quantities so they cannot.
+ */
+describe('MK-088, MK-089, the accrual margin is sized per Trove and on the principal', () => {
+  const RATE_500 = 500n
+
+  /** Principal 2,000 + 200 gas, with 8 MUSD of interest already accrued on top. */
+  const PRINCIPAL = 2_200n * MUSD
+  const INTEREST = 8n * MUSD
+  const ENTIRE = PRINCIPAL + INTEREST
+  const NET = ENTIRE - GAS_COMP
+
+  const troveAt = (rateBps: bigint) => ({
+    owner: '0xaaa' as `0x${string}`,
+    entireDebt: ENTIRE,
+    principal: PRINCIPAL,
+    netDebt: NET,
+    interestRateBps: rateBps,
+  })
+
+  it('the base is the PRINCIPAL, not the entire debt', () => {
+    const p = evaluateRedeem({ ...base, amount: 1n, eligible: [troveAt(RATE_BPS)] })
+    // `InterestRateMath.calculateInterestOwed(trove.principal, ...)`, `:1236-1241`. Accrued
+    // interest is not part of the base, so interest does not compound.
+    expect(p.accrualMargin).toBe(marginOf(PRINCIPAL))
+    expect(p.accrualMargin, 'and it is NOT the entire debt figure').not.toBe(marginOf(ENTIRE))
+  })
+
+  it("the rate is the TARGET Trove's, so a five times rate is a five times margin", () => {
+    const slow = evaluateRedeem({ ...base, amount: 1n, eligible: [troveAt(RATE_BPS)] })
+    const fast = evaluateRedeem({ ...base, amount: 1n, eligible: [troveAt(RATE_500)] })
+
+    expect(slow.accrualMargin).toBe(marginOf(PRINCIPAL, RATE_BPS))
+    expect(fast.accrualMargin).toBe(marginOf(PRINCIPAL, RATE_500))
+    // The old shape read one rate off the REDEEMER's Trove and applied it to every target, with
+    // a hardcoded 100 when the redeemer held none. Under-sizing is the dangerous direction: the
+    // offer arrives as a partial, `:1299-1306` cancels it, `:392` breaks and `:406-408` reverts.
+    expect(fast.accrualMargin).toBeGreaterThan(slow.accrualMargin)
+    expect(fast.nextViableAmount).toBeGreaterThan(slow.nextViableAmount)
+  })
+
+  it('an amount sized at 100 bps is REFUSED against a Trove that carries 500', () => {
+    // This is the defect's consequence, stated as a single call. The old shape read one rate off
+    // the REDEEMER's Trove, or fell back to a hardcoded 100 when the redeemer held none, which is
+    // the ordinary case for an arbitrageur. Offer the upper edge that rate produces against a
+    // Trove accruing five times faster and it arrives as a partial: `:1218-1221` sizes the lot
+    // against the larger debt, the remainder is under the floor, `:1299-1306` cancels, `:392`
+    // breaks and `:406-408` reverts because nothing was drawn.
+    const sizedAt100 = NET + marginOf(PRINCIPAL, RATE_BPS)
+    const against500 = evaluateRedeem({
+      ...base,
+      amount: sizedAt100,
+      eligible: [troveAt(RATE_500)],
+    })
+
+    expect(against500.viable, 'the under-sized offer is refused').toBe(false)
+    expect(against500.bindingConstraint).toBe('PARTIAL_BREACHES_DEBT_FLOOR')
+    // And the figure the preview now reports for that Trove does work.
+    expect(
+      evaluateRedeem({
+        ...base,
+        amount: against500.nextViableAmount,
+        eligible: [troveAt(RATE_500)],
+      }).viable,
+    ).toBe(true)
+  })
+
+  it('each Trove in the walk gets its OWN margin, not the first one applied to all', () => {
+    // A cheap first Trove and an expensive second. The `consumesWhole` split at each step uses
+    // that step's own numbers, so the overshoot left by the first spills into the second as an
+    // ordinary partial rather than being measured against the wrong margin.
+    const mixed = {
+      ...base,
+      eligible: [troveAt(RATE_BPS), { ...troveAt(RATE_500), owner: '0xbbb' as `0x${string}` }],
+    }
+    const firstWhole = NET + marginOf(PRINCIPAL, RATE_BPS)
+    const bothWhole = firstWhole + NET + marginOf(PRINCIPAL, RATE_500)
+
+    // The first Trove is consumed whole and the leftover margin is a valid partial on the second,
+    // so the whole offer is drawn.
+    expect(evaluateRedeem({ ...mixed, amount: firstWhole }).redeemable).toBe(firstWhole)
+    // Enough for both, and the overshoot beyond the second Trove is simply not drawn.
+    expect(evaluateRedeem({ ...mixed, amount: bothWhole }).redeemable).toBe(2n * NET)
+
+    // **The discriminating case.** Enough to consume the first Trove whole and then offer the
+    // second its bare net debt plus the FIRST Trove's margin, which is a fifth of what the
+    // second actually accrues. The second must arrive as a partial and cancel, drawing nothing,
+    // so only the first Trove is redeemed. Sizing the second step from the first Trove's rate,
+    // which is what one shared rate did, would consume both.
+    const sizedWithTheWrongMargin = firstWhole + NET
+    expect(evaluateRedeem({ ...mixed, amount: sizedWithTheWrongMargin }).redeemable).toBe(NET)
+  })
+
+  it('a zero rate accrues nothing, so the upper edge is the bare net debt', () => {
+    const p = evaluateRedeem({ ...base, amount: 1n, eligible: [troveAt(0n)] })
+    expect(p.accrualMargin).toBe(0n)
+    expect(p.nextViableAmount).toBe(NET)
   })
 })

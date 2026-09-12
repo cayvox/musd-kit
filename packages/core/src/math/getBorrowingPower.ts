@@ -75,14 +75,35 @@ export const MAX_BORROWING_POWER_ITERATIONS = 256
  * Returns `0n` when even the largest ratio feasible draw is below the debt floor, meaning no
  * valid open exists for this collateral.
  *
- * **Cost (MK-010).** Every chain read happens in ONE `multicall`, then the answer is solved
- * in closed form from the linear fee, and the chain is asked for the real
- * `getBorrowingFee` only to CONFIRM the solution. That is **three round trips**, or four when
- * an `account` is supplied in normal mode and the exemption has to be read, instead of roughly
- * 77 sequential ones. It was two before MK-067 added the mode correct fee: the exemption read
- * is the price of being right for a cohort the protocol actually has, and it is skipped
- * entirely in Recovery Mode, where the mode alone settles the fee. The binary search is still
- * here, bounded, as the fallback for when the fee stops being linear.
+ * **Cost (MK-010), COUNTED rather than asserted (MK-092).** The price, the fee rate and the
+ * system totals ride in one `multicall`; the answer is then solved in closed form from the
+ * linear fee, and the chain is asked for the real `getBorrowingFee` once, to CONFIRM the
+ * solution. Measured with a counting client, the sequential round trips are:
+ *
+ *   normal mode, no account      4
+ *   normal mode, with account    5
+ *   Recovery Mode, no account    3
+ *
+ * against roughly 77 for the search this replaced. `checkRecoveryMode` cannot join the batch
+ * because it takes the price as an argument and the price is produced by the same batch; the
+ * exemption read is skipped entirely in Recovery Mode, where the mode alone settles the fee.
+ * The binary search is still here, bounded, as the fallback for when the fee stops being
+ * linear, and it is the only path that costs one call per step.
+ *
+ * **This docstring said "Every chain read happens in ONE `multicall`" and "three round trips"
+ * until the P17 wave, and both were false** (MK-092). Six reads were issued where three were
+ * claimed, `fetchPrice` and `checkRecoveryMode` were never in the batch, and `getBorrowingFee`
+ * was called twice with the same argument. The figures above are what a counting client
+ * observed, and `borrowing-power-agreement.test.ts` pins them so the claim cannot drift from
+ * the code again.
+ *
+ * **What this function does NOT promise: a single block snapshot** (MK-093). `price` and
+ * `checkRecoveryMode(price)` are separate round trips after the batch, so the system totals the
+ * resulting TCR gate uses can come from an earlier block than the price they are measured
+ * against. `read/snapshot.ts` exists to pin exactly that and is used by `read/getTrove.ts` and
+ * `read/system.ts`; nothing under `math/` uses it. MK-013 named that gap and exempted this
+ * function on the stated condition that it made no snapshot claim in its docstring, and the
+ * sentence above broke the condition the exemption rested on.
  *
  * The premise, that `getBorrowingFee(d)` equals
  * `borrowingRate() * d / DECIMAL_PRECISION()`, was established by triggering it against the
@@ -105,28 +126,37 @@ export async function getBorrowingPower(
   const tm = { address: addresses.troveManager, abi: troveManagerAbi as Abi } as const
   const bo = { address: addresses.borrowerOperations, abi: borrowerOperationsAbi as Abi } as const
 
-  // One batch for everything the calculation needs, including the fee RATE, which is what
-  // makes the closed form possible at all. `fetchPrice` is included only when the caller did
-  // not supply a price; `checkRecoveryMode` takes the price as an argument, so with a
-  // supplied price it joins this batch and otherwise needs the caller's price anyway.
-  const [borrowingRate, decimalPrecision, systemColl, systemDebt] = (await publicClient.multicall({
+  // One batch for the price INDEPENDENT reads plus the fee RATE, which is what makes the closed
+  // form possible at all. `fetchPrice` joins it when the caller supplied no price, so the price
+  // costs no round trip of its own. `checkRecoveryMode` CANNOT join it either way: it takes the
+  // price as an argument, and inside this batch the price does not exist yet.
+  //
+  // MK-092. The comment here used to say `fetchPrice` was "included only when the caller did
+  // not supply a price" and that `checkRecoveryMode` "joins this batch" with a supplied price.
+  // Neither was true of the code below it: the batch held four price independent reads and
+  // `fetchPrice` was a separate `readContract`. It is in the batch now, which is what the
+  // sentence always claimed.
+  const needsPrice = params.price === undefined
+  const contracts: { address: Address; abi: Abi; functionName: string }[] = [
+    { ...bo, functionName: 'borrowingRate' },
+    { ...bo, functionName: 'DECIMAL_PRECISION' },
+    { ...tm, functionName: 'getEntireSystemColl' },
+    { ...tm, functionName: 'getEntireSystemDebt' },
+  ]
+  if (needsPrice) {
+    contracts.push({
+      address: addresses.priceFeed,
+      abi: priceFeedAbi as Abi,
+      functionName: 'fetchPrice',
+    })
+  }
+  const batched = (await publicClient.multicall({
     allowFailure: false,
     multicallAddress: MULTICALL3_ADDRESS,
-    contracts: [
-      { ...bo, functionName: 'borrowingRate' },
-      { ...bo, functionName: 'DECIMAL_PRECISION' },
-      { ...tm, functionName: 'getEntireSystemColl' },
-      { ...tm, functionName: 'getEntireSystemDebt' },
-    ],
-  })) as [bigint, bigint, bigint, bigint]
-
-  const price =
-    params.price ??
-    (await publicClient.readContract({
-      address: addresses.priceFeed,
-      abi: priceFeedAbi,
-      functionName: 'fetchPrice',
-    }))
+    contracts,
+  })) as [bigint, bigint, bigint, bigint, bigint?]
+  const [borrowingRate, decimalPrecision, systemColl, systemDebt] = batched
+  const price = params.price ?? (batched[4] as bigint)
 
   const [isRecoveryMode, minNetDebt] = await Promise.all([
     publicClient.readContract({
@@ -208,19 +238,26 @@ export async function getBorrowingPower(
     feasibleWith,
   })
 
+  // MK-092. The confirmation fee is KEPT rather than re-read. `feeOf(best)` was called again
+  // below with the same argument on the happy path, which is a whole round trip spent to
+  // receive a number already in hand.
   let best: bigint
+  let bestFee: bigint
+  const solvedFee = solved === undefined ? undefined : await feeOf(solved)
   if (
     solved !== undefined &&
-    (await feeOf(solved)) === localFee(solved, chargesFee ? borrowingRate : 0n, decimalPrecision)
+    solvedFee === localFee(solved, chargesFee ? borrowingRate : 0n, decimalPrecision)
   ) {
     // The closed form's premise held: the chain charges exactly the linear fee at the
-    // answer. Two reads total, and no search.
+    // answer. One fee read total, and no search.
     best = solved
+    bestFee = solvedFee
   } else {
     // The premise did not hold, so the shape assumption is wrong for this deployment and
     // the search is what it was there for. This is the only path that costs one call per
     // step, and it is bounded.
     best = await binarySearch(entireDebtCap, feeOf, feasibleWith)
+    bestFee = await feeOf(best)
   }
 
   // The debt floor, from the SAME evaluator rather than restated here: `netDebt >= minNetDebt`
@@ -229,7 +266,7 @@ export async function getBorrowingPower(
   const verdict = evaluateOpen({
     collateral,
     debt: best,
-    fee: await feeOf(best),
+    fee: bestFee,
     feeExempt,
     minNetDebt,
     isRecoveryMode,

@@ -109,17 +109,29 @@ the surface.
 
 ### Maturity
 
-Single author, unaudited, pre 1.0, with a public register of every known correctness gap. It has a
-fork harness against real Mezo contracts, a differential sweep of ten operations against real
-transaction outcomes, and a coverage ratchet. **That said "every preview" until the P13 wave, and
-the sweep covered nine operations and not the open time maximum solver** (MK-069): the claim was
-broader than the instrument, and a defect lived in the difference (MK-067). It has not had an external audit and has not been run
-at scale by anyone but its author. That is the whole of it: use it on testnet, evaluate it against
-your own cases, and read the register before you depend on it.
+Single author, pre 1.0, with a public register of every known correctness gap. It has a fork
+harness against real Mezo contracts, a differential sweep of ten operations against real
+transaction outcomes, and a coverage ratchet over both published packages. **It has now had two
+external correctness audits**, and the second one found six defects, including one in the React
+package that every control in this repository was scoped to miss (MK-085, MK-087).
 
-**No S1 is open.** One S2 stays open and it is the fee cap above (MK-011), which is a protocol
-property rather than something this SDK can fix. Every other open finding is S3 and concerns this
-repository's own test suite rather than what the SDK returns.
+The sweep found **zero cases where a preview said go and the chain refused**, and ten in the other
+direction. **That second figure was described here as "one defect in the harness's own argument
+mapping rather than in the SDK", and the second half of that sentence was wrong** (MK-086): the
+same argument mis-mapping was in the shipped React adjust preview hook, where it was the answer the
+hook returned rather than a comparison artefact. The sweep could not have seen it, because the
+sweep drives the core client and never renders a hook. What the sweep measures is the core
+surface, and that is what its zero is about.
+
+It has not been run at scale by anyone but its author. That is the whole of it: use it on testnet,
+evaluate it against your own cases, and read the register before you depend on it.
+
+**No S1 is open**, after MK-085 and MK-088 were closed in the P17 wave; that sentence stood here
+while MK-085 was open and is worth reading as a caution about the sentence rather than the tree.
+Two S2 stay open. One is the fee cap above (MK-011), which is a protocol property rather than
+something this SDK can fix. The other is MK-079, which is this repository's own differential
+harness comparing a preview of one call against execution of another. Every other open finding is
+S3 and concerns the test suite.
 
 ---
 

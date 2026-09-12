@@ -1,7 +1,8 @@
 import type { Address } from 'viem'
 import { musdAbi, priceFeedAbi, sortedTrovesAbi, troveManagerAbi } from '../clients'
-import { CCR, MUSD_GAS_COMPENSATION } from '../constants'
-import { computeICR } from './compute'
+import { CCR } from '../constants'
+import { TroveStatus } from '../read/types'
+import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 
 /**
@@ -84,10 +85,18 @@ export interface ClosePreview {
   /** The system TCR after this Trove is removed. */
   resultingTcr: bigint
   /**
-   * `musd.mintList(borrowerOperations)`, read live. **When false, `RECOVERY_MODE` and
-   * `TCR_BELOW_CCR` are not enforced at all** (`:953`, `:964`).
+   * `musd.mintList(borrowerOperations)`, read live. **When false, `RECOVERY_MODE`,
+   * `TCR_BELOW_CCR` and `LAST_TROVE_IN_SYSTEM` are not enforced at all** (`:953`, `:964`, and
+   * `TroveManager.sol:1397`).
    */
   canMint: boolean
+  /**
+   * The two counts behind `LAST_TROVE_IN_SYSTEM`, or `undefined` when they were not read
+   * (MK-091). Surfaced so the typed error the write path throws carries real numbers rather
+   * than the placeholder zeros MK-017 exists to refuse.
+   */
+  troveOwnersCount: bigint | undefined
+  sortedTrovesSize: bigint | undefined
   isRecoveryMode: boolean
   price: bigint
 }
@@ -129,7 +138,8 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
     sortedTrovesSize,
   } = input
 
-  const musdRequired = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
+  // MK-094. `_getNetDebt` (`LiquityBase.sol:107-109`), through the one copy.
+  const musdRequired = netDebtOf(entireDebt)
   const musdShortfall = musdRequired > musdBalance ? musdRequired - musdBalance : 0n
   // Closing removes this Trove's collateral AND its whole debt from the system (`:965-971`).
   const resultingTcr = computeICR({
@@ -139,7 +149,10 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
   })
 
   const reasons: CloseBlockReason[] = []
-  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
+  // MK-094. The enum, not the literal. `TroveStatus.active` is `1`
+  // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two
+  // others used the enum for the same comparison.
+  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')
   if (canMint && isRecoveryMode) reasons.push('RECOVERY_MODE')
   if (musdShortfall > 0n) reasons.push('INSUFFICIENT_MUSD_BALANCE')
   if (canMint && resultingTcr < CCR) reasons.push('TCR_BELOW_CCR')
@@ -166,12 +179,17 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
     collateral,
     resultingTcr,
     canMint,
+    troveOwnersCount,
+    sortedTrovesSize,
     isRecoveryMode,
     price,
   }
 }
 
-/** Read everything {@link evaluateClose} needs, then decide. */
+/** Read everything {@link evaluateClose} needs, then decide.
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
+ */
 export async function previewClose(deps: MathDeps, owner: Address): Promise<ClosePreview> {
   const { publicClient, addresses } = deps
   const price = await publicClient.readContract({
@@ -217,7 +235,7 @@ export async function previewClose(deps: MathDeps, owner: Address): Promise<Clos
   return evaluateClose({
     status,
     collateral: entire[0],
-    entireDebt: entire[1] + entire[2],
+    entireDebt: troveAmounts(entire).entireDebt,
     musdBalance,
     canMint,
     isRecoveryMode,

@@ -406,8 +406,11 @@ it cannot catch:
   before the block the transaction mines in.
 
 Traced on a fork of live Mezo: the same `redeemCollateral` call, from byte identical state,
-varied from **610270 to 710023 gas** across 40 attempts, a 16% swing, against a limit carrying
-a **1.5%** margin. Two of the 40 reverted, and the trace named `ActivePool` running out of gas
+varied from **610270 to 710023 gas** across 40 attempts, a 16% swing, against a limit that left
+only **1.5% over the gas actually used** on a send measured at the time. That 1.5% is a REALISED
+headroom, limit over gas used, and it is not the 25% this SDK now requests over the node's
+estimate: it was that thin because the requested margin was being dropped before the send
+(MK-037, since fixed). Two of the 40 reverted, and the trace named `ActivePool` running out of gas
 at call depth 4. The receipt showed `gasUsed < gasLimit`, so it did not even look like out of
 gas: the EVM forwards at most 63/64 of the remaining gas to a nested call, so an inner frame
 can exhaust its allowance while the outer frame keeps the last 1/64.
