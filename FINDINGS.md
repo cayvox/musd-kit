@@ -6570,6 +6570,43 @@ wave checklist.
 
 ---
 
+## The P17 sweep, run against this tree
+
+**1000 cases, four slices, seed 20260826, fork block 15043414, Node v24.19.0.** Run after every
+change in this wave, against the tree at `327949a`, with the commands the sweep workflow uses:
+
+```
+MK_DIFF_SEED=20260826 MK_DIFF_CASES=1000 MK_DIFF_FROM=<from> MK_DIFF_TO=<to> pnpm test:fork
+```
+
+| Slice | Exit | Wall clock | FALSE_VIABLE | FALSE_BLOCKED | NUMBERS | unexpected |
+|---|---|---|---|---|---|---|
+| 0..250 | 0 | 15m19s | 0 | 1 | 0 | **0** |
+| 250..500 | 0 | 17m12s | 0 | 6 | 0 | **0** |
+| 500..750 | 0 | 17m10s | 0 | 1 | 0 | **0** |
+| 750..1000 | 0 | 16m49s | 0 | 2 | 0 | **0** |
+| **total** | | **66m30s** | **0** | **10** | **0** | **0** |
+
+**Zero FALSE_VIABLE across a thousand cases**, which is the claim the README makes and is the one
+worth having: no preview said go where the chain refused.
+
+**All ten FALSE_BLOCKED are MK-079, and they land on exactly the indices its `knownAt` records**:
+209, 252, 329, 370, 449, 455, 486, 720, 817, 893. That is the registry mechanism working in both
+directions at once. It is also an independent confirmation that the recorded indices are right, at
+the seed and case count they are scoped to, which nothing had re-checked since they were written.
+
+**66 minutes, not the 116 the runbook cites, and the difference is the machine.** The 116 figure
+was measured in the P15 wave and is labelled there; this one is an Apple silicon laptop against the
+public `rpc.test.mezo.org` with a warm anvil cache. **Neither number is CI's**, and per the rule
+MK-081 established a published duration names the machine it was measured on. The runbook's figure
+is left as it is, because replacing a figure measured elsewhere with one measured here is the
+mistake MK-081 was.
+
+**What the sweep does NOT cover, restated because this wave is about exactly that**: it drives
+`client.*` and never renders a React hook, so MK-085 was outside it by construction. See MK-087.
+
+---
+
 ## Open questions and their answers
 
 | # | Question | Answer |

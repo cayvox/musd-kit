@@ -187,8 +187,8 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
 }
 
 /** Read everything {@link evaluateClose} needs, then decide.
- * **Not a single block snapshot**: the price is read outside the batch that uses it. See
- * {@link MathDeps} (MK-013, MK-093).
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewClose(deps: MathDeps, owner: Address): Promise<ClosePreview> {
   const { publicClient, addresses } = deps

@@ -366,8 +366,8 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
 }
 
 /** Read everything {@link evaluateAdjust} needs, then decide.
- * **Not a single block snapshot**: the price is read outside the batch that uses it. See
- * {@link MathDeps} (MK-013, MK-093).
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewAdjustTrove(
   deps: MathDeps,
@@ -505,8 +505,8 @@ export interface MaxWithdrawable {
  * Reported alongside `limitedBy` because "you can withdraw 0" and "you can withdraw 0 because
  * the system is in Recovery Mode" are different messages to a user.
  *
- * **Not a single block snapshot**: the price is read outside the batch that uses it. See
- * {@link MathDeps} (MK-013, MK-093).
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function maxWithdrawableCollateral(
   deps: MathDeps,

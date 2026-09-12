@@ -124,8 +124,8 @@ export interface OpenPreview {
  *
  * Every raw number is still returned so a caller can render its own message.
  *
- * **Not a single block snapshot**: the price is read outside the batch that uses it. See
- * {@link MathDeps} (MK-013, MK-093).
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewOpen(deps: MathDeps, params: PreviewOpenParams): Promise<OpenPreview> {
   const { publicClient, addresses } = deps

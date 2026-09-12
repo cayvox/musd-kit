@@ -182,8 +182,8 @@ export async function getBorrowingCapacity(
  * This is the counterpart to `getBorrowingPower`, which is an OPEN time calculator and is
  * documented as such. Use this one for a Trove that already exists.
  *
- * **Not a single block snapshot**: the price is read outside the batch that uses it. See
- * {@link MathDeps} (MK-013, MK-093).
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewBorrow(
   deps: MathDeps,

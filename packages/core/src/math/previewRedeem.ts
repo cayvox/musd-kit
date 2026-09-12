@@ -330,8 +330,8 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
  * cannot turn a preview into an unbounded read. That bound is the same reason `getBorrowingPower`
  * carries one (MK-010).
  *
- * **Not a single block snapshot**: the price is read outside the batch that uses it. See
- * {@link MathDeps} (MK-013, MK-093).
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewRedeem(
   deps: MathDeps,
