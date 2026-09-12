@@ -15,6 +15,7 @@ import {
   InsufficientMusdBalance,
   InvalidAdjustment,
   InvalidAmount,
+  LastTroveInSystem,
   MaxFeeExceeded,
   type MusdError,
   RecoveryModeRestriction,
@@ -27,10 +28,15 @@ import {
 import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/mapRevert'
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
+import { netDebtOf, troveAmounts } from '../math/compute'
 import type { MathDeps } from '../math/deps'
+// MK-069. The one copy of `BorrowerOperations.sol:637-643` and `:810-818`. Every place on this
+// path that decides whether the borrowing fee applies goes through it.
+import { isBorrowingFeeCharged } from '../math/fee'
 import {
   type AdjustPreview,
   type PreviewAdjustParams,
+  borrowingCapacityOf,
   previewAdjustTrove,
 } from '../math/previewAdjust'
 import { previewClose } from '../math/previewClose'
@@ -66,12 +72,8 @@ async function currentPosition(
     functionName: 'getEntireDebtAndColl',
     args: [owner],
   })
-  return {
-    collateral: edc[0],
-    entireDebt: edc[1] + edc[2],
-    principal: edc[1],
-    interestOwed: edc[2],
-  }
+  // MK-094. The tuple is named once, in `math/compute.ts`, rather than indexed here as well.
+  return troveAmounts(edc)
 }
 
 /**
@@ -105,14 +107,19 @@ async function effectiveBorrowingFee(
       functionName: 'governableVariables',
     }),
   ])
-  if (isRecoveryMode) return 0n
-  const exempt = await deps.publicClient.readContract({
-    address: governableVariables,
-    abi: governableVariablesAbi,
-    functionName: 'isAccountFeeExempt',
-    args: [owner],
-  })
-  if (exempt) return 0n
+  // MK-069. The decision is `isBorrowingFeeCharged` (`math/fee.ts:15-17`), the single copy of
+  // `BorrowerOperations.sol:637-643` and `:810-818`, rather than a conjunction re-derived here.
+  // The exemption read is skipped when the mode alone already settles it, which saves a round
+  // trip and cannot change the answer because the rule is an AND.
+  const feeExempt = isRecoveryMode
+    ? false
+    : await deps.publicClient.readContract({
+        address: governableVariables,
+        abi: governableVariablesAbi,
+        functionName: 'isAccountFeeExempt',
+        args: [owner],
+      })
+  if (!isBorrowingFeeCharged(isRecoveryMode, feeExempt)) return 0n
   return getBorrowingFee(deps, debt)
 }
 
@@ -142,7 +149,8 @@ async function assertWithinBorrowingCapacity(
     capacity,
     entireDebt,
     netDebtChange,
-    capacity > entireDebt ? capacity - entireDebt : 0n,
+    // MK-094. The headroom, through the one factory rather than a third copy of the ternary.
+    borrowingCapacityOf(capacity, entireDebt).remaining,
   )
 }
 
@@ -235,11 +243,18 @@ function assertFeeWithinCap(debtIncrease: bigint, fee: bigint, maxFeePercentage?
  *
  * The parameter is named `principal` on purpose: the previous name, `entireDebt`, is exactly
  * the quantity that must NOT be passed.
+ *
+ * **MK-090. That rename stopped one line short and the gap is now closed.** This function took
+ * `principal` and then handed it straight back to `computeHints` as `entireDebt: principal`,
+ * because the public helper still ASKED for the entire debt, by name and by docstring. Every
+ * internal caller was right and the public signature said the opposite, which is what an
+ * integrator building their own write path reads. `computeNICR` and `computeHints` take
+ * `principal` now, so there is nothing left to translate here.
  */
 function hintsFor(deps: WriteDeps, collateral: bigint, principal: bigint) {
   return computeHints(
     { publicClient: deps.publicClient, addresses: deps.addresses },
-    { collateral, entireDebt: principal },
+    { collateral, principal },
   )
 }
 
@@ -297,7 +312,13 @@ export async function openTrove(deps: WriteDeps, params: OpenTroveParams): Promi
   const { collateral, debt } = params
   assertPositiveAmount('collateral', collateral)
   assertPositiveAmount('debt', debt)
-  const fee = await getBorrowingFee(deps, debt)
+  // MK-068. The fee the contract will ACTUALLY charge, the same helper `borrow` and
+  // `adjustTrove` use. This called the raw `getBorrowingFee` until MK-068, which put a fee the
+  // contract skips into three separate places on this path: the cap check on the next line
+  // refused an open in Recovery Mode where the protocol charges nothing, the `minNetDebt`
+  // floor below was measured against `debt + fee` where the contract measures `debt`
+  // (`BorrowerOperations.sol:645`), and the hint named a position that would not exist.
+  const fee = await effectiveBorrowingFee(deps, wallet.account.address, debt)
   assertFeeWithinCap(debt, fee, params.maxFeePercentage)
   // Pre-send guards (fail fast, fully-typed): min-net-debt floor + no existing Trove.
   const [minNetDebt, pos] = await Promise.all([
@@ -368,6 +389,14 @@ function adjustReasonToError(p: AdjustPreview, owner: Address): MusdError {
     case 'COLLATERAL_ADD_AND_WITHDRAW':
       return new InvalidAdjustment(
         'Cannot add and withdraw collateral in one call (BorrowerOperations.sol:1367-1375).',
+      )
+    case 'DEBT_INCREASE_AND_REPAY':
+      // MK-077. No contract citation, deliberately: `_adjustTrove` takes one debt leg
+      // (`BorrowerOperations.sol:757-758`), so this is the SDK refusing an input the chain
+      // cannot express, not a gate the chain enforces. `adjustTrove` also refuses it earlier
+      // and on presence rather than value.
+      return new InvalidAdjustment(
+        'Cannot borrow and repay in one call: adjustTrove takes a single debt leg.',
       )
     case 'ZERO_DEBT_INCREASE':
       return new InvalidAmount('increaseDebt', 0n)
@@ -461,7 +490,7 @@ export async function repay(deps: WriteDeps, { amount }: { amount: bigint }): Pr
   ])
   assertTroveActive(pos.entireDebt, owner)
   // Repaying more than the net debt would underflow on-chain (Panic) → typed up front.
-  const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
+  const netDebt = netDebtOf(pos.entireDebt)
   if (amount > netDebt) throw new RepayExceedsDebt(undefined, { repay: amount, netDebt })
   if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
   // MK-042. The ratio gate applies to a pure repayment in NORMAL mode too, and it is
@@ -551,7 +580,7 @@ export async function adjustTrove(
     await assertWithinBorrowingCapacity(deps, owner, pos.entireDebt, brw + fee)
   }
   if (rpy !== undefined) {
-    const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
+    const netDebt = netDebtOf(pos.entireDebt)
     if (rpy > netDebt) throw new RepayExceedsDebt(undefined, { repay: rpy, netDebt })
   }
   // MK-042. Every ratio and mode gate on the combined path, in one place. This is the write
@@ -589,13 +618,15 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
   // Close burns the net debt (entireDebt − 200); the 200 gas reserve is returned (verified).
-  const required = pos.entireDebt - MUSD_GAS_COMPENSATION
+  const required = netDebtOf(pos.entireDebt)
   const balance = await getMusdBalance(deps, owner)
   if (balance < required) throw new InsufficientMusdBalance(required, balance)
-  // MK-042. Close has its own gate set, and two of its four gates are conditional on a live
-  // chain read, `musd.mintList(borrowerOperations)` (`BorrowerOperations.sol:949`). When
-  // that is true, closing is refused in Recovery Mode (`:954`) and gated on the resulting
-  // system TCR (`:972`). Neither was checked before this.
+  // MK-042, then MK-074 and MK-091. Close has its own gate set, and THREE of its FIVE gates
+  // are conditional on a live chain read, `musd.mintList(borrowerOperations)`
+  // (`BorrowerOperations.sol:949`). When that is true, closing is refused in Recovery Mode
+  // (`:954`), gated on the resulting system TCR (`:972`), and refused outright for the last
+  // Trove in the system (`:976` into `TroveManager.sol:1390-1399`). The count said "two of
+  // four" until the P17 wave, because MK-074 updated `previewClose.ts` and not this copy.
   const closePreview = await previewClose(mathDepsOf(deps), owner)
   if (!closePreview.viable) {
     if (closePreview.bindingConstraint === 'RECOVERY_MODE') {
@@ -609,6 +640,21 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
     }
     if (closePreview.bindingConstraint === 'INSUFFICIENT_MUSD_BALANCE') {
       throw new InsufficientMusdBalance(closePreview.musdRequired, closePreview.musdBalance)
+    }
+    // MK-091. The fifth reason, which MK-074 added to the preview and left out of here. Every
+    // other reason this block knows about became a typed throw; this one fell through to a
+    // send, and "TroveManager: Only one trove in the system" matched no pattern in `mapRevert`,
+    // so the caller got `ContractCallFailed` carrying a raw string. The preview computed the
+    // answer and the write path threw it away.
+    if (closePreview.bindingConstraint === 'LAST_TROVE_IN_SYSTEM') {
+      throw new LastTroveInSystem({
+        ...(closePreview.troveOwnersCount !== undefined
+          ? { troveOwnersCount: closePreview.troveOwnersCount }
+          : {}),
+        ...(closePreview.sortedTrovesSize !== undefined
+          ? { sortedTrovesSize: closePreview.sortedTrovesSize }
+          : {}),
+      })
     }
   }
   return send(deps, 'closeTrove', [], { revert: { operation: 'close', address: owner } })
@@ -624,7 +670,7 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
  * the fee and the resulting position before signing.
  *
  * **It always reverts in Recovery Mode** (MK-019): `_requireNotInRecoveryMode(price)` is the
- * first requirement `_refinance` applies (`BorrowerOperations.sol:1024`), before the trove
+ * first requirement `_refinance` applies (`BorrowerOperations.sol:1023`), before the trove
  * is even checked for being active. `previewRefinance` reports that as a
  * `RECOVERY_MODE` reason, and simulate-before-send surfaces it as a typed
  * `RecoveryModeRestriction` if you skip the preview.
@@ -661,20 +707,23 @@ async function refinancingFee(
     abi: borrowerOperationsAbi,
     functionName: 'governableVariables',
   })
-  const exempt = await deps.publicClient.readContract({
+  const feeExempt = await deps.publicClient.readContract({
     address: governableVariables,
     abi: governableVariablesAbi,
     functionName: 'isAccountFeeExempt',
     args: [owner],
   })
-  if (exempt) return 0n
+  // MK-069. Through the one rule here too. The mode half is always satisfied on this path,
+  // because `_requireNotInRecoveryMode` (`BorrowerOperations.sol:1023`) is the FIRST thing
+  // `_refinance` does, so a refinance that reaches the fee is a refinance in normal mode. That
+  // is why `false` is passed rather than a read: it is a contract guarantee, not an assumption.
+  if (!isBorrowingFeeCharged(false, feeExempt)) return 0n
   const percentage = await deps.publicClient.readContract({
     address: deps.addresses.borrowerOperations,
     abi: borrowerOperationsAbi,
     functionName: 'refinancingFeePercentage',
   })
-  const netDebt = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
-  return getBorrowingFee(deps, (BigInt(percentage) * netDebt) / 100n)
+  return getBorrowingFee(deps, (BigInt(percentage) * netDebtOf(entireDebt)) / 100n)
 }
 
 /**

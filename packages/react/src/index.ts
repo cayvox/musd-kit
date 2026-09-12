@@ -51,7 +51,9 @@ export {
 // The internal client builder, exported for advanced consumers who want the core client
 // bound to the ambient wagmi context.
 export { useMusdClient } from './internal/useMusdClient'
-export { musdQueryKeys } from './internal/keys'
+// `musdQueryKeys.adjustPreview` takes the four legs as ONE object with absence preserved
+// (MK-085), so the shape is exported with it.
+export { musdQueryKeys, type AdjustPreviewLegs } from './internal/keys'
 
 // Re-export the core's typed errors + the key types consumers branch on, so a React app can
 // import everything it needs from one place.
@@ -71,6 +73,7 @@ export {
   RepayExceedsDebt,
   StaleHint,
   InsufficientMusdBalance,
+  LastTroveInSystem,
   NothingToLiquidate,
   RedemptionFailed,
   Unauthorized,

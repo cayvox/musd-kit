@@ -17,6 +17,7 @@ import {
   ExceedsBorrowingCapacity,
   ICRBelowMCR,
   InsufficientMusdBalance,
+  LastTroveInSystem,
   NothingToLiquidate,
   RecoveryModeRestriction,
   RedemptionFailed,
@@ -101,6 +102,12 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
     return new InsufficientMusdBalance(undefined, undefined, error)
   }
   if (has(/nothing to liquidate/i)) return new NothingToLiquidate(context?.borrowers ?? [], error)
+  // MK-091. `TroveManager._closeTrove:1390-1399` reverts here when the system holds one Trove.
+  // It matched nothing until the P17 wave, so it arrived as `ContractCallFailed` with a raw
+  // string while every neighbouring close reason had a typed error. The decoder does not know
+  // the two counts, so it passes none rather than inventing them (MK-017); `close` throws the
+  // same error WITH them, from the preview, before this is ever reached.
+  if (has(/Only one trove in the system/i)) return new LastTroveInSystem(undefined, error)
   if (has(/Unable to redeem any amount/i)) {
     return new RedemptionFailed(
       'Unable to redeem any amount (nothing redeemable within maxIterations, or a stale hint).',

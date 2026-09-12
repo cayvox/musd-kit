@@ -1,8 +1,10 @@
 import type { Address } from 'viem'
 import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
-import { computeICR } from './compute'
+import { CCR, MCR } from '../constants'
+import { TroveStatus } from '../read/types'
+import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
+import { effectiveBorrowingFee } from './fee'
 
 /**
  * MK-003 and MK-019. Refinancing moves a Trove to the current global interest rate, and the
@@ -13,9 +15,11 @@ import type { MathDeps } from './deps'
  *
  *   1. `updateSystemAndTroveInterest(_borrower)` first (`:1021`), so every debt figure below
  *      is current to the block and includes accrued interest.
- *   2. `_requireNotInRecoveryMode(price)` (`:1024`), which reverts with
+ *   2. `_requireNotInRecoveryMode(price)` (`:1023`), which reverts with
  *      `BorrowerOps: Operation not permitted during Recovery Mode` (`:1133-1138`). This is
- *      the very first requirement: a refinance in Recovery Mode ALWAYS reverts (MK-019).
+ *      the very first requirement, ahead of `_requireTroveisActive` (`:1024`): a refinance in
+ *      Recovery Mode ALWAYS reverts (MK-019), and that is the order the reasons come back in
+ *      (MK-075).
  *   3. The fee base is the NET debt, `getTroveDebt - 200e18` (`:1030-1032`), scaled by the
  *      governable `refinancingFeePercentage` over 100 (`:1033`).
  *   4. The fee itself is `getBorrowingFee(base)`, and is ZERO for a fee exempt account
@@ -29,18 +33,25 @@ import type { MathDeps } from './deps'
  * It is governable, and a hardcoded value is a stale fact waiting to happen.
  */
 
-/** Why a refinance would be refused. Machine readable, stable strings, in a fixed order. */
+/**
+ * Why a refinance would be refused. Machine readable, stable strings, **in contract call
+ * order** (MK-075), so `bindingConstraint` names the gate the chain reaches first.
+ */
 export type RefinanceBlockReason =
-  | 'TROVE_NOT_ACTIVE'
+  /** `_requireNotInRecoveryMode` (`:1023`). The FIRST requirement `_refinance` applies. */
   | 'RECOVERY_MODE'
+  /** `_requireTroveisActive` (`:1024`). */
+  | 'TROVE_NOT_ACTIVE'
+  /** `_requireICRisAboveMCR` (`:1058`). */
   | 'ICR_BELOW_MCR'
+  /** `_requireNewTCRisAboveCCR` (`:1059`), on the TCR that already includes the fee. */
   | 'TCR_BELOW_CCR'
 
 /** Result of {@link previewRefinance}: a verdict plus every raw number behind it. */
 export interface RefinancePreview {
   /** True only when the contract would let the refinance through. */
   viable: boolean
-  /** Every reason it would be refused, in a fixed order. Empty when `viable`. */
+  /** Every reason it would be refused, **in contract call order**. Empty when `viable`. */
   reasons: RefinanceBlockReason[]
   /** The reason that binds first, or `null` when viable. */
   bindingConstraint: RefinanceBlockReason | null
@@ -106,9 +117,15 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
   } = input
 
   const entireDebt = principal + interestOwed
-  // `_getNetDebt(getTroveDebt)` is entire debt minus the gas reserve (`LiquityBase.sol:107-109`).
-  const feeBase = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
-  const fee = feeExempt ? 0n : borrowingFeeOnBase
+  // `_getNetDebt(getTroveDebt)` is entire debt minus the gas reserve (`LiquityBase.sol:107-109`),
+  // through the one copy (MK-094). This file carried the ternary twice, once here and once in
+  // the reader below, for the same quantity on the same Trove.
+  const feeBase = netDebtOf(entireDebt)
+  // MK-069. Through the one rule (`math/fee.ts`), not a local ternary. `false` for the mode is
+  // a contract guarantee rather than an assumption: `_requireNotInRecoveryMode`
+  // (`BorrowerOperations.sol:1023`) is the first requirement `_refinance` applies, so a
+  // refinance that reaches the fee at `:1033-1035` is a refinance in normal mode.
+  const fee = effectiveBorrowingFee(borrowingFeeOnBase, false, feeExempt)
 
   const resultingPrincipal = principal + fee
   const resultingEntireDebt = entireDebt + fee
@@ -120,10 +137,17 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
   })
 
   const reasons: RefinanceBlockReason[] = []
-  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
-  // The mode check is the contract's FIRST requirement, so it is reported even when other
-  // constraints would also fail: it is what the caller actually hits.
+  // MK-075. In the order `_refinance` checks them, so `bindingConstraint` names the gate the
+  // chain reaches first. `_requireNotInRecoveryMode` (`:1023`) genuinely precedes
+  // `_requireTroveisActive` (`:1024`), before the Trove is checked for existing at all. This
+  // block used to push `TROVE_NOT_ACTIVE` first while the comment two lines down asserted the
+  // mode check was first, so for a closed Trove under CCR the preview named a gate the chain
+  // would not have reported. That is MK-065's defect in the evaluator MK-065 did not reach.
   if (isRecoveryMode) reasons.push('RECOVERY_MODE')
+  // MK-094. The enum, not the literal. `TroveStatus.active` is `1`
+  // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two
+  // others used the enum for the same comparison.
+  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')
   if (resultingIcr < MCR) reasons.push('ICR_BELOW_MCR')
   if (resultingTcr < CCR) reasons.push('TCR_BELOW_CCR')
 
@@ -149,6 +173,9 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
  * Preview refinancing an existing Trove (MK-003, MK-019): the fee, the resulting principal,
  * the resulting individual ratio, and a verdict that is false whenever the contract would
  * refuse the operation, Recovery Mode included.
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewRefinance(deps: MathDeps, owner: Address): Promise<RefinancePreview> {
   const { publicClient, addresses } = deps
@@ -173,10 +200,8 @@ export async function previewRefinance(deps: MathDeps, owner: Address): Promise<
     }),
   ])
 
-  const principal = entire[1]
-  const interestOwed = entire[2]
-  const entireDebt = principal + interestOwed
-  const feeBase = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
+  const { principal, interestOwed, entireDebt } = troveAmounts(entire)
+  const feeBase = netDebtOf(entireDebt)
   const scaledBase = (BigInt(percentage) * feeBase) / 100n
 
   const [feeExempt, borrowingFeeOnBase] = await Promise.all([

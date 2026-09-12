@@ -123,6 +123,9 @@ export interface OpenPreview {
  *     never projected the TCR at all (MK-005).
  *
  * Every raw number is still returned so a caller can render its own message.
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewOpen(deps: MathDeps, params: PreviewOpenParams): Promise<OpenPreview> {
   const { publicClient, addresses } = deps

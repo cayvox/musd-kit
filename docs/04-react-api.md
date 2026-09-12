@@ -37,7 +37,9 @@ happened to arrive together.
 
 ```tsx
 // A borrowing-power calculator, no live position needed (preview math)
-const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05') });
+// Pass `account` whenever you have one (MK-067): the borrowing fee is skipped for a fee exempt
+// account, so the maximum is LARGER for such a caller than the figure returned without it.
+const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05'), account });
 // `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
 ```
 
@@ -89,9 +91,23 @@ core; the React layer adds only the reactive wrapper.
 
 ## 3. The v1 hook set (as shipped, Phase 8)
 
-**Read:** `useTrove`, `useBorrowingPower`, `useBorrowPreview`, `useBorrowingCapacity`,
+**Read (14):** `useTrove`, `useBorrowingPower`, `useBorrowPreview`, `useBorrowingCapacity`,
 `useRefinancePreview`, `useLiquidationPrice`, `useHealthFactor`, `useMusdBalance`,
-`useOraclePrice`.
+`useOraclePrice`, `useAdjustTrovePreview`, `useWithdrawCollateralPreview`,
+`useMaxWithdrawableCollateral`, `useClosePreview`, `useRedeemPreview`.
+
+> **This list said nine for two waves while the package exported fourteen** (MK-085). The five
+> preview hooks from the MK-042 and MK-048 waves were exported from `packages/react/src/index.ts`
+> and absent from here, which is part of why nobody exercised `useAdjustTrovePreview` and did not
+> notice it refused every adjustment that was not a borrow. The count is in the heading now so a
+> stale list is visible rather than merely incomplete.
+
+**An omitted leg means "no such leg", and that is not the same as zero** (MK-085, MK-060).
+`useAdjustTrovePreview` takes four optional legs and forwards only the ones you pass.
+`_adjustTrove` takes `_isDebtIncrease` as a parameter independent of `_mUSDChange`
+(`BorrowerOperations.sol:757-758`) and refuses `(0, true)` at `:785-787`, so
+`{ owner, addCollateral }` is an ordinary top-up while `{ owner, addCollateral, increaseDebt: 0n }`
+is a debt increase of zero and is correctly refused. Do not fill the legs you are not using.
 
 `useHealthFactor` and `useLiquidationPrice` are selectors over the **same** `useTrove`
 query (shared key + `select`), three hooks for one address dedupe to a single fetch. All

@@ -4,7 +4,14 @@
 // exercising the raw hint dance against the real contracts.
 import { http, type Address, type Hex, type PrivateKeyAccount, createWalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { MUSD_GAS_COMPENSATION, borrowerOperationsAbi, computeHints, getAddresses } from '../../src'
+import {
+  MUSD_GAS_COMPENSATION,
+  borrowerOperationsAbi,
+  computeHints,
+  getAddresses,
+  priceFeedAbi,
+  troveManagerAbi,
+} from '../../src'
 import { mezoTestnet } from './constants'
 import type { ForkConnection } from './index'
 import { recordMitigation } from './mitigationLog'
@@ -59,13 +66,41 @@ export async function openTroveRaw(
   // Fund the account with collateral + a generous BTC gas buffer.
   await fork.fundAccount(account.address, collateralBtc + 5n * 10n ** 18n)
 
-  // Composite (entire) debt the contract will insert by: draw + borrowingFee + 200.
-  const fee = await publicClient.readContract({
-    address: TESTNET.borrowerOperations,
-    abi: borrowerOperationsAbi,
-    functionName: 'getBorrowingFee',
-    args: [debtMusd],
+  // Composite (entire) debt the contract will insert by (MK-070).
+  //
+  // This read `getBorrowingFee` unconditionally and called the result "the debt the contract
+  // will insert by". In Recovery Mode that is false: `BorrowerOperations.sol:637-643` charges no
+  // fee at all, so the composite is `draw + 200`. Observed on a fork, this helper reported
+  // 2669133333333333333332 where the chain stored 2666666666666666666666, overstating by exactly
+  // the skipped fee, which is wrong twice over: the returned `entireDebt` misleads every
+  // assertion built on it, and the hint below names a position that does not exist.
+  //
+  // The condition is the CONTRACT's, written out rather than imported from `math/fee.ts`, so the
+  // harness stays an independent statement of the rule. The exemption half is a constant here
+  // because no fixture opens through this helper with an exempt account: `obligations.fork.ts`,
+  // the one test that grants exemption, opens through the SDK client instead.
+  const isRecoveryMode = await publicClient.readContract({
+    address: TESTNET.troveManager,
+    abi: troveManagerAbi,
+    functionName: 'checkRecoveryMode',
+    args: [
+      await publicClient.readContract({
+        address: TESTNET.priceFeed,
+        abi: priceFeedAbi,
+        functionName: 'fetchPrice',
+      }),
+    ],
   })
+  const feeExempt = false
+  const chargesFee = !isRecoveryMode && !feeExempt
+  const fee = chargesFee
+    ? await publicClient.readContract({
+        address: TESTNET.borrowerOperations,
+        abi: borrowerOperationsAbi,
+        functionName: 'getBorrowingFee',
+        args: [debtMusd],
+      })
+    : 0n
   const compositeDebt = debtMusd + fee + MUSD_GAS_COMPENSATION
 
   // Dogfood the SDK's insertion-hint module (Phase 3) instead of hand-writing the ritual.
@@ -75,7 +110,8 @@ export async function openTroveRaw(
       { publicClient, addresses: TESTNET },
       {
         collateral: collateralBtc,
-        entireDebt: compositeDebt,
+        // At an open the composite debt IS the principal: no interest has accrued yet.
+        principal: compositeDebt,
         randomSeed: seed,
         ...(numTrials !== undefined ? { numTrials } : {}),
       },

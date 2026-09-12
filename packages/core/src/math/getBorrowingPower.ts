@@ -1,15 +1,29 @@
-import type { Abi } from 'viem'
+import type { Abi, Address } from 'viem'
 import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients'
 import { CCR, MCR, MULTICALL3_ADDRESS, MUSD_GAS_COMPENSATION } from '../constants'
 import { InvalidAmount } from '../errors'
-import { computeICR } from './compute'
 import type { MathDeps } from './deps'
+import { isBorrowingFeeCharged } from './fee'
+import { evaluateOpen } from './previewOpen'
 
 /** Inputs to {@link MusdClient.getBorrowingPower}: the collateral to size a draw against. */
 export interface GetBorrowingPowerParams {
   collateral: bigint
   /** Override the price; defaults to `fetchPrice()`. */
   price?: bigint
+  /**
+   * The account that would open the Trove. Supply it whenever you have it (MK-067).
+   *
+   * The borrowing fee is skipped entirely for a fee exempt account
+   * (`BorrowerOperations.sol:637-643`), and the exempt cohort is NOT empty on mainnet, so for
+   * such a caller the largest valid draw is LARGER than the one this returns without it.
+   * Omitted, the calculation assumes the account is not exempt, exactly as
+   * {@link previewOpen} does with the same absence.
+   *
+   * It has no effect in Recovery Mode, where the fee is skipped for everyone and the mode is
+   * read from the chain rather than from this parameter.
+   */
+  account?: Address
 }
 
 /**
@@ -39,26 +53,59 @@ export const MAX_BORROWING_POWER_ITERATIONS = 256
  * (`:1358-1365`), which this function does not and should not model. For an existing
  * Trove use `previewBorrow`, which returns a verdict plus the binding constraint (MK-002).
  *
- * What it enforces, matching `_openTrove` (`BorrowerOperations.sol:645-665`):
+ * **It does not decide anything about the open rules (MK-067, MK-069).** Its feasibility
+ * predicate IS {@link evaluateOpen}, called per candidate, so the individual ratio, the mode
+ * correct threshold, the resulting system TCR and the debt floor all have exactly one
+ * implementation in this package and it is not here.
  *
- *   - the mode correct individual ratio: `ICR >= MCR` normally, `ICR >= CCR` in Recovery
- *     Mode;
- *   - in NORMAL mode only, the resulting system ratio `TCR >= CCR`. The contract checks
- *     this on every normal mode open (`_requireNewTCRisAboveCCR`, `:663-665`) and it can
- *     bind before the individual ratio does on a large draw. In Recovery Mode the contract
- *     checks `ICR >= CCR` instead and imposes no resulting TCR condition, so neither does
- *     this;
- *   - the debt floor, `netDebt >= minNetDebt`, where `netDebt` is the draw plus the fee
- *     the contract will actually charge.
+ * **Why a projection rather than the delegation `previewBorrow` uses.** `previewBorrow` can be
+ * `previewAdjustTrove` outright, because on chain a borrow IS an adjustment: one call, one
+ * verdict. This function asks a different question, "what is the largest draw for which that
+ * verdict is yes", and a maximum cannot be a case of the evaluator that answers a candidate.
+ * So it stays a solver, and the thing it solves over is the evaluator. **A reader can check
+ * that claim in one place:** every `return` from `solveClosedForm` and `binarySearch` below is
+ * gated on `feasibleWith`, and `feasibleWith` is nothing but a call to `evaluateOpen`. The caps
+ * inside the solver are search bounds and never verdicts, which is why a wrong cap can only
+ * cost round trips.
  *
- * Returns `0n` when even the largest feasible draw is below the debt floor, meaning no
+ * Structurally, drift is refused the way the P12 wave refused it rather than by care:
+ * `packages/core/test/borrowing-power-agreement.test.ts` asserts that the answer is viable to
+ * `previewOpen` and that one wei more is not, in both modes and for an exempt account.
+ *
+ * Returns `0n` when even the largest ratio feasible draw is below the debt floor, meaning no
  * valid open exists for this collateral.
  *
- * **Cost (MK-010).** Every chain read happens in ONE `multicall`, then the answer is solved
- * in closed form from the linear fee, and the chain is asked for the real
- * `getBorrowingFee` only to CONFIRM the solution. That is two round trips in total instead
- * of roughly 77 sequential ones. The binary search is still here, bounded, as the fallback
- * for when the fee stops being linear. The premise, that `getBorrowingFee(d)` equals
+ * **Cost (MK-010), COUNTED rather than asserted (MK-092).** The price, the fee rate and the
+ * system totals ride in one `multicall`; the answer is then solved in closed form from the
+ * linear fee, and the chain is asked for the real `getBorrowingFee` once, to CONFIRM the
+ * solution. Measured with a counting client, the sequential round trips are:
+ *
+ *   normal mode, no account      4
+ *   normal mode, with account    5
+ *   Recovery Mode, no account    3
+ *
+ * against roughly 77 for the search this replaced. `checkRecoveryMode` cannot join the batch
+ * because it takes the price as an argument and the price is produced by the same batch; the
+ * exemption read is skipped entirely in Recovery Mode, where the mode alone settles the fee.
+ * The binary search is still here, bounded, as the fallback for when the fee stops being
+ * linear, and it is the only path that costs one call per step.
+ *
+ * **This docstring said "Every chain read happens in ONE `multicall`" and "three round trips"
+ * until the P17 wave, and both were false** (MK-092). Six reads were issued where three were
+ * claimed, `fetchPrice` and `checkRecoveryMode` were never in the batch, and `getBorrowingFee`
+ * was called twice with the same argument. The figures above are what a counting client
+ * observed, and `borrowing-power-agreement.test.ts` pins them so the claim cannot drift from
+ * the code again.
+ *
+ * **What this function does NOT promise: a single block snapshot** (MK-093). `price` and
+ * `checkRecoveryMode(price)` are separate round trips after the batch, so the system totals the
+ * resulting TCR gate uses can come from an earlier block than the price they are measured
+ * against. `read/snapshot.ts` exists to pin exactly that and is used by `read/getTrove.ts` and
+ * `read/system.ts`; nothing under `math/` uses it. MK-013 named that gap and exempted this
+ * function on the stated condition that it made no snapshot claim in its docstring, and the
+ * sentence above broke the condition the exemption rested on.
+ *
+ * The premise, that `getBorrowingFee(d)` equals
  * `borrowingRate() * d / DECIMAL_PRECISION()`, was established by triggering it against the
  * deployment rather than assumed, and is confirmed on every call before the closed form's
  * answer is trusted, because `borrowingRate` is governable.
@@ -79,28 +126,37 @@ export async function getBorrowingPower(
   const tm = { address: addresses.troveManager, abi: troveManagerAbi as Abi } as const
   const bo = { address: addresses.borrowerOperations, abi: borrowerOperationsAbi as Abi } as const
 
-  // One batch for everything the calculation needs, including the fee RATE, which is what
-  // makes the closed form possible at all. `fetchPrice` is included only when the caller did
-  // not supply a price; `checkRecoveryMode` takes the price as an argument, so with a
-  // supplied price it joins this batch and otherwise needs the caller's price anyway.
-  const [borrowingRate, decimalPrecision, systemColl, systemDebt] = (await publicClient.multicall({
+  // One batch for the price INDEPENDENT reads plus the fee RATE, which is what makes the closed
+  // form possible at all. `fetchPrice` joins it when the caller supplied no price, so the price
+  // costs no round trip of its own. `checkRecoveryMode` CANNOT join it either way: it takes the
+  // price as an argument, and inside this batch the price does not exist yet.
+  //
+  // MK-092. The comment here used to say `fetchPrice` was "included only when the caller did
+  // not supply a price" and that `checkRecoveryMode` "joins this batch" with a supplied price.
+  // Neither was true of the code below it: the batch held four price independent reads and
+  // `fetchPrice` was a separate `readContract`. It is in the batch now, which is what the
+  // sentence always claimed.
+  const needsPrice = params.price === undefined
+  const contracts: { address: Address; abi: Abi; functionName: string }[] = [
+    { ...bo, functionName: 'borrowingRate' },
+    { ...bo, functionName: 'DECIMAL_PRECISION' },
+    { ...tm, functionName: 'getEntireSystemColl' },
+    { ...tm, functionName: 'getEntireSystemDebt' },
+  ]
+  if (needsPrice) {
+    contracts.push({
+      address: addresses.priceFeed,
+      abi: priceFeedAbi as Abi,
+      functionName: 'fetchPrice',
+    })
+  }
+  const batched = (await publicClient.multicall({
     allowFailure: false,
     multicallAddress: MULTICALL3_ADDRESS,
-    contracts: [
-      { ...bo, functionName: 'borrowingRate' },
-      { ...bo, functionName: 'DECIMAL_PRECISION' },
-      { ...tm, functionName: 'getEntireSystemColl' },
-      { ...tm, functionName: 'getEntireSystemDebt' },
-    ],
-  })) as [bigint, bigint, bigint, bigint]
-
-  const price =
-    params.price ??
-    (await publicClient.readContract({
-      address: addresses.priceFeed,
-      abi: priceFeedAbi,
-      functionName: 'fetchPrice',
-    }))
+    contracts,
+  })) as [bigint, bigint, bigint, bigint, bigint?]
+  const [borrowingRate, decimalPrecision, systemColl, systemDebt] = batched
+  const price = params.price ?? (batched[4] as bigint)
 
   const [isRecoveryMode, minNetDebt] = await Promise.all([
     publicClient.readContract({
@@ -112,40 +168,69 @@ export async function getBorrowingPower(
     deps.getMinNetDebt(),
   ])
 
+  // MK-067. Read the exemption rather than assuming nobody is exempt, on the same rule
+  // `previewOpen` uses: with no account there is nobody to ask, so assume not exempt. The read
+  // is skipped in Recovery Mode, where the fee is already zero for everyone and the answer
+  // could not change the outcome.
+  const feeExempt =
+    !isRecoveryMode && params.account !== undefined
+      ? await deps.isAccountFeeExempt(params.account)
+      : false
+  // MK-067, MK-069. THE one rule, from `math/fee.ts`, mirroring
+  // `BorrowerOperations.sol:637-643`. This file previously charged the fee unconditionally
+  // while separately reading the mode two lines above, which is how a Recovery Mode maximum
+  // came back short by the fee.
+  const chargesFee = isBorrowingFeeCharged(isRecoveryMode, feeExempt)
+
   const targetRatio = isRecoveryMode ? CCR : MCR
 
-  // Max entire debt for ICR == targetRatio; the draw is below this (fee + 200 eat into it).
+  // A SEARCH BOUND, not a verdict: the largest entire debt the individual ratio could allow,
+  // which is at or above the true maximum in every mode. `feasibleWith` decides.
   const entireDebtCap = (collateral * price) / targetRatio
   if (entireDebtCap <= MUSD_GAS_COMPENSATION) return 0n
 
-  const feeOf = (draw: bigint) =>
-    publicClient.readContract({
-      address: addresses.borrowerOperations,
-      abi: borrowerOperationsAbi,
-      functionName: 'getBorrowingFee',
-      args: [draw],
-    })
+  const feeOf = (draw: bigint): Promise<bigint> =>
+    chargesFee
+      ? publicClient.readContract({
+          address: addresses.borrowerOperations,
+          abi: borrowerOperationsAbi,
+          functionName: 'getBorrowingFee',
+          args: [draw],
+        })
+      : // The contract charges nothing here, so quoting a fee would be a round trip spent to
+        // produce a number that is then not applied.
+        Promise.resolve(0n)
 
-  const feasibleWith = (draw: bigint, fee: bigint): boolean => {
-    const entireDebt = draw + fee + MUSD_GAS_COMPENSATION
-    if (computeICR({ collateral, entireDebt, price }) < targetRatio) return false
-    if (isRecoveryMode) return true
-    // In normal mode the contract ALSO requires the resulting system TCR to stay at or above
-    // CCR (`BorrowerOperations.sol:663-665`), so the open time calculator must respect it
-    // too; otherwise it reports a draw the contract rejects.
-    const newTcr = computeICR({
-      collateral: systemColl + collateral,
-      entireDebt: systemDebt + entireDebt,
+  /**
+   * Ratio feasibility, decided by {@link evaluateOpen} and by nothing here (MK-067, MK-069).
+   *
+   * `minNetDebt: 0n` and `troveStatus: undefined` are deliberate: the floor is applied once at
+   * the end against the real value, and there is no account whose Trove status could gate a
+   * calculation about a position that does not exist. With those two neutralised the only
+   * reasons `evaluateOpen` can return are `ICR_BELOW_THRESHOLD` and `TCR_BELOW_CCR`, so
+   * `viable` is exactly "the ratios allow this draw", in whichever mode the chain is in.
+   */
+  const feasibleWith = (draw: bigint, fee: bigint): boolean =>
+    evaluateOpen({
+      collateral,
+      debt: draw,
+      fee,
+      feeExempt,
+      minNetDebt: 0n,
+      isRecoveryMode,
       price,
-    })
-    return newTcr >= CCR
-  }
+      systemColl,
+      systemDebt,
+      troveStatus: undefined,
+    }).viable
 
   const solved = solveClosedForm({
     collateral,
     price,
     targetRatio,
-    borrowingRate,
+    // The EFFECTIVE rate: zero when the contract will not charge, so the closed form solves
+    // the same equation the gate evaluates.
+    borrowingRate: chargesFee ? borrowingRate : 0n,
     decimalPrecision,
     isRecoveryMode,
     systemColl,
@@ -153,23 +238,44 @@ export async function getBorrowingPower(
     feasibleWith,
   })
 
+  // MK-092. The confirmation fee is KEPT rather than re-read. `feeOf(best)` was called again
+  // below with the same argument on the happy path, which is a whole round trip spent to
+  // receive a number already in hand.
   let best: bigint
+  let bestFee: bigint
+  const solvedFee = solved === undefined ? undefined : await feeOf(solved)
   if (
     solved !== undefined &&
-    (await feeOf(solved)) === localFee(solved, borrowingRate, decimalPrecision)
+    solvedFee === localFee(solved, chargesFee ? borrowingRate : 0n, decimalPrecision)
   ) {
     // The closed form's premise held: the chain charges exactly the linear fee at the
-    // answer. Two reads total, and no search.
+    // answer. One fee read total, and no search.
     best = solved
+    bestFee = solvedFee
   } else {
     // The premise did not hold, so the shape assumption is wrong for this deployment and
     // the search is what it was there for. This is the only path that costs one call per
     // step, and it is bounded.
     best = await binarySearch(entireDebtCap, feeOf, feasibleWith)
+    bestFee = await feeOf(best)
   }
 
-  // Enforce the minNetDebt floor: if even the max ICR-feasible draw is below it, no open.
-  if (best + (await feeOf(best)) < minNetDebt) return 0n
+  // The debt floor, from the SAME evaluator rather than restated here: `netDebt >= minNetDebt`
+  // where `netDebt` is the draw plus the fee the contract will actually charge
+  // (`BorrowerOperations.sol:645`). Restating it was how the fee got applied twice over.
+  const verdict = evaluateOpen({
+    collateral,
+    debt: best,
+    fee: bestFee,
+    feeExempt,
+    minNetDebt,
+    isRecoveryMode,
+    price,
+    systemColl,
+    systemDebt,
+    troveStatus: undefined,
+  })
+  if (!verdict.meetsMinimum) return 0n
   return best
 }
 
@@ -183,6 +289,7 @@ interface SolveInput {
   collateral: bigint
   price: bigint
   targetRatio: bigint
+  /** The EFFECTIVE rate: zero when the contract will not charge a fee at all (MK-067). */
   borrowingRate: bigint
   decimalPrecision: bigint
   isRecoveryMode: boolean
@@ -193,6 +300,14 @@ interface SolveInput {
 
 /**
  * Solve the largest feasible draw directly, on the premise that the fee is linear in it.
+ *
+ * **The two caps below are SEARCH BOUNDS and never verdicts (MK-069).** They exist to land the
+ * walk within a few wei of the answer instead of iterating from zero. Correctness comes from
+ * `feasibleWith`, which is {@link evaluateOpen}: the walk is driven by it, and the two guards
+ * before the `return` refuse to answer unless the draw is feasible AND the draw plus one wei is
+ * not. So a cap that is wrong costs round trips and cannot produce a wrong maximum.
+ * That is what makes it safe for the rules to live in the evaluator while the algebra lives
+ * here.
  *
  * **The premise, established on chain rather than assumed.** Probed against the forked
  * deployment at the pinned block, `getBorrowingFee(d)` equals
@@ -243,16 +358,23 @@ function solveClosedForm(input: SolveInput): bigint | undefined {
 
   const fee = (d: bigint) => localFee(d, borrowingRate, decimalPrecision)
 
-  // Walk to the exact boundary. Both loops are bounded by construction: floor division can
-  // only lose one unit per term, so the gap is a handful of wei, and the caps stop a
-  // pathological rate from turning this into a second unbounded loop.
+  // Walk UP to the exact boundary. Bounded by construction: floor division can only lose one
+  // unit per term, so the gap is a handful of wei.
+  //
+  // **There is no downward walk, because the seed cannot overshoot.** With `fee(d)` linear,
+  // `d * (P + rate) / P >= d + fee(d)`, so `draw + fee(draw) <= available` for
+  // `draw = floor(available * P / (P + rate))`, which puts the entire debt at or under `cap`.
+  // `cap` is the smaller of the two thresholds `feasibleWith` tests, and both are inclusive
+  // (`_requireICRisAboveCCR` and `_requireNewTCRisAboveCCR` are `>=`), so a seed at the cap is
+  // feasible rather than one wei over. A downward loop sat here until the P13 wave and could
+  // not execute; it was 4 statements no test could reach, which is dead weight on the coverage
+  // ratchet and, worse, a branch a reader would assume had been exercised.
+  //
+  // If `feasibleWith` ever grows a condition the caps do not imply, the seed CAN become
+  // infeasible, and the guards below already handle it: they refuse to answer and the caller
+  // falls back to the bounded binary search, which is the right behaviour and is where a
+  // non-linear fee is handled too.
   let steps = 0
-  while (steps < 64 && !feasibleWith(draw, fee(draw))) {
-    if (draw === 0n) break
-    draw -= 1n
-    steps += 1
-  }
-  steps = 0
   while (steps < 64 && feasibleWith(draw + 1n, fee(draw + 1n))) {
     draw += 1n
     steps += 1

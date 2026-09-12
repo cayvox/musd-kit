@@ -214,7 +214,7 @@ musd.computeEntireDebt({ draw, rate, elapsedSeconds });    // → bigint (previe
 musd.getHealthFactor({ icr });                             // → number
 ```
 
-### `getBorrowingPower` costs four calls, not eighty
+### `getBorrowingPower` costs a handful of calls, not eighty
 
 It used to binary search the draw, calling the real `getBorrowingFee` on every step: about 77
 sequential round trips for one BTC, over a collateral amount nothing validated. A UI bound to
@@ -234,6 +234,17 @@ with the contract would be worse than the loop it replaced.
 `collateral <= 0` now throws `InvalidAmount`. `useBorrowingPower` is disabled for it rather
 than reporting an error, since an empty input parsing to `0n` is a calculator being typed
 into.
+
+**Pass `account` when you have it (MK-067).** The borrowing fee is skipped entirely for a fee
+exempt account (`BorrowerOperations.sol:637-643`), so without an account the answer is the not
+exempt one and an exempt caller is told their maximum is smaller than it is. Supplying it adds one
+read, and only in normal mode: in Recovery Mode the fee is already zero for everyone, so the
+exemption cannot change the answer and is not asked for.
+
+**This function used to charge that fee in Recovery Mode too**, which made every Recovery Mode
+maximum short by it (MK-067). It no longer decides any open rule at all: its feasibility predicate
+is `evaluateOpen`, the same evaluator behind `previewOpen`, so the two cannot disagree about where
+the boundary is. `packages/core/test/borrowing-power-agreement.test.ts` is what keeps that true.
 
 
 `previewOpen` powers a "Borrowing Power Calculator": give it intended collateral and
@@ -275,7 +286,10 @@ debt increase is gated on `maxBorrowingCapacity >= netDebtChange + debt` (`:1358
 
 ```ts
 const { capacity, entireDebt, remaining } = await musd.getBorrowingCapacity(owner);
-// `remaining` is headroom for draw + fee, not for the draw alone.
+// `remaining` is headroom for draw + fee, not for the draw alone. It is ALSO the distance to
+// ICR == MCR, because `capacity` and the debt at MCR are the same expression, so a draw that
+// spends all of it lands on the liquidation threshold and is refused a second later (MK-072).
+// Size the draw with previewBorrow, which evaluates the ratio gate as well as this one.
 
 const p = await musd.previewBorrow({ owner, amount: parseMusd('5000') });
 if (!p.viable) console.log(p.bindingConstraint); // EXCEEDS_BORROWING_CAPACITY | ...
@@ -392,8 +406,11 @@ it cannot catch:
   before the block the transaction mines in.
 
 Traced on a fork of live Mezo: the same `redeemCollateral` call, from byte identical state,
-varied from **610270 to 710023 gas** across 40 attempts, a 16% swing, against a limit carrying
-a **1.5%** margin. Two of the 40 reverted, and the trace named `ActivePool` running out of gas
+varied from **610270 to 710023 gas** across 40 attempts, a 16% swing, against a limit that left
+only **1.5% over the gas actually used** on a send measured at the time. That 1.5% is a REALISED
+headroom, limit over gas used, and it is not the 25% this SDK now requests over the node's
+estimate: it was that thin because the requested margin was being dropped before the send
+(MK-037, since fixed). Two of the 40 reverted, and the trace named `ActivePool` running out of gas
 at call depth 4. The receipt showed `gasUsed < gasLimit`, so it did not even look like out of
 gas: the EVM forwards at most 63/64 of the remaining gas to a nested call, so an inner frame
 can exhaust its allowance while the outer frame keeps the last 1/64.

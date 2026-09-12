@@ -110,8 +110,9 @@ approximating it. Three rules that the earlier version got wrong, each now enfor
 | The debt floor is checked against that same `netDebt` | `:645` | Adding a phantom fee made the floor look met in the band `draw < minNetDebt <= draw + fee`, for an open that reverts. Charging the fee correctly closes it |
 | Recovery Mode requires `ICR >= CCR`; normal mode requires **both** `ICR >= MCR` and a resulting system `TCR >= CCR` | `:654-665` | `viable` covers all three; the old `meetsRecoveryRequirement` covered none of them in normal mode (MK-005) |
 
-Pass `account` whenever you have it: exemption is read, not assumed, and the exempt
-cohort is non empty on mainnet.
+Pass `account` whenever you have it, to `previewOpen` and to `getBorrowingPower` alike:
+exemption is read, not assumed, and the exempt cohort is non empty on mainnet. Until the P13
+wave only the first of the two would take one (MK-067).
 
 **Borrowing against an existing Trove is a different calculation.** `getBorrowingPower`
 solves the OPEN constraints only. An existing Trove is additionally gated by
@@ -123,6 +124,14 @@ SDK compares against the live entire debt rather than the stored `getTroveDebt`.
 
 `getBorrowingPower` also enforces the resulting system TCR in normal mode, which the
 contract requires on every normal mode open and which it previously ignored.
+
+**It no longer decides any of these rules itself (MK-067, MK-069).** Its feasibility predicate
+is `evaluateOpen`, the evaluator behind `previewOpen`, so a maximum and a candidate verdict
+cannot disagree about where the boundary is. They did: this function charged the borrowing fee
+in Recovery Mode and for an exempt account, where the contract charges none
+(`BorrowerOperations.sol:637-643`), so every Recovery Mode maximum came back short by the fee
+while `previewOpen` called the larger draw viable. It also took no `account`, which made
+exemption inexpressible; it takes one now.
 
 ## 4c. Insertion hints are computed from PRINCIPAL
 
@@ -166,7 +175,9 @@ Every formula in `math/` is validated **twice**. This is the mechanism behind
    - `previewOpen(x)` → `openTrove(x)` on the fork → `getEntireDebtAndColl` /
      `getCurrentICR` must match `previewOpen`'s `entireDebt` / `icr`.
    - `getBorrowingPower` → open at the boundary → ICR ≥ MCR, and boundary+1 wei
-     breaches (or the open reverts).
+     breaches (or the open reverts). **In Recovery Mode too, against CCR**, which is where
+     MK-067 lived: the assertion that stood here was reconstructed from the implementation's
+     own arithmetic and could only ever agree with it (MK-070).
    - preview interest accrual → warp the fork clock → compare to
      `getTroveInterestOwed`.
 

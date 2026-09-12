@@ -1,6 +1,6 @@
 import type { Abi, Address } from 'viem'
 import { musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { MCR } from '../constants'
+import { isTroveLiquidatable } from '../math/compute'
 import type { ReadDeps } from './deps'
 import { readAtSnapshot, readPriceSnapshot } from './snapshot'
 import type { SystemState } from './types'
@@ -25,7 +25,8 @@ export async function getSystemState(deps: ReadDeps): Promise<SystemState> {
 }
 
 /**
- * Liquidatability: `ICR < MCR`. There is no mode branch, because the protocol has none.
+ * Liquidatability: `ICR < MCR`, **and not the last Trove in the system**. There is no mode
+ * branch, because the protocol has none.
  *
  * MK-001. This used to widen the predicate to `ICR < CCR` in Recovery Mode and its
  * docstring claimed that behavior had been verified. It had not. `TroveManager.sol`
@@ -40,9 +41,16 @@ export async function getSystemState(deps: ReadDeps): Promise<SystemState> {
  * and CCR was reported liquidatable, and every liquidation attempt against one of them
  * reverted: wasted gas for keepers, false alarms for position holders.
  *
- * This is the same predicate `getTrove().isLiquidatable` applies, deliberately. Two APIs
- * answering one question differently was the underlying defect; a fork test pins that they
- * agree so they cannot drift apart again.
+ * This is the same predicate `getTrove().isLiquidatable` applies, and since MK-074 it is
+ * literally the same function, `isTroveLiquidatable` in `math/compute.ts`. Two APIs answering
+ * one question differently was the underlying defect, and until now they agreed only because
+ * both files happened to inline `icr < MCR`; a fork test pinned the agreement without making it
+ * structural, which `docs/08-conventions.md` §11 asks for.
+ *
+ * **MK-074 added the second condition.** The last Trove in the system cannot be liquidated at
+ * any ICR: `_liquidate` returns without liquidating when `TroveOwners.length <= 1`
+ * (`TroveManager.sol:1058-1060`) and `batchLiquidateTroves` then reverts at `:690-693`. That is
+ * why the count is read here, in the same pinned block batch as the ICR.
  */
 export async function isLiquidatable(deps: ReadDeps, address: Address): Promise<boolean> {
   const { publicClient, addresses } = deps
@@ -50,15 +58,22 @@ export async function isLiquidatable(deps: ReadDeps, address: Address): Promise<
   // earlier block. For a predicate a keeper acts on, that is the difference between a
   // liquidation that lands and one that reverts.
   const { price, blockNumber } = await readPriceSnapshot(deps)
-  const [icr] = (await readAtSnapshot(publicClient, blockNumber, [
+  const [icr, troveOwnersCount] = (await readAtSnapshot(publicClient, blockNumber, [
     {
       address: addresses.troveManager,
       abi: troveManagerAbi as Abi,
       functionName: 'getCurrentICR',
       args: [address, price],
     },
-  ])) as [bigint]
-  return icr < MCR
+    // MK-074, and in the SAME batch so the count cannot come from a different block than the
+    // ratio it qualifies.
+    {
+      address: addresses.troveManager,
+      abi: troveManagerAbi as Abi,
+      functionName: 'getTroveOwnersCount',
+    },
+  ])) as [bigint, bigint]
+  return isTroveLiquidatable({ icr, troveOwnersCount })
 }
 
 /** BTC/USD from `PriceFeed.fetchPrice()` (1e18-scaled). */

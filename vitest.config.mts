@@ -67,9 +67,19 @@ export default defineConfig({
     sequence: { sequencer: AlphabeticalSequencer },
     coverage: {
       provider: 'v8',
-      // The gate is on the hand-written core surface. `_generated/` is ABI and address
-      // data emitted from the contracts package, not logic, and would dilute the floor.
-      include: ['packages/core/src/**/*.ts'],
+      /**
+       * BOTH published packages (MK-087). `_generated/` is ABI and address data emitted from
+       * the contracts package, not logic, and would dilute the floor.
+       *
+       * **`packages/react/src` was outside this glob until the P17 wave**, and that is the
+       * structural reason MK-085 shipped. The coverage gate, the mutation check and the
+       * differential sweep all stopped at the core boundary, so eighty four findings contained
+       * nothing about the React package, and the one control that could have caught MK-085
+       * measured the wrong directory. Including it DROPPED the reported figure, which is the
+       * point: the old number was high because it was scoped to the half that was tested.
+       * The floor below is the honest measurement of the wider scope.
+       */
+      include: ['packages/core/src/**/*.ts', 'packages/react/src/**/*.ts'],
       exclude: ['packages/core/src/_generated/**'],
       reporter: ['text', 'json-summary'],
       reportsDirectory: './coverage',
@@ -79,22 +89,43 @@ export default defineConfig({
        * never lower it to make a red build green. Measured on the full suite
        * (`pnpm test:coverage`, both projects), which is what CI runs.
        *
-       * Measured at the time this gate was wired, at fork block 15043414:
-       *   statements 95.32 · branches 91.28 · functions 99.02 · lines 95.32
-       * Re-measured after the P4 S2 sweep (MK-007 through MK-013), same block:
-       *   statements 98.20 · branches 91.72 · functions 99.27 · lines 98.20
+       * **The P17 wave moved three of these DOWN, and that is not a lowered ratchet: it is a
+       * WIDENED SCOPE** (MK-087). `packages/react/src` was outside the `include` glob above until
+       * this wave, so the old figures graded half of what the repository publishes. Including the
+       * other half cannot be done without the number moving, and hiding the move by keeping the
+       * glob narrow is the thing the ratchet exists to prevent. The two measurements, same suite,
+       * same fork block 15043414, same run:
        *
-       * Statements and lines move up to 98, the measured number rounded down. Branches
-       * stays at 91 rather than following 91.72 up: the branch metric is the one that sits
-       * closest to its floor, several of its remaining branches are fork-path dependent,
-       * and a ratchet that has to be argued down later was set too tight. Functions stays
-       * at 99 for the same reason, the measured 99.27 rounds down to 99.
+       *   core only, the old scope   statements 98.65 · branches 93.20 · functions 100   · lines 98.65
+       *   both packages, the new one statements 94.87 · branches 92.36 · functions  88.18 · lines 94.87
+       *
+       * The core half did not get worse. It improved on every metric (98.62 to 98.65 statements,
+       * 92.98 to 93.20 branches). What changed is that six React files now count, and they are
+       * thin:
+       *
+       *   hooks/reads.ts            statements 50.00  branches 80.95  functions 50.00
+       *   hooks/writes.ts           statements 75.00  branches 93.75  functions 53.33
+       *   internal/keys.ts          statements 78.12  branches 90.90  functions 33.33
+       *   internal/useMusdQuery.ts  statements 77.77  branches 70.00  functions 100
+       *   internal/useMusdClient.ts statements 89.47  branches 66.66  functions 100
+       *   index.ts                  statements 100    branches 100    functions 100
+       *
+       * `functions` is the metric that fell furthest, 100 to 88.18, and the reason is visible in
+       * that table: every unrendered hook is an uncovered function. One rendered test landed in
+       * this wave (`adjust-preview-hook.test.ts`); the rest of the surface is exercised only by
+       * the fork hook tests, which reach a fraction of it. **That gap is the finding, not the
+       * floor**, and the floor now makes it visible on every run instead of hiding it behind a
+       * glob.
+       *
+       * History of the core-only figures, kept because the ratchet's argument is its history:
+       * statements 95.32 at wiring, 98.20 after the P4 S2 sweep, 98.62 after P13.
        */
       thresholds: {
-        lines: 98,
-        functions: 99,
-        branches: 91,
-        statements: 98,
+        // Measured 94.87 / 92.36 / 88.18 / 94.87 over BOTH packages, rounded down.
+        lines: 94,
+        functions: 88,
+        branches: 92,
+        statements: 94,
       },
     },
   },

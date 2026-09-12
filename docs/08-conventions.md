@@ -154,7 +154,7 @@ selected window.
 | # | Command | What must be reported |
 |---|---|---|
 | 1 | `pnpm test:unit`, with `MEZO_TESTNET_RPC_URL` unset and `anvil` off `PATH` | The pass count, and evidence the chain was genuinely absent |
-| 2 | `pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
+| 2 | `MEZO_FORK_BLOCK=15043414 pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0). **The block is not optional**: unset, anvil forks at `latest` and the byte identity this row demands cannot hold (MK-082) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
 | 3 | `pnpm test:coverage` | All four metrics against the ratchet. A metric below its floor is fixed with tests, never by lowering the floor |
 | 4 | `pnpm typecheck` | Clean |
 | 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
@@ -164,6 +164,7 @@ selected window.
 | 9 | **Read the CI run on `main` after the merge, WAITING for it to exist.** `gh run list --branch main --workflow CI --limit 5 --json conclusion,headSha` and match the `headSha` against `git rev-parse HEAD`. An absent run means **not yet**, not never: poll until it appears, and only report absence as a finding if it persists | The run link, its conclusion, and that its `headSha` is the tip rather than an ancestor. **A red `main` blocks the next wave**: repair it first, and register the cause before fixing it |
 | 10 | **Commit the instrument for every measurement you intend to cite**, before citing it. A number quoted in a finding, a pull request body or the documentation is only citable if the code that produced it is in the repository and someone else can run it, and the command is recorded beside the number | The command, verbatim, next to every number. A measurement whose instrument is not committed is not reportable as a measurement; see the labels below |
 | 11 | **A boundary that moves with time is established by SENDING, across the delay a caller will actually have, and is reported with that delay.** A simulation evaluates at the current block; a transaction executes in a later one. So a value read at block N and simulated at block N is an exact equality that passes, and the same value sent is refused, because the contract accrues before it reads (`TroveManager.sol:366` then `:1218-1221`). Vary the elapsed time, hold the method constant, and state the window the answer holds for. **A number obtained by simulation is labelled `simulated` wherever it is cited** and cannot be cited as chain behaviour | The ladder: the amount, the delays tried, and the outcome at each. A margin sized for a window is asserted at BOTH ends, the delay it covers and the delay it does not |
+| 12 | **When a document tells a reader to run a command, confirm that nothing in the repository already performs it, and point at that instead.** Grep the repository for the command before writing it into a document: a workflow, a script or a CI step that already does the job makes the documented version the worse route and usually the less safe one, and it is the route nobody ever executes (MK-083) | The grep, and either "nothing performs this" or the file that does. A document that names a command a workflow already runs is corrected to name the workflow, keeping one sentence on why the raw command is not the route |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
@@ -323,3 +324,73 @@ answer in a different shape, it projects the first rather than restating it: `pr
 a debt increase. **And where a projection is not possible, the agreement is a test**, asserted
 across both modes and both sides of every boundary, not left to review. Two implementations with
 no such test is the shape this rule exists to refuse, whatever the tests on each half say.
+
+**And it happened a fourth and fifth time, in the same wave.** MK-089: the protocol's interest
+formula was implemented twice, once accruing on the principal and once on the entire debt, and the
+test that pinned one of its constants restated the wrong base, so the source could accrue on
+either quantity and the test agreed. MK-094 then worked the whole table rather than the row the
+defect was found on: nine rules decided more than once, seven single sourced, two left as prose
+and labelled as the weaker control they are. **The line on test duplication is this**: a test that
+restates the CONTRACT is an independent second opinion, and a test that restates the
+IMPLEMENTATION is a tautology. Both look identical on the page.
+
+**It happened a third time, and the third one was wider.** MK-067 through MK-070: the borrowing
+fee rule was decided in eight places and four of them were wrong the same way, including a test
+reference implementation and the fixture every fork test opens with. A projection was not
+available, because `getBorrowingPower` solves for a maximum while `evaluateOpen` judges a
+candidate, so it took the other half of this rule: the solver's predicate IS the evaluator, and
+`borrowing-power-agreement.test.ts` is the pin. **Test code counts.** A reference implementation
+that carries the same defect as the thing it references is not a second opinion, and the fixture
+that opens every position is production code for the purposes of this section.
+
+## 12. Closing a finding means enumerating the rule, not the defect
+
+**Before a finding can be marked fixed, list every place the rule it concerns is decided, and
+say for each whether it is correct.** The list goes in the entry. Fixing the location the entry's
+own **SDK location** field names is not closing the finding; it is closing one instance of it.
+
+This is mechanical on purpose: grep for the rule's inputs across `packages/`, `scripts/` and
+`examples/`, including tests and harnesses, and account for every hit. MK-004, MK-017, MK-018 and
+MK-065 were each remediated exactly where they were observed and each left live copies behind,
+which is how one fee rule survived four releases in four wrong implementations.
+
+**The enumeration is scoped to the RULE, never to the package the defect was found in** (MK-086).
+MK-079 found an argument mis-mapping in the differential harness, enumerated it across
+`packages/core`, and concluded in the register that no source file was implicated. The same
+mis-mapping was in `packages/react/src/hooks/reads.ts`, in shipped code, and stayed there for two
+waves while the register said it did not exist. A package boundary has no meaning to a rule:
+presence versus value is a property of every caller of `previewAdjustTrove`, and the React package
+is one.
+
+So when a finding's cause is an **argument shape** or a **shared rule**, the entry names which
+packages call it. "I checked the package the defect was in" is not an enumeration, and neither is
+a grep that stops at a directory the rule does not respect.
+
+## 13. A published measurement names what it measured, and its unit
+
+**State the quantity, the unit, and the machine precisely enough that a reader can tell the figure
+apart from the adjacent quantity it could be mistaken for.** Where two nearby quantities both have a claim on
+the name, publish both and label each; where only one is published, the label says which it is.
+
+The test is mechanical: for any number about to be published, name one plausible neighbouring
+quantity a reader might take it for, and check the wording rules that reading out. This has gone
+wrong three times, each time producing a figure that was true of something NEXT TO what it
+claimed:
+
+- **MK-051.** `scripts/testnet-e2e.ts` called a check "the maximum the SDK reports must be
+  ACCEPTED and one wei more must be REFUSED, on the real chain, checked against the contract
+  rather than against each other", and then called `previewWithdrawCollateral` twice. The chain
+  saw neither amount. **Evaluator agreement, published as chain agreement.**
+- **The per case sweep cost** (commit `949d361`). A figure was quoted without saying whether the
+  RPC cache was cold or warm, which is the difference between 35.3 and 6.3 seconds per case on
+  the same 24 cases at the same seed. `fork state warmed in Nms` was offered as evidence it was
+  warm; that line times globalSetup's sorted list traversal (MK-021) and nothing else, and reads
+  about 30ms on both sides. **One warm-up's duration, published as the fork's cache state.**
+- **The push subset's warm cost** (MK-081, one commit after this rule was written). 158 seconds
+  was published as what CI sits on. It is the mean of a developer laptop's five run window; CI runs
+  the same 24 cases in about 60. Cache state was named because cache state was the variable that
+  had burned us before, and the machine went unexamined. **A laptop's duration, published as CI's.**
+- **The full sweep duration** (P15, corrected in P16). 111 minutes was published; that is the sum
+  of the four `[differential] done in` values, and the recipe a person runs takes 116, the
+  difference being the fork suite each slice also runs. **The sweep's own duration, published as
+  the cost of the sweep.**

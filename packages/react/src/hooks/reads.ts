@@ -11,7 +11,7 @@ import type {
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { Address } from 'viem'
 import { useChainId } from 'wagmi'
-import { musdQueryKeys } from '../internal/keys'
+import { type AdjustPreviewLegs, musdQueryKeys } from '../internal/keys'
 import { useMusdQuery } from '../internal/useMusdQuery'
 
 /**
@@ -69,11 +69,25 @@ export function useLiquidationPrice({
  */
 export function useBorrowingPower({
   collateral,
-}: { collateral: bigint | undefined }): UseQueryResult<bigint, Error> {
+  account,
+}: {
+  collateral: bigint | undefined
+  /**
+   * The account that would open (MK-067). Pass the connected address whenever you have one:
+   * the borrowing fee is skipped entirely for a fee exempt account
+   * (`BorrowerOperations.sol:637-643`), so for such a caller the true maximum is larger than
+   * the figure returned without it. Omitted, the answer assumes not exempt.
+   */
+  account?: Address | undefined
+}): UseQueryResult<bigint, Error> {
   const chainId = useChainId()
   return useMusdQuery<bigint>({
-    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n),
-    fetch: (client) => client.getBorrowingPower({ collateral: collateral as bigint }),
+    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, account),
+    fetch: (client) =>
+      client.getBorrowingPower({
+        collateral: collateral as bigint,
+        ...(account !== undefined ? { account } : {}),
+      }),
     // Zero is disabled rather than queried: `getBorrowingPower` now rejects a non-positive
     // collateral with `InvalidAmount` instead of searching over it (MK-010), and an empty
     // text input parsing to `0n` is the ordinary state of a calculator being typed into, not
@@ -96,7 +110,7 @@ export function useBorrowPreview({
 }): UseQueryResult<BorrowPreview, Error> {
   const chainId = useChainId()
   return useMusdQuery<BorrowPreview>({
-    queryKey: musdQueryKeys.borrowPreview(chainId, owner ?? '0x', amount ?? 0n),
+    queryKey: musdQueryKeys.borrowPreview(chainId, owner ?? '0x', amount),
     fetch: (client) => client.previewBorrow({ owner: owner as Address, amount: amount as bigint }),
     enabled: owner !== undefined && amount !== undefined,
   })
@@ -170,39 +184,38 @@ export function useMusdBalance({
  * absolute test on the RESULTING ratio, not a do-no-harm test, so an adjustment that improves
  * a position can still be refused (MK-038). `minimumCollateralToClearIcr` is the figure that
  * would actually clear it.
+ *
+ * **An omitted leg stays omitted (MK-085).** This hook used to default all four legs to `0n`
+ * and forward them, which made `increaseDebt` present on every call. `previewAdjustTrove`
+ * reads `_isDebtIncrease` from PRESENCE (MK-060), mirroring `_adjustTrove`'s own separate
+ * `_isDebtIncrease` parameter (`BorrowerOperations.sol:757-758`), so through this hook every
+ * adjustment was evaluated as a debt increase: a pure top-up came back
+ * `ZERO_DEBT_INCREASE` (`:785-787`, `:1351-1356`) and a pure repayment came back refused with
+ * `resultingEntireDebt` and `resultingIcr` computed as though nothing had been repaid.
  */
 export function useAdjustTrovePreview(params: {
   owner: Address | undefined
-  addCollateral?: bigint
-  withdrawCollateral?: bigint
-  increaseDebt?: bigint
-  repayDebt?: bigint
+  addCollateral?: bigint | undefined
+  withdrawCollateral?: bigint | undefined
+  increaseDebt?: bigint | undefined
+  repayDebt?: bigint | undefined
 }): UseQueryResult<AdjustPreview, Error> {
   const chainId = useChainId()
-  const {
-    owner,
-    addCollateral = 0n,
-    withdrawCollateral = 0n,
-    increaseDebt = 0n,
-    repayDebt = 0n,
-  } = params
+  const { owner } = params
+  // MK-085. Built ONCE, from presence, and handed to both the key and the call, so the two
+  // cannot describe different questions. `exactOptionalPropertyTypes` is on, so a conditional
+  // spread is the only way to keep an absent leg absent rather than present-and-undefined.
+  const legs: AdjustPreviewLegs = {
+    ...(params.addCollateral !== undefined ? { addCollateral: params.addCollateral } : {}),
+    ...(params.withdrawCollateral !== undefined
+      ? { withdrawCollateral: params.withdrawCollateral }
+      : {}),
+    ...(params.increaseDebt !== undefined ? { increaseDebt: params.increaseDebt } : {}),
+    ...(params.repayDebt !== undefined ? { repayDebt: params.repayDebt } : {}),
+  }
   return useMusdQuery<AdjustPreview>({
-    queryKey: musdQueryKeys.adjustPreview(
-      chainId,
-      owner ?? '0x',
-      addCollateral,
-      withdrawCollateral,
-      increaseDebt,
-      repayDebt,
-    ),
-    fetch: (client) =>
-      client.previewAdjustTrove({
-        owner: owner as Address,
-        addCollateral,
-        withdrawCollateral,
-        increaseDebt,
-        repayDebt,
-      }),
+    queryKey: musdQueryKeys.adjustPreview(chainId, owner ?? '0x', legs),
+    fetch: (client) => client.previewAdjustTrove({ owner: owner as Address, ...legs }),
     enabled: owner !== undefined,
   })
 }
@@ -223,7 +236,7 @@ export function useWithdrawCollateralPreview({
 }): UseQueryResult<AdjustPreview, Error> {
   const chainId = useChainId()
   return useMusdQuery<AdjustPreview>({
-    queryKey: musdQueryKeys.withdrawCollateralPreview(chainId, owner ?? '0x', amount ?? 0n),
+    queryKey: musdQueryKeys.withdrawCollateralPreview(chainId, owner ?? '0x', amount),
     fetch: (client) =>
       client.previewWithdrawCollateral({ owner: owner as Address, amount: amount as bigint }),
     enabled: owner !== undefined && amount !== undefined,
@@ -293,7 +306,7 @@ export function useRedeemPreview({
 }): UseQueryResult<RedemptionPreview, Error> {
   const chainId = useChainId()
   return useMusdQuery<RedemptionPreview>({
-    queryKey: musdQueryKeys.redeemPreview(chainId, redeemer ?? '0x', amount ?? 0n),
+    queryKey: musdQueryKeys.redeemPreview(chainId, redeemer ?? '0x', amount),
     fetch: (client) =>
       client.previewRedeem({ redeemer: redeemer as Address, amount: amount as bigint }),
     enabled: redeemer !== undefined && amount !== undefined,

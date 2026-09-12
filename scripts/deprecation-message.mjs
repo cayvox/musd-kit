@@ -1,0 +1,169 @@
+/**
+ * The deprecation message for a published version, chosen by version from a reviewed set.
+ *
+ * **Why this file exists (MK-084).** `.github/workflows/deprecate.yml` took the version as a
+ * dispatch input and interpolated it into both `npm deprecate` targets, while the two message
+ * strings beside them were literals about `0.1.0`. Dispatching it for any other version would have
+ * attached "0.1.0 returns wrong numbers on seven surfaces" to a real package on the public
+ * registry, and a deprecation message is read by installers at install time, so the falsehood
+ * would have been visible to people who are not us.
+ *
+ * **Why a chosen set and not a free text input.** The workflow's own header argued that the
+ * messages belong in the repository rather than in an input, because an input "would let this
+ * deprecate anything with any text, which is a much larger capability than the job needs". That
+ * reasoning stands and this file keeps it: the dispatch input remains a version, the text is
+ * reviewed in a pull request like any other change, and the job's capability is unchanged. What
+ * this file adds is that the text now varies with the version, which is the half that was missing.
+ *
+ * **Why a module rather than a case statement in the YAML.** Two properties that a shell `case`
+ * cannot give. It is importable, so the guarantees below are asserted by a test that runs in the
+ * unit project on every push rather than only when someone dispatches a registry write. And the
+ * lookup is one implementation, so the message the test checks is the message the workflow sends,
+ * which is `docs/08-conventions.md` §11 applied to a string that reaches the public.
+ *
+ * **The guarantee, enforced at lookup rather than by review.** A message must contain the version
+ * it will be attached to, and {@link messageFor} throws when it does not. So the failure mode this
+ * finding is about, a message copied from one version and filed under another, cannot reach the
+ * registry: it fails in the workflow step that resolves the text, which runs BEFORE any credential
+ * is in scope. An unknown version throws for the same reason. **Failing loudly on a version nobody
+ * has written a message for is the correct outcome**, and is better than a plausible wrong message.
+ */
+
+/** The packages this repository publishes, and therefore deprecates together. */
+export const PACKAGES = Object.freeze(['core', 'react'])
+
+/**
+ * Version to message, one entry per package.
+ *
+ * Adding a version here is the whole of "preparing a deprecation". Every string must name its own
+ * version, must point at the register and the migration guide for that step, and must say what to
+ * upgrade to. `messageFor` enforces the first of those three; the other two are what review is for.
+ */
+export const DEPRECATIONS = Object.freeze({
+  /**
+   * Already applied. `gh run list --workflow deprecate.yml` shows one run, 33180504234, a
+   * `workflow_dispatch` on 2026-08-28, and these two strings are live on the registry today.
+   * **They are reproduced here byte for byte on purpose**: this file has to be able to reproduce
+   * what was already sent, or a re-run would silently rewrite history.
+   */
+  '0.1.0': Object.freeze({
+    core: '0.1.0 returns wrong numbers on seven surfaces, three of them silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0.',
+    react:
+      'Depends on @musd-kit/core@0.1.0, which returns wrong numbers on seven surfaces. See docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0.',
+  }),
+
+  /**
+   * Not yet applied, and it cannot be until 0.3.0 is `latest`: the workflow refuses to deprecate
+   * whichever version a package currently points `latest` at.
+   *
+   * Every claim in it is a register row. `previewBorrow` omitted the Recovery Mode rule that a
+   * debt increase must not lower the Trove's ICR, so it returned viable for borrows the contract
+   * accepts none of (MK-058), and applied a TCR gate on a path where the contract has none
+   * (MK-059). `getBorrowingPower` subtracted a borrowing fee the contract skips in Recovery Mode
+   * and for a fee exempt account (MK-067). All three are S1, all three land after `v0.2.0`
+   * (`git merge-base --is-ancestor` against the tag says so), and all three are fixed in 0.3.0.
+   * Two surfaces, because MK-058 and MK-059 are both `previewBorrow`.
+   */
+  '0.2.0': Object.freeze({
+    core: '0.2.0 is wrong on two Recovery Mode surfaces. previewBorrow returns viable for a borrow the contract refuses (MK-058) and reports a TCR block the contract does not apply (MK-059). getBorrowingPower subtracts a borrowing fee the contract does not charge in Recovery Mode or for a fee exempt account (MK-067). See FINDINGS.md and docs/14-migration-0.2-to-0.3.md. Upgrade to 0.3.0.',
+    react:
+      'Depends on @musd-kit/core@0.2.0, which is wrong on two Recovery Mode surfaces (MK-058, MK-059, MK-067), reachable through useBorrowPreview and useBorrowingPower. See docs/14-migration-0.2-to-0.3.md. Upgrade to 0.3.0.',
+  }),
+})
+
+/** Thrown for anything that would otherwise send a message that does not describe its version. */
+export class DeprecationMessageError extends Error {}
+
+/**
+ * How each package's message must OPEN, so that the version is the message's subject.
+ *
+ * **A substring check is not enough, and the test caught that before this shipped.** The first
+ * version of this guarantee asked only that the message contain its version. It does not hold:
+ * 0.1.0's message ends "Upgrade to 0.2.0.", so 0.1.0's text filed under 0.2.0 contains "0.2.0"
+ * and would have passed, which is precisely the forgery MK-084 is about. The version has to be
+ * what the sentence is ABOUT, and for these two packages that is a fixed opening.
+ */
+const SUBJECT = Object.freeze({
+  core: (version) => `${version} `,
+  react: (version) => `Depends on @musd-kit/core@${version},`,
+})
+
+/** `Upgrade to X.` at the end of every message, so the target can be compared with the subject. */
+const UPGRADE_TARGET = /Upgrade to (\d+\.\d+\.\d+)\.\s*$/
+
+/**
+ * The guarantee, on its own so it can be tested with a forged pair.
+ *
+ * {@link messageFor} can only ever be called with the data in this file, so these checks are
+ * unreachable through it once every entry is correct. Exporting it is what makes the invariant
+ * assertable rather than merely asserted: a test hands it 0.1.0's text under 0.2.0, which is the
+ * exact mistake MK-084 is about, and watches it refuse.
+ *
+ * Two conditions, and both are needed. The message must OPEN by naming the version, so the version
+ * is its subject rather than an incidental mention. And the upgrade target must be a DIFFERENT
+ * version, because no message ever tells a reader to upgrade to the release it is deprecating; that
+ * is what catches a message whose subject was updated and whose tail was not.
+ */
+export function assertMessageDescribes(version, pkg, message) {
+  if (typeof message !== 'string' || message.length === 0) {
+    throw new DeprecationMessageError(`the ${version} entry has no message for ${pkg}`)
+  }
+  const opening = SUBJECT[pkg]?.(version)
+  if (opening === undefined) {
+    throw new DeprecationMessageError(`no message shape is defined for ${pkg}`)
+  }
+  if (!message.startsWith(opening)) {
+    throw new DeprecationMessageError(
+      `the ${pkg} message filed under ${version} does not open by naming ${version}, so it describes a different release. Expected it to start with ${JSON.stringify(opening)}. Refusing it.`,
+    )
+  }
+  const target = UPGRADE_TARGET.exec(message)
+  if (target === null) {
+    throw new DeprecationMessageError(
+      `the ${pkg} message filed under ${version} does not end by naming an upgrade target ("Upgrade to X.Y.Z."). Refusing it.`,
+    )
+  }
+  if (target[1] === version) {
+    throw new DeprecationMessageError(
+      `the ${pkg} message filed under ${version} tells the reader to upgrade to ${version}, the very version it deprecates. Refusing it.`,
+    )
+  }
+  return message
+}
+
+/**
+ * The message for one package at one version.
+ *
+ * Throws, never guesses, on: a version with no entry, a package outside {@link PACKAGES}, and a
+ * message that does not contain its own version. The last one is the point of the whole file.
+ */
+export function messageFor(version, pkg) {
+  if (typeof version !== 'string' || version.length === 0) {
+    throw new DeprecationMessageError('a version is required')
+  }
+  if (!PACKAGES.includes(pkg)) {
+    throw new DeprecationMessageError(
+      `unknown package ${JSON.stringify(pkg)}; expected one of ${PACKAGES.join(', ')}`,
+    )
+  }
+  const entry = Object.hasOwn(DEPRECATIONS, version) ? DEPRECATIONS[version] : undefined
+  if (entry === undefined) {
+    throw new DeprecationMessageError(
+      `no deprecation message is written for ${version}. Refusing to deprecate it: a version without a reviewed message would get another version's text. Add an entry to scripts/deprecation-message.mjs in a pull request, then dispatch from that commit. Known versions: ${Object.keys(DEPRECATIONS).join(', ')}`,
+    )
+  }
+  return assertMessageDescribes(version, pkg, entry[pkg])
+}
+
+/* CLI: `node scripts/deprecation-message.mjs <version> <core|react>`. Prints the message on
+ * stdout and exits 0, or prints the reason on stderr and exits 1. The workflow calls it once per
+ * package in a step that holds no registry credential. */
+if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`) {
+  const [version, pkg] = process.argv.slice(2)
+  try {
+    process.stdout.write(`${messageFor(version, pkg)}\n`)
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+    process.exit(1)
+  }
+}

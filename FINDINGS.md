@@ -102,6 +102,36 @@ claim about it was not).
 | MK-064 | An untracked agent settings directory turns `pnpm lint` red on a clean checkout, invisibly to `git status` | S3 | fixed, and the fix is verified by reproducing the failure and then removing it |
 | MK-065 | `evaluateBorrow` orders its reasons so `bindingConstraint` names a gate the contract checks later than the one that actually binds | S2 | fixed by the same delegation, and the test that pinned the wrong order is corrected |
 | MK-066 | Two error paths were covered only by whichever cases the sweep's generator happened to draw, so an unrelated dimension moved the coverage ratchet | S3 | fixed by covering them deterministically |
+| MK-067 | `getBorrowingPower` adds a borrowing fee the contract skips in Recovery Mode and for an exempt account, and takes no account so exemption is inexpressible | S1 | fixed. The predicate is now the open evaluator, so the rule has one implementation rather than two |
+| MK-068 | The `openTrove` write path calls the raw fee getter while its own file defines and uses an effective one on every other write | S2 | fixed. Three consequences, the debt floor, the fee cap and the hint, closed together |
+| MK-069 | One rule decided in eight places, four of them wrong the same way, with nothing structural preventing it | S2 | **fixed at the cause.** Every decision site routes through `isBorrowingFeeCharged`, and the two surfaces that answer one question are pinned to agree |
+| MK-070 | The Recovery Mode borrowing power assertion reconstructs the implementation's own arithmetic, so it proves self consistency and FAILS when the defect is fixed | S2 | fixed. It now opens on chain at the reported maximum and refuses one wei more |
+| MK-071 | `previewRedeem` shadows `SECONDS_PER_YEAR` with 31_536_000, the value `constants.ts` explicitly names as wrong | S3 | fixed by deleting the shadow and importing the canonical constant |
+| MK-072 | `BorrowingCapacity.remaining` is the headroom to exactly the liquidation threshold, published with no window and no margin | S3 | fixed on the field, where TypeDoc publishes it |
+| MK-073 | MK-051 names the docstring as its acceptance condition and the docstring never said it | S3 | fixed |
+| MK-074 | The last Trove in the system can neither be closed nor liquidated, and `previewClose` and `isLiquidatable` both say it can | S3 | fixed |
+| MK-075 | `previewRefinance` reports its reasons in an order its own adjacent comment says it does not use | S3 | fixed, and given the mutation MK-065 never got |
+| MK-076 | `computeMaxWithdrawable.limitedBy` reports `ICR` whenever the answer is zero, including when the system ratio is what binds | S3 | fixed |
+| MK-077 | `previewAdjustTrove` silently drops a repayment leg that the write path rejects | S3 | fixed with a reason, labelled as SDK input validation rather than a contract gate |
+| MK-078 | ~~The tenth sweep operation costs 245s per case, so no slice of the documented sweep finishes~~ | S2 | **claim-corrected, WITHDRAWN.** The sweep runs: 4 slices, 1000 cases, 116 minutes of wall clock. The 245s was a measurement of a degraded upstream RPC, and it was never repeated before being published |
+| MK-083 | The runbook documented two shell commands for an action a workflow already performed, built to replace them for a stated security reason. The documented version never ran | S2, process | fixed. §3 is the workflow now, and the conventions checklist gained the check that detects the family |
+| MK-084 | `deprecate.yml` takes the version as an input but hardcodes 0.1.0's message text, so dispatching it for any other version writes a false message to the registry | S2 | **fixed.** The message is chosen by version from a reviewed set in `scripts/deprecation-message.mjs`, still not an input. An unknown version, and a message that does not describe its version, are both refused before any credential is in scope |
+| MK-081 | The push subset's warm cost was published as CI's, from a measurement taken on a developer machine. CI is 2.4 times faster | S3 | fixed. Both figures published, each naming the machine it was measured on |
+| MK-082 | The wave checklist's five run command does not pin the fork, and the same checklist requires the five answers to be byte identical | S3 | fixed. The checklist row and the recipe both carry `MEZO_FORK_BLOCK` now |
+| MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
+| MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open** in the harness. The sweep no longer fails on it: it is registered in `packages/core/test/differential/expected.ts` and prints as `EXPECTED MK-079`, so a red sweep is a mismatch no finding explains. **The claim that no `packages/*/src` file is implicated was FALSE and is withdrawn**: the same mis-mapping was in the React adjust preview hook, which is MK-085, and why nobody looked is MK-086 |
+| MK-085 | `useAdjustTrovePreview` defaults all four legs to `0n` and forwards them, so through the hook every adjustment is a debt increase: a pure top-up is refused and a pure repayment is refused with its debt and ICR reported as though nothing were repaid | S1 | **fixed at the cause.** The legs are built once from presence and drive both the query key and the call, pinned by the repository's first rendered hook test and by two mutations |
+| MK-086 | The decision-site enumeration MK-069 established was applied to `packages/core` only, so MK-079 and the README assert that this mapping defect implicates no source file, and it does | S2, process | fixed. The claim is withdrawn in both places, and an enumeration is now scoped to the rule rather than to the directory the defect was found in |
+| MK-087 | The coverage gate, the mutation check and the differential sweep all stop at the core boundary, which is why eighty four findings contain nothing about the React package | S2, process | fixed. React is inside coverage and the mutation check, the floor is re-measured at the honest lower number, and the sweep's exclusion is stated rather than implied |
+| MK-088 | `previewRedeem` sizes its accrual margin from the REDEEMER's Trove rate, with a hardcoded `100n` when the redeemer holds none, and swallows a failed read into the same default | S1 | **fixed.** Each Trove in the walk carries its own principal and rate, read in the batch that already fetches its debt; the fallback and the `catch` are gone |
+| MK-089 | The protocol's interest formula is implemented twice and the copies disagree about the base, one on principal and one on entire debt | S2 | fixed. One `accruedInterest`, two callers, and the test that pinned the constant no longer reuses the wrong base |
+| MK-090 | The public `computeNICR` and `computeHints` instruct the caller to pass the entire debt, which is the quantity MK-006 was filed about; every internal call site was already correct | S2 | fixed. The parameter is `principal` at the public boundary too, and the rename turned fourteen stale call sites into compile errors |
+| MK-091 | `close()` computes `LAST_TROVE_IN_SYSTEM` and sends anyway, and the revert maps to no typed error | S2 | fixed. A typed `LastTroveInSystem` from the precheck with the two counts on it, and from the decoder for a caller who skipped the preview |
+| MK-092 | `getBorrowingPower` published "one batch, three round trips" and issued six reads, with `getBorrowingFee` called twice on the same argument | S3 | fixed. The price joins the batch, the confirmation fee is reused, and the counts are pinned by five tests |
+| MK-093 | MK-013's exemption is conditional on these functions making no single block snapshot claim, and `getBorrowingPower`'s docstring made one; the exemption list is also two waves stale | S2 | fixed. The claim is gone, the straddle is disclosed at every affected function, and MK-013 names all eight |
+| MK-094 | Nine protocol rules decided more than once, two of them already diverged | S2 | fixed for seven by single sourcing; two are prose with no compiler and are labelled as the weaker control they are |
+| MK-095 | The redemption accrual margin was sized for exactly the window it advertises, so it covered the read but not the block the transaction settles in. It only ever worked because the wrong base over-stated it by about 6 seconds of accrual | S2 | **fixed.** Sized for 900 seconds against an advertised 600, with the reason named and both ends of the claim still asserted on chain |
+| MK-096 | The packaging gate's consumer probe is a template literal, so no typecheck in the repository compiles it, and the only thing that does is a gate CI does not run | S2, process | **fixed.** The probe is updated and `pnpm gate:packaging` is a CI step, so a breaking public shape change fails on the commit rather than at release time by hand |
 
 ---
 
@@ -131,12 +161,15 @@ place. A count of numerals would be larger and would mean less.
 |---|---|---|
 | Flake rates and run windows | MK-016, MK-021, MK-022, MK-023, MK-024, MK-025, MK-026, MK-030 | `pnpm test:fork`, `pnpm test:coverage` |
 | Coverage against the ratchet | MK-016, and the floors in `docs/07-testing.md` §4 | `pnpm test:coverage` |
-| The 1000 case differential sweep, 0 mismatches, **89 skipped** | MK-016, MK-048, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` (**four slices of 250**, see `MK_DIFF_FROM` and `MK_DIFF_TO`) |
+| The 1000 case differential sweep on the TEN operation generator: **1000 ran, 97 skipped, 0 FALSE_VIABLE, 10 FALSE_BLOCKED (all MK-079), 0 NUMBERS, 0 throws**, 116 minutes of wall clock (111 inside the sweep) | MK-016, MK-048, MK-079, `docs/09` §3 | `MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` in four slices of 250 via `MK_DIFF_FROM` and `MK_DIFF_TO`, fresh anvil each, block 15043414. Measured in the P15 wave. **The four slices exited 1 when this was measured**, on the 10 FALSE_BLOCKED, which are one
+harness defect and not ten. They exit 0 as of the P16 wave, which did not fix the defect: it
+registered it, so those ten print as `EXPECTED MK-079` and only an unexplained mismatch fails. The previous 89 and its four slice breakdown were the NINE operation generator and stay inside MK-048's evidence block as history |
 | Chain constants and the fee exempt scan at both pinned blocks | MK-014, MK-018, `docs/09` §6 | `pnpm facts --stdout` |
 | Gas variance across three redemption fixtures, 52 executions | MK-037, MK-039 | `MK_GAS_LAB=1 MK_GAS_LAB_AMOUNT=5000 pnpm test:fork` |
 | The zero debt sentinel value | MK-017 | `pnpm test:unit` |
 | Every pin added for MK-058, MK-059, MK-060 and MK-065 fails with its fix removed | MK-058 through MK-065 | `node scripts/mutation-check.mjs` |
-| Recovery Mode borrows in the sweep, 17 of 105, per band, 0 mismatches | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork` |
+| Recovery Mode borrows in the sweep, **20 of 81**, per band, 0 mismatches, 0 throws | MK-058, MK-059 | `MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, **re-measured on the ten operation generator in the P14 wave**, 464s, exit 0. It replaces the 17 of 105 measured on the nine operation one. It was measured with an op filter, which is a narrower instrument than the full sweep; the full sweep's own Recovery Mode borrow counts, measured in P15, are boundary 8, extreme 9, middle 3 |
+| Redemption bands in the sweep, **99 ran, 47 skipped**, per band, 0 mismatches, 0 throws | MK-048 | `MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, re-measured in the P14 wave, 1823s, exit 0 |
 | The Recovery Mode threshold at the pinned block, TCR 2.7731, so 45.9 percent | MK-059 | `cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemColl()" --rpc-url https://rpc.test.mezo.org --block 15043414`, and the same for `getEntireSystemDebt()` |
 | The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
 
@@ -289,6 +322,17 @@ only that capacity does not RISE with price, which is the half the reported defe
 Reaching the ratchet is on the differential harness coverage list in
 `docs/09-review-and-validated-surface.md` §3, so the harness is built to exercise it rather than
 pointed at it afterwards.
+
+**Scope note, P13 wave.** This entry's remediation touched `getBorrowingPower` and improved it: it
+added the resulting TCR condition. It did not ask what ELSE that file got wrong, and the answer was
+the borrowing fee in Recovery Mode and for an exempt account (MK-067). So this is not quite the
+shape of MK-004's and MK-018's corrections, which fixed the file the entry named and left the other
+copies standing; here the named file WAS edited and a second rule inside it was left. Both are the
+same omission, which `docs/08-conventions.md` §12 now names: enumerate the rule, not the defect.
+
+**And one claim above is now sharper.** `remaining` is not merely headroom, it is the distance to
+`ICR == MCR`: `_calculateMaxBorrowingCapacity` (`:1323-1328`) and the entire debt at MCR are the
+same expression, verified numerically. MK-072 carries the measurement, and the field says so now.
 ---
 
 ## MK-003 · Refinancing fee is not modeled
@@ -356,6 +400,18 @@ when not in Recovery Mode and the account is not fee exempt. The second order ef
 with it: because the floor is checked against `netDebt`, removing the phantom fee removes the
 band `draw < minNetDebt <= draw + fee` where the preview reported the floor met for an open that
 reverts. The findings test that pins that band is kept and now passes.
+
+**Scope correction, P13 wave. This entry was too narrow, and the narrowness is the interesting
+part.** The **SDK location** field above names `previewOpen.ts`, the remediation fixed
+`previewOpen.ts`, and the entry then read as closed. The rule was decided in four other places
+and three of them were still wrong, including `trove/index.ts`'s own `openTrove` (MK-068) and
+`getBorrowingPower` (MK-067), which reproduced this exact band for two more releases. The band
+was closed in the preview and open in the write path the preview exists to describe.
+
+**Nothing above is rewritten**, because the record of what was believed at the time is the point.
+What changed is the process: `docs/08-conventions.md` §12 now requires enumerating every place a
+rule is decided before a finding can be closed, which is the step that was missing here. The full
+enumeration for this rule is in MK-069.
 ---
 
 ## MK-005 · `previewOpen.meetsRecoveryRequirement` is vacuous in normal mode, and no TCR check
@@ -705,10 +761,34 @@ that lands and one that reverts. `SystemState` and `Trove` now carry `blockNumbe
 carries the `price` its `icr` was measured against, so the snapshot is checkable by the caller
 rather than merely asserted by a docstring.
 
-**What is NOT changed, stated rather than left to be discovered.** `previewOpen`, `previewBorrow`,
-`previewRefinance` and `getBorrowingPower` still read the price in their own round trip. None of
-them claims a single block snapshot in its docstring, and moving them is a larger change to the
-math layer's shape than this finding calls for. They remain as they are, deliberately.
+**What is NOT changed, stated rather than left to be discovered.** Every preview and calculator
+under `math/` still reads the price outside the batch that uses it, so the system totals a
+resulting TCR gate compares can come from an earlier block than the price they are measured
+against. Moving them is a larger change to the math layer's shape than this finding calls for.
+They remain as they are, deliberately.
+
+**The full list, corrected in the P17 wave (MK-093).** This entry named four functions and the
+list was two waves stale: `previewAdjustTrove`, `previewClose`, `maxWithdrawableCollateral` and
+`previewRedeem` arrived with MK-042 and MK-048 and have the same shape. All eight:
+
+| Function | Reads the price separately |
+|---|---|
+| `previewOpen` | yes |
+| `previewBorrow` | yes, through `previewAdjustTrove` |
+| `previewAdjustTrove` | yes |
+| `previewRefinance` | yes |
+| `previewClose` | yes |
+| `maxWithdrawableCollateral` | yes |
+| `previewRedeem` | yes |
+| `getBorrowingPower` | the price is IN the batch since MK-092, but `checkRecoveryMode(price)` cannot be and is a later round trip |
+
+**And the exemption was originally phrased against a condition that did not hold.** It read "None
+of them claims a single block snapshot in its docstring", which made the exemption conditional on
+prose nobody was checking. `getBorrowingPower`'s docstring then acquired "Every chain read happens
+in ONE `multicall`" and the condition was broken without anything noticing (MK-093). The exemption
+now rests on the engineering judgment alone, which is what it was always doing: pinning eight
+functions to a snapshot costs a round trip each for a window of one block. **What changed is that
+the gap is disclosed at each of the eight rather than in this entry only.**
 
 **Pinned by** two fork tests in `phase2.fork.test.ts`. The second mines blocks after the read and
 then reconciles `icr` and `price` at the REPORTED block, which is the property that was previously
@@ -962,6 +1042,16 @@ and type the write path properly.
   `EstimateContractGasParameters`, and `WriteContractParameters<readonly [never], ...>`. That was
   tried and reverted, not assumed.
 
+**Scope correction, P13 wave.** "Single sourced" was true of the two derivations this entry
+names and of nothing else. `previewRedeem.ts:183` declared its OWN `SECONDS_PER_YEAR`, shadowing
+the canonical one and holding 31_536_000, the value `constants.ts:22-23` explicitly names as
+wrong (MK-071). `read/getTrove.ts` and `read/system.ts` each inlined `icr < MCR` rather than
+sharing a predicate, which is why MK-074's condition had to be added twice before
+`isTroveLiquidatable` existed. And the redemption test carried a third copy of the same wrong
+divisor, so the assertion could only confirm the source's error. A dedup entry that enumerates
+two derivations and closes is the same defect one level up, which is what
+`docs/08-conventions.md` §12 now exists to prevent.
+
 **A correction to the prompt that asked for this.** It said "five casts of the form `as unknown as`
 plus one `any`". The source had **three** `as unknown as Abi` and **two** `any` declarations, which
 is what this entry itself said. The count in the request was wrong; the work was done against the
@@ -1048,6 +1138,14 @@ for a fee.
 **Previously reasoned from source and NOT observed:** the fork test granted
 exemption and exercised the OPEN path only. Reaching the exempt debt increase is on the
 differential harness coverage list in `docs/09-review-and-validated-surface.md` §3.
+
+**Scope correction, P13 wave, the same shape as MK-004's.** "Fixed" covered `previewOpen` and the
+debt increase path. It did not cover `getBorrowingPower`, which could not express exemption at
+all because it took no account (MK-067), nor `openTrove`, which quoted the fee for an exempt
+account and then measured the debt floor against it (MK-068). An exempt account was therefore
+shown a smaller maximum than the protocol allows, and refused an open the protocol accepts, for
+two releases after this entry read fixed. Both now take an account and both route through
+`isBorrowingFeeCharged`. MK-069 enumerates every decision site.
 ---
 
 ## MK-019 · `refinance()` reverts in Recovery Mode, unchecked and undocumented
@@ -2185,7 +2283,7 @@ conclusion was wrong: `gasUsed === gasLimit` only ever detects exhaustion at the
 | gas used, failing | 710023 |
 | **work swing for the identical call** | **16%** |
 | gas limit sent | 720980, fixed |
-| **margin the SDK ships** | **1.5%** over actual, measured separately on `openTrove` |
+| **margin the send REALISED**, limit over gas used | **1.5%**, measured separately on `openTrove`. Not a setting: it is what one send's limit left over its gas used, and MK-037 is why it was that thin. The SDK now REQUESTS 25% over the node's estimate, which is a different quantity (§13) |
 
 The work varies by ten times the margin. That is the finding in one line.
 
@@ -3266,6 +3364,23 @@ ran=123  skipped=40   FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0  exit=
 said the net debt as read is NOT redeemable and nineteen times the chain agreed, on a chain where
 the previous version of this preview would have said the opposite.
 
+**Re-measured in the P14 wave on the ten operation generator**, because the block above describes a
+tuple stream this tree no longer produces (MK-069). Same seed, same command, 1823s, exit 0:
+
+```
+ran=99  skipped=47  FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0
+  AT_NET_DEBT      ran=13  skipped=12
+  WITHIN_HEADROOM  ran=11  skipped=11
+  AT_HEADROOM      ran= 9  skipped=10
+  IN_THE_GAP       ran= 8  skipped= 5
+  WHOLE_TROVE      ran=11  skipped= 9
+```
+
+**Thirteen `AT_NET_DEBT` executions rather than nineteen, and the conclusion is unchanged**: every
+band still ran, the band this finding turns on still ran, and the chain still agreed with the preview
+in both directions every time. The counts are smaller because the draw moved, not because anything
+got worse. The block above is kept as the record of what closed the finding at the time.
+
 **Why 40 of 123 skipped, which is a high rate and is not hidden.** Redemption skips for a reason no
 other operation has. At the extreme band's price multipliers of 25 and 50 percent, and at the
 boundary band's 66, every Trove in the fork's list falls below MCR, so the loop finds nothing, there
@@ -3474,6 +3589,23 @@ MK_DIFF_OP=borrow MK_DIFF_CASES=1000 pnpm test:fork
   recovery mode: reached=17 of 105  asked for a drawdown=14
   recovery mode BORROWS by band: boundary ran=7  extreme ran=7  middle ran=3
 ```
+
+**Re-measured in the P14 wave on the ten operation generator**, because the two blocks above describe
+a tuple stream this tree no longer produces (MK-069). Same seed, same command, 464s, exit 0:
+
+```
+MK_DIFF_OP=borrow MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+  ran=81 skipped=3  bands: boundary=47 extreme=22 middle=12
+  recovery mode: reached=20 of 81  asked for a drawdown=15
+  recovery mode BORROWS by band: boundary ran=8  extreme ran=9  middle ran=3
+  FALSE_VIABLE=0  FALSE_BLOCKED=0  NUMBERS=0  threw=0
+```
+
+**Twenty Recovery Mode borrows across all three bands rather than seventeen, and none of them
+mismatched.** The argument this entry makes is unchanged and is if anything better served: the point
+was never the size of the number, it was that the count is REPORTED so a reader can tell "the sweep
+reached Recovery Mode" from "the sweep reached a Recovery Mode borrow". Both blocks are kept, the
+first as the record of what closed the finding at the time.
 
 **The first run is why the second exists, and it is the point of counting rather than assuming.**
 Sixty mixed cases reached Recovery Mode thirteen times and reached a Recovery Mode BORROW zero
@@ -3891,6 +4023,13 @@ evidence of that would be the wrong repair.
 test was not touched; the only unit test in the repository that failed was this one, on exactly the
 assertion that pinned the wrong order. Nothing else moved.
 
+**Scope correction, P13 wave.** This was fixed for `evaluateBorrow`, by delegation, and the entry
+did not ask which OTHER evaluator reports reasons in an order. `previewRefinance` had the same
+defect, and worse: its reason list contradicted a comment printed two lines above it claiming the
+mode check came first (MK-075). Delegation could not reach it, because refinance has no evaluator
+to project onto, so it needed the fix written out and a mutation of its own, which
+`scripts/mutation-check.mjs` now carries.
+
 A second assertion was added beside it for the case a caller actually meets: with the status gate
 cleared and both capacity and the ratio breached, `bindingConstraint` is now the ratio. That matters
 because capacity never rises (`BorrowerOperations.sol:879-897`), so naming it as the single thing to
@@ -3950,6 +4089,1314 @@ main    All files  98.50 stmts  91.76 branch   100 funcs   98.50 lines
 
 Every metric now sits at or above `main`'s, which is what the ratchet requires: it is not enough to
 climb back over the floor if the wave still left the number lower than it found it.
+
+---
+
+<!-- P13 wave: MK-067 through MK-077 -->
+
+> **A note on the line numbers in the eleven entries below.** Every `packages/core/src/...` line
+> range cites the tree **as the defect was found**, before the wave's own changes moved them.
+> Contract citations into `mezo-org/musd` are at `43ef441` and are stable. This is the register's
+> existing convention and it is stated here because eleven entries land at once and every one of
+> them names a file the wave then edited. Where an entry needs to point at the CURRENT tree, it
+> names the symbol rather than the line.
+
+## MK-067 · `getBorrowingPower` charges a fee the contract skips, and cannot express exemption
+
+**Class** S1 · **Status** fixed · **Found by an external correctness audit of the 0.3.0 tree, and
+re-derived from the contract here before it was filed**
+
+**Ground truth.** `BorrowerOperations.sol:637-643` charges the borrowing fee on an open only when
+`!isRecoveryMode && !governableVariables.isAccountFeeExempt(_borrower)`. In Recovery Mode, and for
+an exempt account, `vars.netDebt` is the bare draw, so the entire debt is `draw + 200` and the
+binding ceiling is `draw + 200 <= coll * price / CCR` via `_requireICRisAboveCCR` (`:1337-1342`,
+inclusive at `>=`).
+
+**SDK location.** `packages/core/src/math/getBorrowingPower.ts`. It reads
+`checkRecoveryMode` and uses it twice, at `:115` to pick the ratio threshold and at `:132` to skip
+the resulting TCR condition, and then adds the fee unconditionally anyway: `feeOf` (`:121-127`)
+calls `getBorrowingFee` with no mode branch, `feasibleWith` (`:129-142`) folds that into
+`draw + fee + MUSD_GAS_COMPENSATION`, `:172` checks the `minNetDebt` floor against `best + feeOf`,
+and `solveClosedForm` (`:221-263`) solves against the same premise. The file never imports
+`isBorrowingFeeCharged` from `math/fee.ts:15-17`, which exists precisely to be the one copy of this
+rule.
+
+**And exemption is not merely unmodelled, it is inexpressible.** `GetBorrowingPowerParams`
+(`:9-13`) is `{ collateral, price? }`. There is no account, so there is nothing to ask
+`isAccountFeeExempt` about, even though `MathDeps.isAccountFeeExempt` (`math/deps.ts:17`) is already
+wired and every other preview uses it.
+
+**How this was established.** Not by reading. The excluded draw was sent to the real contracts on
+an anvil fork of Mezo testnet at the pinned block 15043414, on phase 4's own Recovery Mode fixture
+of 0.1 BTC at 40,000 USD:
+
+```
+getBorrowingPower = 2464202464202464202464
+contract max      = 2466666666666666666666
+under-report      = 2464202464202464202 wei   (2.4642 MUSD)
+previewOpen(contractMax).viable=true fee=0 reasons=[]
+OPENED ON CHAIN entireDebt=2666666666666666666666
+resulting ICR=1500000000000000000  CCR=1500000000000000000  icr>=CCR? true
+```
+
+The draw the calculator excluded opened, and landed at ICR exactly equal to CCR. `previewOpen`, the
+SDK's own evaluator for the same question, calls that draw viable with `fee: 0`. **Two surfaces, one
+question, different answers**, which is the shape `docs/08-conventions.md` §11 exists to refuse.
+
+**Blast radius.** The reported maximum is short by the fee: roughly 0.0999 percent of the draw at
+the live 0.1 percent rate, in Recovery Mode for every caller, and in every mode for the exempt
+cohort MK-018 measured as non empty on mainnet. No error is raised. A UI sizing a "max" button is
+wrong by that amount exactly when the system is stressed, which is when it is most consulted.
+
+**Why S1 and not S2.** Nothing reverts. The number is simply small, plausible, and silently wrong,
+which is this register's own S1 definition.
+
+**Decision.** Fix, and fix at the cause rather than by adding a mode branch here. See MK-069.
+
+### Fixed
+
+**The feasibility predicate IS `evaluateOpen` now.** `getBorrowingPower` no longer decides any open
+rule: `feasibleWith` builds an `evaluateOpen` input and returns its `viable`, with `minNetDebt: 0n`
+and `troveStatus: undefined` so the only reasons it can produce are the two ratio ones, and the debt
+floor is applied once at the end through the same evaluator. The individual ratio, the mode correct
+threshold and the resulting TCR therefore have one implementation in this package and it is not in
+this file.
+
+**Why a projection rather than the delegation `previewBorrow` uses**, stated in the source in one
+sentence a reader can check: `previewBorrow` can BE `previewAdjustTrove` because a borrow is one
+call with one verdict, while a maximum is not a case of the evaluator that judges a candidate. So it
+stays a solver, and what it solves over is the evaluator. The caps inside `solveClosedForm` are
+search bounds, never verdicts, and the two guards before its `return` refuse to answer unless the
+draw is feasible and the draw plus one wei is not, so a wrong cap costs round trips and cannot
+produce a wrong maximum.
+
+**Exemption is expressible.** `GetBorrowingPowerParams` takes an optional `account`, and the
+exemption is read through the `MathDeps.isAccountFeeExempt` that was already wired. The read is
+skipped in Recovery Mode, where the mode alone settles the conjunction, and skipped when no account
+is supplied, matching `previewOpen`'s rule that with nobody to ask about, nothing is asked.
+`useBorrowingPower` threads it, and the query key carries it, because the answer differs per account.
+
+**Proven on chain, not argued.** `phase4.fork.test.ts` now opens at the reported maximum in Recovery
+Mode against the real contracts and asserts one wei more reverts:
+
+```
+[phase4] borrowingPower(RM, 100000000000000000) = 2466666666666666666666
+[phase4] RM open at max: entireDebt=2666666666666666666666 icr=1500000000000000000
+```
+
+2466666666666666666666 against the 2464202464202464202464 this returned before, which is the whole
+CCR ceiling with no fee taken out of it, landing at ICR exactly CCR. **Pinned by**
+`packages/core/test/borrowing-power-agreement.test.ts`, twelve cases across both modes, an exempt
+account, a TCR bound scenario and two awkward prices, and by two mutations in
+`scripts/mutation-check.mjs`.
+
+**And four statements of dead code came out with it, found by the ratchet rather than by reading.**
+`solveClosedForm` carried a downward walk beside its upward one, and coverage showed it had never
+executed. It cannot: with a linear fee, `draw = floor(available * P / (P + rate))` gives
+`draw + fee(draw) <= available`, so the seed's entire debt is at or under `cap`, and both thresholds
+`feasibleWith` tests are inclusive, so a seed exactly at the cap is feasible rather than one wei
+over. Checked over 32 combinations of rate, from zero to 300 percent, against five caps including
+an odd one and 1e30: no seed exceeded its cap. Removing it is safe because the guards that follow
+already refuse to answer on an infeasible draw and fall back to the bounded binary search, which is
+also where a non-linear fee is handled. A branch no test can reach is worse than absent: a reader
+assumes it was exercised.
+
+---
+
+---
+
+## MK-068 · The `openTrove` write path reaches past the effective fee helper defined in its own file
+
+**Class** S2 · **Status** fixed · **Same audit, same root cause as MK-067**
+
+**Ground truth.** `BorrowerOperations.sol:637-643` again, plus the three places the resulting
+`netDebt` is used on the open path: `_requireAtLeastMinNetDebt(vars.netDebt)` (`:645`), the composite
+debt `_getCompositeDebt(vars.netDebt)` (`:648`), and the sort key
+`_computeNominalCR(msg.value, compositeDebt)` (`:652`).
+
+**SDK location.** `packages/core/src/trove/index.ts` defines `effectiveBorrowingFee` at `:85-117`,
+which reads the mode and the exemption and returns zero when either applies. `borrow` uses it at
+`:432`. `adjustTrove` uses it at `:543`. `openTrove` at `:300` calls the raw `getBorrowingFee`
+(`:149-156`) instead, two hundred lines below the correct helper in the same file.
+
+**Three consequences, recorded separately because they fail differently.**
+
+**(a) The debt floor precheck is computed against the wrong quantity.** `:307` forms
+`netDebt = debt + fee` and `:308` throws `BelowMinimumDebt` when it is under the floor. In Recovery
+Mode or for an exempt account the contract's `netDebt` is the bare draw, so in the band
+`draw < minNetDebt <= draw + fee` the precheck passes and the chain reverts at `:645`. **This is
+exactly the second order effect MK-004's own entry names and records as closed.** It is closed in
+`previewOpen` and was still open here. Reproduced against a stubbed client at draw 1799 MUSD against
+a 1800 MUSD floor: `openTrove(RM)` and `openTrove(exempt)` both proceeded to send, while
+`previewOpen` on the same inputs returned `viable=false reasons=["BELOW_MINIMUM_DEBT"]`.
+
+**(b) The fee cap refuses a call the contract accepts.** `:301` calls `assertFeeWithinCap(debt, fee,
+maxFeePercentage)` with the quoted fee. A caller passing `maxFeePercentage: 0n`, meaning "open only
+if there is no fee", is refused with `MaxFeeExceeded` in precisely the state where the protocol
+charges nothing. Nothing reaches the chain. Reproduced: `MaxFeeExceeded: Borrowing fee
+(1000000000000000 of 1e18) exceeds the supplied cap (0 of 1e18)`. This is the loudest of the three
+and the only one that blocks a valid operation outright.
+
+**(c) The insertion hint names a position that will not exist.** `:314` computes the hint from
+`debt + fee + MUSD_GAS_COMPENSATION` while the contract inserts at `_computeNominalCR(msg.value,
+netDebt + 200)` with no fee in the term (`:648`, `:652`). `SortedTroves.reInsert` re-validates and
+traverses, so the cost is gas and latency rather than a wrong number. This is MK-006's class, on the
+one path MK-006's own note says was "accidentally correct" and therefore never exercised the defect.
+
+**Blast radius.** (a) and (c) are recoverable: simulate catches (a) and the chain corrects (c). (b)
+is not, and it is silent from the caller's side in the sense that the error names a fee that will
+never be charged.
+
+**Decision.** Route the open through the same effective fee every other write uses. See MK-069.
+
+### Fixed
+
+`openTrove` calls `effectiveBorrowingFee`, the helper defined at `trove/index.ts:85-117` that
+`borrow` and `adjustTrove` already used, and that helper now makes its decision through
+`isBorrowingFeeCharged` rather than re-deriving the conjunction. All three consequences close
+together, because all three read the same variable: the floor is measured against the contract's
+`netDebt`, the cap compares a fee that will actually be charged, and the hint is computed from the
+composite debt the contract will insert by.
+
+`refinancingFee` and `previewRefinance` route through the rule too, passing `false` for the mode
+with the reason stated: `_requireNotInRecoveryMode` (`:1023`) is the first thing `_refinance` does,
+so a refinance that reaches the fee is a refinance in normal mode. That is a contract guarantee, not
+an assumption, and saying which it is was the point.
+
+**Pinned by** `packages/core/test/p13-gates.test.ts`, driven through the real `openTrove` against a
+stubbed client so the helper it actually calls is what is under test: the floor refuses the band in
+Recovery Mode and for an exempt account, the same draw passes when the fee IS charged so the band is
+demonstrably real, a zero fee cap is honoured in Recovery Mode, and the cap still bites in normal
+mode so it was not simply disabled.
+
+---
+
+---
+
+## MK-069 · One rule, eight places, and the four wrong ones agree with each other
+
+**Class** S2 · **Status** fixed · **The root cause behind MK-067, MK-068 and MK-070**
+
+`docs/08-conventions.md:309-325` §11 is unambiguous: "A rule the protocol has once is implemented
+here once ... it has now happened twice with the same root cause." MK-001 was the first occurrence.
+MK-058, MK-059 and MK-065 were the second. **This is the third, and it is wider than either**,
+because the copies are not two but four.
+
+**The rule.** Whether the borrowing fee applies at all. The contract decides it in two places, and
+they are the same condition: `BorrowerOperations.sol:637-643` on open, and `:813-818` on a debt
+increase. On refinance the mode half is already guaranteed, because `_requireNotInRecoveryMode`
+(`:1023`) is the first requirement on that path, so only the exemption half is live (`:1033-1035`).
+
+**Every place the SDK decides it**, enumerated rather than sampled, which is the point of this
+entry:
+
+| Location | Role | Decides the rule how | Correct? |
+|---|---|---|---|
+| `math/fee.ts:15-17` | `isBorrowingFeeCharged`, the canonical rule | `!isRecoveryMode && !feeExempt` | yes, by definition |
+| `math/previewOpen.ts:154-163` | open preview | calls `isBorrowingFeeCharged` | yes |
+| `math/previewAdjust.ts:375-384` | adjust preview | calls `isBorrowingFeeCharged` | yes |
+| `trove/index.ts:85-117` | `effectiveBorrowingFee`, write path | re-derives inline | yes, and duplicated |
+| `trove/index.ts:654-678` | `refinancingFee`, write path | re-derives the exemption half | yes, and duplicated |
+| `math/previewRefinance.ts:111` | refinance preview | re-derives the exemption half | yes, and duplicated |
+| `math/getBorrowingPower.ts:121-127` | open time calculator | **always charges** | **no, MK-067** |
+| `trove/index.ts:300` | write path, open | **always charges** | **no, MK-068** |
+| `test/phase4.fork.test.ts:184-190` | the reference search `getBorrowingPower` is compared against | **always charges** | **no, MK-070** |
+| `test/harness/openTroveRaw.ts:62-69` | the fixture every fork test opens with | **always charges** | **no, MK-070** |
+
+**What structurally prevented the four from drifting: nothing.**
+`packages/core/test/preview-agreement.test.ts` is exactly the instrument §11 asks for, and it pins
+`previewBorrow` against `previewAdjustTrove` in both modes across every boundary. No equivalent
+existed for `getBorrowingPower` against `evaluateOpen`, and `getBorrowingPower` is not one of the
+nine operations `test/differential/generate.ts:202-211` sweeps. **The two surfaces answer the same
+question and had never been compared to each other, once.**
+
+**The harness copy has an effect of its own, observed rather than argued.**
+`openTroveRaw` returns an `entireDebt` it computes locally at `:69` as `draw + fee + 200`, under the
+comment "Composite (entire) debt the contract will insert by". In Recovery Mode that comment is
+false. Read back off the chain on the same fork run:
+
+```
+openTroveRaw REPORTED entireDebt = 2669133333333333333332
+chain ACTUAL          entireDebt = 2666666666666666666666
+overstates by                    = 2466666666666666666 wei   (exactly the skipped fee)
+```
+
+So any fork assertion comparing against the harness's reported figure in Recovery Mode is comparing
+against a wrong number, and the hint the helper computes is for a position that does not exist.
+
+**What makes this a finding rather than a tidy up.** Four independent copies of one condition all
+got it wrong the same way, and each one passes its own tests. The 120 case differential sweep run
+while auditing this reached Recovery Mode 27 times across eight operations and reported zero
+mismatches, which is a real result for the surface it covers and also the shape of the blind spot:
+the sweep exercises `previewOpen`, which is right, and never asks `getBorrowingPower` anything.
+
+**Decision.** Every place that decides whether the fee applies goes through the one exported rule,
+and the two surfaces that answer the same question get the pin that §11 requires. Adding a mode
+check to `getBorrowingPower` and stopping there would leave four copies where there should be one.
+
+### Fixed
+
+Every row in the table above now reads through `isBorrowingFeeCharged`, and the two test copies
+state the CONTRACT's condition rather than importing the SDK's, so they remain independent checks
+rather than becoming tautologies. That distinction is the one MK-070 turns on and it is written into
+both files.
+
+**And the rule that would have caught it is now in the conventions**, as
+`docs/08-conventions.md` §12: closing a finding requires enumerating every place the rule it
+concerns is decided, not only the location where the defect was observed. MK-004, MK-017, MK-018 and
+MK-065 were each remediated exactly where they were seen and each left live copies behind; those
+four entries now carry a scope correction saying so.
+
+**The sweep reaches it now.** `borrowingPower` is a generated operation
+(`test/differential/generate.ts`), swept inverted because a maximum has no verdict: the SDK supplies
+the amount and the chain supplies the verdict, so the case attempts the maximum plus one wei first,
+which must revert and changes no state, then the maximum itself, which must open.
+
+**Measured against the present generator**, which is the number `docs/09` §3 points here for, since
+adding a tenth operation shifts the PRNG stream and the recorded 1000 case figures describe the nine
+operation one. `MK_DIFF_OP=borrowingPower MK_DIFF_CASES=400 MK_DIFF_SEED=20260826 pnpm test:fork`,
+one fresh anvil at pinned block 15043414, 176 seconds, exit 0:
+
+```
+ran=33 skipped=2  bands: boundary=19 extreme=3 middle=11
+mismatches: FALSE_VIABLE=0 FALSE_BLOCKED=0 NUMBERS=0
+recovery mode: reached=8 of 33
+recovery mode by op: borrowingPower ran=6 skipped=2
+threw=0
+```
+
+**Six of them executed in Recovery Mode against the real contracts**, each opening at the reported
+maximum and being refused one wei above it. That is the count that matters rather than the total:
+MK-048 established that a band which never ran proves nothing, and Recovery Mode is the mode this
+finding lived in. The 2 skips are a maximum of zero, which means no valid open exists for that
+collateral at all.
+
+### The wave's fork window
+
+Five consecutive `pnpm test:fork` runs at pinned block 15043414 followed by one
+`pnpm test:coverage`, recorded by exit code, with the code tree hashed before the first and after
+the last so the window is provably over ONE tree (`a5a5d56bb9611cb399cd4f51d38ecf83` at both ends):
+
+| Run | Exit | Tests | Sweep |
+|---|---|---|---|
+| 1 | 0 | 104 passed, 1 skipped | 0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS |
+| 2 | 0 | 104 passed, 1 skipped | same |
+| 3 | 0 | 104 passed, 1 skipped | same |
+| 4 | 0 | 104 passed, 1 skipped | same |
+| 5 | 0 | 104 passed, 1 skipped | same |
+| coverage | 0 | 396 passed, 1 skipped | 98.62 stmts, 92.96 branch, 100 funcs, 98.62 lines |
+
+Against `main`'s 98.50 / 91.76 / 100 / 98.50 and the previous wave's 98.55 / 92.83 / 100 / 98.55,
+so the wave leaves every metric at or above where it found it, which MK-066 established is the bar
+rather than merely clearing the floor. **The branch floor moves 91 to 92**; functions is left at 99
+although it measures 100, because a floor of 100 is a sharper control than this ratchet and deserves
+its own argument rather than being slipped in beside eleven findings.
+
+**The hash is recorded because two earlier attempts at this window were invalidated by edits that
+landed mid-window**, both of them comment only: a docstring line in `read/system.ts`, and then two
+`{@link}` references to private helpers that turned the TypeDoc build red. A window over a moving
+tree is not a window, and "the change was only a comment" is exactly the reasoning this register
+exists to refuse. Both were stopped and re-run from the start. The third attempt was preceded by
+running every static gate to completion first, which is the order this should have been done in.
+
+**A third copy surfaced while fixing MK-071**, which is the entry's own argument working:
+`preview-redeem.test.ts` carried the same wrong divisor as the source, so its assertion could only
+confirm the defect. Found by fixing the source and watching the test go red.
+
+---
+
+---
+
+## MK-070 · A Recovery Mode test that passes because of the defect, and fails when it is fixed
+
+**Class** S2, harness · **Status** fixed · **The second occurrence of the phase 6 pattern**
+
+MK-030 and the phase 6 wave established the shape: a test whose assertion is reconstructed from the
+implementation's own arithmetic proves self consistency and nothing else. This is that, in the one
+place it costs the most, and it is worse than the first occurrence because it does not merely fail
+to catch the defect. **It fails when the defect is removed.**
+
+**The assertion.** `packages/core/test/phase4.fork.test.ts:327-331`:
+
+```ts
+const bpRM = await c.getBorrowingPower({ collateral: coll, price: p })
+const entireAtBp = bpRM + (await c.getBorrowingFee(bpRM)) + GAS
+expect(
+  computeICR({ collateral: coll, entireDebt: entireAtBp, price: p }),
+).toBeGreaterThanOrEqual(CCR - 1n)
+```
+
+It rebuilds the projected debt with the same unconditional `+ getBorrowingFee` the implementation
+uses, so it can only ever agree with it. It never opens a Trove at `bpRM` in Recovery Mode, which is
+the one thing that would have settled it.
+
+**Evaluated both ways on its own fixture**, arithmetic rather than assertion, because mutating the
+source to check would have been a fix:
+
+```
+coll = 0.1 BTC, price = 40,000 USD, rate = 0.1%, CCR = 1.5e18
+
+today (fee subtracted)      entireAtBp=2666666666666666666666  ICR=1500000000000000000  passes=true
+fixed (fee skipped in RM)   entireAtBp=2669133333333333333332  ICR=1498613782251417438  passes=false
+```
+
+Correcting the fee raises `bpRM` by the fee, the test then adds the fee back on top of a value that
+already consumed the whole ceiling, its reconstructed debt overshoots the CCR cap, and the assertion
+breaks. **Anyone fixing MK-067 sees this test go red and has every reason to read that as the fix
+being wrong.** That is the cost, and it is why this is filed at S2 rather than as hygiene.
+
+**The comparison above it has the same defect.** `phase4.fork.test.ts:160-215` validates
+`getBorrowingPower` against a binary search written out in the test file, under the comment "Kept
+here rather than in src so the comparison is against the implementation this replaced, not against a
+shared helper that could drift with it". That reference calls `feeOf(draw)` unconditionally at
+`:184-190`, so it is a copy of the defect and the comparison can only agree. The intent of the
+comment was right and the execution reproduced the thing it was guarding against.
+
+**And the chain free tests cannot see the branch at all.** Every unit test that drives
+`getBorrowingPower` stubs `checkRecoveryMode` to `false`: `s2-guards.test.ts:135` and
+`preview-adjust-reads.test.ts` through `fakeDeps`. The coverage gate reports the Recovery Mode
+branch as covered, because phase 4 executes it. **Coverage measured that the line ran. Nothing
+measured that it was right**, which is MK-053's lesson one level down: a gate that cannot fail is a
+claim.
+
+**Decision.** The Recovery Mode assertion compares against the chain. The reference search stops
+being a copy. The agreement pin §11 asks for gets written. Every new pin gets a mutation.
+
+### Fixed
+
+**The assertion sends transactions.** `phase4.fork.test.ts` attempts the maximum plus one wei first,
+asserts `previewOpen` refuses it AND the chain reverts, then opens at the maximum, then reads the
+Trove back and asserts it exists, that its ICR is at or above CCR, and that its entire debt is
+exactly `draw + 200`, which is the assertion that no fee was charged. The refusal goes first because
+it changes no state and so cannot move the system out of Recovery Mode before the acceptance is
+tried.
+
+**The reference search states the contract's condition.** It stays out of `src`, which was always
+the right instinct, but its fee is now gated on `!isRecoveryMode && !feeExempt` written out, with
+the exemption half a named constant and the reason it is constant stated. Importing
+`isBorrowingFeeCharged` there would have made the comparison agree by construction, which is the
+defect rather than the fix.
+
+**The fixture stopped lying about what it opened.** `test/harness/openTroveRaw.ts` reads
+`checkRecoveryMode` and applies the same condition, so its returned `entireDebt` is what the chain
+stored and its hint is for a position that exists.
+
+**And the chain free blind spot is closed.** `borrowing-power-agreement.test.ts` exercises Recovery
+Mode without a chain, so the branch every unit test used to stub to `false` is now covered by
+assertions about its behaviour rather than only by a coverage percentage.
+
+---
+
+---
+
+## MK-071 · A shadowed seconds per year, holding the value its own canonical file names as wrong
+
+**Class** S3 · **Status** fixed · **The third instance of MK-017's class**
+
+**Ground truth.** `solidity/contracts/dependencies/InterestRateMath.sol:9` is
+`SECONDS_IN_A_YEAR = 31_556_952`, the Gregorian year, and `calculateInterestOwed` (`:12-22`) divides
+by it.
+
+**SDK location, two values under one name.** `packages/core/src/constants.ts:26` is
+`SECONDS_PER_YEAR = 31_556_952n`, and its docstring at `:22-23` says it was verified on the fork and
+is explicitly "NOT 365 (31_536_000)". `packages/core/src/math/previewRedeem.ts:183` then declares a
+module local `const SECONDS_PER_YEAR = 365n * 24n * 3600n`, which is 31_536_000, under the docstring
+"The divisor the protocol's interest accrual uses". **It is the exact value the canonical file
+singles out as incorrect, asserted to be the protocol's.** The name is shadowed, so nothing in the
+file reads as a conflict.
+
+**What it feeds.** Only `marginFor` (`:188-190`), which sizes `accrualMargin` and
+`nextViableAmount`, and which decides at `:230` whether an offer consumes a Trove whole.
+
+```
+constants.ts SECONDS_PER_YEAR     = 31556952n
+previewRedeem.ts SECONDS_PER_YEAR = 31536000n   equal? false
+
+debt=2000 MUSD   sdkMargin=380517503805175    trueMargin=380264862081737    +0.0664%
+debt=10000 MUSD  sdkMargin=1902587519025875   trueMargin=1901324310408685   +0.0664%
+```
+
+**Consequence, in both directions.** On `nextViableAmount` a margin 0.0664 percent too large is
+conservative and harmless, and the field's own docstring says overshooting cannot cost the call. On
+the `consumesWhole` classification it is not: in a band roughly one micro MUSD wide the SDK treats
+an offer as a partial, finds it breaches the floor, and reports `PARTIAL_BREACHES_DEBT_FLOOR` for an
+amount the chain would accept. `redemption/redeem.ts:172-178` turns that reason into a thrown
+`RedemptionBreachesDebtFloor` before simulate, so the call never reaches the chain.
+
+**Why S3 and why it is filed at all.** The band is narrow enough that no realistic caller lands in
+it. It is filed because MK-048's entire correction turns on this figure, because MK-017,
+"Duplicated derivations and placeholder values", is marked fixed, and because a constant whose
+docstring asserts a provenance it does not have is how the next reader gets it wrong.
+
+### Fixed, and there was a third copy
+
+`previewRedeem.ts` imports `SECONDS_PER_YEAR` from `constants.ts` and declares nothing. The shadow
+is gone.
+
+**The test carried the same wrong value**, which is why nothing caught it:
+`preview-redeem.test.ts:56` computed its expected margin with `365n * 24n * 3600n` under a comment
+saying it was "recomputed here rather than imported, so a change to either side shows up". The
+instinct was right and the value was the source's own mistake, so the two agreed and the assertion
+proved nothing. It now uses the CONTRACT's `31_556_952` as a named literal, which keeps it an
+independent statement while making it a true one. Found by fixing the source and watching five
+assertions go red, which is the evidence that the pin is now real.
+
+---
+
+---
+
+## MK-072 · The borrowing capacity headroom is the distance to liquidation, published as spendable
+
+**Class** S3 · **Status** fixed · **A class this register had no entry for**
+
+MK-050 files a figure the chain outgrows against `previewClose.musdRequired`. MK-051 files the same
+shape with the sign flipped against `maxWithdrawableCollateral.amount`. **This is the third
+instance, and the interesting part is not the staleness. It is what the number turns out to be.**
+
+**Ground truth.** `_calculateMaxBorrowingCapacity` (`BorrowerOperations.sol:1323-1328`) is
+`(_coll * _price) / (110 * 1e16)`. `_requireICRisAboveMCR` (`:1330-1335`) is `_newICR >= MCR` with
+`MCR = 1.1e18` (`LiquityBase.sol:22`). **Those are the same expression.** Checked numerically at the
+fork's live price rather than asserted: `coll * price / (110 * 1e16)` and `coll * price / MCR` both
+give `70046461200000000000000` for 1 BTC at 77051.10732 USD.
+
+So `maxBorrowingCapacity` is exactly the entire debt at which the position is liquidatable, computed
+at the opening price, and `capacity - entireDebt` is the distance to that point.
+
+**SDK location.** `packages/core/src/math/previewAdjust.ts:57-64`. `BorrowingCapacity.remaining` is
+documented as "`capacity - entireDebt`, floored at zero. The headroom for `draw + fee`, not for the
+draw." That sentence invites a caller to size a draw from it. There is no window, no margin, and no
+mention that the ICR gate binds at the same point.
+
+**Observed on a fork**, open 1 BTC against 2000 MUSD, then warp with only the delay varied:
+
+```
+t0 capacity=70046461200000000000000 entireDebt=2202000000000000000000
+   remaining=67844461200000000000000
+   largest draw that fits the reported headroom = 67776684515484515484515
+
+warp    0s  previewBorrow.viable=true   reasons=[]
+warp    1s  preview.viable=false  chain=REVERTED (BorrowerOps: An operation that would result in ICR < MCR)
+warp   60s  preview.viable=false  chain=REVERTED (same)
+warp  600s  preview.viable=false  chain=REVERTED (same)
+warp 3600s  preview.viable=false  chain=REVERTED (same)
+```
+
+**One second is enough**, the same finding MK-051 records for the withdrawal maximum, and for the
+same reason: the debt in the comparison accrues.
+
+**Who is exposed and who is not, stated precisely.** A caller who then runs `previewBorrow` is safe:
+it correctly returns `viable: false` at one second, so the SDK is self consistent and this is not a
+wrong verdict. The exposure is a caller who sizes from `getBorrowingCapacity` alone, which is a
+separately exported function (`src/index.ts:94`) and a React hook (`useBorrowingCapacity`).
+
+**Decision.** Say it on the field, where TypeDoc publishes it, the way `previewClose` and
+`previewRedeem` already do. Not a margin: unlike a redemption headroom, a caller who wants to spend
+the whole thing has a live evaluator two lines away, and inventing a window here would be a number
+chosen to feel safe rather than one the contract names.
+
+### Fixed
+
+`BorrowingCapacity.remaining` carries the whole thing on the field: that `capacity` and the entire
+debt at `ICR == MCR` are the same expression, that a draw consuming it lands at the liquidation
+threshold, that one second of interest is enough to make the same call revert, and that the way to
+size a draw is `previewBorrow` rather than this number.
+
+**No pin, and that is stated rather than glossed.** This change is a docstring: it alters no
+behaviour, so there is nothing for a test to assert and nothing for `mutation-check.mjs` to mutate.
+The measurement behind it is in this entry and is reproducible on a fork by opening a position,
+reading `getBorrowingCapacity`, warping, and attempting a draw sized from the reported headroom.
+
+---
+
+---
+
+## MK-073 · MK-051 names the docstring as its acceptance condition, and the docstring is silent
+
+**Class** S3 · **Status** fixed · **Found by checking whether an open entry's own stated remedy was met**
+
+MK-051 closes with: "`maxWithdrawableCollateral` returning a number good for one block is defensible
+only if the docstring says so." Its status is `open, documented`.
+
+`packages/core/src/math/previewAdjust.ts:419-423`, the docstring on `MaxWithdrawable.amount`, in
+full: "BTC wei that can be withdrawn in a single `withdrawCollateral` call. **Zero in Recovery
+Mode**, where `_requireNoCollWithdrawal` (`:1270`) refuses any withdrawal at all." There is no
+mention of expiry.
+
+**"Documented" meant documented here, not on the API**, and the distinction matters because this
+register is not what a consumer reads. TypeDoc publishes the docstring. `previewClose.ts:49-52` and
+`previewRedeem.ts:122-125` both carry their staleness warning on the field where a caller meets it.
+This one does not, and MK-051 is the entry that says it should.
+
+**Why it is filed separately rather than folded into MK-051.** MK-051's own remedy is a margin plus
+its tests, deferred deliberately. This is the half that was already agreed and simply not done, and
+folding it in would let the deferral cover it.
+
+### Fixed
+
+`MaxWithdrawable.amount` now carries the expiry, with MK-051's own measured table behind it: accepted
+at 0 seconds, refused at 1, 60, 600, 3600 and 86400, with half the maximum succeeding throughout as
+the control. It also says what a caller should do instead, and that the refusal is a typed error
+before sending rather than a failed transaction, which is the material difference from MK-048.
+
+**MK-051 stays open**, deliberately. Its remedy is a margin plus tests plus a sweep, and that is a
+wave. What is closed is the clause MK-051 itself named as the acceptance condition for shipping
+without one. Like MK-072, this is a docstring change with no behaviour to pin.
+
+---
+
+---
+
+## MK-074 · The last Trove in the system can neither be closed nor liquidated, and neither predicate knows
+
+**Class** S3 · **Status** fixed · **Direction: the preview says yes and the chain refuses**
+
+**Ground truth, close.** `TroveManager._closeTrove` (`:1390-1399`) gates on the same `canMint` flag
+the close preview already reads:
+
+```solidity
+uint256 TroveOwnersArrayLength = TroveOwners.length;
+if (musdToken.mintList(address(borrowerOperations))) {
+    _requireMoreThanOneTroveInSystem(TroveOwnersArrayLength);
+}
+```
+
+and `_requireMoreThanOneTroveInSystem` (`:1488-1496`) requires
+`TroveOwnersArrayLength > 1 && sortedTroves.getSize() > 1`, reverting with "TroveManager: Only one
+trove in the system". `BorrowerOperations._closeTrove` reaches it through
+`troveManagerCached.closeTrove(_borrower)` (`:976`), which is `TroveManager:472-475`.
+
+**Ground truth, liquidate.** `_liquidate` (`TroveManager.sol:1058-1060`) returns an empty
+`singleLiquidation` when `TroveOwners.length <= 1`, so `batchLiquidateTroves` accumulates nothing
+and reverts at `:690-693` with "TroveManager: nothing to liquidate".
+
+**SDK locations.** `packages/core/src/math/previewClose.ts:114-118` pushes four reasons; the fifth is
+absent, even though `canMint` is already in hand at `:153-157`. `packages/core/src/read/system.ts:61`
+and `packages/core/src/read/getTrove.ts:94` both return `icr < MCR`, which is the complete
+liquidation predicate for every Trove but one.
+
+**Likelihood, stated honestly: low.** The pinned testnet fork carries 230 sorted Troves. This is
+reachable on a fresh deployment, in a test fixture, and in a system in terminal decline, and nowhere
+else. It is filed because it is a contract condition the SDK does not enforce while claiming to
+enumerate them, and because the read that satisfies the close half is already being paid for.
+
+### Fixed, and it forced a dedup on the way
+
+`previewClose` gains `LAST_TROVE_IN_SYSTEM`, reported LAST because `BorrowerOperations.sol:976`
+reaches it last, gated on the same `canMint` the contract gates it on, and evaluated from
+`getTroveOwnersCount()` and `SortedTroves.getSize()` read together. Both are read rather than one
+inferred from the other, because the contract requires both to exceed one and they are different
+structures. They are optional on `EvaluateCloseInput` under MK-047's rule: `undefined` is "not
+asked", not "there is one".
+
+**The liquidation half could not be fixed in one place, because there was no one place.**
+`read/getTrove.ts` and `read/system.ts` each inlined `icr < MCR`, so MK-074's condition would have
+had to be written twice, which is §11's defect being introduced while fixing something else. Both
+now call `isTroveLiquidatable` in `math/compute.ts`, and the docstring on `read/system.ts` no longer
+claims a fork test is what keeps them agreeing. **Note the two paths differ**: the close gate
+consults the sorted list size as well as the count, the liquidation gate consults only the count
+(`TroveManager.sol:1058-1060`), and the predicate takes only the count for that reason.
+
+**Pinned by** `p13-gates.test.ts`, including the `canMint` conditionality, the "not asked" case, the
+ordering, and both halves of the count-or-size condition. Two mutations.
+
+---
+
+---
+
+## MK-075 · `previewRefinance` orders its reasons against the comment printed directly above them
+
+**Class** S3 · **Status** fixed · **MK-065's defect, in the evaluator MK-065 did not touch**
+
+**Ground truth.** `_refinance` runs `_requireNotInRecoveryMode(vars.price)` at
+`BorrowerOperations.sol:1023` and `_requireTroveisActive` at `:1024`. The mode check is genuinely
+first, before the Trove is checked for existing at all.
+
+**SDK location.** `packages/core/src/math/previewRefinance.ts:122-128` pushes `TROVE_NOT_ACTIVE`
+first. The comment at `:124-125`, immediately above the mode check, reads: "The mode check is the
+contract's FIRST requirement, so it is reported even when other constraints would also fail: it is
+what the caller actually hits." **The code does the opposite of what the comment claims two lines
+later**, and the file's own header at `:11-12` says the rules are listed "in the order the contract
+applies them".
+
+Reproduced on a closed Trove while the system is under CCR:
+
+```
+SDK reasons          : [ 'TROVE_NOT_ACTIVE', 'RECOVERY_MODE', 'TCR_BELOW_CCR' ]
+SDK bindingConstraint: TROVE_NOT_ACTIVE
+chain reverts with   : "BorrowerOps: Operation not permitted during Recovery Mode"
+```
+
+`viable` is correct either way. Only `bindingConstraint` misnames the gate, which is precisely
+MK-065's finding, "reports its reasons in an order the contract does not use", marked fixed for
+`evaluateBorrow` by delegation. This evaluator has no evaluator to delegate to, so it was not
+reached, and `scripts/mutation-check.mjs` has no mutation covering it.
+
+### Fixed
+
+`RECOVERY_MODE` is pushed first, the `RefinanceBlockReason` union is reordered to match with a
+contract line on each member, the header's numbered list says the mode check precedes
+`_requireTroveisActive`, and the field docstring says "in contract call order" rather than "in a
+fixed order". **The header also cited `:1024` for `_requireNotInRecoveryMode` and that was wrong:
+`:1023` is the mode check and `:1024` is the status check.** A citation off by one line is how the
+next reader reproduces the ordering mistake, so it is corrected rather than left.
+
+**And it has the mutation MK-065 never got**, which is the part that stops this recurring: swapping
+the two pushes back turns `p13-gates.test.ts` red.
+
+---
+
+---
+
+## MK-076 · `limitedBy` reports the individual ratio whenever the answer is zero, including when the system ratio is what binds
+
+**Class** S3 · **Status** fixed
+
+**SDK location.** `packages/core/src/math/previewAdjust.ts:520`:
+
+```ts
+const limitedBy = amount === 0n || byIcr <= bySystem ? 'ICR' : 'TCR'
+```
+
+The `amount === 0n` clause swallows the case where the ICR gate would allow a large withdrawal and
+the system TCR gate allows none. Reproduced with an over collateralised Trove in a system sitting at
+exactly CCR:
+
+```
+ICR gate alone would allow : 9975800000000000000 wei
+TCR gate allows            : 0 wei
+amount                     = 0
+limitedBy                  = ICR   (TCR is what binds)
+```
+
+**The docstring makes the argument against the code.** `:448-449` says the field exists because "you
+can withdraw 0" and "you can withdraw 0 because the system is in Recovery Mode" are different
+messages to a user. The same is true of the system ratio, and a caller renders "your position is too
+thin" when the correct message is "the system is at its floor". Nothing is wrong with `amount`; the
+label attached to it is.
+
+### Fixed
+
+`const limitedBy = byIcr <= bySystem ? 'ICR' : 'TCR'`. The `amount === 0n` clause is gone, so the
+label names whichever allowance is smaller regardless of what that allowance happens to be. Ties go
+to ICR, which is the gate a caller can act on. `RECOVERY_MODE` still short circuits ahead of both,
+and the `entireDebt === 0n && systemDebt === 0n` case still reports `null`.
+
+**Pinned by** three cases in `p13-gates.test.ts`: the system at exactly CCR with a heavily over
+collateralised position, which is the case that was mislabelled; a thin position in a roomy system,
+which must still say ICR; and Recovery Mode, which must still say neither.
+
+---
+
+---
+
+## MK-077 · The adjust evaluator silently drops a repayment leg the write path refuses
+
+**Class** S3 · **Status** fixed · **Preview and write disagree about the same input**
+
+**Ground truth.** `_adjustTrove` takes ONE debt leg: `_mUSDChange` with a separate `_isDebtIncrease`
+flag (`BorrowerOperations.sol:757-758`). There is no contract gate for "both", because the parameter
+shape makes it unrepresentable. This is the asymmetry worth naming: the collateral side DOES have a
+gate, `_requireSingularCollChange` (`:788`, `:1367-1375`), because `msg.value` and `_collWithdrawal`
+are separate parameters and both can be non zero.
+
+**SDK location.** `PreviewAdjustParams` (`packages/core/src/math/previewAdjust.ts:149-161`) offers
+`increaseDebt` and `repayDebt` as independent optional fields. Given both, `evaluateAdjust` at
+`:229-232` takes `isDebtIncrease` from the presence of the first and computes
+`netDebtChange = increaseDebt + fee`. The repayment is dropped, and no reason names it:
+
+```
+evaluateAdjust({ increaseDebt: 1000 MUSD, repayDebt: 500 MUSD, ... })
+  viable = true  reasons = []
+  netDebtChange = 1001000000000000000000
+```
+
+`trove/index.ts:523-525` throws `InvalidAdjustment` for the same input, so **the write path is right
+and the preview returns a confident verdict about an operation nobody can perform.** The evaluator
+already has `COLLATERAL_ADD_AND_WITHDRAW` for the symmetric case on the collateral side.
+
+**Scope of the claim.** This is an SDK input validation gap, not an unenforced contract rule. Filing
+it as the latter would be the mistake MK-001 made in the other direction.
+
+### Fixed
+
+`AdjustBlockReason` gains `DEBT_INCREASE_AND_REPAY`, whose docstring says in its first line that it
+is SDK input validation and not a contract gate, and explains why the collateral side has one and
+the debt side does not. `adjustReasonToError` maps it to `InvalidAdjustment` with a message carrying
+no contract citation, deliberately, since there is no line to cite.
+
+The test is value based, matching `_requireSingularCollChange`'s shape on the collateral side, so
+`(0, n)` is left to `ZERO_DEBT_INCREASE`, which already refuses it. `trove/index.ts` refuses the same
+shape earlier and on PRESENCE, which is stricter and safe: a write it rejects never reaches the
+chain. Both halves are pinned, the evaluator in `p13-gates.test.ts` and the write path beside it.
+
+---
+
+## MK-078 · The tenth sweep operation makes the documented sweep unable to finish, so the thousand case figures cannot be re-measured at all
+
+**Class** S2, harness · **Status** **claim-corrected in the P15 wave: this finding is WITHDRAWN.**
+The run it rests on was a measurement of a failing network, not of this repository. Read the
+correction at the end of the entry before anything above it · **Found by running the documented
+recipe on the P13 tree, which is the first time anyone has**
+
+**What was attempted.** MK-069 left `docs/09` §3 carrying 1000 case figures measured on the NINE
+operation generator, labelled as describing a stream this tree no longer produces. The P14 wave's
+single purpose was to replace them: run the sweep at the documented scale, in the documented slices,
+and put the current numbers in the table. **The run does not complete. There are no current numbers
+to put there.**
+
+**Every slice failed.** Seed `20260826`, 1000 cases, four slices of 250 via `MK_DIFF_FROM` and
+`MK_DIFF_TO`, `pnpm test:fork` per slice at pinned block 15043414, a fresh anvil each, exactly as
+`docs/07-testing.md` §4a documents:
+
+| slice | exit | reached | outcome |
+|---|---|---|---|
+| 0..250 | **1** | 200 of 250 at 5373s | `Test timed out in 5400000ms`, no summary emitted |
+| 250..500 | **1** | under 100 | `Test timed out in 5400000ms`, no summary emitted |
+| 500..750 | **1** | under 100 | `Test timed out in 5400000ms`, no summary emitted |
+| 750..1000 | **1** | under 100 | `Test timed out in 5400000ms`, no summary emitted |
+
+Not one slice reached its `done in` line, so not one produced a ran count, a skip count, a direction
+breakdown or a band count. **The table's own reproduction command produces nothing.**
+
+**The cost is the tenth operation, and that is measured rather than inferred.** The first slice
+timed 100 cases at 730s and 200 at 5373s, so cases 101 to 200 averaged 46.4s each against the 3 to
+4s `docs/07` §4a documents for early cases. Every harness throw in all four slices was
+`op=borrowingPower`, the operation MK-067 added, and every one was a
+`WaitForTransactionReceiptTimeoutError`. Isolating that operation over the same index window settles
+it, on a FRESH anvil so the documented "cost grows with the life of the anvil process" cannot be the
+explanation:
+
+```
+MK_DIFF_OP=borrowingPower MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 MK_DIFF_FROM=0 MK_DIFF_TO=250
+
+[differential] done in 4412710ms  ran=18 skipped=0  bands: boundary=10 extreme=1 middle=7
+[differential] mismatches: FALSE_VIABLE=0 FALSE_BLOCKED=0 NUMBERS=0
+[differential] threw=4
+```
+
+**Eighteen cases, 4413 seconds, 245 seconds each**, with four of the eighteen throwing. A 250 case
+slice holds roughly that many of them, so one operation consumes about 73 of the 90 minutes the test
+allows itself before the other nine operations have run at all. That is the whole failure.
+
+**And the control, on the same tree and the same generation, with the operation excluded.** Filtering
+to a single other operation drops `borrowingPower` from the case list entirely, and everything runs
+at the documented cost:
+
+```
+MK_DIFF_OP=borrow  MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+  exit 0, 464s wall.  ran=81 skipped=3, 4.9s per case, threw=0, and the whole fork suite green
+
+MK_DIFF_OP=redeem  MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork
+  exit 0, 1823s wall. ran=99 skipped=47, threw=0, and the whole fork suite green
+```
+
+4.9 seconds per case against 245. **Same tree, same seed, same generation, same anvil recipe**: the
+only variable is whether the operation MK-067 added is in the case list. That is as close to a
+controlled comparison as this harness allows, and it is why this entry attributes the failure to that
+operation rather than to machine load or to the RPC.
+
+The four that threw, with their tuples, so each is reproducible by index:
+
+```
+case=169 band=extreme   collateral=4645000000000000000000 debt=524                     pricePercent=25
+case=220 band=middle    collateral=2000000000000000000    debt=23295000000000000000000 pricePercent=127
+case=222 band=boundary  collateral=610000000000000000     debt=42528341332000000000000 pricePercent=100
+case=230 band=middle    collateral=540000000000000000     debt=30474000000000000000000 pricePercent=123
+```
+
+**Why P13 did not catch it, which is the part worth carrying forward.** MK-069 measured the new
+operation with `MK_DIFF_OP=borrowingPower MK_DIFF_CASES=400` and recorded 33 cases in 176 seconds,
+exit 0, zero mismatches. That is 5.3s per case against the 245s measured here, and the two are not
+in conflict: `MK_DIFF_CASES=400` generates a **different tuple set** from indices 0 to 250 of a 1000
+case generation, because the count is an input to the generator and not a window onto a fixed
+sequence. **The P13 measurement was real and it exercised cases that happen not to hang.** The
+default 24 case sweep that CI runs, and that the P13 five run window ran five times, draws few enough
+of them to stay inside the budget, which is why the wave went green five times over a defect that
+makes the full scale run impossible.
+
+**So the defect is latent at every scale anyone had run, and appears only at the scale the
+documentation promises.** That is the same shape as MK-053, a gate nobody had executed, and MK-066,
+coverage that rested on which cases the generator happened to draw.
+
+**A second property, named because it bears on what the table can ever claim.** The isolated probe
+above **exited 0** with `threw=4`. Throws are counted and never fatal by design
+(`differential.fork.test.ts`), so a sweep can report exit 0 and `0 FALSE_VIABLE, 0 FALSE_BLOCKED,
+0 NUMBERS` while a fifth of its cases never reached the chain. Past runs recorded `threw=0`, so this
+has not yet made a published figure wrong, but a headline of zero mismatches is a statement about the
+cases that RAN and the throw count is what says how many that was. Any replacement figure has to
+carry it.
+
+**Not diagnosed, deliberately.** Why those four transactions are sent and never confirmed is not
+established here. The tuples are extreme (4645 BTC of collateral against 524 wei of debt; 0.61 BTC
+against 42528 MUSD), which points at either the fixture's funding step or a send the SDK's precheck
+and simulate both accept and the chain then never mines, but that is a hypothesis and this entry does
+not assert it. **This wave registers and stops rather than fixing**, on instruction, so the next wave
+owns the diagnosis.
+
+**Blast radius.** No shipped code is implicated: `borrowingPower` is a test operation and every
+production path it exercises is covered by the chain free
+`borrowing-power-agreement.test.ts` and by the Recovery Mode fork assertion in `phase4`. What is
+implicated is **the evidence base**. The thousand case sweep is the instrument `docs/09` §3 leans on
+for "preview verdict against actual transaction outcome", and it cannot currently be run to
+completion, so that row is supported by a measurement of a previous tree and by nothing on this one.
+
+**What the documents say now.** Every figure that described the nine operation stream has been
+removed rather than relabelled, and the rows that carried them say the sweep cannot currently be run
+at the documented scale and name this entry. A number a reader cannot reproduce is worse in that
+table than an absent one, which is the whole reason the P14 wave was called.
+
+---
+
+### Corrected in the P15 wave: this finding is WRONG, and the process failure that produced it matters more than the finding did
+
+**Status changes from `open` to `claim-corrected`.** Everything above describes a real run that
+really happened. The conclusion drawn from it does not hold, and every number in it is a measurement
+of a degraded network rather than of this repository.
+
+**What the re-measurement found**, on the same tree, same seed, same commands, with nothing else
+running:
+
+| measurement | P14 recorded | P15 measured |
+|---|---|---|
+| `MK_DIFF_OP=borrowingPower` over index 0..250, 18 cases | 4413s, `threw=4` | **103s, `threw=0`** |
+| Those same 18 cases through `runCase` in sequence | not measured | **110s total, 6.1s mean, 0 throws, no growth** |
+| One `borrowingPower` case, RPC counted | "245s per case" | **3.0s, 32 RPCs, solver 0.2s and 9 `eth_call`** |
+| One `borrow` case, same tree, same method | the control, 4.9s | **7.0s, 27 RPCs** |
+| Slice 0..250, full `pnpm test:fork` | exit 1 at the 90 minute timeout, no summary | **completed, 1593s, 250 ran, `threw=0`, flat 6.4s per case** |
+
+**A `borrowingPower` case is CHEAPER than a `borrow` case**, because a borrow case has to seed a
+position first and this one does not. The solver makes nine chain calls, not hundreds: the closed
+form answers and the bounded binary search never runs. The 245 was not a per case cost at all; it
+was a mean over a bimodal distribution in which four cases each burned a receipt timeout, which is
+exactly the shape `docs/08-conventions.md` §10 warns about.
+
+**What was actually wrong with the machine, established by watching it fail again.** anvil forks
+LAZILY from the upstream RPC, so any state the fork has not cached is fetched from
+`rpc.test.mezo.org` mid execution. When that link degrades, every uncached read stalls, transactions
+cannot be executed or mined, and `waitForTransactionReceipt` reaches its timeout. The P15 run caught
+the whole progression in one sitting: slice 250..500 finished but with `threw=19`, **every one an
+`InternalRpcError`** and all of them clustered in the last cases; slices 500..750 and 750..1000 then
+failed in `startFork` itself with
+
+```
+- Error #2: dns error
+- Error #3: failed to lookup address information: nodename nor servname provided, or not known
+```
+
+and exited in one and two seconds. The network recovered a few minutes later
+(`dns=0.065s http=200`) and the slices were re-run.
+
+**So the four transactions that "never confirm" are not four transactions and not a defect.** Cases
+169, 220, 222 and 230 run in 2.7s, 2.9s, 7.2s and 6.9s, and in the single case probe the `max + 1`
+attempt is refused by the SDK's own precheck (`ICRBelowMCR`, `RecoveryModeRestriction`) so no
+transaction is sent at all.
+
+**The process failure, which is the part worth keeping.** The P14 entry was written from a single
+run, taken immediately after four slices had hit test level timeouts, without checking what else was
+on the machine and without re-running the measurement once. `docs/08-conventions.md` §10 requires a
+measurement to be reproducible and the command to be recorded; the command was recorded and the
+measurement was never repeated, so the rule was met in letter and missed in substance. **A single
+run of a number that decides a release is not a measurement, it is an observation**, and this
+register already has a class for that: observed once. This entry claimed reproducible and was not.
+
+**What this cost.** The P14 wave removed correct figures from `docs/09` §3, `docs/07`, the provenance
+index and the README on the strength of a false finding, and told a reader the sweep could not be
+run. It can. The figures are restored in this wave from a run of the real thing, and what the real
+run found instead is MK-079.
+
+**Kept, not deleted.** The original entry stands above so the reasoning that produced a wrong
+conclusion is legible, which is the same treatment MK-034 and MK-036 got.
+
+---
+
+## MK-079 · The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero
+
+**Class** S2, harness · **Status** open. NOT fixed. Registered as an expected mismatch in the
+P16 wave so the sweep stops failing on it · **Found by the first clean run of the documented
+sweep, which is also the run that refuted MK-078**
+
+**The mismatch, verbatim from the run that produced it:**
+
+```
+DIFFERENTIAL MISMATCH [FALSE_BLOCKED]
+  seed=20260826 case=209 band=boundary op=adjust collateral=340000000000000000 debt=0
+  pricePercent=66 elapsedSeconds=1 precondition=OCCUPIED redeemBand=AT_NET_DEBT
+  recoveryDrawdownPercent=60
+  replay with: MK_DIFF_SEED=20260826 MK_DIFF_CASE=209
+  preview.viable=false  chainSucceeded=true
+  the preview said NOT VIABLE and the chain accepted it. reasons=[ZERO_DEBT_INCREASE]
+```
+
+**Both halves of the SDK are correct. The harness asked them different questions.**
+
+`adjustCase` (`packages/core/test/differential/harness.ts`) passes its `legs` object to the preview
+**verbatim**:
+
+```ts
+const preview = await client.previewAdjustTrove({ owner: account.address, ...legs })
+```
+
+and then to the write **filtered on `> 0n`**:
+
+```ts
+...(legs.increaseDebt !== undefined && legs.increaseDebt > 0n ? { borrow: legs.increaseDebt } : {}),
+```
+
+The case is generated with `debt=0`, and `adjustDebt(c)` is `c.debt / 4n`, so `increaseDebt` is
+`0n`. On the preview side that is PRESENT, so `previewAdjustTrove` sets
+`isDebtIncrease = params.increaseDebt !== undefined` and reports `ZERO_DEBT_INCREASE`, which is
+exactly right: `_adjustTrove` with `(_mUSDChange = 0, _isDebtIncrease = true)` is refused by
+`_requireNonZeroDebtChange` (`BorrowerOperations.sol:786`, `:1351-1356`). On the write side the leg
+is dropped entirely, so `adjustTrove` sends a pure collateral top-up, which the contract accepts.
+
+**A preview of "add collateral and increase debt by zero" was compared against an execution of "add
+collateral".** Neither answer is wrong. The comparison is.
+
+**This is MK-060's distinction, never applied to the harness.** MK-060 established that
+`_isDebtIncrease` is a parameter the contract takes independently of `_mUSDChange`, and that
+presence and value are different inputs; it fixed `trove/index.ts` and `previewAdjust.ts` to both
+read presence. The harness's own mapping still reads presence on one side and value on the other,
+which is the same defect one level out, in the instrument that exists to catch defects.
+
+**Why it surfaced only now.** The tenth operation added in MK-067 shifts the generator's PRNG
+stream, so the same seed draws different tuples. `debt=0` on an `adjust` case at index 209 is a
+tuple this seed did not previously produce. That is MK-066's lesson repeating: coverage, and now
+correctness of the comparison itself, resting on which cases the generator happens to draw.
+
+**Blast radius: the instrument, not the SDK.** No `packages/*/src` file is implicated. The
+consequence is that the sweep reports a mismatch that is not a product defect, which is the worst
+thing a differential harness can do short of missing a real one: it costs the credibility of every
+zero it has ever reported. Any `adjust` case whose `debt` is under `4` wei produces
+`adjustDebt(c) === 0n` and reaches this path.
+
+**Not fixed here, on instruction.** The obvious shapes are to filter the preview legs the same way
+the write legs are filtered, or to stop filtering the write legs and let `adjustTrove` refuse the
+zero leg as MK-060 made it do. **They are not equivalent** and the choice decides what the case
+tests, so it belongs to a wave that can weigh it rather than to this one.
+
+**What the P16 wave did instead, and why it is not a silencing.** Left alone, an open finding that
+fails the sweep every time makes the sweep useless as a gate: the next person sees red, remembers
+that one of them is expected, and stops reading. That is exactly the shape of MK-053, where a
+verification job sat unexecuted for two releases while looking like a control. So MK-079 is now a
+row in `packages/core/test/differential/expected.ts`, carrying this finding ID and the reason
+above, and `partitionMismatches` splits a run's mismatches into the registered and the
+unregistered. **Three properties, each proved by a test in
+`packages/core/test/expected-mismatches.test.ts` and two of them by a mutation in
+`scripts/mutation-check.mjs`:** an unregistered mismatch still fails the run and is named; a
+registered one does not, so red is real; and a registered one that stops reproducing is reported as
+`EXPECTED-BUT-ABSENT`, because a defect that quietly stops appearing means either somebody fixed it
+without updating the registry or the generator stopped reaching it.
+
+**The predicate matches a SHAPE, not a case index**, and that is not a stylistic choice.
+`generateCases` takes the case count as an input to its PRNG, so index 209 at
+`MK_DIFF_CASES=1000` and index 209 at `MK_DIFF_CASES=400` are different tuples (MK-069). The
+indices are recorded in `knownAt`, scoped to the seed and count they were measured at, and used
+only for the disappearance report. The predicate itself requires an `adjust` op, a `FALSE_BLOCKED`
+direction, `ZERO_DEBT_INCREASE` in the reason, and `case.debt < 4n`, which is precisely the band
+where `adjustDebt` yields a zero leg. **Nothing about registering it makes this finding less open.**
+
+---
+
+## MK-083 · A document described an action that a workflow already performed, and the documented version never ran
+
+**Class** S2, process · **Status** fixed · **Found by auditing this runbook for preconditions
+asserted without an action**, which is a different question that kept turning up the same answer
+
+`docs/12-release-runbook.md` §3 carried two literal `npm deprecate` shell commands.
+`.github/workflows/deprecate.yml` exists to replace exactly those two commands and says so in its
+own header, in its own words:
+
+> `npm deprecate` writes to the registry, so it needs a publish-capable token. The one place this
+> project keeps one is the `NPM_TOKEN` repository secret; putting it in a maintainer's shell to run
+> two commands means a publish credential living somewhere it is not tracked, not rotated with the
+> secret, and not visible in any log. `docs/12-release-runbook.md` §3 recorded the two commands and
+> nothing ran them.
+
+**The workflow was written, it was run, and the document was never updated.** Checked rather than
+assumed:
+
+```
+gh run list --workflow deprecate.yml        ->  33180504234  success  workflow_dispatch  2026-08-28
+npm view @musd-kit/core@0.1.0 deprecated    ->  "0.1.0 returns wrong numbers on seven surfaces..."
+npm view @musd-kit/react@0.1.0 deprecated   ->  "Depends on @musd-kit/core@0.1.0, which returns..."
+```
+
+So the deprecation happened, through the workflow, while the runbook went on instructing a reader to
+obtain a publish credential and paste it into a shell. **A reader following the documentation would
+have taken the exact risk the workflow was built to remove**, and would have had no way to know,
+because the document does not mention the workflow at all: `git grep "deprecate.yml" -- docs`
+returned nothing.
+
+### What makes this family detectable, now that it has appeared three times
+
+| | the document said | where the action actually lived | what had executed |
+|---|---|---|---|
+| MK-053 | the release posture includes a post publish verification gate | a job inside `release.yml`, reachable only as the tail of a real publish | **nothing**, across two releases |
+| MK-080 | the full sweep runs "on demand and on a schedule" | the on demand half only; no `schedule:` trigger existed anywhere | the on demand half, by hand, twice in 85 commits |
+| MK-083 | run these two `npm deprecate` commands | `.github/workflows/deprecate.yml`, written to replace them | **the workflow**, once; the documented commands never |
+
+**The three share one shape and it is mechanically checkable: a document names a command, and
+something in the repository already performs that command.** That divergence is the signal, and it
+is visible without knowing anything about intent, by grepping the repository for the command a
+document tells you to run and asking what else already runs it.
+
+**The execution counts differ and that difference matters, so do not flatten it.** In MK-053 and
+MK-080 nobody ran anything, and the gap was a gate that did not exist. Here the real mechanism ran
+and worked; the gap is that the document pointed somewhere worse. **A working alternative makes the
+family harder to notice, not easier**, because nothing is failing: the deprecation is live on the
+registry, the runbook looks satisfied, and only reading both side by side reveals that the thing
+described and the thing that happened were different things.
+
+**Why S2 rather than S3.** The documented route is not merely redundant, it is the insecure one. A
+maintainer following §3 puts a publish capable npm token into their shell and their shell history,
+and this repository has already recorded what an untracked credential costs to reason about
+afterwards (MK-037's window, where the margin was silently dropped on an unknown fraction of sends
+and there is now no way to find out which).
+
+**Fixed by** replacing §3 with the workflow, its dispatch command, its two inputs, its two guards,
+and how to read the result back from the registry, keeping one sentence that says why the shell
+commands are not the route so nobody restores them. The conventions checklist gains the check that
+detects the family, `docs/08-conventions.md` §10 row 12.
+
+**Audited for other instances in the same pass, and reported rather than fixed.** `ci.yml` is not
+one: the checklist deliberately requires both the local run and the CI run, and says so. `release.yml`
+is not one: §2 dispatches the workflow and the `pnpm publish` line beneath it describes what the
+workflow does rather than instructing you. `sweep.yml` is not one: precondition 7 dispatches it and
+`docs/07-testing.md` gives the local four slice recipe for local use, with the relationship stated.
+`pnpm gate:packaging` is not one: CI does not run it, so precondition 6 is a genuinely manual gate.
+Two near misses are recorded in the wave's report: the runbook names the `verify-published` job
+without mentioning that `verify-published.yml` is dispatchable on its own, which
+`docs/07-testing.md:90-95` documents with a command; and §5 still tells you to run
+`npm dist-tag add` by hand, which carries the identical credential hazard with **no** workflow to
+supersede it, so it is an unclosed instance of the principle rather than a supersession.
+
+---
+
+## MK-084 · The deprecation workflow takes a version input and hardcodes one version's message
+
+**Class** S2 · **Status** fixed · **Found while documenting the workflow
+as the route**, by reading it rather than describing it from its header
+
+`.github/workflows/deprecate.yml` accepts `version` as a required dispatch input and interpolates it
+into both `npm deprecate` targets. **The message strings beside them are literals about 0.1.0:**
+
+```
+npm deprecate "@musd-kit/core@$V"  "0.1.0 returns wrong numbers on seven surfaces, three of them
+                                    silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md.
+                                    Upgrade to 0.2.0."
+npm deprecate "@musd-kit/react@$V" "Depends on @musd-kit/core@0.1.0, which returns wrong numbers on
+                                    seven surfaces. See docs/11-migration-0.1-to-0.2.md.
+                                    Upgrade to 0.2.0."
+```
+
+So a dispatch with `version=0.2.0` attaches the sentence "0.1.0 returns wrong numbers on seven
+surfaces" to 0.2.0 and sends the reader to the wrong migration guide. **The registry is the one
+surface where this is visible to people who are not us**, and a deprecation message is read by
+installers at install time.
+
+**The workflow's own reasoning is right and is not what is wrong here.** Its header argues that the
+messages belong in the workflow rather than in an input, because an input "would let this deprecate
+anything with any text, which is a much larger capability than the job needs". That is sound. The
+defect is that the version was parameterised and the text was not, so the two disagree for every
+input except the one they were written for.
+
+### The fix, and why this shape
+
+**The message is chosen by version from a set that lives in the repository**,
+`scripts/deprecation-message.mjs`, and the dispatch input stays a version. **The header's argument
+against a free text input is untouched:** an input would let this job write any text onto any
+version, and it still cannot. What changes is that the text now varies with the version, which is
+the half that was missing.
+
+A module rather than a `case` in the YAML, for two properties a shell branch cannot give. It is
+**importable**, so the guarantees are asserted by `packages/core/test/deprecation-message.test.ts`
+in the unit project on every push, rather than only when somebody dispatches a registry write. And
+the lookup is **one implementation**, so the string the test checks is the string the workflow
+sends, which is §11 applied to text that reaches the public.
+
+**Two refusals, both before `NODE_AUTH_TOKEN` enters any environment.** The workflow's first step
+resolves the messages by shelling out to the module; the credential appears only in the step after
+it. So a bad dispatch cannot reach the registry even in principle, rather than being caught by a
+later check:
+
+```
+node scripts/deprecation-message.mjs 0.3.0 core
+  -> exit 1: no deprecation message is written for 0.3.0. Refusing to deprecate it: a version
+     without a reviewed message would get another version's text. ... Known versions: 0.1.0, 0.2.0
+```
+
+**Failing loudly on an unknown version is the correct outcome**, and better than a plausible wrong
+message. Preparing a deprecation is now exactly "add an entry in a pull request".
+
+### The first version of the guarantee was too weak, and the test caught it before it shipped
+
+The check began as "the message must contain its version". **It does not hold.** 0.1.0's message
+ends `Upgrade to 0.2.0.`, so 0.1.0's text filed under 0.2.0 CONTAINS "0.2.0" and passed, which is
+precisely the forgery this finding is about. Recorded because the near miss is the useful part: a
+containment check on a string that legitimately names two versions is not a check at all.
+
+The guarantee is now two conditions. The message must **open** by naming the version, per package
+(`0.2.0 ` for core, `Depends on @musd-kit/core@0.2.0,` for react), so the version is the sentence's
+subject rather than an incidental mention. And its `Upgrade to X.Y.Z.` target must be a **different**
+version, because no message tells a reader to upgrade to the release it deprecates, which catches a
+message whose subject was updated and whose tail was not.
+
+### Verified without writing to the registry
+
+By dry run, and by test. The dry run is the CLI the workflow actually invokes:
+
+```
+0.1.0 core   exit 0   0.1.0 returns wrong numbers on seven surfaces, ...
+0.2.0 core   exit 0   0.2.0 is wrong on two Recovery Mode surfaces. ...
+0.3.0 core   exit 1   no deprecation message is written for 0.3.0 ...
+0.2.1 core   exit 1   ... Known versions: 0.1.0, 0.2.0
+''    core   exit 1   a version is required
+0.2.0 landing exit 1  unknown package "landing"; expected one of core, react
+```
+
+**And the 0.1.0 strings are byte identical to what is live**, checked by reading the registry rather
+than by inspection: `npm view @musd-kit/core@0.1.0 deprecated` and the react equivalent both compare
+equal to what the module produces, so a re-dispatch of 0.1.0 rewrites nothing.
+
+14 tests, and two mutations in `scripts/mutation-check.mjs` proving the two guarantees are load
+bearing rather than decorative:
+
+```
+MK-084 subject          startsWith(opening) -> includes(version)        caught by 1 test
+MK-084 unknown version  refuse -> fall back to the first entry          caught by 2 tests
+18 mutations, all caught
+```
+
+**What is NOT proven, and cannot be without a registry write.** That `npm deprecate` accepts a
+message of this length, that the equality check in the verify step passes against what npm actually
+stores, and that npm does not normalise the text. The 0.1.0 comparison is evidence for all three at
+141 and 134 characters, since those strings made the round trip intact; 0.2.0's core message is 378
+characters and has not. The next real dispatch is the first execution of that path.
+
+---
+
+## MK-081 · A developer machine's warm figure was published as CI's, one commit after the rule against it
+
+**Class** S3 · **Status** fixed · **Found by the CI run that proved the commit which introduced
+it**, which is the only reason it was caught at all
+
+Commit `c3e1b6b` added `docs/08-conventions.md` §13, the rule that a published measurement names
+what it measured, and in the same commit rewrote the push subset's cost as:
+
+> **About 158 seconds with the RPC cache warm**, which is what CI sits on because `ci.yml` caches
+> the fork state between runs
+
+The 158 seconds is real and the cache state is correctly named. **The machine is not.** It is the
+mean of a five run window on a developer laptop. The CI runs of that very commit, all three with
+`Cache hit for: anvil-fork-31611-15043414` in the log, so genuinely warm:
+
+```
+34599589828   [differential] done in 50690ms    24 cases    2.1 s/case
+34595233656   [differential] done in 62539ms    24 cases    2.6 s/case
+34599594210   [differential] done in 65412ms    24 cases    2.7 s/case
+```
+
+**Mean 59.5 seconds, against the 158 published as CI's. A factor of 2.4.** A reader budgeting the
+push path from that sentence would have been wrong by more than the figure itself.
+
+**The register was careful where the documentation was not.** MK-058's entry says only that "CI is
+on the run 2 side of that table rather than the run 1 side", which is a claim about the cache state
+and says nothing about the duration. The documentation turned a qualitative claim into a
+quantitative one across a machine boundary.
+
+**This is §13's own failure mode, one commit after §13.** The rule says to name a plausible
+neighbouring quantity and check the wording rules it out. The neighbour here is not a different
+cache state, which the sentence handles; it is the same measurement on a different machine. Cache
+state was the variable that had burned this programme before (`949d361`), so it was the one that
+got named, and the machine went unexamined.
+
+**And the laptop figure is a range, not a point.** The P16 five run window, same laptop, same
+seed, same pinned block, all five exit 0 and all five reporting the identical seeded price:
+
+```
+113630ms  117440ms  113792ms  123305ms  117880ms     mean 117.2s, 4.9 s/case
+```
+
+against P15's mean of 158s, 6.6 s/case. **One machine varies by a third between windows**, so a
+single window's mean published as "the laptop figure" is the same error one scale down. The
+documentation now carries the range and both windows.
+
+**Fixed by** publishing every figure with its machine and as a range where two windows disagree,
+and by adding the machine to §13's list of things a figure has to name.
+
+---
+
+## MK-082 · The checklist demands five byte identical answers from a command that does not pin the fork
+
+**Class** S3, process · **Status** fixed · **Found by following the checklist literally**, which
+cost a 53 minute run
+
+`docs/08-conventions.md` §10 row 2 requires:
+
+> `pnpm test:fork`, five consecutive runs ... The seeded answer, which must be byte identical
+> across all five
+
+**Run exactly as written, it cannot be.** The harness reads `MEZO_FORK_BLOCK` and passes it to
+anvil as `--fork-block-number` (`packages/core/test/harness/anvil.ts:83-91`); with the variable
+unset there is no `--fork-block-number` and anvil forks at `latest`. The oracle shim is then seeded
+from the fork's own block (MK-020), so the seeded price is whatever the chain was doing at that
+second. `docs/07-testing.md:27` says so plainly, "Locally, leaving it unset forks at `latest`", but
+the checklist row that demands the identity does not carry the variable, and neither does the recipe
+block at `docs/07-testing.md:219-221`.
+
+**Observed, not reasoned.** A window started without it reported
+`[harness] anvil fork ready at http://127.0.0.1:57114, block 15465775` against the pinned
+`15043414`, took 3187 seconds for 24 cases because no cached state existed for a block nothing had
+ever forked at, and ended in a viem `TimeoutError`. The four runs after it failed in `startFork`.
+
+**Why it matters beyond the wasted hour.** CI sets the block (`ci.yml`), so CI is pinned and green
+while a local window is measuring a different chain state. Every figure taken from an unpinned
+window is a figure about one moment on testnet, and MK-078 is what that costs when it reaches the
+register.
+
+**Fixed by** putting `MEZO_FORK_BLOCK` in the checklist row and in the recipe, with the consequence
+of omitting it stated where the command is, rather than a section earlier.
+
+---
+
+## MK-080 · The sweep was described as scheduled for 85 commits and a release, and no schedule existed
+
+**Class** S2, process · **Status** fixed · **Found while carrying out the P16 instruction to
+schedule the sweep**, by checking whether it was already scheduled before writing a workflow
+
+`docs/07-testing.md` §4a has read "**The full 1000 case sweep: on demand and on a schedule, never
+on push**" since commit `622bbe4`, dated 2026-08-27. The on demand half is true and documented with
+a recipe. **The other half was never built.**
+
+```
+git log --all -S "schedule:" -- .github/workflows/   ->  (no commits)
+grep -rl "schedule:" .github/workflows/              ->  (nothing, before this wave)
+git rev-list --count 622bbe4..HEAD                   ->  85
+git tag --contains 622bbe4                           ->  v0.2.0
+```
+
+**85 commits and one published release sat under a sentence describing a control that did not
+exist.** In that window the push path ran the 24 case subset and nothing ran the other 976.
+
+**This is MK-053's shape, and that is the reason it is filed rather than quietly wired.** MK-053
+was a post publish verification job that had never executed across two releases while being
+presented as part of the release posture. The failure mode is identical: a gate that is described
+but not scheduled is a claim about diligence, and a reader cannot tell the two apart from the
+documentation alone.
+
+**It was not harmless.** The tenth operation added in MK-067 shifts the generator's PRNG stream,
+so the same seed draws different tuples. Nobody ran the full sweep against the new stream for two
+waves. When the P15 wave finally did, the first clean run surfaced MK-079, which had been reachable
+from the moment the operation landed. A weekly run would have surfaced it within seven days of the
+merge instead of two waves later.
+
+**The fix, and what it deliberately does not do.** `.github/workflows/sweep.yml` runs the four
+slices on `schedule` (Sundays 03:00 UTC) and on `workflow_dispatch`. It does **not** move the sweep
+onto the push path: 116 minutes of wall clock on every merge would get skipped, and a gate people
+route around is worse than one they budget for. The fast 24 case subset stays on push in `ci.yml`,
+unchanged by this wave. The release runbook now carries the other half of the answer, since a
+weekly run is almost never against the commit being released: precondition 7 requires a sweep whose
+`headSha` equals the released commit (`docs/12-release-runbook.md` §0).
 
 ---
 
@@ -4519,6 +5966,691 @@ caller's gas without asking is not the SDK's decision to make. This is documente
 `docs/03-core-api.md` so a caller builds the retry rather than discovering the need for it.
 
 
+
+---
+
+## MK-085 · The React adjust preview defaults every leg, so through the hook every adjustment is a debt increase
+
+**Class** S1 · **Status** fixed · **Found by an external correctness audit of the
+`4c8227e..004ace9` range, and re-derived from the contract here before it was filed**
+
+**Ground truth.** `_adjustTrove` takes `uint256 _mUSDChange` and `bool _isDebtIncrease` as two
+INDEPENDENT parameters (`BorrowerOperations.sol:757-758`) and reconciles them at `:785-787`:
+`if (_isDebtIncrease) _requireNonZeroDebtChange(_mUSDChange)`, which is
+`require(_debtChange > 0)` (`:1351-1356`). So `(0, true)` is refused and `(0, false)` is an
+ordinary collateral operation. The single axis entry points pass the flag as a constant:
+`addColl` (`:193`) and `repayMUSD` (`:266`) pass `false`, `withdrawMUSD` (`:248`) passes `true`.
+
+**SDK location.** `packages/react/src/hooks/reads.ts`, `useAdjustTrovePreview`. It destructured
+all four legs with `= 0n` defaults and forwarded them unconditionally. `previewAdjustTrove`
+reads the flag from PRESENCE, `isDebtIncrease: params.increaseDebt !== undefined`
+(`packages/core/src/math/previewAdjust.ts`), which is what MK-060 changed it to. Through this
+hook `increaseDebt` was never `undefined`, so **every** adjustment was evaluated as a debt
+increase.
+
+**What that produced, measured chain free before the fix:**
+
+```
+// Healthy Trove: 1 BTC at 100,000 USD, entire debt 10,200 MUSD, normal mode.
+previewAdjustTrove(deps, { owner, addCollateral: 1e18 })
+  -> { viable: true,  reasons: [] }                        // legs OMITTED
+previewAdjustTrove(deps, { owner, addCollateral: 1e18,
+                           withdrawCollateral: 0n, increaseDebt: 0n, repayDebt: 0n })
+  -> { viable: false, reasons: ['ZERO_DEBT_INCREASE'] }    // legs DEFAULTED
+
+// Pure repayment of 5,000 MUSD, the silent half:
+omitted   -> netDebtChange 5000e18  resultingEntireDebt 5200e18  resultingIcr 19.230769...
+defaulted -> netDebtChange 0        resultingEntireDebt 10200e18 resultingIcr  9.803921...
+```
+
+**Two failure modes, not one.** The verdict fails LOUDLY and wrongly: a pure top-up, a pure
+withdrawal and a pure repayment all come back `viable: false` with `ZERO_DEBT_INCREASE`, which
+the contract accepts. The numbers beside it fail SILENTLY: `netDebtChange`,
+`resultingEntireDebt`, `resultingIcr` and `resultingTcr` are all computed from the increase
+branch, so a repayment leg is dropped from every figure. A panel rendering "your ICR after this
+change" showed 9.80 where the answer was 19.23. The repayment gates at `:855-861` are guarded by
+`!isDebtIncrease` and could never run from this hook at all.
+
+**The only shape it got right was a non zero `increaseDebt`**, which is a minority of the surface
+the hook exists for.
+
+**Why nothing caught it.** `packages/core/test/preview-adjust-reads.test.ts` asserts the exact
+distinction, in as many words: "`increaseDebt: 0n` is a debt increase OF ZERO, which is a
+different input from no debt leg at all", with one call viable and the other not. That test
+passed throughout, because it tests the core. Nothing rendered the hook. See MK-087.
+
+**A second, smaller half: the query key.** `musdQueryKeys.adjustPreview` encoded an absent leg
+and a leg of zero identically as `"0"`, so "no debt leg" and "a debt increase of zero" shared a
+cache entry. `borrowPreview`, `withdrawCollateralPreview` and `redeemPreview` had the same shape
+for `amount`: the hook disables itself without one, and a disabled TanStack query still reads
+whatever sits at its key, so an empty input box could render the verdict computed for a draw of
+zero.
+
+### Fixed
+
+**The legs are built ONCE, from presence, and handed to both the key and the call.** A single
+`AdjustPreviewLegs` object drives `musdQueryKeys.adjustPreview` and
+`client.previewAdjustTrove`, so the key cannot describe a different question from the one asked.
+`exactOptionalPropertyTypes` is on, so a conditional spread is the only way to keep an absent leg
+absent rather than present-and-undefined, and the compiler enforces the resulting shape. An
+absent leg is `null` in the key and a leg of `0n` is `"0"`; the three amount keys follow the same
+rule.
+
+**Pinned by a RENDERED test**, `packages/react/test/adjust-preview-hook.test.ts`, which is the
+first of its kind in this repository. React, TanStack Query, the wagmi context, the hook, the key,
+the core's `previewAdjustTrove` and the `evaluateAdjust` rules are all real; only `useMusdClient`
+and the transport under it are replaced, so it runs in the `unit` project with no anvil and no RPC
+URL. **Proved by mutation**: restoring the default fails three of its tests, and collapsing the
+key's absent case to zero fails a fourth. Both are in `scripts/mutation-check.mjs`.
+
+**And a package-wide guard.** A test reads `packages/react/src/hooks/*.ts` and fails on any
+destructuring default of a value, because the compiler cannot see one and it reads as tidy. The
+full hook audit is in MK-087.
+
+---
+
+## MK-086 · The decision-site enumeration was applied to one package, so the register asserted a defect implicated no source file
+
+**Class** S2, process · **Status** fixed · **Found by the same audit, as the finding behind
+MK-085 rather than beside it**
+
+**What was asserted.** MK-079 found this exact argument mis-mapping in the differential harness
+and concluded: "**Blast radius: the instrument, not the SDK.** No `packages/*/src` file is
+implicated." The summary table repeated it, and `README.md` repeated it twice, including under
+"**No S1 is open.**"
+
+**Every one of those statements was false when it was written.** The identical mis-mapping was in
+`packages/react/src/hooks/reads.ts`, in shipped source, where it is not a comparison artefact but
+the answer the hook returns. MK-085 is that defect.
+
+**Why the assertion was made, which is the part worth keeping.** MK-069 established the rule that
+a protocol rule decided in more than one place gets its decision sites ENUMERATED rather than
+patched where they happen to be noticed, and MK-069 did exactly that for the borrowing fee: eight
+sites, listed, all routed through `isBorrowingFeeCharged`. MK-079 inherited the rule and applied
+it to `packages/core`. The enumeration stopped at a package boundary that has no meaning to the
+defect: presence versus value is a property of every caller of `previewAdjustTrove`, and
+`packages/react` is one.
+
+**The correction, stated as a rule rather than as an apology.** An enumeration is scoped to the
+RULE, not to the directory the defect was found in. `docs/08-conventions.md` §11 now says so, and
+the conventions checklist asks, for any finding whose cause is an argument shape or a shared rule,
+which packages call it, naming them.
+
+### Fixed
+
+MK-079's entry and its summary row no longer claim the SDK is unimplicated; they point at MK-085.
+`README.md`'s maturity section is corrected in both places, and "No S1 is open" is gone: it was
+true of what the sweep could express and not of the tree.
+
+---
+
+## MK-087 · Eighty four findings and nothing about the React package, because no gate reached it
+
+**Class** S2, process · **Status** fixed · **Found by asking why MK-085 survived rather than how
+it was written**
+
+**The measurement, not the impression.** Before this wave:
+
+| Control | Scope | React reached? |
+|---|---|---|
+| Coverage ratchet | `include: ['packages/core/src/**/*.ts']` (`vitest.config.mts`) | No. 36 files in the report, 0 under `packages/react/src` |
+| `scripts/mutation-check.mjs` | 18 mutations, every one in `packages/core` or `scripts` | No |
+| Differential sweep | calls `client.previewAdjustTrove` directly (`test/differential/harness.ts`) | No, it never renders a hook |
+| Unit project | 3 React tests, all about an `AbortSignal` shim (MK-028) | Barely |
+| Fork project | `hooks.fork.test.ts`, `phase9-app.fork.test.ts` | Yes, but chain bound and never coverage measured |
+
+The prior external audit stated in writing that it read the React package for hook names only. So
+did every control in the repository, in effect. MK-085 was sitting in that hole.
+
+### The full hook audit, negative results included
+
+**Every exported hook, and what it does with an optional parameter.** The rule applied: a hook must
+never substitute a value for an absent optional before forwarding it, because `previewAdjustTrove`,
+`previewOpen` and `getBorrowingPower` all read meaning from PRESENCE. Enumerated mechanically from
+`packages/react/src/hooks/*.ts` rather than by eye, and the negative results are listed because
+"one was wrong" is only a claim if the other twenty three were checked.
+
+| Hook | Optionals it forwards | Verdict |
+|---|---|---|
+| `useAdjustTrovePreview` | four legs | **WAS WRONG.** Defaulted all four to `0n`. MK-085 |
+| `useBorrowingPower` | `account` | Clean. Already spread conditionally, `...(account !== undefined ? { account } : {})`, and the key carries `account ?? null` |
+| `useTrove`, `useHealthFactor`, `useLiquidationPrice` | none | Clean. `address` is required-or-disabled, never defaulted into a call |
+| `useMusdBalance`, `useOraclePrice` | none | Clean |
+| `useBorrowPreview`, `useWithdrawCollateralPreview`, `useRedeemPreview` | none forwarded | Clean on the call. **The KEY had the weaker form of the same defect**: `amount ?? 0n` made "not asked yet" and "a draw of zero" one cache entry, and a disabled TanStack query still reads whatever sits at its key. Absent is `null` now |
+| `useBorrowingCapacity`, `useRefinancePreview`, `useMaxWithdrawableCollateral`, `useClosePreview` | none | Clean. The `owner ?? '0x'` key placeholder cannot collide with a real owner, since no address is two characters |
+| All ten write hooks | none at the hook | Clean **by construction**: `useMusdWrite` takes the params object at `mutate` time and hands it to the core method verbatim. No hook in `writes.ts` destructures or defaults anything |
+
+**Fourteen read hooks and ten write hooks. One was wrong, three more had the key-only form, and
+twenty were clean.** The guard that keeps it that way is a test reading the hook sources and
+failing on any destructuring default of a value, because the compiler cannot see one and it reads
+as tidy.
+
+### Fixed
+
+**Coverage now measures both published packages.** `include` is
+`['packages/core/src/**/*.ts', 'packages/react/src/**/*.ts']`. **This DROPPED the reported
+figure**, which is the point and is reported rather than excluded: the old number was high because
+it was scoped to the half that was tested. The floor is re-measured below and the ratchet resumes
+from the honest number.
+
+**The mutation check reaches React.** Two mutations in `packages/react/src`, both caught.
+
+**A rendered test exists**, `packages/react/test/adjust-preview-hook.test.ts`, chain free, in the
+`unit` project. It is the minimum pin rather than a suite; what it establishes is that rendering a
+hook needs no chain, so the next one is cheap.
+
+**The sweep still does not reach hooks, and that is now stated rather than implied.** One
+sentence a reader can check: the harness drives `client.*` directly because a differential case
+compares a preview against an executed transaction, and a React hook adds a render and a cache
+between the two without changing either side of the comparison. `docs/09-review-and-validated-surface.md`
+records that the validated surface is the core client, and that the React layer is covered by the
+fork hook tests and the rendered unit test, not by the sweep.
+
+---
+
+## MK-088 · `previewRedeem` sizes its accrual margin from the redeemer's Trove, and bundles a governable rate when there is none
+
+**Class** S1 · **Status** fixed · **Found by the same audit, verified against the contract here**
+
+**Ground truth.** The quantity the margin models is the growth of the TARGET Trove's debt between
+the preview read and execution. `_redeemCollateralFromTrove` accrues it with that Trove's own
+stored rate and its own principal (`TroveManager.sol:1234-1241`):
+
+```solidity
+vars.interestPayment =
+    trove.interestOwed +
+    InterestRateMath.calculateInterestOwed(
+        trove.principal,
+        trove.interestRate,        // the TARGET's rate
+        trove.lastInterestUpdateTime,
+        block.timestamp
+    );
+```
+
+A Trove's rate is frozen at open (`BorrowerOperations.sol:668-672`) and at refinance (`:1075`),
+each time from `interestRateManager.interestRate()`. That global is GOVERNABLE: initialised to
+`100` (`InterestRateManager.sol:88`), changed through `proposeInterestRate` (`:129`) and
+`approveInterestRate` (`:145`, assigning at `:225`). **So two Troves in one system carry different
+rates whenever governance has moved it between their opens.**
+
+**SDK location.** `packages/core/src/math/previewRedeem.ts` read
+`getTroveInterestRate(redeemer)`, coerced a zero to `100n`, wrapped the read in
+`.catch(() => 100n)`, and applied that one rate to every Trove in the walk. A redeemer is
+typically an arbitrageur or keeper with NO Trove, so the getter returns `0` and the hardcoded
+`100n` is what shipped.
+
+**Three defects in four lines:**
+
+1. **The wrong Trove.** The redeemer's rate has nothing to do with the target's accrual.
+2. **A bundled governable value.** `constants.ts:1-4` states the rule this breaks: "Everything
+   governable/dynamic (minNetDebt, the borrowing/redemption/interest rates, the oracle price) is
+   read on-chain, never bundled." The `interestRateManager` address is already in the SDK's
+   address map and `createMusdClient` already reads `interestRate()` into its TTL cache.
+3. **A swallowed read failure.** `.catch(() => 100n)` turned an RPC error into a plausible number,
+   which is the class MK-007 and MK-012 closed twice already.
+
+**Measured, chain free, before the fix.** Target Trove with entire debt 2,208 MUSD, net debt
+2,008, floor 1,800, target rate 500 bps, redeemer holding no Trove:
+
+```
+reported accrualMargin        419812407738237       // computed at the hardcoded 100 bps
+margin the target accrues    2099062038691189       // 500 bps, per :1236-1241
+reported nextViableAmount  2008000419812407738237
+amount that would work     2008002099062038691189
+shortfall                    1679249630952952 wei
+```
+
+**Under-sizing is the dangerous direction**, and it reproduces the exact failure the field exists
+to prevent: the offer arrives as a partial, `:1218-1221` sizes the lot against the larger debt,
+the remainder is under the floor, `:1299-1306` cancels, `:392` breaks, and `:406-408` reverts
+because nothing was drawn. That is MK-048.
+
+**Why it was not wrong today, which is not the same as being right.** The live global rate is 100
+bps on both chains (`docs/09-review-and-validated-surface.md` §6), every Trove was opened at it,
+and the hardcoded fallback happened to match. The number was correct by coincidence; the rule was
+wrong. `docs/01-ground-truth.md` records the governable band as 1 to 5 percent, so the margin could
+be understated by up to five times on the first rate change.
+
+### Fixed
+
+**`EligibleTrove` carries its own `principal` and `interestRateBps`**, read per Trove in the walk.
+`getTroveInterestRate(cursor)` rides in the `Promise.all` that already fetches that Trove's ICR and
+debt, so it costs one request and **no extra round trip**. `marginFor(trove)` takes the Trove, not
+a shared rate, so each step of the walk is sized by its own numbers.
+
+**`EvaluateRedeemInput.interestRateBps` is REMOVED rather than kept as a fallback**, which is a
+breaking change to an exported interface and is the right one: a fallback is an assumed governable
+value wearing a different hat. **There is no `catch`**: a failed read fails the preview.
+
+**Pinned by five chain free cases** in `packages/core/test/preview-redeem.test.ts`: the base is the
+principal and not the entire debt, a five times rate is a five times margin, an amount sized at 100
+bps is REFUSED against a Trove carrying 500, each Trove in a mixed walk gets its own margin, and a
+zero rate accrues nothing. **Proved by mutation**, one for the rate and one for the base.
+
+**What it costs, stated rather than discovered.** The rate is read for every Trove the walk visits,
+including the sub-MCR ones it skips, because it rides in the same `Promise.all` as that Trove's ICR
+and debt. Three requests per iteration where there were two, and **no additional round trip**, since
+they are concurrent. The walk is bounded by `maxIterations` and breaks as soon as the accumulated
+net debt covers the request, so the iteration count is unchanged; what grew is requests per
+iteration, by half. The alternative, reading the rate only for eligible Troves, costs a sequential
+round trip per eligible Trove instead, and round trips are what MK-010 is about.
+
+---
+
+## MK-089 · The interest formula was implemented twice and the copies disagreed about the base
+
+**Class** S2 · **Status** fixed · **Found by the same audit**
+
+**Ground truth.** `InterestRateMath.calculateInterestOwed` takes `_principal`
+(`InterestRateMath.sol:12-22`) and every call site passes `trove.principal`:
+`getEntireDebtAndColl` at `TroveManager.sol:788-793` and `_redeemCollateralFromTrove` at
+`:1236-1241`. **Accrued interest is not part of the base**, so interest does not compound.
+
+**SDK location.** Two copies. `math/compute.ts`'s `computeEntireDebt` accrued on the principal,
+correctly, with `BPS_DIVISOR` and `SECONDS_PER_YEAR` imported. `math/previewRedeem.ts`'s
+`marginFor` accrued on the ENTIRE debt and wrote the basis point divisor as a literal `10_000n`.
+
+**Measured**, same Trove, principal 2,200 MUSD with 8 MUSD of interest already owed:
+
+```
+margin on entireDebt (2,208)             419812407738237
+contract accrues on principal (2,200)    418291348289910
+difference                                 1521059448327 wei
+```
+
+The divergence was conservative, so no caller was harmed: the margin was overstated and
+overshooting a redemption is free. **It is reported because it is two copies of one protocol rule,
+not because the number was dangerous.** MK-071 had already fixed a different divergence in the same
+four lines, the shadowed 365 day year, and left the base alone.
+
+**The test could not see it.** `packages/core/test/preview-redeem.test.ts` restated the formula
+with an independently written `31_556_952n`, which is genuinely independent about the constant and
+is why MK-071 stayed fixed. It then reused `entireDebt` as the base, so the source could accrue on
+either quantity and the test would agree. Every fixture in the file also carried
+`principal === entireDebt`, so the two were never separable.
+
+### Fixed
+
+**One function, `accruedInterest`, in `math/compute.ts`**, mirroring
+`InterestRateMath.calculateInterestOwed` term for term and taking `{ principal, rateBps, seconds }`.
+`computeEntireDebt` and `previewRedeem.marginFor` both call it. `previewRedeem` no longer contains
+the arithmetic at all, which is what stops the base drifting again: there is nothing left there to
+drift.
+
+**The test is fixed too.** `marginOf` takes a principal, and the new cases carry a principal that
+differs from the entire debt, so the base is asserted rather than coincidentally equal.
+
+**And correcting it broke something, which is MK-095.** The over-estimate this removed was about 1
+percent on the fork fixture, worth roughly 6 seconds of accrual, and that was what had been
+covering the block a redemption settles in. The fork gate caught it on the next run. Two defects
+were cancelling; fixing one exposed the other.
+
+---
+
+## MK-090 · The public hint helpers instructed the caller to pass the quantity MK-006 was filed about
+
+**Class** S2 · **Status** fixed · **Found by the same audit**
+
+**Ground truth.** The SortedTroves key is the PRINCIPAL on every operation except an open.
+`_computeNominalCR(vars.newColl, vars.newPrincipal)` on the adjust path
+(`BorrowerOperations.sol:902-905`), the same on refinance (`:1087`), the same on a partial
+redemption (`TroveManager.sol:1287-1290`), and `getNominalICR` itself reads
+`Troves[b].principal + pendingPrincipal` (`TroveManager.sol:569-576`). Only `:652`, the open path,
+passes `compositeDebt`, and at an open there is no accrued interest so the two coincide.
+
+**SDK location.** `packages/core/src/hints/computeNICR.ts` named the parameter `entireDebt` and
+documented it as "The position's ENTIRE debt". `computeHints.ts` repeated it: "The caller supplies
+the RESULTING entire debt". Both are on the public client
+(`createMusdClient.ts`, `computeNICR` and `computeHints`).
+
+**Every internal call site was correct.** `trove/index.ts`'s `hintsFor` names its own parameter
+`principal` and all nine call sites pass principal. MK-006's remediation says the rename was made
+"so the wrong quantity cannot be passed by habit". **It stopped one line short**: `hintsFor` took
+`principal` and handed it straight back as `entireDebt: principal`, because the public helper still
+asked for the entire debt. The adapter line was where the correct name was translated into the
+wrong one, and the public signature is what an integrator building their own write path reads.
+
+**Blast radius.** Gas and latency, not funds, exactly as MK-006 records: a NICR below the node's
+real key lands the hint in the wrong neighbourhood, `reInsert` re-validates and traverses, and on a
+long list that can run out of gas.
+
+### Fixed
+
+`ComputeNICRParams.principal` and `ComputeHintsParams.principal`, with the docstrings stating which
+quantity and why the open path makes the two look interchangeable. `hintsFor` has nothing left to
+translate.
+
+**The rename was the test.** Excess property checking turned every stale call site into a compile
+error: **fourteen in `@musd-kit/core`** (`math.test.ts` 5, `phase3.fork.test.ts` 4,
+`zz-findings.fork.test.ts` 4, `harness/openTroveRaw.ts` 1) and **two more in
+`@musd-kit/react`** (`hooks.fork.test.ts`), sixteen in total. Twelve were already passing a
+principal under the wrong key name, with local variables literally called `principalAfter` and
+`expectedFromPrincipal` beside a key called `entireDebt`; two were passing a live Trove's
+`entireDebt` and are corrected. **The test suite knew which quantity it meant and the public
+signature said the other one.**
+
+**The sweep of the rest of the public surface**, which the wave was asked for: no other exported
+docstring instructs a caller into a closed finding. `RedeemResult.truncatedAmount`,
+`BorrowingCapacity.remaining`, `ClosePreview.musdRequired` and `MaxWithdrawable.amount` each carry a
+warning pointing AT their finding rather than into it.
+
+---
+
+## MK-091 · `close()` computed the last Trove reason and sent anyway, and the revert had no typed error
+
+**Class** S2 · **Status** fixed · **Found by the same audit**
+
+**Ground truth.** `BorrowerOperations._closeTrove` finishes at `:976` with
+`troveManagerCached.closeTrove(_borrower)`, which is `TroveManager.sol:472-475` and reaches
+`_closeTrove` at `:1390`. There, gated on the same `musdToken.mintList(borrowerOperations)` flag as
+the Recovery Mode and TCR checks (`:1395-1399`), it requires
+`TroveOwners.length > 1 && sortedTroves.getSize() > 1` (`:1488-1496`) and reverts with
+"TroveManager: Only one trove in the system".
+
+**SDK location.** `packages/core/src/math/previewClose.ts` has reported this correctly as
+`LAST_TROVE_IN_SYSTEM` since MK-074. `packages/core/src/trove/index.ts`'s `close()` mapped three of
+the five block reasons to typed errors and let this one fall through to the send.
+`errors/mapRevert.ts` had no pattern for the revert either, so it arrived as `ContractCallFailed`
+carrying a raw string, which is precisely what MK-043 existed to remove.
+
+**The preview computed the answer and the write path threw it away.**
+
+**Blast radius.** No gas: the simulation refuses it. The cost is an untyped error where every
+neighbouring reason has a typed one, for the holder of the last Trove in a system, which is the
+state a fresh deployment and a quiet testnet spend most of their time in. This package's own README
+says it is for testnet and evaluation.
+
+**A stale count in the same file.** `trove/index.ts` still read "two of its four gates are
+conditional on a live chain read" where MK-074 had made it three of five. MK-074 updated
+`previewClose.ts` and not this copy, which is MK-094's shape in prose.
+
+### Fixed
+
+`close()` throws `LastTroveInSystem`, a new typed error, and `mapRevert` maps the revert string to
+the same class for a caller who skipped the preview. `ClosePreview` now carries
+`troveOwnersCount` and `sortedTrovesSize`, so the error thrown from the preview carries the real
+counts rather than the placeholder zeros MK-017 refuses; the decoder, which cannot know them,
+passes none. Four chain free tests, and the MK-074 close mutation now fails four tests instead of
+two.
+
+---
+
+## MK-092 · `getBorrowingPower` published a cost that was never counted
+
+**Class** S3 · **Status** fixed · **Found by the same audit, which counted it**
+
+**What was claimed.** "Every chain read happens in ONE `multicall` ... That is **three round
+trips**, or four when an `account` is supplied in normal mode." An inline comment added that
+`fetchPrice` was "included only when the caller did not supply a price" and that
+`checkRecoveryMode` "joins this batch" with a supplied price.
+
+**What the code did.** The batch carried four contracts and never any other. `fetchPrice` was a
+separate `readContract`, `checkRecoveryMode` another, `isAccountFeeExempt` another, and
+`getBorrowingFee` was called TWICE with the same argument on the happy path. Counted with a
+counting client:
+
+```
+normal mode, no account       6 reads, claimed 3
+normal mode, with account     7 reads, claimed 4
+Recovery Mode, no account     4 reads
+normal mode, price supplied   5 reads, and checkRecoveryMode STILL outside the batch
+```
+
+**This is MK-039's shape and MK-081's shape**: a published figure with nothing in the repository
+executing it. `docs/08-conventions.md` §10 makes a measurement citable only when the code that
+produced it is committed and someone else can run it.
+
+### Fixed
+
+**The code now does what the comment always said.** `fetchPrice` joins the batch when the caller
+supplied no price. `checkRecoveryMode` cannot join it and the comment says why rather than
+claiming it does: it takes the price as an argument and inside that batch the price does not exist
+yet. The confirmation fee is KEPT and reused for the debt floor check instead of being re-read with
+the same argument.
+
+**Re-counted, and pinned**: 4 round trips in normal mode with no account, 5 with an account, 3 in
+Recovery Mode, 4 with a supplied price, and `getBorrowingFee` at most once on the closed form path.
+Five tests in `packages/core/test/borrowing-power-agreement.test.ts` assert the exact call
+sequence, so the docstring cannot drift from the code again.
+
+**One stub was wrong for the same reason and is fixed:** `s2-guards.test.ts` returned a fixed
+four element tuple from `multicall` regardless of what was asked, so a fifth batched read came back
+`undefined`. It answers by function name now.
+
+---
+
+## MK-093 · MK-013's exemption rested on a condition `getBorrowingPower` had broken, and its list was two waves stale
+
+**Class** S2 · **Status** fixed · **Found by reading MK-013 against the tree it exempts**
+
+**What MK-013 says.** It fixed the price/state straddle in `read/` by PINNING rather than merging:
+`read/snapshot.ts` returns the price with `Multicall3.getBlockNumber()` from one `eth_call` and the
+caller runs the dependent reads at that block. It then states, exactly:
+
+> **What is NOT changed, stated rather than left to be discovered.** `previewOpen`,
+> `previewBorrow`, `previewRefinance` and `getBorrowingPower` still read the price in their own
+> round trip. **None of them claims a single block snapshot in its docstring**, and moving them is
+> a larger change to the math layer's shape than this finding calls for.
+
+**The exemption is conditional, and the condition was broken.** `getBorrowingPower`'s docstring
+said "Every chain read happens in ONE `multicall`", which is a single block snapshot claim in a
+docstring. The exemption did not cover the tree it was written about.
+
+**The gap is real, not only rhetorical.** The system totals the resulting TCR gate uses come from
+the batch; `price` and `checkRecoveryMode(price)` are later round trips. So the TCR gate can mix
+system totals from one block with a price from another. Nothing under `math/` uses
+`read/snapshot.ts`.
+
+**And the list is stale.** It names four functions. `previewAdjustTrove`, `previewClose`,
+`maxWithdrawableCollateral` and `previewRedeem` have the same shape and landed in the MK-042 and
+MK-048 waves, after MK-013 was written. None was named.
+
+### Fixed
+
+The false claim is gone from `getBorrowingPower` and replaced by an explicit statement of what the
+function does NOT promise, naming MK-013 and `read/snapshot.ts`. MK-013's entry is brought up to
+date: it lists all eight preview and calculator functions that read the price in their own round
+trip, restates the exemption as a decision about the math layer's shape rather than as a fact about
+docstrings, and records that the condition it was originally phrased against is not a durable one.
+
+**Not closed by pinning the snapshot**, deliberately and with the cost stated: moving `math/` onto
+`readAtSnapshot` is the larger change MK-013 declined, it would add a round trip to eight
+functions, and the window is one block. What changed is that it is now disclosed at every one of
+those functions rather than at four of them in a register entry.
+
+---
+
+## MK-094 · Nine protocol rules decided more than once, two of them already diverged
+
+**Class** S2 · **Status** fixed for seven, two named as deliberate · **Found by the same audit,
+which produced the table**
+
+**This is the fifth time duplication has produced a defect here**: MK-001 (two liquidatability
+predicates), MK-006 (hint basis), MK-017 (duplicated derivations), MK-069 (one fee rule, eight
+places, four wrong). The audit's table was treated as a work queue rather than an observation, and
+every row is settled below.
+
+| Rule | Sites before | State | Resolution |
+|---|---|---|---|
+| Borrowing fee applies | 1 (`math/fee.ts`), 6 callers | one copy | Unchanged. MK-069 holds; verified by grep that no site re-derives the conjunction |
+| Interest accrual formula | 2 | **DIVERGED** on the base | MK-089. One copy, `accruedInterest` |
+| `capacity - entireDebt` headroom | 3 | agreed | `borrowingCapacityOf`, called by `evaluateAdjust`, `getBorrowingCapacity` and `assertWithinBorrowingCapacity` |
+| `entire[1] + entire[2]` | 6 | agreed | `troveAmounts(edc)`, a named accessor over the six-tuple |
+| Net debt (`entireDebt - 200`) | 10, in **two different shapes** | agreed on active Troves | `netDebtOf`, mirroring `LiquityBase._getNetDebt` (`:107-109`) |
+| Trove-is-active test | 5, three as `status !== 1` | agreed | `TroveStatus.active` at all five |
+| Basis point divisor | `BPS_DIVISOR` plus 2 literals | agreed | Both literals replaced |
+| `_requireNotInRecoveryMode` citation | 2 | **DIVERGED**, `:1023` and `:1024` | `:1023` is correct; `:1024` is `_requireTroveisActive`. MK-075 fixed one copy |
+| Close path gate count | 2 | **DIVERGED**, "four" and "five" | MK-091. Both say five, three conditional |
+
+**The net debt row was worse than "ten copies", and the enumeration is what showed it.** Seven
+sites floored at zero (`entireDebt > 200 ? entireDebt - 200 : 0n`) and three subtracted
+unguarded (`pos.entireDebt - MUSD_GAS_COMPENSATION`, `trove/index.ts` at the repay, adjust and
+close paths). On an active Trove the two agree, because the gas reserve is always part of the
+debt, so nothing was wrong. **They are still two different implementations of one line of
+Solidity**, and which one a future caller copied would have been decided by which file they had
+open. The counts in this table were also wrong in the first draft of this entry, at 7, 2 and 8
+against the real 6, 3 and 10; they are the output of the grep now rather than a recollection of
+it, which is the same discipline §12 asks for and the same one this row is about.
+
+**What prevents divergence now, per row, rather than "they agree".** The first seven are one
+function or one constant with callers, so a change lands in one place by construction and a
+disagreement is not expressible. `troveAmounts` in particular closes a case that was worse than it
+looked: a positional index into a generated six-tuple would have moved all seven sites silently and
+identically on a regeneration.
+
+**Two are prose, and prose has no compiler.** The contract citation and the gate count were
+comments that drifted from their pair. Nothing structural prevents a comment from going stale; what
+is added instead is a check in the conventions checklist for a finding that edits one copy of a
+cited rule, asking where else that citation appears. That is a weaker control and it is labelled as
+one.
+
+**Deliberate duplication, named rather than removed.** Two remain and both are load bearing:
+`packages/core/test/borrowing-power-agreement.test.ts` and `phase4.fork.test.ts` restate the
+contract's fee condition instead of importing `isBorrowingFeeCharged`, and
+`preview-redeem.test.ts` restates the interest formula with the constant written out. Importing
+would make each assertion a tautology, which is MK-070's defect. **A test that restates the
+CONTRACT is independent; a test that restates the IMPLEMENTATION is not**, and that is the line.
+
+---
+
+## MK-095 · The redemption margin was sized for exactly the window it advertises, and only worked because a different defect over-stated it
+
+**Class** S2 · **Status** fixed · **Found by the fork gate, on the run that verified MK-089**
+
+**This is the wave's own regression, caught by the gate that exists for it.** MK-089 corrected the
+accrual base from the entire debt to the principal, which is what
+`InterestRateMath.calculateInterestOwed` takes (`InterestRateMath.sol:12-22`) and what
+`TroveManager.sol:1236-1241` passes. Nothing else changed. `redeem-boundary.fork.test.ts` then went
+red on one row:
+
+```
+  warp    600s  netDebt + margin  simulate=ACCEPTED send=reverted targetStatus=1
+```
+
+with `netDebt=2358261948990159125633` and `margin=481740441852559`.
+
+**What the correction removed was not an error, it was the slack.** The entire-debt base
+over-stated the margin by the interest already owed, about 1 percent on that fixture, which is
+roughly **6 seconds of accrual**. The quantity the margin actually has to cover is the accrual
+between the block the preview READ at and the block the transaction SETTLES in, and a caller
+cannot make those the same block: a transaction is always mined after it is priced. Sizing the
+margin for exactly the advertised 600 seconds leaves **zero** for the settlement block, so the
+amount is short by whatever the Trove accrued in it. The old figure covered that block by accident,
+from a defect, and nobody had named it.
+
+**The conflation underneath.** `600` came from `TroveManager.sol:1276-1285`, where the contract
+allows ten minutes of accrual when it bounds a partial redemption HINT. That is a different
+quantity from a caller's settlement delay, and the original docstring presented it as "the
+contract's own allowance for accrual ... rather than a number chosen to feel safe". It was the
+contract's allowance for something else.
+
+### Fixed
+
+`MARGIN_WINDOW_SECONDS = 900n`, with the advertised window still 600 and the 300 second difference
+stated as what it is: room for settlement, not a cushion. **Both ends of the claim are still
+asserted on chain**, which is what keeps this bounded rather than an ever growing safety factor:
+the ladder requires `send=success` at 1, 60 and 600 seconds and `send=reverted` at 3600 and 86400.
+Re-measured after the change, on the same fork at the same block:
+
+```
+  warp    600s  netDebt + margin  simulate=ACCEPTED send=success  targetStatus=4
+  warp   3600s  netDebt + margin  simulate=REFUSED  send=reverted targetStatus=1
+```
+
+**Pinned chain free as well as on the fork**, because the fork test is the slow gate and the
+mutation check runs the unit project: `preview-redeem.test.ts` asserts the exact margin against an
+independently written 900, so shrinking the window back to 600 fails it. That mutation is in
+`scripts/mutation-check.mjs`.
+
+**The lesson, which is the part worth keeping.** Two defects were cancelling: a wrong base and an
+unsized settlement window. Fixing one exposed the other, and the gate that showed it was the fork
+suite rather than any reasoning about the contract, because the settlement block is not visible in
+the Solidity. **A guarantee that only holds because of a defect elsewhere is not a guarantee**, and
+the only way this was ever going to be found was by sending across a delay, which is step 11 of the
+wave checklist.
+
+---
+
+## The P17 sweep, run against this tree
+
+**1000 cases, four slices, seed 20260826, fork block 15043414, Node v24.19.0.** Run after every
+change in this wave, against the tree at `327949a`, with the commands the sweep workflow uses:
+
+```
+MK_DIFF_SEED=20260826 MK_DIFF_CASES=1000 MK_DIFF_FROM=<from> MK_DIFF_TO=<to> pnpm test:fork
+```
+
+| Slice | Exit | Wall clock | FALSE_VIABLE | FALSE_BLOCKED | NUMBERS | unexpected |
+|---|---|---|---|---|---|---|
+| 0..250 | 0 | 15m19s | 0 | 1 | 0 | **0** |
+| 250..500 | 0 | 17m12s | 0 | 6 | 0 | **0** |
+| 500..750 | 0 | 17m10s | 0 | 1 | 0 | **0** |
+| 750..1000 | 0 | 16m49s | 0 | 2 | 0 | **0** |
+| **total** | | **66m30s** | **0** | **10** | **0** | **0** |
+
+**Zero FALSE_VIABLE across a thousand cases**, which is the claim the README makes and is the one
+worth having: no preview said go where the chain refused.
+
+**All ten FALSE_BLOCKED are MK-079, and they land on exactly the indices its `knownAt` records**:
+209, 252, 329, 370, 449, 455, 486, 720, 817, 893. That is the registry mechanism working in both
+directions at once. It is also an independent confirmation that the recorded indices are right, at
+the seed and case count they are scoped to, which nothing had re-checked since they were written.
+
+**66 minutes, not the 116 the runbook cites, and the difference is the machine.** The 116 figure
+was measured in the P15 wave and is labelled there; this one is an Apple silicon laptop against the
+public `rpc.test.mezo.org` with a warm anvil cache. **Neither number is CI's**, and per the rule
+MK-081 established a published duration names the machine it was measured on. The runbook's figure
+is left as it is, because replacing a figure measured elsewhere with one measured here is the
+mistake MK-081 was.
+
+**What the sweep does NOT cover, restated because this wave is about exactly that**: it drives
+`client.*` and never renders a React hook, so MK-085 was outside it by construction. See MK-087.
+
+---
+
+## MK-096 · The packaging gate's probe is source nothing compiles, guarded by a gate CI does not run
+
+**Class** S2, process · **Status** fixed · **Found by running `pnpm gate:packaging` after the
+public surface changed, which nothing asked for**
+
+**What happened.** MK-088 removed `EvaluateRedeemInput.interestRateBps`. `pnpm typecheck` was
+clean, `pnpm lint` was clean, the full fork gate was green, the 1000 case sweep was clean, and CI
+was green on all four jobs across three Node versions. Then `pnpm gate:packaging` failed **4 of 4
+rows**:
+
+```
+  (absent, CommonJS)  node16  node16  FAIL
+      first error: probe.ts(10,3): error TS2353: Object literal may only specify known
+      properties, and 'interestRateBps' does not exist in type 'EvaluateRedeemInput'.
+```
+
+**The package was fine. The probe was stale**, and nothing could have told anyone.
+
+**Two controls stopping short of each other.** `scripts/packaging-gate.mjs` holds its consumer file
+in a `PROBE` template literal, so to `tsc` it is a string: `pnpm typecheck` cannot see it, and
+neither can lint. The only thing that compiles it is the gate itself, and the gate is not in CI. It
+is step 6 of the release runbook, run by hand, at release time. So the window between a breaking
+public shape change and anyone learning the probe had gone stale was **the whole wave**, and the
+place it would have surfaced is the last place anybody wants a surprise.
+
+**This is MK-053's shape and MK-080's shape.** A control that exists, is cited, and does not
+execute. It is also MK-040's own lesson turned one notch: MK-040 exists because a workspace
+typecheck cannot see an export map defect, and the instrument built to see it was itself placed
+where no typecheck could see it.
+
+### Fixed
+
+The probe is updated to the current surface and widened deliberately: it now touches
+`accruedInterest` and `netDebtOf` (MK-089, MK-094), `LastTroveInSystem` (MK-091),
+`AdjustPreviewLegs` and `useAdjustTrovePreview` (MK-085), and constructs an `EligibleTrove` with
+its own `principal` and `interestRateBps` (MK-088). Re-run: **GATE PASSED, four of four rows, 105
+exports by `require` and 105 by `import`.**
+
+**And `pnpm gate:packaging` is a CI step now**, in the fork gate job beside `release-smoke.sh`. It
+packs, installs into a scratch consumer and runs `tsc` four times, which is the reason it was left
+manual; the cost of leaving it manual turned out to be higher. `docs/09-review-and-validated-surface.md`
+said this row was "**Manual, at release preparation, not automated**" and that automating it "needs
+a pack, an install and a `tsc` run, which is its own job". It is automated now and that row says so.
 
 ---
 

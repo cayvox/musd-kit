@@ -24,6 +24,15 @@ export type Band = keyof typeof BAND_WEIGHTS
 /** The operations the harness exercises. Read off the SDK's preview surface, not invented. */
 export type CaseOp =
   | 'open'
+  /**
+   * MK-067, MK-069. The open time MAXIMUM, not a candidate draw.
+   *
+   * It is swept differently from every other op because it answers a different kind of
+   * question: the harness asks for the maximum and then attempts it, rather than being handed
+   * an amount. `docs/09` claimed `getBorrowingPower` was "dual validated" while it was absent
+   * from this list, and MK-067 lived in the gap that claim covered.
+   */
+  | 'borrowingPower'
   | 'borrow'
   | 'refinance'
   | 'addCollateral'
@@ -201,6 +210,7 @@ export function generateCases(
   // when this generator was written.
   const ops: CaseOp[] = [
     'open',
+    'borrowingPower',
     'borrow',
     'refinance',
     'addCollateral',
@@ -294,8 +304,19 @@ export function generateCases(
     const recoveryDrawdownPercent =
       rnd() < 0.2 ? (RECOVERY_DRAWDOWNS[Math.floor(rnd() * RECOVERY_DRAWDOWNS.length)] ?? 0) : 0
     const mismatched = rnd() < 0.2
+    // `borrowingPower` sizes an open, so it needs an account with no Trove, always: the
+    // OCCUPIED variant would only ever re-prove `TROVE_ALREADY_ACTIVE`, which `open` already
+    // covers, and would tell us nothing about the maximum.
     const precondition: Precondition =
-      op === 'open' ? (mismatched ? 'OCCUPIED' : 'FRESH') : mismatched ? 'FRESH' : 'OCCUPIED'
+      op === 'borrowingPower'
+        ? 'FRESH'
+        : op === 'open'
+          ? mismatched
+            ? 'OCCUPIED'
+            : 'FRESH'
+          : mismatched
+            ? 'FRESH'
+            : 'OCCUPIED'
     cases.push({
       index,
       seed,

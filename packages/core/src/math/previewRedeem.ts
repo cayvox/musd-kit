@@ -1,6 +1,7 @@
 import type { Address } from 'viem'
 import { musdAbi, priceFeedAbi, sortedTrovesAbi, troveManagerAbi } from '../clients'
-import { MCR, MUSD_GAS_COMPENSATION } from '../constants'
+import { MCR } from '../constants'
+import { accruedInterest, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 
 /**
@@ -119,19 +120,21 @@ export interface RedemptionPreview {
    * against the debt at EXECUTION, after interest accrues (`:366`, `:1218-1221`), so an offer of
    * exactly the net debt read here arrives as a partial and cancels.
    *
-   * **This value has a shelf life of about ten minutes.** The margin is 600 seconds of interest,
-   * and it was measured at both ends: a send at this amount succeeds after a 600 second delay and
-   * is refused after an hour. Add to it if you expect to be slower; overshooting cannot cost you
-   * the call.
+   * **This value has a shelf life of about ten minutes.** The margin is 900 seconds of interest
+   * and the claim is 600, and it is measured at both ends: a send at this amount succeeds after a
+   * 600 second delay and is refused after an hour. Add to it if you expect to be slower;
+   * overshooting cannot cost you the call.
    */
   nextViableAmount: bigint
   /**
-   * The interest the first eligible Trove accrues in 600 seconds, which is what
-   * {@link nextViableAmount} adds on top of the net debt.
+   * The interest the first eligible Trove accrues in **900 seconds**, at its OWN rate and on its
+   * OWN principal, which is what {@link nextViableAmount} adds on top of the net debt.
    *
-   * 600 is the contract's own staleness window for accrual (`TroveManager.sol:1276-1285`). Exposed
-   * rather than folded in silently so a caller who needs a different window can scale it: this is
-   * 600 seconds of interest, so ten times it is 6000 seconds of interest.
+   * Sized for 900 while the answer is advertised as good for 600, because the accrual that has to
+   * be covered runs from the block this was READ at to the block the transaction SETTLES in, and
+   * a caller cannot make those the same block (MK-095). Exposed rather than folded in silently so
+   * a caller who needs a different window can scale it: this is 900 seconds of interest, so four
+   * times it is an hour of interest.
    */
   accrualMargin: bigint
   /** The live `minNetDebt()` floor the cancellation compares against. */
@@ -157,10 +160,28 @@ export interface PreviewRedeemParams {
 /** One eligible Trove, as the walk found it. */
 export interface EligibleTrove {
   owner: Address
-  /** Live entire debt, principal plus accrued interest. Sizes the accrual margin. */
+  /** Live entire debt, principal plus accrued interest. */
   entireDebt: bigint
+  /**
+   * The stored principal, which is the base the protocol accrues interest on (MK-088).
+   *
+   * `_redeemCollateralFromTrove` sizes its lot against `_getTotalDebt(_borrower)` read at
+   * EXECUTION (`TroveManager.sol:1218-1221`), and the growth between this read and that block
+   * is `calculateInterestOwed(trove.principal, trove.interestRate, ...)` (`:1236-1241`). Both
+   * arguments belong to THIS Trove, so both are carried here.
+   */
+  principal: bigint
   /** Entire debt minus the 200 MUSD gas reserve. */
   netDebt: bigint
+  /**
+   * `getTroveInterestRate(owner)`, in basis points. **This Trove's rate, not a global and not
+   * the redeemer's** (MK-088).
+   *
+   * A Trove's rate is frozen at open (`BorrowerOperations.sol:668-672`) and at refinance
+   * (`:1075`) from the governable `interestRateManager.interestRate()`, so two Troves in one
+   * system carry different rates whenever governance has moved it between their opens.
+   */
+  interestRateBps: bigint
 }
 
 /** Everything {@link evaluateRedeem} needs, already read from the chain. */
@@ -170,8 +191,6 @@ export interface EvaluateRedeemInput {
   minNetDebt: bigint
   tcr: bigint
   price: bigint
-  /** The redeemer's interest rate in basis points, used only to size the accrual margin. */
-  interestRateBps: bigint
   /**
    * Eligible Troves in the order the loop visits them, lowest ICR first, with those below MCR
    * already skipped exactly as `:341-349` and `:375-378` skip them.
@@ -179,14 +198,58 @@ export interface EvaluateRedeemInput {
   eligible: EligibleTrove[]
 }
 
-/** The divisor the protocol's interest accrual uses. */
-const SECONDS_PER_YEAR = 365n * 24n * 3600n
-/** The contract's own allowance for accrual when it bounds a partial hint (`:1276-1285`). */
-const ACCRUAL_WINDOW_SECONDS = 600n
+// MK-071, then MK-089. The formula is not restated here AT ALL any more. It used to shadow
+// `SECONDS_PER_YEAR` with 31_536_000 (MK-071), and after that was fixed it still carried its
+// own copy of the arithmetic on the wrong base: `entireDebt` where the protocol accrues on
+// `trove.principal` (`InterestRateMath.sol:12-22`, called with `trove.principal` at
+// `TroveManager.sol:788-793` and `:1236-1241`). One copy now, in `math/compute.ts`.
+/**
+ * The window {@link RedemptionPreview.nextViableAmount} is sized for, in seconds (MK-095).
+ *
+ * **The advertised window is 600 seconds and the margin is sized for 900**, and the 300 second
+ * difference is deliberate rather than a number chosen to feel safe. The quantity the margin has
+ * to cover is the accrual between the block the preview READ at and the block the transaction
+ * SETTLES in. A caller cannot make that second block the first one: a transaction is always mined
+ * after it is priced. Sizing the margin for exactly the advertised window therefore leaves zero
+ * slack for the settlement block itself, and the amount is short by whatever the Trove accrued in
+ * it.
+ *
+ * **Measured, on the fork, at the moment the base was corrected.** Until MK-089 this margin
+ * accrued on the entire debt where the protocol accrues on the principal
+ * (`InterestRateMath.sol:12-22`), which over-stated it by the interest already owed. On the
+ * `redeem-boundary.fork.test.ts` fixture that was about 1 percent, worth roughly 6 seconds of
+ * accrual, and **that accident was what had been covering the settlement block**: correcting the
+ * base to the contract's quantity turned the 600 second row of the ladder from `send=success` to
+ * `send=reverted` with nothing else changed. A guarantee resting on an over-estimate nobody had
+ * named is not a guarantee.
+ *
+ * 900 covers the advertised 600 plus five minutes of settlement. The upper bound is still
+ * asserted: the ladder requires the margin to FAIL at 3600 seconds, so this is a bounded claim
+ * and not an ever growing cushion.
+ *
+ * The contract's own 600 (`TroveManager.sol:1276-1285`) bounds the staleness of a partial
+ * redemption HINT, which is a different quantity from a caller's settlement delay. Reading one as
+ * the other is what produced the original figure.
+ */
+const MARGIN_WINDOW_SECONDS = 900n
 
-/** Interest a Trove accrues over the margin window, at the given rate. */
-function marginFor(entireDebt: bigint, interestRateBps: bigint): bigint {
-  return (entireDebt * interestRateBps * ACCRUAL_WINDOW_SECONDS) / (10_000n * SECONDS_PER_YEAR)
+/** The window a caller is told the answer holds for, which is shorter than it is sized for. */
+export const REDEMPTION_MARGIN_WINDOW_SECONDS = 600n
+
+/**
+ * Interest ONE Trove accrues over the margin window, at ITS OWN rate (MK-088, MK-089).
+ *
+ * Both arguments come from the Trove the lot is sized against. Before MK-088 this took a
+ * single rate read off the REDEEMER's Trove, applied to every Trove in the walk, with a
+ * hardcoded `100n` when the redeemer held no Trove, which is the ordinary case for the
+ * arbitrageur this preview exists for.
+ */
+function marginFor(trove: Pick<EligibleTrove, 'principal' | 'interestRateBps'>): bigint {
+  return accruedInterest({
+    principal: trove.principal,
+    rateBps: trove.interestRateBps,
+    seconds: MARGIN_WINDOW_SECONDS,
+  })
 }
 
 /**
@@ -197,7 +260,7 @@ function marginFor(entireDebt: bigint, interestRateBps: bigint): bigint {
  * only the amounts a fork happens to produce.
  */
 export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
-  const { amount, musdBalance, minNetDebt, tcr, price, interestRateBps, eligible } = input
+  const { amount, musdBalance, minNetDebt, tcr, price, eligible } = input
 
   const first = eligible[0]
   const firstTroveNetDebt = first?.netDebt ?? 0n
@@ -205,7 +268,7 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   // The Trove owes more by the block this lands in, so consuming it whole costs more than the net
   // debt read here. Without this the upper edge is off by exactly the accrual, and the sweep
   // caught it as a FALSE_VIABLE twice in a thousand cases.
-  const accrualMargin = marginFor(first?.entireDebt ?? 0n, interestRateBps)
+  const accrualMargin = first === undefined ? 0n : marginFor(first)
   const nextViableAmount = firstTroveNetDebt > 0n ? firstTroveNetDebt + accrualMargin : 0n
 
   const reasons: RedeemBlockReason[] = []
@@ -227,7 +290,7 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
     // Consuming a Trove whole needs its net debt PLUS the margin, because the contract compares
     // against the debt at execution rather than the debt read here. Anything short of that is a
     // partial, and a partial that leaves less than the floor cancels and BREAKS.
-    const consumesWhole = remaining >= trove.netDebt + marginFor(trove.entireDebt, interestRateBps)
+    const consumesWhole = remaining >= trove.netDebt + marginFor(trove)
     const lot = consumesWhole ? trove.netDebt : remaining
     if (!consumesWhole && trove.netDebt - lot < minNetDebt) {
       if (i === 0) cancelledOnFirst = true
@@ -266,6 +329,9 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
  * The walk is bounded by `maxIterations`, matching the contract's own parameter, so a long list
  * cannot turn a preview into an unbounded read. That bound is the same reason `getBorrowingPower`
  * carries one (MK-010).
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewRedeem(
   deps: MathDeps,
@@ -283,7 +349,7 @@ export async function previewRedeem(
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
   const st = { address: addresses.sortedTroves, abi: sortedTrovesAbi } as const
 
-  const [tcr, musdBalance, minNetDebt, interestRateBps] = await Promise.all([
+  const [tcr, musdBalance, minNetDebt] = await Promise.all([
     publicClient.readContract({ ...tm, functionName: 'getTCR', args: [price] }),
     publicClient.readContract({
       address: addresses.musd,
@@ -292,14 +358,6 @@ export async function previewRedeem(
       args: [redeemer],
     }),
     deps.getMinNetDebt(),
-    // The system rate, read off the redeemer's own Trove when there is one. Every Trove in this
-    // deployment carries the same rate; this only sizes a safety margin, so the fallback below is
-    // the protocol default rather than a computation that could fail the whole preview.
-    publicClient
-      .readContract({ ...tm, functionName: 'getTroveInterestRate', args: [redeemer] })
-      // `uint16` on the ABI, so it arrives as a number and has to be widened deliberately.
-      .then((rate) => (BigInt(rate) > 0n ? BigInt(rate) : 100n))
-      .catch(() => 100n),
   ])
 
   // Start at the tail, the lowest ICR, and skip everything under MCR exactly as `:341-349` does.
@@ -307,18 +365,36 @@ export async function previewRedeem(
   const eligible: EligibleTrove[] = []
   const ZERO = '0x0000000000000000000000000000000000000000'
   for (let i = 0n; i < maxIterations && cursor !== ZERO; i++) {
-    const [icr, entire] = await Promise.all([
+    const [icr, entire, rate] = await Promise.all([
       publicClient.readContract({ ...tm, functionName: 'getCurrentICR', args: [cursor, price] }),
       publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [cursor] }),
+      // MK-088. THIS Trove's rate, in the SAME batch as its debt, because the margin is that
+      // Trove's own accrual.
+      //
+      // The cost, stated rather than left to be discovered: this fires for every Trove the walk
+      // VISITS, including the sub-MCR ones it skips, so it is three requests per iteration where
+      // there were two and **no additional round trip**, since they are concurrent. Reading it
+      // only for eligible Troves would trade that for a sequential round trip per eligible
+      // Trove, and round trips are the quantity MK-010 is about.
+      //
+      // It is deliberately NOT wrapped in a `catch`: a read that fails must fail the preview
+      // rather than become a plausible default (MK-012's lesson, and the rule `constants.ts:1-4`
+      // states for every governable value).
+      publicClient.readContract({ ...tm, functionName: 'getTroveInterestRate', args: [cursor] }),
     ])
     // `getEntireDebtAndColl` returns (coll, principal, interest, ...), and the loop compares the
     // LIVE entire debt, so principal plus accrued interest is the right quantity here.
-    const entireDebt = entire[1] + entire[2]
+    const { principal, entireDebt } = troveAmounts(entire)
     if (icr >= MCR) {
       eligible.push({
         owner: cursor,
         entireDebt,
-        netDebt: entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n,
+        // The base the protocol accrues on (`InterestRateMath.sol:12-22`), which is the stored
+        // principal alone and never the entire debt.
+        principal,
+        netDebt: netDebtOf(entireDebt),
+        // `uint16` on the ABI, so it arrives as a number and is widened deliberately.
+        interestRateBps: BigInt(rate),
       })
       // Stop as soon as the accumulated net debt covers the request: nothing beyond it can
       // change the verdict, and every extra step is two more chain reads.
@@ -334,7 +410,6 @@ export async function previewRedeem(
     minNetDebt,
     tcr,
     price,
-    interestRateBps,
     eligible,
   })
 }

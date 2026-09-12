@@ -1,7 +1,8 @@
 import type { Address } from 'viem'
 import { borrowerOperationsAbi, musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
-import { computeICR } from './compute'
+import { CCR, MCR } from '../constants'
+import { TroveStatus } from '../read/types'
+import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import { isBorrowingFeeCharged } from './fee'
 
@@ -59,8 +60,35 @@ export interface BorrowingCapacity {
   capacity: bigint
   /** The Trove's live entire debt, principal plus accrued interest, as the gate sees it. */
   entireDebt: bigint
-  /** `capacity - entireDebt`, floored at zero. The headroom for `draw + fee`, not for the draw. */
+  /**
+   * `capacity - entireDebt`, floored at zero. The headroom for `draw + fee`, not for the draw.
+   *
+   * **This is the distance to the liquidation threshold, and it expires in about a second**
+   * (MK-072). `_calculateMaxBorrowingCapacity` is `(coll * price) / (110 * 1e16)`
+   * (`BorrowerOperations.sol:1323-1328`) and `MCR` is `1.1e18`, so `capacity` is exactly the
+   * entire debt at which `_requireICRisAboveMCR` (`:1330-1335`) stops holding, computed at the
+   * OPENING price. A draw that consumes this figure in full therefore lands the position at
+   * `ICR == MCR`, where one second of accrued interest is enough to make the same call revert
+   * with `BorrowerOps: An operation that would result in ICR < MCR is not permitted`. Observed
+   * on a fork at 1s, 60s, 600s and 3600s.
+   *
+   * Use it to render headroom, not to size a draw. **To size a draw, ask
+   * {@link previewBorrow}**, which evaluates the ratio gate as well as this one and correctly
+   * returns `viable: false` for a draw sized from this number.
+   */
   remaining: bigint
+}
+
+/**
+ * Build a {@link BorrowingCapacity} from the two figures behind it (MK-094).
+ *
+ * **One copy, because two surfaces publish this field.** `evaluateAdjust` puts it on every
+ * adjust and borrow preview, and `getBorrowingCapacity` returns it standalone. Both computed
+ * `capacity > entireDebt ? capacity - entireDebt : 0n` separately, which is two implementations
+ * of one field on one Trove. They agreed; nothing made them.
+ */
+export function borrowingCapacityOf(capacity: bigint, entireDebt: bigint): BorrowingCapacity {
+  return { capacity, entireDebt, remaining: capacity > entireDebt ? capacity - entireDebt : 0n }
 }
 
 /** Why an adjust preview came back not viable. Machine readable, stable strings. */
@@ -73,6 +101,20 @@ export type AdjustBlockReason =
   | 'COLLATERAL_ADD_AND_WITHDRAW'
   /** `_requireNonZeroDebtChange` (`:786`, `:1351-1356`): a debt increase of zero. */
   | 'ZERO_DEBT_INCREASE'
+  /**
+   * Both debt legs were supplied (MK-077). **SDK input validation, not a contract gate**, and
+   * the asymmetry with `COLLATERAL_ADD_AND_WITHDRAW` is real rather than an oversight:
+   * `_adjustTrove` takes ONE debt leg, `_mUSDChange` with a separate `_isDebtIncrease` flag
+   * (`BorrowerOperations.sol:757-758`), so "both" is unrepresentable on chain and there is
+   * nothing for the contract to refuse. The collateral side needs `_requireSingularCollChange`
+   * (`:788`, `:1367-1375`) precisely because `msg.value` and `_collWithdrawal` ARE two
+   * parameters.
+   *
+   * Before this reason existed the evaluator took the increase, dropped the repayment and
+   * returned `viable: true`, while `trove/index.ts:523-525` threw `InvalidAdjustment` for the
+   * same input. The preview now refuses what the write path refuses.
+   */
+  | 'DEBT_INCREASE_AND_REPAY'
   /** `assert(_collWithdrawal <= vars.coll)` (`:837`). An assert, so on chain this is a Panic. */
   | 'WITHDRAWAL_EXCEEDS_COLLATERAL'
   /** `_requireNoCollWithdrawal` (`:1270`, `:1388-1393`). Recovery Mode only. */
@@ -233,11 +275,9 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   const resultingCollateral = collateral + addCollateral - withdrawCollateral
   const resultingEntireDebt = isDebtIncrease ? entireDebt + netDebtChange : entireDebt - repayDebt
 
-  const capacityPicture: BorrowingCapacity = {
-    capacity,
-    entireDebt,
-    remaining: capacity > entireDebt ? capacity - entireDebt : 0n,
-  }
+  // MK-094. Through the factory, which `getBorrowingCapacity` also calls, so the standalone
+  // read and the field on this preview cannot report the same Trove differently.
+  const capacityPicture = borrowingCapacityOf(capacity, entireDebt)
   const currentIcr = computeICR({ collateral, entireDebt, price })
   // Clamp the collateral at zero so a withdrawal larger than the balance produces a number
   // rather than a negative, and let WITHDRAWAL_EXCEEDS_COLLATERAL be the reason reported.
@@ -256,6 +296,10 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   // chain would actually report first.
   if (isDebtIncrease && increaseDebt === 0n) reasons.push('ZERO_DEBT_INCREASE')
   if (addCollateral > 0n && withdrawCollateral > 0n) reasons.push('COLLATERAL_ADD_AND_WITHDRAW')
+  // MK-077. Value based, matching the collateral test directly above, so `(0, n)` is left to
+  // `ZERO_DEBT_INCREASE` which already refuses it. `trove/index.ts` refuses the same shape on
+  // PRESENCE, which is stricter and safe: a write it rejects is never a write the chain sees.
+  if (increaseDebt > 0n && repayDebt > 0n) reasons.push('DEBT_INCREASE_AND_REPAY')
   if (
     addCollateral === 0n &&
     withdrawCollateral === 0n &&
@@ -264,7 +308,10 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   ) {
     reasons.push('NO_CHANGE_REQUESTED')
   }
-  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
+  // MK-094. The enum, not the literal. `TroveStatus.active` is `1`
+  // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two
+  // others used the enum for the same comparison.
+  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')
   if (withdrawCollateral > collateral) reasons.push('WITHDRAWAL_EXCEEDS_COLLATERAL')
 
   if (isRecoveryMode) {
@@ -281,15 +328,11 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   if (isDebtIncrease && capacity < resultingEntireDebt) reasons.push('EXCEEDS_BORROWING_CAPACITY')
 
   if (!isDebtIncrease && repayDebt > 0n) {
-    // `_getNetDebt(debt)` is the entire debt minus the gas compensation (`:856`).
-    const netDebtAfter =
-      entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION - repayDebt : 0n
-    if (netDebtAfter < minNetDebt) reasons.push('BELOW_MINIMUM_DEBT')
-    if (
-      repayDebt > (entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n)
-    ) {
-      reasons.push('REPAY_EXCEEDS_DEBT')
-    }
+    // `_getNetDebt(debt)` is the entire debt minus the gas compensation (`:856`), through the
+    // one copy rather than restated twice in this block (MK-094).
+    const netDebt = netDebtOf(entireDebt)
+    if (netDebt - repayDebt < minNetDebt) reasons.push('BELOW_MINIMUM_DEBT')
+    if (repayDebt > netDebt) reasons.push('REPAY_EXCEEDS_DEBT')
     if (musdBalance < repayDebt) reasons.push('INSUFFICIENT_MUSD_BALANCE')
   }
 
@@ -322,7 +365,10 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   }
 }
 
-/** Read everything {@link evaluateAdjust} needs, then decide. */
+/** Read everything {@link evaluateAdjust} needs, then decide.
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
+ */
 export async function previewAdjustTrove(
   deps: MathDeps,
   params: PreviewAdjustParams,
@@ -383,10 +429,11 @@ export async function previewAdjustTrove(
         })
       : 0n
 
+  const amounts = troveAmounts(entire)
   return evaluateAdjust({
     status,
-    collateral: entire[0],
-    entireDebt: entire[1] + entire[2],
+    collateral: amounts.collateral,
+    entireDebt: amounts.entireDebt,
     capacity,
     musdBalance,
     minNetDebt,
@@ -419,6 +466,16 @@ export interface MaxWithdrawable {
   /**
    * BTC wei that can be withdrawn in a single `withdrawCollateral` call. **Zero in Recovery
    * Mode**, where `_requireNoCollWithdrawal` (`:1270`) refuses any withdrawal at all.
+   *
+   * **Good for the block it was computed at and no block a caller can reach** (MK-051,
+   * MK-073). The cap is bounded by `ICR >= MCR` against a debt that GROWS with accrued
+   * interest, so this figure SHRINKS: measured on a fork with only the delay varied, the
+   * reported maximum was accepted at 0s and refused with `InsufficientCollateral` at 1s, 60s,
+   * 600s, 3600s and 86400s, with half the maximum succeeding throughout as the control.
+   *
+   * The SDK refuses it before sending rather than spending gas on it, so the cost is a typed
+   * error and not a failed transaction. Withdraw less than this, or recompute at the point of
+   * use. MK-051 carries the measurement.
    */
   amount: bigint
   /** Which gate caps it, or `null` when nothing does and the whole balance can come out. */
@@ -447,6 +504,9 @@ export interface MaxWithdrawable {
  *
  * Reported alongside `limitedBy` because "you can withdraw 0" and "you can withdraw 0 because
  * the system is in Recovery Mode" are different messages to a user.
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. The full
+ * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function maxWithdrawableCollateral(
   deps: MathDeps,
@@ -465,9 +525,10 @@ export async function maxWithdrawableCollateral(
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
   ])
+  const amounts = troveAmounts(entire)
   return computeMaxWithdrawable({
-    collateral: entire[0],
-    entireDebt: entire[1] + entire[2],
+    collateral: amounts.collateral,
+    entireDebt: amounts.entireDebt,
     isRecoveryMode,
     price,
     systemColl,
@@ -517,7 +578,14 @@ export function computeMaxWithdrawable(input: {
   const byIcr = collateral > keepForIcr ? collateral - keepForIcr : 0n
   const bySystem = systemColl > keepForTcr ? systemColl - keepForTcr : 0n
   const amount = byIcr < bySystem ? byIcr : bySystem
-  const limitedBy = amount === 0n || byIcr <= bySystem ? 'ICR' : 'TCR'
+  // MK-076. The gate that actually binds, which is the smaller allowance, whatever the answer
+  // happens to be. The old form was `amount === 0n || byIcr <= bySystem ? 'ICR' : 'TCR'`, whose
+  // first clause reported `ICR` for every zero answer including the ones where the individual
+  // ratio allowed a large withdrawal and the SYSTEM ratio allowed none. That is the case this
+  // field exists to distinguish: the docstring below argues that "you can withdraw 0" and "you
+  // can withdraw 0 because of the system" are different messages, and the code did not honour
+  // it. Ties go to ICR, which is the gate a caller can act on.
+  const limitedBy = byIcr <= bySystem ? 'ICR' : 'TCR'
 
   return {
     amount,
