@@ -138,17 +138,27 @@ cases:
   fail. It is configured in `vitest.config.mts` (`coverage.thresholds`, v8 provider over
   `packages/core/src/**`, excluding `_generated/` which is ABI and address data rather
   than logic) and run by `pnpm test:coverage` in the fork-gate job.
-- **The floor is a ratchet: it only ever moves upward.** It was set to the honestly
-  measured number rounded down, not to an aspiration. Raise it when real coverage rises.
-  Never lower it to turn a red build green, that converts the gate into decoration.
+- **The floor is a ratchet: it only ever moves upward at a fixed scope.** It is set to the
+  honestly measured number rounded down, not to an aspiration. Raise it when real coverage
+  rises. Never lower it to turn a red build green, that converts the gate into decoration.
+- **Widening the scope is the one thing that can move a floor down, and it did in P17.**
+  Including `packages/react/src` took the reported figures from 98.65 / 93.20 / 100 / 98.65
+  (core alone) to 94.87 / 92.36 / 88.18 / 94.87 (both packages), measured in one run at fork
+  block 15043414. The core half did not get worse; it improved. Keeping the glob narrow to
+  protect the number is the failure this rule exists to prevent, so the move is recorded
+  rather than avoided. Floors are now 94 / 92 / 88 / 94.
 - **Scope, stated so the number cannot mislead.** `pnpm test:coverage` runs **both**
   vitest projects, so the fork suite counts toward the measurement, not just the unit
-  layer. What is measured is `packages/core/src/**` minus `_generated/`.
-  **`@musd-kit/react` is not measured at all**, even though it is a published package: no
-  file under `packages/react/src` appears in the coverage report, so the floor says
-  nothing about the hook layer. Its fork tests do run and must pass; they simply do not
-  contribute to, or get graded by, the gate. Bringing it under the gate needs its own
-  measured floor and is not done yet.
+  layer. What is measured is `packages/core/src/**` and `packages/react/src/**`, minus
+  `_generated/`, which is ABI and address data rather than logic.
+- **`@musd-kit/react` came under the gate in the P17 wave (MK-087), and the reported figure
+  went DOWN.** That is the correct outcome and it is reported rather than excluded: the old
+  number was high because it was scoped to the half that was tested. Before this, no file
+  under `packages/react/src` appeared in the report at all, the mutation check had no React
+  mutation, and the differential sweep drives the core client rather than rendering a hook.
+  Three controls, one blind spot, and MK-085 was sitting in it: a shipped hook that made every
+  adjust preview a debt increase, while a core test asserted the exact distinction it
+  violated and passed. **A pin one layer below the defect is not a pin.**
 - Coverage is necessary but not sufficient: a line covered by a mock proves nothing
   about protocol truth, the fork tests are what count. A high floor over
   `previewOpen` would not have caught MK-005 or MK-006, both of which are fully covered

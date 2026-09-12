@@ -15,6 +15,7 @@ import {
   InsufficientMusdBalance,
   InvalidAdjustment,
   InvalidAmount,
+  LastTroveInSystem,
   MaxFeeExceeded,
   type MusdError,
   RecoveryModeRestriction,
@@ -27,6 +28,7 @@ import {
 import { type RevertContext, decodeRevertReason, mapRevert } from '../errors/mapRevert'
 import { computeHints } from '../hints'
 import { type WriteDeps, type WriteResult, requireWallet, simulateAndSend } from '../internal/write'
+import { netDebtOf, troveAmounts } from '../math/compute'
 import type { MathDeps } from '../math/deps'
 // MK-069. The one copy of `BorrowerOperations.sol:637-643` and `:810-818`. Every place on this
 // path that decides whether the borrowing fee applies goes through it.
@@ -34,6 +36,7 @@ import { isBorrowingFeeCharged } from '../math/fee'
 import {
   type AdjustPreview,
   type PreviewAdjustParams,
+  borrowingCapacityOf,
   previewAdjustTrove,
 } from '../math/previewAdjust'
 import { previewClose } from '../math/previewClose'
@@ -69,12 +72,8 @@ async function currentPosition(
     functionName: 'getEntireDebtAndColl',
     args: [owner],
   })
-  return {
-    collateral: edc[0],
-    entireDebt: edc[1] + edc[2],
-    principal: edc[1],
-    interestOwed: edc[2],
-  }
+  // MK-094. The tuple is named once, in `math/compute.ts`, rather than indexed here as well.
+  return troveAmounts(edc)
 }
 
 /**
@@ -150,7 +149,8 @@ async function assertWithinBorrowingCapacity(
     capacity,
     entireDebt,
     netDebtChange,
-    capacity > entireDebt ? capacity - entireDebt : 0n,
+    // MK-094. The headroom, through the one factory rather than a third copy of the ternary.
+    borrowingCapacityOf(capacity, entireDebt).remaining,
   )
 }
 
@@ -243,11 +243,18 @@ function assertFeeWithinCap(debtIncrease: bigint, fee: bigint, maxFeePercentage?
  *
  * The parameter is named `principal` on purpose: the previous name, `entireDebt`, is exactly
  * the quantity that must NOT be passed.
+ *
+ * **MK-090. That rename stopped one line short and the gap is now closed.** This function took
+ * `principal` and then handed it straight back to `computeHints` as `entireDebt: principal`,
+ * because the public helper still ASKED for the entire debt, by name and by docstring. Every
+ * internal caller was right and the public signature said the opposite, which is what an
+ * integrator building their own write path reads. `computeNICR` and `computeHints` take
+ * `principal` now, so there is nothing left to translate here.
  */
 function hintsFor(deps: WriteDeps, collateral: bigint, principal: bigint) {
   return computeHints(
     { publicClient: deps.publicClient, addresses: deps.addresses },
-    { collateral, entireDebt: principal },
+    { collateral, principal },
   )
 }
 
@@ -483,7 +490,7 @@ export async function repay(deps: WriteDeps, { amount }: { amount: bigint }): Pr
   ])
   assertTroveActive(pos.entireDebt, owner)
   // Repaying more than the net debt would underflow on-chain (Panic) → typed up front.
-  const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
+  const netDebt = netDebtOf(pos.entireDebt)
   if (amount > netDebt) throw new RepayExceedsDebt(undefined, { repay: amount, netDebt })
   if (balance < amount) throw new InsufficientMusdBalance(amount, balance)
   // MK-042. The ratio gate applies to a pure repayment in NORMAL mode too, and it is
@@ -573,7 +580,7 @@ export async function adjustTrove(
     await assertWithinBorrowingCapacity(deps, owner, pos.entireDebt, brw + fee)
   }
   if (rpy !== undefined) {
-    const netDebt = pos.entireDebt - MUSD_GAS_COMPENSATION
+    const netDebt = netDebtOf(pos.entireDebt)
     if (rpy > netDebt) throw new RepayExceedsDebt(undefined, { repay: rpy, netDebt })
   }
   // MK-042. Every ratio and mode gate on the combined path, in one place. This is the write
@@ -611,13 +618,15 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
   // Close burns the net debt (entireDebt − 200); the 200 gas reserve is returned (verified).
-  const required = pos.entireDebt - MUSD_GAS_COMPENSATION
+  const required = netDebtOf(pos.entireDebt)
   const balance = await getMusdBalance(deps, owner)
   if (balance < required) throw new InsufficientMusdBalance(required, balance)
-  // MK-042. Close has its own gate set, and two of its four gates are conditional on a live
-  // chain read, `musd.mintList(borrowerOperations)` (`BorrowerOperations.sol:949`). When
-  // that is true, closing is refused in Recovery Mode (`:954`) and gated on the resulting
-  // system TCR (`:972`). Neither was checked before this.
+  // MK-042, then MK-074 and MK-091. Close has its own gate set, and THREE of its FIVE gates
+  // are conditional on a live chain read, `musd.mintList(borrowerOperations)`
+  // (`BorrowerOperations.sol:949`). When that is true, closing is refused in Recovery Mode
+  // (`:954`), gated on the resulting system TCR (`:972`), and refused outright for the last
+  // Trove in the system (`:976` into `TroveManager.sol:1390-1399`). The count said "two of
+  // four" until the P17 wave, because MK-074 updated `previewClose.ts` and not this copy.
   const closePreview = await previewClose(mathDepsOf(deps), owner)
   if (!closePreview.viable) {
     if (closePreview.bindingConstraint === 'RECOVERY_MODE') {
@@ -631,6 +640,21 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
     }
     if (closePreview.bindingConstraint === 'INSUFFICIENT_MUSD_BALANCE') {
       throw new InsufficientMusdBalance(closePreview.musdRequired, closePreview.musdBalance)
+    }
+    // MK-091. The fifth reason, which MK-074 added to the preview and left out of here. Every
+    // other reason this block knows about became a typed throw; this one fell through to a
+    // send, and "TroveManager: Only one trove in the system" matched no pattern in `mapRevert`,
+    // so the caller got `ContractCallFailed` carrying a raw string. The preview computed the
+    // answer and the write path threw it away.
+    if (closePreview.bindingConstraint === 'LAST_TROVE_IN_SYSTEM') {
+      throw new LastTroveInSystem({
+        ...(closePreview.troveOwnersCount !== undefined
+          ? { troveOwnersCount: closePreview.troveOwnersCount }
+          : {}),
+        ...(closePreview.sortedTrovesSize !== undefined
+          ? { sortedTrovesSize: closePreview.sortedTrovesSize }
+          : {}),
+      })
     }
   }
   return send(deps, 'closeTrove', [], { revert: { operation: 'close', address: owner } })
@@ -646,7 +670,7 @@ export async function close(deps: WriteDeps): Promise<WriteResult> {
  * the fee and the resulting position before signing.
  *
  * **It always reverts in Recovery Mode** (MK-019): `_requireNotInRecoveryMode(price)` is the
- * first requirement `_refinance` applies (`BorrowerOperations.sol:1024`), before the trove
+ * first requirement `_refinance` applies (`BorrowerOperations.sol:1023`), before the trove
  * is even checked for being active. `previewRefinance` reports that as a
  * `RECOVERY_MODE` reason, and simulate-before-send surfaces it as a typed
  * `RecoveryModeRestriction` if you skip the preview.
@@ -699,8 +723,7 @@ async function refinancingFee(
     abi: borrowerOperationsAbi,
     functionName: 'refinancingFeePercentage',
   })
-  const netDebt = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
-  return getBorrowingFee(deps, (BigInt(percentage) * netDebt) / 100n)
+  return getBorrowingFee(deps, (BigInt(percentage) * netDebtOf(entireDebt)) / 100n)
 }
 
 /**

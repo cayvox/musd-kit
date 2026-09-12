@@ -7,7 +7,7 @@ import { MULTICALL3_ADDRESS } from '@musd-kit/core'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type ReactNode, createElement } from 'react'
 import type { Address, Chain } from 'viem'
-import { http, WagmiProvider, createConfig } from 'wagmi'
+import { http, type Config, WagmiProvider, createConfig } from 'wagmi'
 import { mock } from 'wagmi/connectors'
 import { mezoTestnet } from '../../core/test/harness/constants'
 
@@ -41,8 +41,14 @@ export function newQueryClient() {
   })
 }
 
-/** RTL wrapper providing WagmiProvider + QueryClientProvider (no JSX, keep tooling minimal). */
-export function makeWrapper(config: ReturnType<typeof makeConfig>, queryClient: QueryClient) {
+/**
+ * RTL wrapper providing WagmiProvider + QueryClientProvider (no JSX, keep tooling minimal).
+ *
+ * Takes wagmi's `Config` rather than `ReturnType<typeof makeConfig>`, because the chain free
+ * hook tests (MK-085) build a config over a `custom` transport instead of `http` and the
+ * wrapper needs nothing beyond what `WagmiProvider` itself takes.
+ */
+export function makeWrapper(config: Config, queryClient: QueryClient) {
   return ({ children }: { children: ReactNode }) =>
     createElement(
       WagmiProvider,

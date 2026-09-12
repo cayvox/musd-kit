@@ -106,7 +106,7 @@ describe('computeICR (LiquityMath._computeCR)', () => {
 describe('computeNICR (LiquityMath._computeNominalCR)', () => {
   it('mirrors coll * 1e20 / debt and is price-independent', () => {
     // 5e16 * 1e20 / 2.7e21 = 1851851851851851.
-    expect(computeNICR({ collateral: 5n * 10n ** 16n, entireDebt: 2700n * E18 })).toBe(
+    expect(computeNICR({ collateral: 5n * 10n ** 16n, principal: 2700n * E18 })).toBe(
       1_851_851_851_851_851n,
     )
   })
@@ -114,17 +114,17 @@ describe('computeNICR (LiquityMath._computeNominalCR)', () => {
   it('uses 1e20 precision, exactly (LiquityMath.sol:15)', () => {
     expect(NICR_PRECISION).toBe(100n * E18)
     // coll == debt collapses the formula to the precision constant itself.
-    expect(computeNICR({ collateral: 7n * E18, entireDebt: 7n * E18 })).toBe(NICR_PRECISION)
+    expect(computeNICR({ collateral: 7n * E18, principal: 7n * E18 })).toBe(NICR_PRECISION)
   })
 
   it('THROWS on zero debt instead of returning the contract sentinel', () => {
     // Deliberate, documented divergence: the contract returns type(uint256).max
     // (LiquityMath.sol:35-39), which is meaningless as a SortedTroves insertion hint,
     // so the SDK refuses the input rather than emitting an unusable hint.
-    expect(() => computeNICR({ collateral: E18, entireDebt: 0n })).toThrow(RangeError)
-    expect(() => computeNICR({ collateral: E18, entireDebt: -1n })).toThrow(RangeError)
+    expect(() => computeNICR({ collateral: E18, principal: 0n })).toThrow(RangeError)
+    expect(() => computeNICR({ collateral: E18, principal: -1n })).toThrow(RangeError)
     // One wei of debt is enough to be valid: the guard is on zero, not on smallness.
-    expect(computeNICR({ collateral: E18, entireDebt: 1n })).toBe(E18 * NICR_PRECISION)
+    expect(computeNICR({ collateral: E18, principal: 1n })).toBe(E18 * NICR_PRECISION)
   })
 })
 

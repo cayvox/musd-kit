@@ -1,7 +1,8 @@
 import type { Address } from 'viem'
 import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
-import { computeICR } from './compute'
+import { CCR, MCR } from '../constants'
+import { TroveStatus } from '../read/types'
+import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import { effectiveBorrowingFee } from './fee'
 
@@ -116,8 +117,10 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
   } = input
 
   const entireDebt = principal + interestOwed
-  // `_getNetDebt(getTroveDebt)` is entire debt minus the gas reserve (`LiquityBase.sol:107-109`).
-  const feeBase = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
+  // `_getNetDebt(getTroveDebt)` is entire debt minus the gas reserve (`LiquityBase.sol:107-109`),
+  // through the one copy (MK-094). This file carried the ternary twice, once here and once in
+  // the reader below, for the same quantity on the same Trove.
+  const feeBase = netDebtOf(entireDebt)
   // MK-069. Through the one rule (`math/fee.ts`), not a local ternary. `false` for the mode is
   // a contract guarantee rather than an assumption: `_requireNotInRecoveryMode`
   // (`BorrowerOperations.sol:1023`) is the first requirement `_refinance` applies, so a
@@ -141,7 +144,10 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
   // mode check was first, so for a closed Trove under CCR the preview named a gate the chain
   // would not have reported. That is MK-065's defect in the evaluator MK-065 did not reach.
   if (isRecoveryMode) reasons.push('RECOVERY_MODE')
-  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
+  // MK-094. The enum, not the literal. `TroveStatus.active` is `1`
+  // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two
+  // others used the enum for the same comparison.
+  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')
   if (resultingIcr < MCR) reasons.push('ICR_BELOW_MCR')
   if (resultingTcr < CCR) reasons.push('TCR_BELOW_CCR')
 
@@ -167,6 +173,9 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
  * Preview refinancing an existing Trove (MK-003, MK-019): the fee, the resulting principal,
  * the resulting individual ratio, and a verdict that is false whenever the contract would
  * refuse the operation, Recovery Mode included.
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. See
+ * {@link MathDeps} (MK-013, MK-093).
  */
 export async function previewRefinance(deps: MathDeps, owner: Address): Promise<RefinancePreview> {
   const { publicClient, addresses } = deps
@@ -191,10 +200,8 @@ export async function previewRefinance(deps: MathDeps, owner: Address): Promise<
     }),
   ])
 
-  const principal = entire[1]
-  const interestOwed = entire[2]
-  const entireDebt = principal + interestOwed
-  const feeBase = entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n
+  const { principal, interestOwed, entireDebt } = troveAmounts(entire)
+  const feeBase = netDebtOf(entireDebt)
   const scaledBase = (BigInt(percentage) * feeBase) / 100n
 
   const [feeExempt, borrowingFeeOnBase] = await Promise.all([

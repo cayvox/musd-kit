@@ -1,7 +1,8 @@
 import type { Address } from 'viem'
 import { borrowerOperationsAbi, musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
-import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
-import { computeICR } from './compute'
+import { CCR, MCR } from '../constants'
+import { TroveStatus } from '../read/types'
+import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import { isBorrowingFeeCharged } from './fee'
 
@@ -76,6 +77,18 @@ export interface BorrowingCapacity {
    * returns `viable: false` for a draw sized from this number.
    */
   remaining: bigint
+}
+
+/**
+ * Build a {@link BorrowingCapacity} from the two figures behind it (MK-094).
+ *
+ * **One copy, because two surfaces publish this field.** `evaluateAdjust` puts it on every
+ * adjust and borrow preview, and `getBorrowingCapacity` returns it standalone. Both computed
+ * `capacity > entireDebt ? capacity - entireDebt : 0n` separately, which is two implementations
+ * of one field on one Trove. They agreed; nothing made them.
+ */
+export function borrowingCapacityOf(capacity: bigint, entireDebt: bigint): BorrowingCapacity {
+  return { capacity, entireDebt, remaining: capacity > entireDebt ? capacity - entireDebt : 0n }
 }
 
 /** Why an adjust preview came back not viable. Machine readable, stable strings. */
@@ -262,11 +275,9 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   const resultingCollateral = collateral + addCollateral - withdrawCollateral
   const resultingEntireDebt = isDebtIncrease ? entireDebt + netDebtChange : entireDebt - repayDebt
 
-  const capacityPicture: BorrowingCapacity = {
-    capacity,
-    entireDebt,
-    remaining: capacity > entireDebt ? capacity - entireDebt : 0n,
-  }
+  // MK-094. Through the factory, which `getBorrowingCapacity` also calls, so the standalone
+  // read and the field on this preview cannot report the same Trove differently.
+  const capacityPicture = borrowingCapacityOf(capacity, entireDebt)
   const currentIcr = computeICR({ collateral, entireDebt, price })
   // Clamp the collateral at zero so a withdrawal larger than the balance produces a number
   // rather than a negative, and let WITHDRAWAL_EXCEEDS_COLLATERAL be the reason reported.
@@ -297,7 +308,10 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   ) {
     reasons.push('NO_CHANGE_REQUESTED')
   }
-  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')
+  // MK-094. The enum, not the literal. `TroveStatus.active` is `1`
+  // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two
+  // others used the enum for the same comparison.
+  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')
   if (withdrawCollateral > collateral) reasons.push('WITHDRAWAL_EXCEEDS_COLLATERAL')
 
   if (isRecoveryMode) {
@@ -314,15 +328,11 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   if (isDebtIncrease && capacity < resultingEntireDebt) reasons.push('EXCEEDS_BORROWING_CAPACITY')
 
   if (!isDebtIncrease && repayDebt > 0n) {
-    // `_getNetDebt(debt)` is the entire debt minus the gas compensation (`:856`).
-    const netDebtAfter =
-      entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION - repayDebt : 0n
-    if (netDebtAfter < minNetDebt) reasons.push('BELOW_MINIMUM_DEBT')
-    if (
-      repayDebt > (entireDebt > MUSD_GAS_COMPENSATION ? entireDebt - MUSD_GAS_COMPENSATION : 0n)
-    ) {
-      reasons.push('REPAY_EXCEEDS_DEBT')
-    }
+    // `_getNetDebt(debt)` is the entire debt minus the gas compensation (`:856`), through the
+    // one copy rather than restated twice in this block (MK-094).
+    const netDebt = netDebtOf(entireDebt)
+    if (netDebt - repayDebt < minNetDebt) reasons.push('BELOW_MINIMUM_DEBT')
+    if (repayDebt > netDebt) reasons.push('REPAY_EXCEEDS_DEBT')
     if (musdBalance < repayDebt) reasons.push('INSUFFICIENT_MUSD_BALANCE')
   }
 
@@ -355,7 +365,10 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
   }
 }
 
-/** Read everything {@link evaluateAdjust} needs, then decide. */
+/** Read everything {@link evaluateAdjust} needs, then decide.
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. See
+ * {@link MathDeps} (MK-013, MK-093).
+ */
 export async function previewAdjustTrove(
   deps: MathDeps,
   params: PreviewAdjustParams,
@@ -416,10 +429,11 @@ export async function previewAdjustTrove(
         })
       : 0n
 
+  const amounts = troveAmounts(entire)
   return evaluateAdjust({
     status,
-    collateral: entire[0],
-    entireDebt: entire[1] + entire[2],
+    collateral: amounts.collateral,
+    entireDebt: amounts.entireDebt,
     capacity,
     musdBalance,
     minNetDebt,
@@ -490,6 +504,9 @@ export interface MaxWithdrawable {
  *
  * Reported alongside `limitedBy` because "you can withdraw 0" and "you can withdraw 0 because
  * the system is in Recovery Mode" are different messages to a user.
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. See
+ * {@link MathDeps} (MK-013, MK-093).
  */
 export async function maxWithdrawableCollateral(
   deps: MathDeps,
@@ -508,9 +525,10 @@ export async function maxWithdrawableCollateral(
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
   ])
+  const amounts = troveAmounts(entire)
   return computeMaxWithdrawable({
-    collateral: entire[0],
-    entireDebt: entire[1] + entire[2],
+    collateral: amounts.collateral,
+    entireDebt: amounts.entireDebt,
     isRecoveryMode,
     price,
     systemColl,

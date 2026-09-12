@@ -1,10 +1,12 @@
 import type { Address } from 'viem'
 import { troveManagerAbi } from '../clients'
+import { troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import {
   type AdjustBlockReason,
   type AdjustPreview,
   type BorrowingCapacity,
+  borrowingCapacityOf,
   evaluateAdjust,
   previewAdjustTrove,
 } from './previewAdjust'
@@ -156,11 +158,12 @@ export async function getBorrowingCapacity(
     }),
     publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [owner] }),
   ])
-  // getEntireDebtAndColl returns (coll, principal, interest, pendingColl, pendingPrincipal,
-  // pendingInterest) and adds live-accrued interest to the stored value, which is exactly
-  // what `_adjustTrove` compares against after its own interest update.
-  const entireDebt = entire[1] + entire[2]
-  return { capacity, entireDebt, remaining: capacity > entireDebt ? capacity - entireDebt : 0n }
+  // MK-094. Through the named accessor and the one capacity factory. `getEntireDebtAndColl`
+  // adds live-accrued interest to the stored value (`TroveManager.sol:788-793`), which is
+  // exactly what `_adjustTrove` compares against after its own interest update; and this
+  // standalone read and the `capacity` field on an adjust preview are now one implementation,
+  // so they cannot describe the same Trove differently.
+  return borrowingCapacityOf(capacity, troveAmounts(entire).entireDebt)
 }
 
 /**
@@ -178,6 +181,9 @@ export async function getBorrowingCapacity(
  *
  * This is the counterpart to `getBorrowingPower`, which is an OPEN time calculator and is
  * documented as such. Use this one for a Trove that already exists.
+ *
+ * **Not a single block snapshot**: the price is read outside the batch that uses it. See
+ * {@link MathDeps} (MK-013, MK-093).
  */
 export async function previewBorrow(
   deps: MathDeps,

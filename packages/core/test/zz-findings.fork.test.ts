@@ -399,7 +399,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     // includes the capitalized fee.
     const [collAfter, principalAfter] = await entireDebtAndColl(borrower.address)
     expect(
-      reader().computeNICR({ collateral: collAfter, entireDebt: principalAfter }),
+      reader().computeNICR({ collateral: collAfter, principal: principalAfter }),
       'MK-003: the post-refinance sort key must match what the SDK computed hints from',
     ).toBe(await nominalICR(borrower.address))
 
@@ -599,13 +599,13 @@ describe('Open findings, pinned by failing tests (P2)', () => {
     // contract sorts by. Every on-chain re-insert passes `_computeNominalCR(coll, principal)`:
     // BorrowerOperations.sol:902-906, :1087-1088, and TroveManager.sol:1287-1290.
     expect(
-      reader().computeNICR({ collateral, entireDebt: principal }),
+      reader().computeNICR({ collateral, principal: principal }),
       'MK-006: the hint NICR must equal the contract nominal ICR',
     ).toBe(contractNicr)
 
     // And the distinction is real on this fixture, not a coincidence: the old basis differs.
     expect(
-      reader().computeNICR({ collateral, entireDebt: principal + interest }),
+      reader().computeNICR({ collateral, principal: principal + interest }),
       'the entire-debt basis must NOT equal the sort key, or this test proves nothing',
     ).not.toBe(contractNicr)
   }, 240_000)
@@ -677,7 +677,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // The hint the SDK would place by must be the contract's post-repay sort key.
       expect(collAfter, `${label}: collateral must not move on a repay`).toBe(collBefore)
       expect(
-        reader().computeNICR({ collateral: collAfter, entireDebt: principalAfter }),
+        reader().computeNICR({ collateral: collAfter, principal: principalAfter }),
         `${label}: MK-006, the SDK hint basis must equal the contract sort key after the repay`,
       ).toBe(await nominalICR(account.address))
     }

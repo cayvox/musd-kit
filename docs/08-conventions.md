@@ -325,6 +325,15 @@ a debt increase. **And where a projection is not possible, the agreement is a te
 across both modes and both sides of every boundary, not left to review. Two implementations with
 no such test is the shape this rule exists to refuse, whatever the tests on each half say.
 
+**And it happened a fourth and fifth time, in the same wave.** MK-089: the protocol's interest
+formula was implemented twice, once accruing on the principal and once on the entire debt, and the
+test that pinned one of its constants restated the wrong base, so the source could accrue on
+either quantity and the test agreed. MK-094 then worked the whole table rather than the row the
+defect was found on: nine rules decided more than once, seven single sourced, two left as prose
+and labelled as the weaker control they are. **The line on test duplication is this**: a test that
+restates the CONTRACT is an independent second opinion, and a test that restates the
+IMPLEMENTATION is a tautology. Both look identical on the page.
+
 **It happened a third time, and the third one was wider.** MK-067 through MK-070: the borrowing
 fee rule was decided in eight places and four of them were wrong the same way, including a test
 reference implementation and the fixture every fork test opens with. A projection was not
@@ -344,6 +353,18 @@ This is mechanical on purpose: grep for the rule's inputs across `packages/`, `s
 `examples/`, including tests and harnesses, and account for every hit. MK-004, MK-017, MK-018 and
 MK-065 were each remediated exactly where they were observed and each left live copies behind,
 which is how one fee rule survived four releases in four wrong implementations.
+
+**The enumeration is scoped to the RULE, never to the package the defect was found in** (MK-086).
+MK-079 found an argument mis-mapping in the differential harness, enumerated it across
+`packages/core`, and concluded in the register that no source file was implicated. The same
+mis-mapping was in `packages/react/src/hooks/reads.ts`, in shipped code, and stayed there for two
+waves while the register said it did not exist. A package boundary has no meaning to a rule:
+presence versus value is a property of every caller of `previewAdjustTrove`, and the React package
+is one.
+
+So when a finding's cause is an **argument shape** or a **shared rule**, the entry names which
+packages call it. "I checked the package the defect was in" is not an enumeration, and neither is
+a grep that stops at a directory the rule does not respect.
 
 ## 13. A published measurement names what it measured, and its unit
 

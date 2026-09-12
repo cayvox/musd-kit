@@ -100,6 +100,16 @@ evidence for what it actually exercises.
 | The PACKAGED artifact, not the workspace | The packed tarball is installed into a scratch project and a consumer file is typechecked against it under four module configurations, plus ESM and CJS runtime imports | **Manual, at release preparation, not automated.** This is what found MK-040, a broken `exports` map that a workspace typecheck cannot see because path mapping hides it. Automating it needs a pack, an install and a `tsc` run, which is its own job |
 | Live testnet lifecycle, end to end | `scripts/testnet-e2e.ts`, **run against live Mezo testnet**, chain 31611, blocks 15163946 to 15164162. **20 surfaces exercised, 3 skipped**, each asserting the preview's verdict and numbers against what the chain did, and the redemption checked field by field against the authoritative `Redemption` event. The full ledger is `docs/13-live-testnet-ledger.md` | **It found MK-045, MK-046, MK-047 and MK-048**, none of which a fork can produce. Not reached: `liquidate` and `batchLiquidate` (need a Trove below MCR, uncreatable on live testnet) and `claim` (needs a surplus) |
 
+| **`@musd-kit/react`, the hook layer** | Fork exercised (`hooks.fork.test.ts`, `phase9-app.fork.test.ts`) and, since the P17 wave, one RENDERED chain free test over `useAdjustTrovePreview` (`adjust-preview-hook.test.ts`) plus two mutations and a package wide guard against filling an absent optional | **Newly measured, and it was not measured before.** Until P17 no file under `packages/react/src` appeared in the coverage report, the mutation check had no React mutation, and the sweep never rendered a hook. MK-085 lived in that gap: a shipped hook that made every adjust preview a debt increase. Coverage now includes the package (MK-087) |
+
+**The differential sweep does NOT cover the React hooks, and that is a property of what a
+differential case is, not an oversight.** A case compares a preview's verdict against the outcome
+of an executed transaction; the harness therefore drives `client.*` directly, because a hook adds
+a React render and a TanStack cache between the two without changing either side of the
+comparison. **The validated surface of the sweep is the core client.** The React layer is covered
+by the fork hook tests and by the rendered unit test above, and by nothing else. This was implied
+rather than stated until MK-087.
+
 **The fork sweep and the live run prove different things, and the table lists them separately for
 that reason.**
 
@@ -273,7 +283,7 @@ table is that a reader can trust it without cross referencing the register.
 
 | Claim | Status |
 |---|---|
-| Coverage floor enforced in CI | **True.** `vitest.config.mts` `coverage.thresholds`, enforced on every push by the fork gate. Floors 98 / 91 / 99 / 98, and they only ever move up |
+| Coverage floor enforced in CI | **True.** `vitest.config.mts` `coverage.thresholds`, enforced on every push by the fork gate. Floors are **94 statements / 92 branches / 88 functions / 94 lines**, over **both published packages**. This row read `98 / 91 / 99 / 98` until the P17 wave, which was stale on the branch metric and, more importantly, was measuring `packages/core/src` alone: `packages/react/src` was outside the glob (MK-087). Widening it moved three floors down, which is a wider scope and not a lowered ratchet; the core half measured 98.65 / 93.20 / 100 / 98.65 in the same run |
 | Fork pinned to a block for determinism | **True.** `MEZO_FORK_BLOCK` in `.github/workflows/ci.yml`, read by the harness. **With a stated limit:** pinning is not order independence, and the fork project is still one stateful sequence (MK-016) |
 | Fork price pinned with the block | **True.** The oracle shim is seeded from the pinned block, and the seeded answer is byte identical across runs |
 | CI matrix across Node versions | **True.** 20, 22 and 24, resolving to v20.20.2, v22.23.2 and v24.19.0, measured from a run rather than assumed |

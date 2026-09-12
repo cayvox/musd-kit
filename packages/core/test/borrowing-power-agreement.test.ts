@@ -296,3 +296,107 @@ describe('getBorrowingPower and previewOpen answer the same question the same wa
     expect(exemptReads).toBe(0)
   })
 })
+
+/**
+ * MK-092. The published COST, counted rather than asserted.
+ *
+ * `getBorrowingPower`'s docstring names a number of round trips, and that number was wrong for
+ * two waves: it said "three round trips, or four when an `account` is supplied" and claimed
+ * "Every chain read happens in ONE `multicall`", while the code issued six reads and had
+ * `fetchPrice` and `checkRecoveryMode` outside the batch. `docs/08-conventions.md` §10 makes a
+ * measurement citable only when the code that produced it is in the repository, and a published
+ * figure with nothing executing it is exactly the shape MK-039 and MK-081 were.
+ *
+ * A round trip here is one `multicall` or one `readContract`. `getMinNetDebt` counts as one. A
+ * real client serves it from the TTL cache (`createMusdClient.ts`), so a warm client pays less
+ * than these figures; a COLD client pays more, because its first `getConstants` also runs the
+ * deployment verification multicall and the two constants reads. Those are shared across every
+ * call the SDK makes and are deliberately not attributed to this function.
+ */
+function countingDeps(s: Scenario): { deps: MathDeps; calls: string[] } {
+  const calls: string[] = []
+  const inner = fakeDeps(s)
+  const publicClient = {
+    readContract: (args: { functionName: string; args?: readonly unknown[] }) => {
+      calls.push(args.functionName)
+      return (
+        inner.publicClient as unknown as { readContract: (a: unknown) => Promise<unknown> }
+      ).readContract(args)
+    },
+    multicall: (args: { contracts: { functionName: string }[] }) => {
+      calls.push(`multicall(${args.contracts.map((c) => c.functionName).join(',')})`)
+      return (
+        inner.publicClient as unknown as { multicall: (a: unknown) => Promise<unknown> }
+      ).multicall(args)
+    },
+  } as unknown as PublicClient
+  return {
+    calls,
+    deps: {
+      ...inner,
+      publicClient,
+      getMinNetDebt: async () => {
+        calls.push('minNetDebt')
+        return MIN_NET_DEBT
+      },
+      isAccountFeeExempt: async (a) => {
+        calls.push('isAccountFeeExempt')
+        return inner.isAccountFeeExempt(a)
+      },
+    },
+  }
+}
+
+describe('MK-092, the round trips getBorrowingPower actually makes', () => {
+  const NORMAL: Scenario = {
+    label: 'normal',
+    price: 100_000n * E18,
+    collateral: E18,
+    ...ROOMY,
+    isRecoveryMode: false,
+    feeExempt: false,
+  }
+
+  it('normal mode, no account: FOUR, and the price rides in the batch', async () => {
+    const { deps, calls } = countingDeps(NORMAL)
+    await getBorrowingPower(deps, { collateral: E18 })
+    expect(calls).toEqual([
+      'multicall(borrowingRate,DECIMAL_PRECISION,getEntireSystemColl,getEntireSystemDebt,fetchPrice)',
+      'checkRecoveryMode',
+      'minNetDebt',
+      // ONE fee read, not two: the confirmation figure is kept rather than re-fetched.
+      'getBorrowingFee',
+    ])
+  })
+
+  it('normal mode, with an account: FIVE, the extra one being the exemption', async () => {
+    const { deps, calls } = countingDeps(NORMAL)
+    await getBorrowingPower(deps, { collateral: E18, account: ACCOUNT })
+    expect(calls).toContain('isAccountFeeExempt')
+    expect(calls.filter((c) => c.startsWith('multicall'))).toHaveLength(1)
+    expect(calls).toHaveLength(5)
+  })
+
+  it('Recovery Mode, no account: THREE, because no fee is charged so none is quoted', async () => {
+    const { deps, calls } = countingDeps({ ...NORMAL, isRecoveryMode: true })
+    await getBorrowingPower(deps, { collateral: E18 })
+    expect(calls).not.toContain('getBorrowingFee')
+    expect(calls).not.toContain('isAccountFeeExempt')
+    expect(calls).toHaveLength(3)
+  })
+
+  it('a supplied price keeps fetchPrice out of the batch and costs nothing extra', async () => {
+    const { deps, calls } = countingDeps(NORMAL)
+    await getBorrowingPower(deps, { collateral: E18, price: NORMAL.price })
+    expect(calls[0]).toBe(
+      'multicall(borrowingRate,DECIMAL_PRECISION,getEntireSystemColl,getEntireSystemDebt)',
+    )
+    expect(calls).toHaveLength(4)
+  })
+
+  it('getBorrowingFee is asked at most ONCE on the closed form path', async () => {
+    const { deps, calls } = countingDeps(NORMAL)
+    await getBorrowingPower(deps, { collateral: E18 })
+    expect(calls.filter((c) => c === 'getBorrowingFee')).toHaveLength(1)
+  })
+})
