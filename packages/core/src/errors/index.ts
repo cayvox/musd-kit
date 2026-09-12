@@ -376,6 +376,41 @@ export class InsufficientMusdBalance extends MusdError {
   }
 }
 
+/**
+ * The Trove cannot be closed because it is the LAST one in the system (MK-074, MK-091).
+ *
+ * `BorrowerOperations._closeTrove` finishes by calling `troveManager.closeTrove`
+ * (`BorrowerOperations.sol:976`), which reaches `TroveManager._closeTrove:1390-1399`. There,
+ * gated on the same `musdToken.mintList(borrowerOperations)` flag as the Recovery Mode and TCR
+ * checks, it requires `TroveOwners.length > 1 && sortedTroves.getSize() > 1`
+ * (`TroveManager.sol:1488-1496`) and reverts with "TroveManager: Only one trove in the system".
+ *
+ * **There is no smaller close that works and nothing the owner can do alone.** The condition is
+ * a property of the system, not of the position: it clears when somebody else opens a Trove.
+ * `previewClose` reports it as `LAST_TROVE_IN_SYSTEM` with the two counts behind it.
+ */
+export class LastTroveInSystem extends MusdError {
+  constructor(counts?: { troveOwnersCount?: bigint; sortedTrovesSize?: bigint }, cause?: unknown) {
+    super(
+      Codes.LAST_TROVE_IN_SYSTEM,
+      'Cannot close the last Trove in the system: TroveManager requires more than one ' +
+        '(TroveManager.sol:1488-1496). This clears when another Trove is opened.',
+      {
+        context: {
+          ...(counts?.troveOwnersCount !== undefined
+            ? { troveOwnersCount: counts.troveOwnersCount }
+            : {}),
+          ...(counts?.sortedTrovesSize !== undefined
+            ? { sortedTrovesSize: counts.sortedTrovesSize }
+            : {}),
+        },
+        ...(cause !== undefined ? { cause } : {}),
+      },
+    )
+    this.name = 'LastTroveInSystem'
+  }
+}
+
 /** `liquidate`/`batchLiquidate` found nothing liquidatable (the simulation reverted). */
 export class NothingToLiquidate extends MusdError {
   constructor(borrowers: readonly string[], cause?: unknown) {

@@ -1,4 +1,5 @@
 import { formatUnits, parseUnits } from 'viem'
+import { BPS_DIVISOR } from './constants'
 
 // Unit helpers (docs/08 §5). BTC and MUSD are both 18-decimal on Mezo, so these are thin,
 // well-named aliases over viem's parseUnits/formatUnits, they exist for readable call sites
@@ -29,5 +30,7 @@ export function formatMusd(value: bigint): string {
  * (`maxFeePercentage`): `parseBps(100)` = 1% = `1e16`. (100 bps = 1%.)
  */
 export function parseBps(bps: number): bigint {
-  return (BigInt(bps) * 10n ** 18n) / 10_000n
+  // MK-094. `BPS_DIVISOR` from `constants.ts`, not a literal: the constant exists and this
+  // was the last site bypassing it.
+  return (BigInt(bps) * 10n ** 18n) / BPS_DIVISOR
 }

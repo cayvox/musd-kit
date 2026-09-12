@@ -110,7 +110,8 @@ export async function openTroveRaw(
       { publicClient, addresses: TESTNET },
       {
         collateral: collateralBtc,
-        entireDebt: compositeDebt,
+        // At an open the composite debt IS the principal: no interest has accrued yet.
+        principal: compositeDebt,
         randomSeed: seed,
         ...(numTrials !== undefined ? { numTrials } : {}),
       },

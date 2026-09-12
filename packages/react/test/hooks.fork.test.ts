@@ -201,8 +201,10 @@ describe('@musd-kit/react, read hooks (fork)', () => {
     // mine-revert (a silent reverted receipt), leaving the position unchanged and making
     // this look like a block-watch miss when it isn't. We assert the receipt succeeded.
     const fork = connectFork()
-    const rdebt = (await coreClient.getTrove(reader)).entireDebt
-    await coreClient.computeHints({ collateral: before + BTC / 10n, entireDebt: rdebt })
+    // MK-090. The sort key is the PRINCIPAL, so warm the traversal with the same quantity a
+    // real write would place by rather than with the entire debt.
+    const rprincipal = (await coreClient.getTrove(reader)).principal
+    await coreClient.computeHints({ collateral: before + BTC / 10n, principal: rprincipal })
     await fork.mineBlocks(1)
     const rc = await waitTx(
       (await coreClientFor(testAccount(800)).addCollateral({ amount: BTC / 10n })).hash,
@@ -236,7 +238,8 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
     // Warm the insertion-hint traversal so the SDK's openTrove is fast; ensureWriteMined
     // confirms the open actually mined (retrying any silent revert). The warm cache + holder's
     // Trove then cover the later write tests.
-    await coreClient.computeHints({ collateral: (5n * BTC) / 10n, entireDebt: 5_205n * MUSD })
+    // 5,000 draw + 5 fee + 200 gas reserve, which at an open is the principal (MK-090).
+    await coreClient.computeHints({ collateral: (5n * BTC) / 10n, principal: 5_205n * MUSD })
     await ensureWriteMined(
       () => result.current.open.openTrove({ collateral: (5n * BTC) / 10n, debt: 5_000n * MUSD }),
       () => result.current.open,

@@ -1,0 +1,161 @@
+# The full 1000 case differential sweep, on a schedule, because a sweep nobody runs is a claim.
+#
+# **Why this workflow exists.** `docs/07-testing.md` §4a has described the full sweep as running
+# "on demand and on a schedule" since it was written. The on demand half was true. **The schedule
+# was never wired**, so between releases the only thing that ran was the 24 case push subset, and
+# a generator change could go unmeasured indefinitely. It did: the tenth operation added in MK-067
+# shifted the PRNG stream, nobody ran the full sweep against the new stream for two waves, and
+# when someone finally did it surfaced MK-079, which had been reachable the whole time.
+#
+# That is MK-053's shape exactly. The post publish verification job existed for two releases
+# without executing while being presented as part of the release posture, and it took a finding to
+# notice. A gate that is described but not scheduled is a claim about diligence, not a control.
+#
+# **Why weekly and not on push.** Measured in the P15 wave: about 116 minutes of wall clock across
+# four slices, of which 111 is the sweep itself. On the push path that would make every merge wait
+# on a two hour job, and people would start skipping it, which is worse than not having it. The
+# fast 24 case subset stays on push in `ci.yml`; this is the breadth run.
+#
+# **Why four slices and not one job.** A single run does not fit: the per case cost grows with the
+# life of the anvil process, so the sweep is sliced with a fresh anvil each. `MK_DIFF_FROM` and
+# `MK_DIFF_TO` index into ONE generation rather than reseeding, which is the distinction that
+# makes four slices equal to one thousand case run. They run sequentially rather than in a matrix
+# so the log reads in case order and so four anvils do not contend for one runner.
+name: Full differential sweep
+
+on:
+  # Sunday 03:00 UTC. Off the working week so a two hour job never queues behind a merge.
+  schedule:
+    - cron: '0 3 * * 0'
+  # Dispatchable, because a release cites a sweep against the tree being released
+  # (`docs/12-release-runbook.md` §0, precondition 7) and that tree is rarely the one the last
+  # Sunday run saw.
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Generator seed'
+        required: false
+        default: '20260826'
+      cases:
+        description: 'Total generated cases; the four slices divide this'
+        required: false
+        default: '1000'
+
+concurrency:
+  group: sweep-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # The same pinned block the push gate uses (MK-016). A sweep against a moving fork is not
+  # reproducible and its figures could not be cited anywhere.
+  MEZO_FORK_BLOCK: '15043414'
+  MK_DIFF_SEED: ${{ github.event.inputs.seed || '20260826' }}
+  MK_DIFF_CASES: ${{ github.event.inputs.cases || '1000' }}
+
+jobs:
+  sweep:
+    name: 1000 cases, four slices
+    runs-on: ubuntu-latest
+    # Four slices at about 29 minutes each, plus the fork suite each slice also runs, plus
+    # setup. 116 minutes measured locally; 210 leaves room on a loaded runner without letting a
+    # genuinely hung job burn six hours.
+    timeout-minutes: 210
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      # RUNTIME: declared here, NOT inherited from `.nvmrc`, for the reason `ci.yml` gives at
+      # length (MK-029, MK-044). The development pin must never silently change what CI executes.
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # PINNED, not `stable` (MK-041): a floating toolchain turned the fork gate red on a
+      # markdown-only commit once already.
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: 1.7.1
+
+      - name: Restore anvil fork state (per pinned block)
+        id: anvil-fork-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.foundry/cache/rpc/31611/${{ env.MEZO_FORK_BLOCK }}
+          key: anvil-fork-31611-${{ env.MEZO_FORK_BLOCK }}
+
+      # Each slice is a separate `pnpm test:fork`, so each gets a fresh anvil from globalSetup.
+      # `continue-on-error` is deliberately NOT set: a failing slice must fail this job. Since
+      # MK-079 the sweep exits non zero only for a mismatch no finding explains
+      # (`packages/core/test/differential/expected.ts`), so a red here is always worth reading.
+      - name: 'Slice 1 of 4: cases 0..250'
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+          MK_DIFF_FROM: '0'
+          MK_DIFF_TO: '250'
+        run: pnpm test:fork
+
+      - name: 'Slice 2 of 4: cases 250..500'
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+          MK_DIFF_FROM: '250'
+          MK_DIFF_TO: '500'
+        run: pnpm test:fork
+
+      - name: 'Slice 3 of 4: cases 500..750'
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+          MK_DIFF_FROM: '500'
+          MK_DIFF_TO: '750'
+        run: pnpm test:fork
+
+      - name: 'Slice 4 of 4: cases 750..1000'
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+          MK_DIFF_FROM: '750'
+          MK_DIFF_TO: '1000'
+        run: pnpm test:fork
+
+      # Save the fork cache even when a slice failed: the next run should not pay the cold cost
+      # again just because this one found something. `continue-on-error` so a cache problem can
+      # never be the reason a real result is reported as a failure.
+      - name: Save anvil fork state
+        if: always() && steps.anvil-fork-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.foundry/cache/rpc/31611/${{ env.MEZO_FORK_BLOCK }}
+          key: anvil-fork-31611-${{ env.MEZO_FORK_BLOCK }}
+
+      # The figures are the deliverable, not a side effect: a release cites them, so they have to
+      # be readable off the run without opening four step logs.
+      - name: Sweep figures
+        if: always()
+        run: |
+          echo "seed=${MK_DIFF_SEED} cases=${MK_DIFF_CASES} block=${MEZO_FORK_BLOCK}"
+          echo "commit=${GITHUB_SHA}"
+          echo ""
+          echo "Per slice figures are in the four step logs above, on the lines beginning"
+          echo "[differential]. The ones a release cites are:"
+          echo "  ran / skipped, per slice and summed"
+          echo "  FALSE_VIABLE, FALSE_BLOCKED, NUMBERS, each reported separately"
+          echo "  EXPECTED <finding> lines, which are mismatches a register entry explains"
+          echo "  EXPECTED-BUT-ABSENT lines, which mean the registry may be stale"
+          echo "  threw, because throws are counted and never fatal"
+          echo "  per operation and per band counts, because a band that never ran proves nothing"

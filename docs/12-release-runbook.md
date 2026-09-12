@@ -39,31 +39,200 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 |---|---|---|---|
 | 1 | `main` is green **at its tip** | `gh run list --branch main --limit 5 --json conclusion,headSha` then `git rev-parse origin/main` | A run whose `headSha` **equals** the tip, `conclusion: success`. A run on an ancestor is not this check (MK-036) |
 | 2 | No open S1 | `FINDINGS.md`, the index table | No row with class `S1` and a status other than `fixed` |
-| 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json` | Both at the same version, and it is not already on npm |
-| 4 | The changelogs describe this release | `packages/*/CHANGELOG.md` | The top entry is the version from step 3 |
+| 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json`. **These do not become correct by themselves: §0a is the action that sets them** | Both at the same version, and it is not already on npm |
+| 4 | The changelogs describe this release | `packages/*/CHANGELOG.md`. **Written by the same command as step 3, see §0a** | The top entry is the version from step 3 |
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
 | 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
+| 7 | **A full sweep has run against THIS tree** | `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status` | A run whose `headSha` **equals the commit being released**, `conclusion: success`. See below: an earlier run does not satisfy this, and `--ref` will not take a raw SHA |
 
 **Step 5 is the one that is easy to skip and should not be.** The fork suite proves the SDK against
 a fork; nothing but this proves it against the real deployment, the real oracle and real gas.
+
+**Step 7 cites a sweep against the tree being released, never an earlier one, and that is not
+pedantry.** `generateCases` takes the case count as an input to its PRNG and the operation list
+feeds the same stream, so **changing the set of operations changes which tuples the same seed
+draws** (MK-069). The P13 wave added a tenth operation; nobody ran the full sweep against the new
+stream for two waves; when someone finally did, it surfaced MK-079, which had been reachable from
+the moment the operation landed. A sweep against an earlier tree is evidence about that tree.
+
+**`--ref` takes a branch or a tag, never a commit SHA**, so you cannot point a dispatch at an
+arbitrary commit. In practice: merge everything first, let `main` settle at the commit you intend to
+release, dispatch against `main`, and then check the run's `headSha` rather than assuming it. If
+anything lands on `main` between the dispatch and the release, the sweep is about a different tree
+and precondition 7 is not met. Tagging first and dispatching `--ref <tag>` is the alternative when
+`main` cannot be held still, at the cost of a tag that exists before the release does.
+
+**The workflow must already be on the default branch** for `workflow_dispatch` to be offered at all,
+which is why a dispatch attempted before `sweep.yml` reaches `main` returns `404 Not Found`.
+
+The weekly scheduled run (`.github/workflows/sweep.yml`, Sundays 03:00 UTC) exists so this is
+usually a recent green rather than a two hour wait, but a release almost never sits on the exact
+commit the last Sunday run saw, so **expect to dispatch it**. Budget it: about 116 minutes of wall
+clock, of which 111 is the sweep itself (`docs/07-testing.md` §4a).
+
+**What "success" means here has changed (MK-079).** The sweep exits non zero only for a mismatch
+that no register entry explains. Mismatches a finding covers are listed in
+`packages/core/test/differential/expected.ts`, printed as `EXPECTED <finding>` lines, and do not
+fail the run. So a red sweep is always a real finding, and **a green one is not a claim that the
+sweep found nothing**: read the `EXPECTED` lines, and read `EXPECTED-BUT-ABSENT`, which means a
+registered mismatch stopped reproducing and the registry may be stale.
+
+---
+
+## 0a. Version the packages, which is what makes preconditions 3 and 4 true
+
+**This step had no home in this runbook until now, and that is the gap it closes.** Preconditions 3
+and 4 assert that the versions and the changelogs are right, and nothing said how they get that way.
+A check asserted without the action that satisfies it is the same shape as MK-080, where the sweep
+was documented as scheduled for 85 commits and a release while no schedule existed.
+
+**Where it goes in the order.** After every pull request for the release has merged, so that all of
+their changesets are on `main` at once, and **before preconditions 3, 4 and 7**. Before 3 and 4
+because it is what makes them pass. Before 7 because this step produces a commit, and precondition
+7 wants a sweep whose `headSha` equals the commit being released: sweep first and you have measured
+the tree one commit before the one you ship.
+
+The changesets themselves are not written here. Each is written during the wave that makes the
+change, with `pnpm changeset`, and lands in `.changeset/` as part of that wave's pull request. This
+step only consumes them.
+
+```sh
+pnpm changeset status        # read only: prints the plan without touching anything
+pnpm changeset version       # applies it
+```
+
+`.changeset/config.json` sets `"commit": false`, so **the command does not commit.** Review the diff
+and commit it yourself, then push to `main`.
+
+### What it does, for this release
+
+Computed by `pnpm changeset status` against the three changesets on the branch, rather than
+predicted:
+
+| package | from | to | bump | published? |
+|---|---|---|---|---|
+| `@musd-kit/core` | 0.2.0 | **0.3.0** | minor | yes |
+| `@musd-kit/react` | 0.2.0 | **0.3.0** | minor | yes |
+| `@musd-kit/example-keeper` | 0.0.2 | 0.0.3 | patch | no, `private` |
+| `@musd-kit/example-open-and-manage` | 0.0.2 | 0.0.3 | patch | no, `private` |
+
+The three changesets consumed are `borrow-evaluator-delegation`, `fee-rule-one-implementation` and
+`react-borrow-preview-union`.
+
+**The two examples move and that is expected.** They are `"private": true`, so `pnpm publish -r`
+skips them and nothing reaches the registry: `npm view @musd-kit/example-keeper` returns `E404`.
+Their version moving is noise in the diff, not a second release.
+
+### A minor here is a BREAKING release, and this is the thing a reader will get wrong
+
+**Both packages are on `0.x`.** `docs/08-conventions.md` §7 says so as policy: `0.x` while the
+surface stabilizes, `1.0` only when the maturity gate is met. On `0.x` there is no major slot to
+bump, **so the minor slot is where breaking changes go**, and all three changesets for this release
+describe breaking changes in so many words: a widened `BorrowBlockReason` union, a widened
+`AdjustBlockReason`, `CloseBlockReason` and reordered `RefinanceBlockReason`, and a
+`getBorrowingPower` that returns a different number in Recovery Mode. `docs/14-migration-0.2-to-0.3.md`
+is the guide, and it exists because this is a breaking release.
+
+**Do not read "minor" as "safe to pick up automatically".** The opposite is true on `0.x`, and it
+cuts both ways. Checked against the `semver` resolver this repository already installs, version
+7.8.4:
+
+```
+^0.2.0   ->  >=0.2.0 <0.3.0-0     0.3.0 satisfies it: false
+~0.2.0   ->  >=0.2.0 <0.3.0-0     0.3.0 satisfies it: false
+^1.2.0   ->  >=1.2.0 <2.0.0-0     1.3.0 satisfies it: true
+```
+
+So on `0.x` a caret behaves like a tilde. **Nobody on `^0.2.0` is upgraded by this release**, which
+is the correct outcome for a breaking change, and it also means the migration reaches people only if
+they are told: the version number will not push it to them.
+
+### What to verify after it
+
+| | |
+|---|---|
+| both versions | `grep '"version"' packages/core/package.json packages/react/package.json` reads `0.3.0` twice |
+| both changelogs | the top entry under the package heading is `## 0.3.0`, followed by `### Minor Changes` |
+| the changesets are consumed | the three `.md` files named above are gone from `.changeset/`; `README.md` and `config.json` stay |
+| nothing else moved | the diff touches only `package.json`, `CHANGELOG.md` and `.changeset/`. No source file, no lockfile |
+| the version is free | `npm view @musd-kit/core version` returns the PREVIOUS version, `0.2.0`, not `0.3.0` |
+
+Then commit, push, and let CI go green at the tip before continuing: that is precondition 1, and
+this commit is now the tip.
+
+**The internal dependency resolves at publish time, not here.** `packages/react/package.json`
+declares `"@musd-kit/core": "workspace:*"`, which pnpm replaces with the exact version when it packs.
+Verified on what actually shipped: `npm view @musd-kit/react@0.2.0 dependencies` returns
+`{ '@musd-kit/core': '0.2.0' }`. So `react@0.3.0` will depend on `core@0.3.0` exactly, and the two
+packages must publish together.
 
 ---
 
 ## 1. The live testnet run
 
-It needs a funded testnet account. **Compute the figure rather than guessing it**, because the
-price, the debt floor, the fee rate and the gas price are all governable:
+It needs a funded testnet account, and **this runbook used to open by sourcing a file it never told
+you how to make** (MK-083's sibling in the same audit). So: the account first, then the funding,
+then the run.
+
+### 1a. The key file, which nothing in the repository can create for you
+
+`scripts/testnet-e2e.ts` reads `MEZO_TESTNET_PRIVATE_KEY` **from the environment and from nowhere
+else**, by deliberate design: no path to a key file appears anywhere in that script. The convention
+this project uses is a one line shell file that exports it.
+
+| | |
+|---|---|
+| path | `.secrets/testnet-e2e.env`, at the repository root |
+| contents | exactly one line, `export MEZO_TESTNET_PRIVATE_KEY=0x<64 hex characters>` |
+| tracked? | **no.** `.gitignore:25` ignores `.secrets/` as a whole directory, confirmed with `git check-ignore -v .secrets/testnet-e2e.env` |
+| mode | `0600`. The directory holds a spendable key and nothing else should read it |
+
+**Generating it without the key ever reaching your scrollback or a tracked file.** `cast wallet new`
+prints the private key to stdout, which puts it in terminal history and in any transcript; the
+pipeline below writes it straight to the file and prints **only the address**, which is public:
+
+```sh
+mkdir -p .secrets
+( umask 077
+  cast wallet new --json | python3 -c '
+import json, sys
+w = json.load(sys.stdin)[0]
+open(".secrets/testnet-e2e.env", "w").write("export MEZO_TESTNET_PRIVATE_KEY=" + w["private_key"] + "\n")
+print(w["address"])
+' )
+```
+
+`umask 077` inside the subshell is what makes the file `0600`, and it is scoped to the subshell so
+it does not follow you around. Check with `stat -f '%Sp' .secrets/testnet-e2e.env`.
+
+**It will overwrite an existing file without asking.** If `.secrets/testnet-e2e.env` is already
+there it is probably a funded account from a previous release, and replacing it strands those funds.
+Check before you run the above: `ls -l .secrets/`.
+
+### 1b. Fund it
+
+**The faucet is [faucet.test.mezo.org](https://faucet.test.mezo.org/).** Checked while writing this:
+it resolves to a Cloudflare address, answers `200`, and serves a page headed "BTC MEZO" with a
+"Request Tokens" control. It was not verified by requesting funds.
+
+**Do not take an amount from this page.** The price, the debt floor, the fee rate and the gas price
+are all governable, so any number written here goes stale. Compute it:
 
 ```sh
 pnpm tsx scripts/testnet-e2e.ts --plan
 ```
 
-That needs no key and prints the required balance with its arithmetic. Fund the address from the
-Mezo testnet faucet, then:
+That needs **no key** and prints the required balance with its arithmetic. `scripts/README.md` and
+the header of `scripts/testnet-e2e.ts` carry the shape of the answer and the constraint that decides
+it: the grant is capped per day, and the script sizes the position from the chain rather than from a
+constant for exactly that reason (MK-045). If `--plan` asks for more than one grant, that is the
+signal to read `scripts/testnet-fund.ts`, which exists because MUSD has no faucet at all.
+
+### 1c. Run it
 
 ```sh
 source .secrets/testnet-e2e.env      # exports MEZO_TESTNET_PRIVATE_KEY
-pnpm tsx scripts/testnet-e2e.ts
+pnpm tsx scripts/testnet-e2e.ts      # or: pnpm testnet:e2e
 ```
 
 **What to check:** the final ledger lists every write and preview the SDK exposes, each marked
@@ -113,16 +282,111 @@ npm view @musd-kit/core dist-tags      # `latest` points at it
 
 ## 3. Deprecate the previous version
 
-Only if the previous version returns wrong numbers, which 0.1.0 does:
+Only if the previous version returns wrong numbers, which 0.1.0 does. **Deprecating is not
+unpublishing:** the version stays installable for anyone already pinned to it and everyone else
+sees a warning, which is the point, and it is reversible.
+
+**This section used to carry two `npm deprecate` shell commands. It does not any more, and they
+must not come back** (MK-083). `npm deprecate` writes to the registry, so it needs a publish
+capable credential, and the only one this project keeps is the `NPM_TOKEN` repository secret;
+running it from a maintainer's shell means that credential lives somewhere untracked, unrotated
+with the secret and invisible in any log. `.github/workflows/deprecate.yml` exists specifically to
+replace them and states that reasoning in its own header.
+
+### Run it
 
 ```sh
-npm deprecate @musd-kit/core@0.1.0 "0.1.0 returns wrong numbers on seven surfaces, three of them silently. See FINDINGS.md and docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
-npm deprecate @musd-kit/react@0.1.0 "Depends on @musd-kit/core@0.1.0, which returns wrong numbers on seven surfaces. See docs/11-migration-0.1-to-0.2.md. Upgrade to 0.2.0."
+gh workflow run deprecate.yml -f version=0.1.0 -f confirm=deprecate
 ```
 
-**What to check:** `npm view @musd-kit/core@0.1.0 deprecated` prints the message. Installers now see
-a warning; the version stays installable, which is the point. Deprecation is reversible:
-`npm deprecate <pkg>@<version> ""` clears it.
+| input | | |
+|---|---|---|
+| `version` | required | the version to deprecate, for example `0.1.0`. **Both packages are deprecated at that version**, `@musd-kit/core` and `@musd-kit/react` together |
+| `confirm` | required, default empty | the literal string `deprecate`. Anything else and the job is **skipped, not failed**, so read the job's status rather than the run's colour |
+
+Three guards are in the workflow rather than in your memory. It **resolves the message before any
+credential is in scope** and fails there if the version has none (see below). It **refuses to
+deprecate whichever version is currently `latest`**, per package, so the release you just shipped
+cannot be marked broken by a typo in the version input. And the write is not the result: a final
+step with **no credential in its environment** reads both packages back from the registry, polling
+up to twelve times at ten second intervals, and fails unless the text on the registry **equals**
+the text this run resolved. An equality rather than a non empty check, because a non empty check
+passes on a version that was already deprecated with somebody else's message (MK-084).
+
+### What to check afterwards
+
+The workflow proves it, and you should still read it from the registry yourself, because that is
+the only surface an installer sees:
+
+```sh
+npm view @musd-kit/core@0.1.0 deprecated
+npm view @musd-kit/react@0.1.0 deprecated
+npm view @musd-kit/core dist-tags          # `latest` must NOT be the version you deprecated
+```
+
+Each of the first two prints the message, and the messages differ per package. To clear one, the
+same hazard applies: it is a registry write, so it belongs in a workflow, and none exists for
+clearing. Today, on the live registry, both `@musd-kit/core@0.1.0` and `@musd-kit/react@0.1.0`
+report their messages and `latest` is `0.2.0`.
+
+**The workflow has run exactly once**,
+[run 33180504234](https://github.com/cayvox/musd-kit/actions/runs/33180504234), a
+`workflow_dispatch` on 2026-08-28 that produced the two deprecations above. The shell commands this
+section used to carry never ran at all, which is the whole of MK-083.
+
+### Where the message comes from, and why you cannot send a wrong one
+
+**The messages live in `scripts/deprecation-message.mjs`, chosen by version** (MK-084). They are not
+a dispatch input: an input would let this job write any text onto any version, which is a much
+larger capability than it needs. They are not literals in the workflow either, which is what they
+used to be, with `version` parameterised and the text not, so a dispatch for anything but 0.1.0
+would have attached 0.1.0's sentence to a real package.
+
+Three things follow, and the third is the one that makes this safe rather than merely tidy:
+
+- **An unknown version is refused**, by name, listing the versions that do have a message. Nothing
+  is written. Preparing a deprecation means adding an entry in a pull request.
+- **A message that does not describe its version is refused.** It must OPEN by naming the version,
+  and must not tell the reader to upgrade to the version it deprecates. A substring check would not
+  do: 0.1.0's message ends "Upgrade to 0.2.0.", so it CONTAINS "0.2.0" while being entirely about
+  0.1.0, and a weaker rule would have let exactly the forged pair through.
+- **Both refusals happen in the first step, which holds no credential.** `NODE_AUTH_TOKEN` only
+  enters scope in the step after, so a bad dispatch cannot reach the registry even in principle.
+
+`packages/core/test/deprecation-message.test.ts` asserts all of this in the unit project, so it runs
+on every push rather than only when someone dispatches a registry write, and two entries in
+`scripts/mutation-check.mjs` break the two guarantees to prove the tests catch them.
+
+Check the text yourself before dispatching, without running anything that writes:
+
+```sh
+node scripts/deprecation-message.mjs 0.2.0 core
+node scripts/deprecation-message.mjs 0.2.0 react
+node scripts/deprecation-message.mjs 0.3.0 core   # expect exit 1, no message written
+```
+
+### Before dispatching for 0.2.0, which is the next real use
+
+0.2.0 carries three S1 findings, all fixed in 0.3.0: `previewBorrow` returned viable for a Recovery
+Mode borrow the contract refuses (MK-058) and reported a TCR block the contract does not apply
+(MK-059), and `getBorrowingPower` subtracted a borrowing fee the contract does not charge in
+Recovery Mode or for a fee exempt account (MK-067). The message says so and points at
+`docs/14-migration-0.2-to-0.3.md`.
+
+| check | how | what you want |
+|---|---|---|
+| 0.3.0 is published and is `latest` | `npm view @musd-kit/core dist-tags` | `{ latest: '0.3.0' }`. **The workflow refuses to deprecate the current `latest`**, so dispatching this before 0.3.0 ships fails at that guard, which is the interlock that stops a premature deprecation |
+| the message is the one you mean | `node scripts/deprecation-message.mjs 0.2.0 core` and the same for `react` | exit 0, and text that names 0.2.0 and sends readers to 0.3.0 |
+| you are dispatching the right commit | `gh workflow run deprecate.yml --ref main` after the entry is merged | the run's `headSha` carries the entry. A dispatch from a ref without it is refused as an unknown version, loudly |
+
+Then:
+
+```sh
+gh workflow run deprecate.yml --ref main -f version=0.2.0 -f confirm=deprecate
+```
+
+**Re-dispatching 0.1.0 is safe.** Its two strings are reproduced in the module byte for byte, and
+checked against the live registry, so a re-run rewrites nothing.
 
 ---
 

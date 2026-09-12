@@ -49,12 +49,16 @@ export interface HintsDeps {
 /**
  * The insertion-hint ritual, wrapped once (Appendix A): compute the NICR, pick
  * `numTrials` from the list size, get an approximate hint, then refine it to the
- * exact `{ upperHint, lowerHint }` via `findInsertPosition`. The caller supplies the
- * RESULTING entire debt (for an open: `draw + getBorrowingFee(draw) + 200`); this
- * does not compute the debt itself.
+ * exact `{ upperHint, lowerHint }` via `findInsertPosition`.
+ *
+ * **The caller supplies the RESULTING PRINCIPAL, not the entire debt** (MK-090). For an open
+ * that is `draw + getBorrowingFee(draw) + 200`, which at open is the same number; for a live
+ * Trove it is the principal AFTER the operation, excluding accrued interest, because that is
+ * what the contract keys the sorted list on ({@link ComputeNICRParams.principal}). This does
+ * not compute the principal itself; `trove/index.ts` projects it per operation.
  */
 export async function computeHints(deps: HintsDeps, params: ComputeHintsParams): Promise<Hints> {
-  const nicr = computeNICR({ collateral: params.collateral, entireDebt: params.entireDebt })
+  const nicr = computeNICR({ collateral: params.collateral, principal: params.principal })
   const opts: { numTrials?: number; randomSeed?: bigint } = {}
   if (params.numTrials !== undefined) opts.numTrials = params.numTrials
   if (params.randomSeed !== undefined) opts.randomSeed = params.randomSeed

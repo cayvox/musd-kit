@@ -138,17 +138,27 @@ cases:
   fail. It is configured in `vitest.config.mts` (`coverage.thresholds`, v8 provider over
   `packages/core/src/**`, excluding `_generated/` which is ABI and address data rather
   than logic) and run by `pnpm test:coverage` in the fork-gate job.
-- **The floor is a ratchet: it only ever moves upward.** It was set to the honestly
-  measured number rounded down, not to an aspiration. Raise it when real coverage rises.
-  Never lower it to turn a red build green, that converts the gate into decoration.
+- **The floor is a ratchet: it only ever moves upward at a fixed scope.** It is set to the
+  honestly measured number rounded down, not to an aspiration. Raise it when real coverage
+  rises. Never lower it to turn a red build green, that converts the gate into decoration.
+- **Widening the scope is the one thing that can move a floor down, and it did in P17.**
+  Including `packages/react/src` took the reported figures from 98.65 / 93.20 / 100 / 98.65
+  (core alone) to 94.87 / 92.36 / 88.18 / 94.87 (both packages), measured in one run at fork
+  block 15043414. The core half did not get worse; it improved. Keeping the glob narrow to
+  protect the number is the failure this rule exists to prevent, so the move is recorded
+  rather than avoided. Floors are now 94 / 92 / 88 / 94.
 - **Scope, stated so the number cannot mislead.** `pnpm test:coverage` runs **both**
   vitest projects, so the fork suite counts toward the measurement, not just the unit
-  layer. What is measured is `packages/core/src/**` minus `_generated/`.
-  **`@musd-kit/react` is not measured at all**, even though it is a published package: no
-  file under `packages/react/src` appears in the coverage report, so the floor says
-  nothing about the hook layer. Its fork tests do run and must pass; they simply do not
-  contribute to, or get graded by, the gate. Bringing it under the gate needs its own
-  measured floor and is not done yet.
+  layer. What is measured is `packages/core/src/**` and `packages/react/src/**`, minus
+  `_generated/`, which is ABI and address data rather than logic.
+- **`@musd-kit/react` came under the gate in the P17 wave (MK-087), and the reported figure
+  went DOWN.** That is the correct outcome and it is reported rather than excluded: the old
+  number was high because it was scoped to the half that was tested. Before this, no file
+  under `packages/react/src` appeared in the report at all, the mutation check had no React
+  mutation, and the differential sweep drives the core client rather than rendering a hook.
+  Three controls, one blind spot, and MK-085 was sitting in it: a shipped hook that made every
+  adjust preview a debt increase, while a core test asserted the exact distinction it
+  violated and passed. **A pin one layer below the defect is not a pin.**
 - Coverage is necessary but not sufficient: a line covered by a mock proves nothing
   about protocol truth, the fork tests are what count. A high floor over
   `previewOpen` would not have caught MK-005 or MK-006, both of which are fully covered
@@ -216,15 +226,27 @@ that they are printed.
 
 **A mode that never ran proves nothing**, which is MK-048's rule about bands applied to a mode.
 
+**Set `MEZO_FORK_BLOCK` for every one of these.** Unset, the harness passes no
+`--fork-block-number` and anvil forks at `latest` (`test/harness/anvil.ts:83-91`), which makes the
+run non reproducible, uncached and slow, and seeds the oracle shim from whatever the chain was
+doing at that second (MK-020, MK-082). CI sets it; your shell does not.
+
 ```sh
+export MEZO_FORK_BLOCK=15043414                   # REQUIRED, see above
 pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
-MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep, DOES NOT COMPLETE, see MK-078
+MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep; use the four slices below
 MK_DIFF_SEED=123 MK_DIFF_CASE=57 pnpm test:fork   # replay exactly one case
 
 # The full sweep, in four slices with a fresh anvil each. One run does not fit.
-# MK-078: on the ten operation generator no slice fits either. Every one of the four below
-# exits 1 at the test's own 90 minute timeout without emitting a summary. Kept as the
-# documented recipe so the failure is reproducible, not as something that works today.
+# Measured P15 on the ten operation generator. Sweep only: 1593s, 1697s, 1719s, 1648s (111 min).
+# Wall clock of the four invocations: 1678s, 1768s, 1799s, 1731s (116 min), the difference
+# being the rest of the fork suite, which each slice also runs.
+# Re-run in P17 on a different machine: 919s, 1032s, 1030s, 1009s (66m30s). BOTH figures are
+# kept and both name their machine, because replacing a duration measured elsewhere with one
+# measured here is the mistake MK-081 was. NEITHER is CI's.
+# The slices now exit 0: MK-079's ten FALSE_BLOCKED are registered in
+# packages/core/test/differential/expected.ts, so they print as EXPECTED MK-079 lines and do
+# not fail the run. A non zero exit is a mismatch NO finding explains, and is worth stopping for.
 for FROM in 0 250 500 750; do
   MK_DIFF_CASES=1000 MK_DIFF_FROM=$FROM MK_DIFF_TO=$((FROM+250)) pnpm test:fork
 done
@@ -260,40 +282,65 @@ seed nobody has when they need it.
 
 Measured on the declared Node at the pinned block, not estimated:
 
+**Every row names its cache state**, because that is the variable that dominates and the one a
+figure here is most easily mistaken about (§13, and the correction in commit `949d361`). "Fresh
+anvil" names the anvil's age, which is NOT the same thing: the same 24 cases cost 35.3 s/case with
+the RPC cache cold for the state they touch and 6.3 s/case warm.
+
 | | |
 |---|---|
-| per case, fresh anvil | **about 3 seconds** |
-| per case, late in a long run | **about 20 seconds** |
-| per case, `borrowingPower` | **about 245 seconds** (MK-078) |
-| 1000 cases | ~~about 96 minutes, across four slices of 250~~ **does not complete (MK-078)** |
+| per case, **RPC cache warm, developer laptop** | **4.9 to 6.6 seconds**, the means of two five run windows, 24 cases each: 6.6 (P15) and 4.9 (P16). One machine, one seed, one block |
+| per case, **RPC cache warm, CI** | **2.5 seconds**, mean of three `ubuntu-latest` runs of `c3e1b6b`, cache hit confirmed in each log (MK-081) |
+| per case, **RPC cache cold** | **35.3 seconds** (`949d361`); a thousand distinct cases stay near this, since each is a first touch |
+| per case, late in a long run, cache warm | **about 20 seconds** |
+| per case, `borrowingPower`, RPC counted | **3.0s, 32 JSON-RPC requests**, of which the solver accounts for 0.2s and 9 of them, all `eth_call` |
+| per case, `borrow`, same method | **7.0s, 27 JSON-RPC requests** (the seeding open is 6.6s of it) |
+| 1000 cases, **P15 machine** | **116 minutes of wall clock**, across four slices of 250, of which 111 is the sweep itself and the rest is the fork suite each slice also runs. Measured P15 |
+| 1000 cases, **P17 machine** | **66m30s**, four slices of 250 at 15m19s, 17m12s, 17m10s, 16m49s. Apple silicon laptop, Node v24.19.0, against public `rpc.test.mezo.org` with a warm anvil cache at block 15043414 |
 
-**The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
-seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
-cases against a fresh anvil came back to 3 seconds each. So the cost grows with the LIFE of the
-anvil process, not with the case index, which is why `MK_DIFF_FROM` and `MK_DIFF_TO` exist: they
+**The degradation is the interesting number, and it has two causes that are easy to conflate.**
+The first 800 cases of a sweep ran at 3 to 4 seconds each; the next hundred took 2008 seconds,
+about 20 seconds each. A separate run of 120 cases against a fresh anvil came back to 3 seconds
+each. That is anvil LIFE. Separately and larger, the RPC cache state moves the same 24 cases
+between 6.3 and 35.3 seconds each (`949d361`). **Quote neither figure without saying which of the
+two you are describing.** Anvil life is why `MK_DIFF_FROM` and `MK_DIFF_TO` exist: they
 slice the same generated set across runs rather than generating a different set. `MK_DIFF_FROM`
 alone could only cut a tail, so the slice needs a bound at both ends and the sweep is run as four
 slices of 250.
 
-**That slice size no longer works, and this is the number that says why (MK-078).** The
-`borrowingPower` operation added in the P13 wave measures at about 245 seconds per case against
-roughly 5 for every other operation, isolated on a fresh anvil so the degradation above is not the
-explanation. A 250 case slice holds around eighteen of them, which is about 73 minutes, and the test
-gives itself 90. Every one of the four slices therefore hits its own timeout without emitting a
-summary. **Until that is fixed, the full sweep cannot be run at any slice size that also covers the
-generation**, and the usable instrument is the per operation form above, which excludes the expensive
-operation by construction.
+**The slice size still works on the ten operation generator**, measured in the P15 wave: the four
+slices took 1593s, 1697s, 1719s and 1648s, none close to the test's own 90 minute budget.
+
+**MK-078 claimed otherwise and was withdrawn.** It reported 245 seconds per `borrowingPower` case
+from a single run that was never repeated. Re-measured with the RPC counted, such a case costs 3.0
+seconds and nine chain calls, which is CHEAPER than a `borrow` case, because a borrow case has to
+seed a position first and this one does not. **anvil forks lazily from the upstream RPC**, so when
+that link degrades every uncached read stalls and the harness looks slow; the run that produced the
+245 was taken while it was failing, and the failure was caught in the act during P15 when two slices
+died inside `startFork` with a DNS error and a third finished with 19 `InternalRpcError` throws. If
+a sweep suddenly costs an order of magnitude more, **check the network before blaming the tree.**
 
 **The split, and the reasoning.**
 
-- **On every push: 24 cases**, the default, about 90 seconds on a fresh fork. It is deterministic
-  from a fixed seed, so it is a gate rather than a lottery, and it is small enough to sit beside
-  a fork suite that already takes about 50 seconds.
-- **The full 1000 case sweep: on demand and on a schedule, never on push.** A ninety minute job
-  on the push path would make every merge wait for it, and people would start skipping it.
-  **Currently it cannot be run at all (MK-078)**, which is worse than it being slow: nothing is
-  scheduled that would have caught this, because the schedule was never wired and the wave that
-  added the tenth operation only ever ran the 24 case default.
+- **On every push: 24 cases**, the default. **On CI, about 60 seconds**, mean of three runs of
+  commit `c3e1b6b`, each with `Cache hit for: anvil-fork-31611-15043414` in the log: 50.7s, 62.5s,
+  65.4s. **On a developer machine with the cache warm, between about 115 and 160 seconds**: two five
+  run windows on the SAME laptop at the same seed and block gave means of 158s (P15) and 117s
+  (P16: 113.6, 117.4, 113.8, 123.3, 117.9). About 847 seconds cold (`949d361`). **The machine is
+  part of the figure, CI is roughly 2 to 2.6 times faster than the laptop, and one laptop varies
+  by a third between windows** (MK-081), so quote the row you mean and prefer a range. It is deterministic from
+  a fixed seed, so it is a gate rather than a lottery, and it sits beside **about 62 seconds** of
+  fork suite on the laptop, which is the suite with the differential test taken out.
+- **The full 1000 case sweep: weekly and on demand, never on push.**
+  `.github/workflows/sweep.yml` runs the four slices every Sunday at 03:00 UTC and on
+  `workflow_dispatch`. It costs **about 116 minutes of wall clock, of which 111 is the sweep
+  itself** (P15, ten operation generator), which is why it is not on the push path: a two hour wait
+  on every merge would get routed around, and a gate people skip is worse than one they budget for.
+  **This bullet claimed the schedule for 85 commits and a release before one existed** (MK-080).
+- **A release cites a sweep against the tree being released**, not the last Sunday's.
+  `docs/12-release-runbook.md` §0 precondition 7 requires a run whose `headSha` equals the released
+  commit, because the operation set feeds the generator's stream and a sweep of a different tree is
+  evidence about that tree (MK-069, learned through MK-079).
 - **It is not hidden either**, which is the other failure mode. `docs/08-conventions.md` §10 is
   where a wave's obligations live, and the sweep belongs in a wave's acceptance when preview or
   math code changed, with the seed reported.

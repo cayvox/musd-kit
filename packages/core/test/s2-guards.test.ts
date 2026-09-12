@@ -122,10 +122,23 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
   function mathDeps() {
     let feeCalls = 0
     let multicalls = 0
+    // MK-092. The stub answers what the batch ASKED for rather than a fixed tuple: `fetchPrice`
+    // joins the multicall when the caller supplies no price, so a positional stub silently
+    // returned `undefined` for the price the moment that landed.
+    const answers: Record<string, unknown> = {
+      borrowingRate: RATE,
+      DECIMAL_PRECISION: PRECISION,
+      getEntireSystemColl: 5_000n * 10n ** 18n,
+      getEntireSystemDebt: 100_000n * 10n ** 18n,
+      fetchPrice: PRICE,
+    }
     const publicClient = {
-      multicall: async () => {
+      multicall: async ({ contracts }: { contracts: { functionName: string }[] }) => {
         multicalls += 1
-        return [RATE, PRECISION, 5_000n * 10n ** 18n, 100_000n * 10n ** 18n]
+        return contracts.map((c) => {
+          if (!(c.functionName in answers)) throw new Error(`unstubbed batch: ${c.functionName}`)
+          return answers[c.functionName]
+        })
       },
       readContract: async ({ functionName, args }: { functionName: string; args?: unknown[] }) => {
         if (functionName === 'fetchPrice') return PRICE
@@ -159,9 +172,10 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
     const { deps, feeCalls, multicalls } = mathDeps()
     const answer = await getBorrowingPower(deps, { collateral: 10n ** 18n })
     expect(answer).toBeGreaterThan(0n)
-    // The old implementation needed roughly 77 getBorrowingFee calls for one BTC. Two here:
-    // one to confirm the closed form's premise, one for the minNetDebt floor check.
-    expect(feeCalls()).toBeLessThanOrEqual(4)
+    // The old implementation needed roughly 77 getBorrowingFee calls for one BTC. ONE here
+    // since MK-092: the confirmation figure is kept and reused for the minNetDebt floor check
+    // rather than being asked for a second time with the same argument.
+    expect(feeCalls()).toBe(1)
     expect(multicalls()).toBe(1)
   })
 

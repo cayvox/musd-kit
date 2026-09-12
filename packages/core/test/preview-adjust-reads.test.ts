@@ -4,6 +4,7 @@ import {
   CollateralWithdrawalBlocked,
   InsufficientCollateral,
   InvalidAmount,
+  LastTroveInSystem,
   MusdError,
   RecoveryModeRestriction,
   SystemRatioBelowCCR,
@@ -15,6 +16,7 @@ import {
   previewClose,
   previewWithdrawCollateral,
 } from '../src'
+import { mapRevert } from '../src/errors/mapRevert'
 import type { WriteDeps } from '../src/internal/write'
 import type { MathDeps } from '../src/math/deps'
 import { addCollateral, adjustTrove, borrow, close, repay, withdrawCollateral } from '../src/trove'
@@ -323,6 +325,35 @@ describe('MK-042, prechecks fire before simulate, with the right typed error', (
     await expect(close(writeDeps({ checkRecoveryMode: true }))).rejects.toBeInstanceOf(
       RecoveryModeRestriction,
     )
+  })
+
+  it('MK-091: close refuses the LAST Trove before sending, with a typed error', async () => {
+    // `TroveManager._closeTrove:1390-1399` gates `_requireMoreThanOneTroveInSystem` on the same
+    // `canMint` flag as the two checks above, and `:1488-1496` needs BOTH counts above one.
+    // `previewClose` has reported this since MK-074; `close` ignored it and sent anyway, and the
+    // revert matched no pattern, so the caller got `ContractCallFailed` with a raw string.
+    await expect(close(writeDeps({ getTroveOwnersCount: 1n }))).rejects.toBeInstanceOf(
+      LastTroveInSystem,
+    )
+    // The OTHER half of the condition, which is a different structure and is read separately.
+    await expect(close(writeDeps({ getSize: 1n }))).rejects.toBeInstanceOf(LastTroveInSystem)
+  })
+
+  it('MK-091: and the error carries the two counts rather than placeholder zeros', async () => {
+    const err = await close(writeDeps({ getTroveOwnersCount: 1n })).catch((e) => e)
+    expect(err).toBeInstanceOf(LastTroveInSystem)
+    expect((err as LastTroveInSystem).context).toMatchObject({
+      troveOwnersCount: 1n,
+      sortedTrovesSize: 42n,
+    })
+  })
+
+  it('MK-091: the revert has a typed error too, for a caller who skipped the preview', () => {
+    const mapped = mapRevert(
+      new Error('execution reverted: TroveManager: Only one trove in the system'),
+      { operation: 'close' },
+    )
+    expect(mapped).toBeInstanceOf(LastTroveInSystem)
   })
 
   it('a borrow that cannot improve ICR in Recovery Mode is refused before sending', async () => {

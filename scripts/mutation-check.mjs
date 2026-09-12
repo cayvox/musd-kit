@@ -105,10 +105,12 @@ const MUTATIONS = [
   },
   {
     id: 'MK-071',
-    what: 'restore the shadowed 365 day year in the redemption margin',
-    file: 'packages/core/src/math/previewRedeem.ts',
-    from: '  return (entireDebt * interestRateBps * ACCRUAL_WINDOW_SECONDS) / (10_000n * SECONDS_PER_YEAR)',
-    to: '  return (entireDebt * interestRateBps * ACCRUAL_WINDOW_SECONDS) / (10_000n * 365n * 24n * 3600n)',
+    what: 'restore the 365 day year in the interest formula',
+    file: 'packages/core/src/math/compute.ts',
+    // Retargeted in the P17 wave: MK-089 moved the formula out of `previewRedeem.ts` into the
+    // one copy here, so the divisor this finding is about now lives at a single site.
+    from: '  return (principal * rateBps * seconds) / (BPS_DIVISOR * SECONDS_PER_YEAR)',
+    to: '  return (principal * rateBps * seconds) / (BPS_DIVISOR * 365n * 24n * 3600n)',
   },
   {
     id: 'MK-074 close',
@@ -128,11 +130,16 @@ const MUTATIONS = [
     id: 'MK-075',
     what: 'report the refinance reasons in the order the contract does not use',
     file: 'packages/core/src/math/previewRefinance.ts',
+    // Retargeted in the P17 wave: MK-094 replaced the bare `1` with `TroveStatus.active`, so
+    // the two lines this swaps no longer read as they did.
     from:
       "  if (isRecoveryMode) reasons.push('RECOVERY_MODE')\n" +
-      "  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')",
+      '  // MK-094. The enum, not the literal. `TroveStatus.active` is `1`\n' +
+      '  // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two\n' +
+      '  // others used the enum for the same comparison.\n' +
+      "  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')",
     to:
-      "  if (status !== 1) reasons.push('TROVE_NOT_ACTIVE')\n" +
+      "  if (status !== TroveStatus.active) reasons.push('TROVE_NOT_ACTIVE')\n" +
       "  if (isRecoveryMode) reasons.push('RECOVERY_MODE')",
   },
   {
@@ -142,6 +149,77 @@ const MUTATIONS = [
     from: "  const limitedBy = byIcr <= bySystem ? 'ICR' : 'TCR'",
     to: "  const limitedBy = amount === 0n || byIcr <= bySystem ? 'ICR' : 'TCR'",
   },
+  // --- P16. The gate that decides whether the sweep's red is worth reading. ------------------
+
+  {
+    id: 'MK-084 subject (a message must OPEN by naming its version)',
+    what: 'accept any message that merely mentions the version, which is the weak check that let 0.1.0 text pass under 0.2.0',
+    file: 'scripts/deprecation-message.mjs',
+    from: '  if (!message.startsWith(opening)) {',
+    to: '  if (!message.includes(version)) {',
+  },
+  {
+    id: 'MK-084 unknown version (an unwritten version must be REFUSED)',
+    what: "fall back to some other version's entry instead of refusing, which is the defect itself",
+    file: 'scripts/deprecation-message.mjs',
+    from: '  const entry = Object.hasOwn(DEPRECATIONS, version) ? DEPRECATIONS[version] : undefined',
+    to: '  const entry = DEPRECATIONS[version] ?? Object.values(DEPRECATIONS)[0]',
+  },
+  {
+    id: 'MK-079 swallows (an unexpected mismatch must FAIL)',
+    what: 'match every mismatch against the first registry entry, so an unregistered one is swallowed',
+    file: 'packages/core/test/differential/expected.ts',
+    from: '    const hit = registry.find((e) => e.matches(m))',
+    to: '    const hit = registry[0]',
+  },
+  {
+    id: 'MK-079 registry (a registered mismatch must NOT fail)',
+    what: 'match nothing, so the registered mismatches go back to failing the run',
+    file: 'packages/core/test/differential/expected.ts',
+    from: '    const hit = registry.find((e) => e.matches(m))',
+    to: '    const hit = undefined',
+  },
+  // --- P17. The redemption margin, and the interest formula it restated. -------------------
+
+  {
+    id: "MK-088 rate (the margin uses the TARGET Trove's rate)",
+    what: "size every Trove's margin from the first Trove's rate, which is what one shared rate did",
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: '    const consumesWhole = remaining >= trove.netDebt + marginFor(trove)',
+    to: '    const consumesWhole = remaining >= trove.netDebt + marginFor(eligible[0] ?? trove)',
+  },
+  {
+    id: 'MK-095 window (the margin is sized ABOVE the window it advertises)',
+    what: 'size the margin at the advertised 600 seconds, leaving nothing for the settlement block',
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: 'const MARGIN_WINDOW_SECONDS = 900n',
+    to: 'const MARGIN_WINDOW_SECONDS = 600n',
+  },
+  {
+    id: 'MK-089 base (interest accrues on the PRINCIPAL)',
+    what: 'accrue the margin on the entire debt again, which compounds what the protocol does not',
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: '    principal: trove.principal,',
+    to: '    principal: trove.entireDebt,',
+  },
+
+  // --- P17. The React package, which no gate had ever reached. ---------------------------
+
+  {
+    id: 'MK-085 hook (an absent leg must stay absent)',
+    what: 'default the debt leg to zero and forward it, so every adjustment is a debt increase',
+    file: 'packages/react/src/hooks/reads.ts',
+    from: '    ...(params.increaseDebt !== undefined ? { increaseDebt: params.increaseDebt } : {}),',
+    to: '    increaseDebt: params.increaseDebt ?? 0n,',
+  },
+  {
+    id: 'MK-085 key (absent and zero must not share a cache entry)',
+    what: 'encode an absent leg as zero in the query key, so the two questions collide',
+    file: 'packages/react/src/internal/keys.ts',
+    from: '      legs.increaseDebt?.toString() ?? null,',
+    to: '      (legs.increaseDebt ?? 0n).toString(),',
+  },
+
   {
     id: 'MK-077',
     what: 'silently drop the repayment leg again',
