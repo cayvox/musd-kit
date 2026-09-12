@@ -29,6 +29,17 @@ export interface CaseResult {
   skipped?: string
   /** Set when the case threw where nothing should throw. Counted, never fatal. */
   threw?: string
+  /**
+   * Whether the system was in Recovery Mode at the moment the preview was taken
+   * (MK-058, MK-059).
+   *
+   * Recorded rather than inferred from the case tuple, because whether a drawdown actually
+   * lands the system under CCR depends on the fork's live TCR and on the seeded position, and
+   * "the generator asked for a drawdown" is not the same claim as "the case ran in Recovery
+   * Mode". MK-048 established that a band which never ran proves nothing; this is the same
+   * distinction for a mode.
+   */
+  isRecoveryMode?: boolean
 }
 
 export function clientFor(fork: ForkConnection, account: PrivateKeyAccount): MusdClient {
@@ -104,7 +115,8 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
       if (seeded !== undefined)
         return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
     }
-    return await openCase(fork, client, account, c)
+    await applyDrawdown(fork, c, basePrice)
+    return { ...(await openCase(fork, client, account, c)), isRecoveryMode: await inRm(client) }
   }
   // Every other op is previewed against a position. Opening one is a fixture step, not the
   // case: if it fails, the case is skipped rather than counted as a mismatch, because the
@@ -118,6 +130,34 @@ async function runCaseInner(fork: ForkConnection, c: DiffCase): Promise<CaseResu
     if (seeded !== undefined)
       return { case: c, previewViable: false, chainSucceeded: false, skipped: seeded }
   }
+  // MK-058, MK-059. The drawdown goes here, AFTER the fixture, which is the whole point: a
+  // price low enough to put the system under CCR is also a price at which the seeding open is
+  // refused, so applying it earlier turns every Recovery Mode case into a skip. That is exactly
+  // what the sweep did for its whole life, and it is why a thousand cases never asked a preview
+  // about a Recovery Mode borrow.
+  await applyDrawdown(fork, c, basePrice)
+  const isRecoveryMode = await inRm(client)
+  return { ...(await runOperation(fork, client, account, c)), isRecoveryMode }
+}
+
+/** Drop the price after the fixture exists, when the case asked for it. */
+async function applyDrawdown(fork: ForkConnection, c: DiffCase, basePrice: bigint): Promise<void> {
+  if (c.recoveryDrawdownPercent === 0) return
+  await fork.setPrice((basePrice * BigInt(100 - c.recoveryDrawdownPercent)) / 100n)
+  await fork.mineBlocks(1)
+}
+
+/** Whether the system is under CCR right now, read rather than assumed. */
+async function inRm(client: MusdClient): Promise<boolean> {
+  return (await client.getSystemState()).isRecoveryMode
+}
+
+async function runOperation(
+  fork: ForkConnection,
+  client: MusdClient,
+  account: PrivateKeyAccount,
+  c: DiffCase,
+): Promise<CaseResult> {
   switch (c.op) {
     case 'borrow':
       return await borrowCase(fork, client, account, c)

@@ -30,6 +30,13 @@ anvil*.log
 .vscode/
 *.log
 
+# Agent tooling settings (MK-064). The whole directory, on the `.secrets/` reasoning above:
+# a second settings file cannot then appear and be linted by accident. `biome.json` sets
+# `vcs.useIgnoreFile`, which reads THIS file and not a contributor's global excludes, so
+# without this line `pnpm lint` fails on a working tree that `git status` calls clean for
+# anyone whose global excludes hide the same directory.
+.claude/
+
 # docs site (generated)
 docs/public/api
 docs/.vitepress/dist

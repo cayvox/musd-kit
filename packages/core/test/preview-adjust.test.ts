@@ -55,6 +55,45 @@ describe('MK-042, the adjust preview against the gates the contract actually run
     expect(rescued.resultingIcr, 'and that number actually clears MCR').toBeGreaterThanOrEqual(MCR)
   })
 
+  it('MK-060: `_isDebtIncrease` is a parameter, not a function of the amount', () => {
+    // `_adjustTrove` takes `_isDebtIncrease` separately from `_mUSDChange` and reconciles the
+    // pair at `:785-787`. Deriving it from `increaseDebt > 0n` made `(true, 0)` inexpressible,
+    // so `ZERO_DEBT_INCREASE` was declared, documented, mapped to a typed error, and dead.
+    const stated = evaluateAdjust({ ...base, increaseDebt: 0n, isDebtIncrease: true })
+    expect(stated.reasons).toContain('ZERO_DEBT_INCREASE')
+    expect(stated.bindingConstraint).toBe('ZERO_DEBT_INCREASE')
+    expect(stated.viable).toBe(false)
+
+    // The same numbers with a collateral leg, so `NO_CHANGE_REQUESTED` cannot be what fires.
+    const withColl = evaluateAdjust({
+      ...base,
+      increaseDebt: 0n,
+      isDebtIncrease: true,
+      addCollateral: BTC / 100n,
+    })
+    expect(withColl.reasons).toEqual(['ZERO_DEBT_INCREASE'])
+
+    // And omitting the flag keeps the old derivation, so an input built before the field
+    // existed still evaluates the way it did.
+    const absent = evaluateAdjust({ ...base, increaseDebt: 0n, addCollateral: BTC / 100n })
+    expect(absent.viable).toBe(true)
+    expect(absent.reasons).toEqual([])
+  })
+
+  it('MK-060: the capacity numbers ride on the result, not just the reason', () => {
+    // `EXCEEDS_BORROWING_CAPACITY` used to arrive as a bare string on this preview while
+    // `previewBorrow` carried the figures behind it. Same gate, same numbers, both places.
+    const p = evaluateAdjust({ ...base, increaseDebt: 150_000n * MUSD, isDebtIncrease: true })
+    expect(p.capacity.capacity).toBe(base.capacity)
+    expect(p.capacity.entireDebt).toBe(base.entireDebt)
+    expect(p.capacity.remaining).toBe(base.capacity - base.entireDebt)
+    expect(p.reasons).toContain('EXCEEDS_BORROWING_CAPACITY')
+
+    // Floored at zero rather than negative when the position is already over capacity.
+    const over = evaluateAdjust({ ...base, capacity: 1n * MUSD })
+    expect(over.capacity.remaining).toBe(0n)
+  })
+
   it('MK-042: Recovery Mode refuses a collateral withdrawal OUTRIGHT, not by amount', () => {
     // `_requireNoCollWithdrawal` (:1270) permits zero, so there is no smaller amount that
     // works. A preview that reported a ratio here would send a user hunting for a number

@@ -184,6 +184,28 @@ wei either side.
 **Every case runs in its own `evm_snapshot` and reverts.** Cases must not see each other, or a
 failure becomes a function of everything before it and the seed stops reproducing it.
 
+**Recovery Mode is reachable, and it was not** (MK-058, MK-059). The generator's `pricePercent` is
+applied BEFORE the fixture is seeded, so any multiplier low enough to put the system under CCR was
+also a multiplier at which the seeding open was refused: every Recovery Mode case the generator
+could express was a case it also skipped. `recoveryDrawdownPercent` is applied AFTER the fixture
+exists, which is the whole difference. The sizes are read from the chain rather than picked: at the
+pinned block the system TCR is 2.7731, so Recovery Mode needs the price below `CCR / TCR`, a
+drawdown of 45.9 percent, and the generator uses 50, 60 and 70.
+
+**And it is COUNTED, not assumed.** `CaseResult.isRecoveryMode` is read from the chain at the moment
+the preview is taken, and the sweep reports Recovery Mode cases per operation and, for borrows, per
+band. This matters more than it sounds: a 60 case run reached Recovery Mode 13 times and reached a
+Recovery Mode BORROW zero times, because one operation in nine times one case in five is about 1.3
+expected at that sample size. "The sweep reached Recovery Mode" would have been true and would have
+proved nothing about the defect it was added for. Use `MK_DIFF_OP=borrow` over the full generation
+to get a usable sample:
+
+```sh
+MK_DIFF_OP=borrow MK_DIFF_CASES=1000 pnpm test:fork   # 105 borrow cases, 17 in Recovery Mode
+```
+
+**A mode that never ran proves nothing**, which is MK-048's rule about bands applied to a mode.
+
 ```sh
 pnpm test:fork                                    # the push subset, MK_DIFF_CASES defaults to 24
 MK_DIFF_CASES=1000 pnpm test:fork                 # the full sweep
@@ -202,6 +224,22 @@ test's own 90 minute timeout part way through and takes its results with it. A f
 slice holds the per case cost near the first figure. `MK_DIFF_TO` exists for exactly this: without
 an upper bound `MK_DIFF_FROM` can only cut a tail.
 
+**And the per case figure depends on the RPC cache far more than on anything else**, which is worth
+knowing before quoting one. From the MK-058 wave's five run window, the SAME 24 cases at the same
+seed:
+
+```
+run 1  differential.fork.test.ts   847329ms    35.3 s/case    cold for the state these cases touch
+run 2  differential.fork.test.ts   151759ms     6.3 s/case    warm
+```
+
+**`fork state warmed in Nms` does not tell you which side you are on.** That line times globalSetup's
+sorted-list traversal (MK-021) and nothing else; it is about 30ms in both rows above. The state a
+case touches when it opens a Trove at a price no earlier case used is fetched one slot at a time on
+first touch, and that is what the 35 seconds is. A thousand distinct cases stay near the cold figure
+throughout, because every one of them is a first touch. The push subset is the same 24 cases every
+time and `ci.yml:199` caches the fork state between runs, so CI sits on the run 2 row.
+
 **The seed is printed on every run, passing or failing.** A seed only visible on failure is a
 seed nobody has when they need it.
 
@@ -213,13 +251,15 @@ Measured on the declared Node at the pinned block, not estimated:
 |---|---|
 | per case, fresh anvil | **about 3 seconds** |
 | per case, late in a long run | **about 20 seconds** |
-| 1000 cases | **about 96 minutes**, across two slices |
+| 1000 cases | **about 96 minutes**, across four slices of 250 |
 
 **The degradation is the interesting number.** The first 800 cases of a sweep ran at 3 to 4
 seconds each; the next hundred took 2008 seconds, about 20 seconds each. A separate run of 120
 cases against a fresh anvil came back to 3 seconds each. So the cost grows with the LIFE of the
-anvil process, not with the case index, which is why `MK_DIFF_FROM` exists: it slices the same
-generated set across runs rather than generating a different set.
+anvil process, not with the case index, which is why `MK_DIFF_FROM` and `MK_DIFF_TO` exist: they
+slice the same generated set across runs rather than generating a different set. `MK_DIFF_FROM`
+alone could only cut a tail, so the slice needs a bound at both ends and the sweep is run as four
+slices of 250.
 
 **The split, and the reasoning.**
 
@@ -235,6 +275,27 @@ generated set across runs rather than generating a different set.
 **The fork state cache applies**, verified rather than assumed: these runs used
 `~/.foundry/cache/rpc/31611/15043414` like every other fork test, and the harness warm up
 reported the usual `fork state warmed in 5xms (230 sorted Troves)` rather than a cold refetch.
+
+## 4a-bis. Agreement tests, where one question has two answers
+
+`packages/core/test/preview-agreement.test.ts`. Chain free, and it exists because a rule
+implemented twice diverges (`08-conventions` §11).
+
+`previewBorrow` and `previewAdjustTrove` are two questions about the same call: on chain
+`withdrawMUSD` IS `_adjustTrove` with `_collWithdrawal = 0` and `_isDebtIncrease = true`
+(`BorrowerOperations.sol:243-257`). This file asserts they agree on the verdict, on `reasons` in
+order, on `bindingConstraint` and on every shared number, **in both modes and on both sides of the
+MCR, CCR, TCR and capacity boundaries**, and then again end to end through the reads against a fake
+chain.
+
+The delegation makes agreement structural. This file is what keeps it structural: it fails the
+moment anyone puts a decision back into `previewBorrow`. Three rules had already drifted before it
+existed (MK-058, MK-059, MK-065), and each of them fails on the first case in the matrix.
+
+**It also guards its own matrix**, with an assertion that the generated case count has not silently
+shrunk and that every reason a borrow can reach is actually produced by some case. A matrix that
+quietly got smaller would make every other assertion in the file pass while proving less, which is
+MK-047's lesson about what a case count means.
 
 ## 4b. The gas variance lab (MK-039)
 

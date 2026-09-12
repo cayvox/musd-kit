@@ -229,7 +229,14 @@ describe('evaluateBorrow, the borrow verdict (MK-002)', () => {
     expect(p.reasons).toContain('TCR_BELOW_CCR')
   })
 
-  it('accumulates every reason and names the first as binding', () => {
+  it('MK-065: reasons come back in the order `_adjustTrove` checks them, capacity LAST', () => {
+    // REGRESSION. This assertion used to read
+    // ['TROVE_NOT_ACTIVE', 'EXCEEDS_BORROWING_CAPACITY', 'ICR_BELOW_THRESHOLD', 'TCR_BELOW_CCR']
+    // and it passed, which is why the wrong order survived. The contract checks
+    // `_requireTroveisActive` (:790), then `_requireValidAdjustmentInCurrentMode` (:840-845,
+    // so ICR at :1201 then TCR at :1209), and only then `_requireHasBorrowingCapacity`
+    // (:850-852). `bindingConstraint` is documented as the one the chain reports first, so the
+    // order is load bearing rather than cosmetic.
     const p = evaluateBorrow(
       borrowInput({
         status: 3,
@@ -242,12 +249,125 @@ describe('evaluateBorrow, the borrow verdict (MK-002)', () => {
     )
     expect(p.reasons).toEqual([
       'TROVE_NOT_ACTIVE',
-      'EXCEEDS_BORROWING_CAPACITY',
       'ICR_BELOW_THRESHOLD',
       'TCR_BELOW_CCR',
+      'EXCEEDS_BORROWING_CAPACITY',
     ])
     expect(p.bindingConstraint).toBe('TROVE_NOT_ACTIVE')
     expect(p.viable).toBe(false)
+
+    // And with the status gate cleared, the ratio binds rather than capacity. This is the
+    // case a caller actually sees: they are told to fix the ratio, which they can, rather
+    // than to raise capacity, which never rises (`BorrowerOperations.sol:879-897`).
+    const active = evaluateBorrow(
+      borrowInput({
+        capacity: 0n,
+        amount: 10n ** 24n,
+        collateral: 1n,
+        systemColl: 20n * E18,
+        systemDebt: 1_300_000n * E18,
+      }),
+    )
+    expect(active.bindingConstraint).toBe('ICR_BELOW_THRESHOLD')
+  })
+
+  /**
+   * MK-058 and MK-059. The Recovery Mode combination the whole suite never exercised.
+   *
+   * Before this block the only Recovery Mode borrow assertion in the repository was that
+   * `icrThreshold` switches from MCR to CCR, which is true of both the right evaluator and
+   * the wrong one. Two rules were wrong underneath it for the life of the file.
+   */
+  describe('MK-058, MK-059: the Recovery Mode rules', () => {
+    // The fee is skipped in Recovery Mode on chain (`:813-818`), so the fixture says so.
+    const rm = (over: Partial<EvaluateBorrowInput> = {}) =>
+      borrowInput({ isRecoveryMode: true, fee: 0n, capacity: 10n ** 30n, ...over })
+
+    it('MK-058: no Recovery Mode borrow of any usable size is viable, because ICR must fall', () => {
+      // `withdrawMUSD` sends no collateral (`:243-257`), so `ICR = coll * price / debt` with
+      // coll fixed and debt rising cannot rise. `_requireNewICRisAboveOldICR` (`:1273`,
+      // defined `:1395-1403`) is `newICR >= oldICR`, so no draw that moves the ratio clears
+      // it. The preview used to say `viable: true` for all of these.
+      for (const amount of [E18 / 1_000_000n, E18, 1_000n * E18, 20_000n * E18]) {
+        const p = evaluateBorrow(rm({ amount }))
+        expect(p.resultingIcr, `amount ${amount}`).toBeLessThan(p.currentIcr)
+        expect(p.reasons, `amount ${amount}`).toContain('ICR_NOT_IMPROVED_IN_RECOVERY_MODE')
+        expect(p.viable, `amount ${amount}`).toBe(false)
+      }
+    })
+
+    it('MK-058: and the exception is truncation, which the SDK inherits rather than invents', () => {
+      // The rule is NOT "every non-zero draw is refused", and saying so would be a claim the
+      // contract does not make. `LiquityMath._computeCR` is integer `coll * price / debt`, so
+      // a draw small enough to leave the quotient unchanged satisfies `newICR >= oldICR` on
+      // equality. For this fixture, 1 BTC of collateral at 100k against 2,200 MUSD of debt,
+      // the first draw that moves the quotient is 23 wei, which is 2.3e-17 MUSD.
+      //
+      //   measured with:
+      //     node -e 'const E=10n**18n,P=100000n*E,C=E,D=2200n*E,f=d=>(C*P)/d;
+      //              let lo=1n,hi=10n**6n; while(lo<hi){const m=(lo+hi)/2n;
+      //              if(f(D+m)<f(D))hi=m; else lo=m+1n;} console.log(lo)'
+      //
+      // The SDK uses the same integer form, so it agrees with the chain on BOTH sides of that
+      // boundary. That agreement is the property worth pinning; the 23 is a consequence.
+      const below = evaluateBorrow(rm({ amount: 22n }))
+      expect(below.resultingIcr, 'truncates to the same ratio').toBe(below.currentIcr)
+      expect(below.reasons).not.toContain('ICR_NOT_IMPROVED_IN_RECOVERY_MODE')
+
+      const at = evaluateBorrow(rm({ amount: 23n }))
+      expect(at.resultingIcr).toBeLessThan(at.currentIcr)
+      expect(at.reasons).toContain('ICR_NOT_IMPROVED_IN_RECOVERY_MODE')
+    })
+
+    it('MK-058: the ICR gate is still ABSOLUTE against CCR as well, and both can fire', () => {
+      // `:1272` and `:1273` are two separate requires, not one. A borrow that drops the
+      // resulting ICR below CCR breaches both, and the preview reports both.
+      const p = evaluateBorrow(rm({ amount: 80_000n * E18 }))
+      expect(p.resultingIcr).toBeLessThan(CCR)
+      expect(p.reasons).toContain('ICR_BELOW_THRESHOLD')
+      expect(p.reasons).toContain('ICR_NOT_IMPROVED_IN_RECOVERY_MODE')
+      expect(p.icrThreshold).toBe(CCR)
+    })
+
+    it('MK-058: the identical borrow in NORMAL mode is viable, so it is the mode not the numbers', () => {
+      const amount = 1_000n * E18
+      expect(evaluateBorrow(borrowInput({ amount, fee: 0n })).viable).toBe(true)
+      expect(evaluateBorrow(rm({ amount })).viable).toBe(false)
+    })
+
+    it('MK-059: there is NO TCR gate in Recovery Mode, and there is one in normal mode', () => {
+      // `_requireNewTCRisAboveCCR` (`:1344-1349`) has exactly four call sites: `:665` inside
+      // `_openTrove`'s NORMAL mode branch, `:972` on the close path, `:1059` on refinance,
+      // and `:1209` inside `_requireValidAdjustmentInNormalMode`. The Recovery Mode arm
+      // (`:1265-1275`) calls none of them. Since Recovery Mode is DEFINED as `TCR < CCR`, an
+      // unconditional gate fires on essentially every Recovery Mode borrow.
+      const strained = { systemColl: 20n * E18, systemDebt: 1_400_000n * E18 }
+      const normal = evaluateBorrow(borrowInput({ ...strained, amount: 1_000n * E18, fee: 0n }))
+      expect(normal.resultingTcr).toBeLessThan(CCR)
+      expect(normal.reasons).toContain('TCR_BELOW_CCR')
+
+      const recovery = evaluateBorrow(rm({ ...strained, amount: 1_000n * E18 }))
+      expect(recovery.resultingTcr, 'still REPORTED, because a caller wants it').toBeLessThan(CCR)
+      expect(recovery.reasons, 'and it is not a reason').not.toContain('TCR_BELOW_CCR')
+    })
+
+    it('MK-059: TCR is reported in Recovery Mode across the CCR boundary and never gates', () => {
+      // Both sides of the boundary, so the assertion is about the absence of a gate rather
+      // than about one fixture happening to sit clear of it.
+      for (const systemDebt of [600_000n * E18, 1_333_333n * E18, 1_400_000n * E18]) {
+        const p = evaluateBorrow(rm({ systemColl: 20n * E18, systemDebt, amount: 1n }))
+        expect(p.reasons, `systemDebt ${systemDebt}`).not.toContain('TCR_BELOW_CCR')
+      }
+    })
+
+    it('MK-060: a draw of zero is refused, and names the gate the chain reaches first', () => {
+      // `:785-787` refuses `(_isDebtIncrease = true, _mUSDChange = 0)` before every other
+      // gate. `:789` would refuse it too, and both are reported, in that order.
+      const p = evaluateBorrow(borrowInput({ amount: 0n, fee: 0n }))
+      expect(p.reasons).toEqual(['ZERO_DEBT_INCREASE', 'NO_CHANGE_REQUESTED'])
+      expect(p.bindingConstraint).toBe('ZERO_DEBT_INCREASE')
+      expect(p.viable).toBe(false)
+    })
   })
 })
 
