@@ -142,6 +142,7 @@ claim about it was not).
 | MK-107 | `previewRedeem` charges `maxIterations` for the sub-MCR Troves the contract skips for free before its loop, so it reports `NOTHING_REDEEMABLE` for redemptions the chain accepts | S2 | **fixed** |
 | MK-108 | The quickstart npm renders does not compile, and gates the open on `meetsMinimum` instead of `viable` | S2 | **fixed.** The packaging gate compiles the quickstart out of the packed tarball |
 | MK-109 | Documentation and shipped surface disagree: a documented `getPeg` that does not exist, a write count and precheck claim in the packaged README that are false, stale React docs and types, and missing React re-exports | S3 | **fixed**, item by item, with `liquidationPrice`'s rounding documented |
+| MK-110 | Three pins in the P21 wave checked nothing while green: a mutation entry that drifted onto a different line, a test that could not see the defect it was named for, and a computation no fixture could tell apart from its defect. The mutation gate runs only the mutations it lists, and nothing runs it but a person | S2 | **fixed for the three**, and a mutation row added to the wave checklist. **The class can recur**: see the entry |
 
 ---
 
@@ -157,13 +158,13 @@ text read, the entry now says which part is evidence and which part is not.
 
 | Class | Count | What it means |
 |---|---|---|
-| **Reproducible** | 25 | The instrument is committed. The command is named below or in the entry |
+| **Reproducible** | 26 | The instrument is committed. The command is named below or in the entry |
 | **Observed once** | 5 | One execution, pinned by a run ID. Every one is enumerated below |
 | **Observed once, unlinked** | 3 | One execution whose artifact was not preserved. Grandfathered, and the label says it cannot be re-checked |
 | **Unestablished** | 8 | Inferred, or the instrument is gone, or the premise turned out to be wrong |
 
-**41 claims, counted as claims rather than as lines**, since several are quoted in more than one
-place. The P21 wave added six, all reproducible, and turned two of MK-100's unestablished same-shape
+**42 claims, counted as claims rather than as lines**, since several are quoted in more than one
+place. MK-110 added one. The P21 wave added six, all reproducible, and turned two of MK-100's unestablished same-shape
 rows into reproducible ones inside that entry. A count of numerals would be larger and would mean less.
 
 ### The reproducible set, and the command for each
@@ -187,6 +188,7 @@ registered it, so those ten print as `EXPECTED MK-079` and only an unexplained m
 | Mezo mainnet `fetchPrice()` moves: over 2000 consecutive blocks, the absolute one block move p99 2.26 bps and max 8.02, two blocks p99 3.76 (up 4.13, down 3.87); over 610589 seconds sampled every 16 blocks, the worst fall inside an hour p99 132.56 bps and max 190.78, inside ten minutes max 163.43 | MK-100, MK-103 | `MEZO_MAINNET_RPC_URL=https://jsonrpc-mezo.boar.network pnpm tsx scripts/oracle-moves.ts --end 11823000 --consecutive 2000 --days 7 --step 16`. The window figures are a lower bound: a dip between two samples is not seen |
 | `redeem(nextViableAmount)` succeeds after 1, 60 and 600 seconds and is refused before gas after 3600; a 4.23 MUSD first-Trove partial reports 0.504 bps of tolerance each way, succeeds at half of it in both directions, reverts at twice it, and the helper's lower edge hint reverts at half the up tolerance | MK-103, MK-104 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/redeem-boundary.fork.test.ts` |
 | A refinance after a governance rate change and a 20% price rise moves the Trove from 100 to 500 bps and its capacity from 70046.46 to 84055.75 MUSD, and after a fall to 90% cuts it to 63041.82, each equal to the preview to the wei | MK-101 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-refinance.fork.test.ts` |
+| The three pins MK-110 names checked nothing: the old MK-089 mutation string matches once, inside `partialRedemptionBand`; the first MK-107 test passes with its mutation applied; every unit test but the new band test passes with the band base mutated, 423 passed | MK-110 | The three commands in the MK-110 entry |
 | With the oracle stale, thirteen surfaces (four reads, the borrowing power calculator, three previews, four writes and `liquidate`) each reject with `OracleStale` and keep the viem error in `cause` | MK-105 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-typed-errors.fork.test.ts` |
 | `capacity.remaining`, `maxWithdrawableCollateral().amount` and `minimumCollateralToClearIcr`, each sent one second after the read, are refused (`ExceedsBorrowingCapacity`, `InsufficientCollateral`, `InsufficientCollateral`) while a control inside each succeeds | MK-100 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-limit-figures.fork.test.ts` |
 | 0.3.1 against 0.3.0, both packages: runtime builds byte identical, declarations identical without comments, manifests differ only in version | MK-100, `docs/12-release-runbook.md` §0b | `node scripts/compare-published.mjs --base 0.3.0 --head 0.3.1` |
@@ -7243,6 +7245,88 @@ liquidatable AT it, and accrual raises the true threshold every second after the
 unchanged, since it is at most one wei under the threshold; the docstring now says both things.
 `docs/09`'s claim that a moving oracle cannot be expressed on a fork at all was also wrong: the
 harness writes the oracle, and MK-103's proof does exactly that.
+
+---
+
+## MK-110 · Three pins checked nothing while green, and the mutation gate only checks what it is pointed at
+
+**Class** S2, a control weaker than advertised · **Status** fixed for the three; the gate's scope is
+unchanged and stated below · **Found by `node scripts/mutation-check.mjs` during the P21 wave, before
+the pull request, not by a reviewer**
+
+**The claim it undercut.** The P21 wave's first mutation run printed `2 mutation(s) were caught by
+NOTHING`, while the wave was about to report that every pin for MK-100 to MK-108 fails with its fix
+removed. None of the three states below reached `main`: all were repaired in `8f2258e`, the commit
+that introduced them. The failing run's log was a local file and is not preserved; each state is
+reproduced below against the current tree instead, with the command.
+
+### The three, and how each stopped checking
+
+**1. The MK-089 mutation drifted onto a line it was not written for.** Its entry replaces the first
+occurrence of `    principal: trove.principal,` (`scripts/mutation-check.mjs`, id `MK-089 base`). On
+`main` that string occurs once, in `marginFor` (`git show origin/main:packages/core/src/math/previewRedeem.ts`,
+line 249). P21 rewrote `marginFor` onto one line (`previewRedeem.ts:343`) and added
+`partialRedemptionBand`, whose band base is written exactly that way (`:375`). So the string still
+matched, exactly once, and the script's stale entry guard, which checks only that the string is
+present, passed; but the mutation now altered the partial band, not the margin. The margin's own pins
+in `preview-redeem.test.ts` were intact and caught nothing only because nothing touched the margin.
+Reproduce the match: `grep -c '^    principal: trove.principal,$' packages/core/src/math/previewRedeem.ts`
+prints `1`, and the line it finds is inside `partialRedemptionBand`. **A uniqueness guard would not
+have caught this**, since the match was unique.
+
+**2. The first MK-107 test could not see the defect it is named for.** `three sub-MCR Troves at the
+tail, then an eligible one, with maxIterations 1` (`packages/core/test/mk103-redemption.test.ts`) stops
+at the first eligible Trove, whose net debt covers the amount. The walk's loop condition,
+`!started || i < maxIterations` (`previewRedeem.ts`), already walks the sub-MCR tail for free, so
+charging those Troves (`if (started) i++` mutated to `i++`) changes nothing until a SECOND eligible
+Trove is needed. The test was green with the fix and green without it. Reproduce: apply that mutation
+and run `pnpm exec vitest run --project unit packages/core/test/mk103-redemption.test.ts -t "three
+sub-MCR Troves at the tail"`, which prints `1 passed`.
+
+**3. The partial band's base had no fixture that could tell principal from entire debt.**
+`TroveManager.sol:1278-1283` accrues the 600 second band on `trove.principal`. Every `EligibleTrove`
+fixture had `interestOwed: 0n`, so principal and entire debt were equal and a band sized on the wrong
+one produced the same numbers. Reproduce: mutate `partialRedemptionBand`'s `principal: trove.principal`
+to `trove.entireDebt` and run every unit test except the one added for it,
+`pnpm exec vitest run --project unit -t "^(?!.*PRE-redemption PRINCIPAL)"`, which prints
+`423 passed | 1 skipped`.
+
+**The repairs, each now caught** (`node scripts/mutation-check.mjs`): the MK-089 entry names the
+margin's own line; a second MK-107 case needs two eligible Troves under `maxIterations: 2`; a band
+test uses `interestOwed: 3_000n * MUSD`, with its own mutation, `MK-103 band base`.
+
+### What would have caught them earlier
+
+- **The drift (1)**: running the unit mutation gate on the commit that edited `previewRedeem.ts`. The
+  gate did fail the first time it ran; the gap was that nothing runs it. No workflow invokes
+  `scripts/mutation-check.mjs` (`grep -n mutation .github/workflows/*.yml` finds nothing), and the
+  standing wave checklist in `docs/08-conventions.md` §10 had no row for it, so mutation evidence was
+  produced when a prompt asked for it and not otherwise.
+- **The blind test (2)**: writing the mutation in the same sitting as the test and running it before
+  calling the test a pin. A test is a pin only once its defect has been put back and the test has gone
+  red; until then it is a test that passes.
+- **The indistinguishable fixture (3)**: the rule MK-089 had already established, that interest
+  accrues on the principal and not on the entire debt, applied to every computation using that
+  quantity rather than to the one it was found in. It is `docs/08-conventions.md` §12's defect again,
+  the same one MK-100 names: the enumeration was scoped to the field, not to the rule.
+
+### Does the gate now run over every pin, or only the ones it was pointed at
+
+**Only the ones it was pointed at, and this can recur.** `scripts/mutation-check.mjs` applies the 47
+mutations listed in its `MUTATIONS` array (`:35`). Each one is judged against the whole unit project,
+or against named fork files and the packaging gate under `--all`, so a mutation is caught by any test
+that notices it. But a test with no mutation entry is never put to the question, and a computation
+with no mutation entry is never mutated: the repository has about 437 `it(` call sites
+(`git grep -n "it(\|it.fails(" -- 'packages/*/test/*.ts' 'packages/*/test/**/*.ts' | wc -l`, a
+static count that undercounts looped cases) against 47 mutations. The band base in (3) was found only
+because the drifted entry in (1) happened to land on it.
+
+**What changed in this commit, and what did not.** `docs/08-conventions.md` §10 gains row 13: every
+pin a wave adds names its mutation in the script, and the wave reports the gate's output, `--all`
+when a fork or gate pin changed. That closes the absence that let (1) and (2) sit unrun. It does not
+make the gate exhaustive, and it does not put it in CI; a mutation per changed line would be a
+different instrument, and CI time for the unit gate was not measured in this wave. **So a new
+computation added without a mutation entry is exactly as unchecked as (3) was.**
 
 ---
 
