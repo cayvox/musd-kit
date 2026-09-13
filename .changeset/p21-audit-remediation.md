@@ -50,7 +50,10 @@ MK-100 to MK-109.
   instead of the previous answer marked as a success; a write hook resets when the account or chain
   changes (MK-102).
 
-**Added, not breaking:** `useBorrowingPowerDetail`; `maxBorrowingCapacityAt`,
+**Added, not breaking:** `useBorrowingPowerDetail`; `marginWindowSeconds` and `priceMoveBps` on
+`useBorrowingPower` and `useBorrowingPowerDetail`, forwarded to the core and keyed separately, and
+validated in the core, where a negative override or a price move of 10000 bps or more throws
+`InvalidAmount` instead of returning the ceiling as `recommended`; `maxBorrowingCapacityAt`,
 `partialRedemptionBand` and the margin constants; `OracleStale` and `RedemptionPriceFragile`; the
 preview result types re-exported from `@musd-kit/react`. The packaged core README's quickstart now
 compiles and is compiled against the packed tarball by `pnpm gate:packaging` (MK-108); documentation

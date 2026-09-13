@@ -32,8 +32,25 @@ export const musdQueryKeys = {
   /** Query key for a borrowing-power preview (collateral stringified, keys are JSON-hashed). */
   // MK-067. The account is part of the key: the answer differs for a fee exempt account,
   // because the contract charges it no borrowing fee (`BorrowerOperations.sol:637-643`).
-  borrowingPower: (chainId: number, collateral: bigint, account?: string) =>
-    ['musd', chainId, 'borrowingPower', collateral.toString(), account ?? null] as const,
+  //
+  // MK-100. The margin overrides are part of it too, because a different margin is a different
+  // `recommended`. An ABSENT override is `null`, the measured default, and never the default's
+  // value written out, so a change to the default cannot leave an old answer under the new key.
+  borrowingPower: (
+    chainId: number,
+    collateral: bigint,
+    account?: string,
+    margin?: { marginWindowSeconds?: bigint; priceMoveBps?: bigint },
+  ) =>
+    [
+      'musd',
+      chainId,
+      'borrowingPower',
+      collateral.toString(),
+      account ?? null,
+      margin?.marginWindowSeconds?.toString() ?? null,
+      margin?.priceMoveBps?.toString() ?? null,
+    ] as const,
   /**
    * Key for `useBorrowPreview`: one entry per owner and draw (MK-002).
    *

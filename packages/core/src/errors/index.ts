@@ -167,8 +167,12 @@ export class TroveAlreadyExists extends MusdError {
 
 /** A zero / negative / nonsensical numeric input. */
 export class InvalidAmount extends MusdError {
-  constructor(field: string, value: bigint) {
-    super(Codes.INVALID_AMOUNT, `Invalid ${field}: ${value}. Must be a positive amount.`, {
+  /**
+   * @param requirement what a valid value is, when it is not "a positive amount": a borrowing power
+   *   margin override may be zero, so it says its own range (MK-100).
+   */
+  constructor(field: string, value: bigint, requirement = 'Must be a positive amount.') {
+    super(Codes.INVALID_AMOUNT, `Invalid ${field}: ${value}. ${requirement}`, {
       context: { field, value },
     })
     this.name = 'InvalidAmount'

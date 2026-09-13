@@ -57,22 +57,46 @@ export function useLiquidationPrice({
   })
 }
 
+/** The borrowing power hooks' parameters, shared so the two cannot drift apart. */
+export interface BorrowingPowerHookParams {
+  collateral: bigint | undefined
+  /** The account that would open. Defaults to the connected wallet (MK-106). */
+  account?: Address | undefined
+  /**
+   * Core's `marginWindowSeconds`: a larger window for a slower flow, a smaller one for an immediate
+   * send. Omitted, the measured default applies. The value used is on the detail's `margin`.
+   */
+  marginWindowSeconds?: bigint | undefined
+  /** Core's `priceMoveBps`, from `0n` up to but excluding `10_000n`. Omitted, the measured default. */
+  priceMoveBps?: bigint | undefined
+}
+
 /** Shared query for {@link useBorrowingPower} and {@link useBorrowingPowerDetail}: one fetch. */
 function useBorrowingPowerQuery<TSelected>(
-  { collateral, account }: { collateral: bigint | undefined; account?: Address | undefined },
+  params: BorrowingPowerHookParams,
   select: (power: BorrowingPower) => TSelected,
 ): UseQueryResult<TSelected, Error> {
   const chainId = useChainId()
+  const { collateral, account } = params
   // MK-106. The hook runs inside a wagmi context that knows the connected wallet, so an omitted
   // `account` means that wallet rather than "not fee exempt". An explicit account still wins.
   const { address: connected } = useAccount()
   const who = account ?? connected
+  // MK-100, MK-085. Built once from presence and handed to both the key and the call, so an omitted
+  // override stays omitted and means the measured default in both places.
+  const margin = {
+    ...(params.marginWindowSeconds !== undefined
+      ? { marginWindowSeconds: params.marginWindowSeconds }
+      : {}),
+    ...(params.priceMoveBps !== undefined ? { priceMoveBps: params.priceMoveBps } : {}),
+  }
   return useMusdQuery<BorrowingPower, TSelected>({
-    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, who),
+    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, who, margin),
     fetch: (client) =>
       client.getBorrowingPower({
         collateral: collateral as bigint,
         ...(who !== undefined ? { account: who } : {}),
+        ...margin,
       }),
     // Zero is disabled rather than queried: `getBorrowingPower` rejects a non-positive collateral
     // with `InvalidAmount` (MK-010), and an empty input parsing to `0n` is the ordinary state of a
@@ -104,11 +128,7 @@ function useBorrowingPowerQuery<TSelected>(
  *
  * Refetches on new blocks (the binding ratio, the price and the system TCR can all move).
  */
-export function useBorrowingPower(params: {
-  collateral: bigint | undefined
-  /** The account that would open. Defaults to the connected wallet (MK-106). */
-  account?: Address | undefined
-}): UseQueryResult<bigint, Error> {
+export function useBorrowingPower(params: BorrowingPowerHookParams): UseQueryResult<bigint, Error> {
   return useBorrowingPowerQuery(params, (power) => power.recommended)
 }
 
@@ -118,11 +138,9 @@ export function useBorrowingPower(params: {
  * it is liquidatable within seconds in normal mode; offer `recommended`. Shares one fetch with
  * {@link useBorrowingPower}.
  */
-export function useBorrowingPowerDetail(params: {
-  collateral: bigint | undefined
-  /** The account that would open. Defaults to the connected wallet (MK-106). */
-  account?: Address | undefined
-}): UseQueryResult<BorrowingPower, Error> {
+export function useBorrowingPowerDetail(
+  params: BorrowingPowerHookParams,
+): UseQueryResult<BorrowingPower, Error> {
   return useBorrowingPowerQuery(params, (power) => power)
 }
 

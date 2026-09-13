@@ -535,6 +535,36 @@ describe('MK-100, MK-106: useBorrowingPower, rendered', () => {
     ])
   })
 
+  it('a margin override is forwarded, and each margin is its own question', async () => {
+    const { wrapper } = setup()
+    const { result } = renderHook(
+      () => ({
+        wide: reads.useBorrowingPower({
+          collateral: BTC,
+          priceMoveBps: 500n,
+          marginWindowSeconds: 86_400n,
+        }),
+        fast: reads.useBorrowingPowerDetail({ collateral: BTC, marginWindowSeconds: 60n }),
+        plain: reads.useBorrowingPower({ collateral: BTC }),
+      }),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.plain.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.wide.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.fast.isSuccess).toBe(true))
+    const asked = calls.filter((c) => c.method === 'getBorrowingPower').map((c) => c.args[0])
+    // Three different margins, three fetches: sharing one would show one margin's answer as another's.
+    expect(asked).toHaveLength(3)
+    expect(asked).toContainEqual({
+      collateral: BTC,
+      priceMoveBps: 500n,
+      marginWindowSeconds: 86_400n,
+    })
+    expect(asked).toContainEqual({ collateral: BTC, marginWindowSeconds: 60n })
+    // An omitted override stays omitted, so the core applies the measured default.
+    expect(asked).toContainEqual({ collateral: BTC })
+  })
+
   it('an explicit account wins over the connected wallet', async () => {
     state.account = CONNECTED
     const { wrapper } = setup()

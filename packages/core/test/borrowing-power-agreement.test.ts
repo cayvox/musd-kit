@@ -4,6 +4,7 @@ import {
   BORROWING_POWER_MARGIN_WINDOW_SECONDS,
   BORROWING_POWER_PRICE_MOVE_BPS,
   CCR,
+  InvalidAmount,
   MCR,
   evaluateOpen,
   getAddresses,
@@ -119,12 +120,14 @@ function opens(s: Scenario, draw: bigint, atPrice = s.price): ReturnType<typeof 
  * read off the result (MK-100): the price after a fall of `BORROWING_POWER_PRICE_MOVE_BPS`, divided
  * by one plus `BORROWING_POWER_MARGIN_WINDOW_SECONDS` of interest at the rate, rounded up.
  */
-function stressedPrice(price: bigint): bigint {
+function stressedPrice(
+  price: bigint,
+  priceMoveBps = BORROWING_POWER_PRICE_MOVE_BPS,
+  windowSeconds = BORROWING_POWER_MARGIN_WINDOW_SECONDS,
+): bigint {
   const denominator = 10_000n * SECONDS_PER_YEAR
-  const accrual =
-    (INTEREST_RATE_BPS * BORROWING_POWER_MARGIN_WINDOW_SECONDS * E18 + denominator - 1n) /
-    denominator
-  return (price * (10_000n - BORROWING_POWER_PRICE_MOVE_BPS) * E18) / (10_000n * (E18 + accrual))
+  const accrual = (INTEREST_RATE_BPS * windowSeconds * E18 + denominator - 1n) / denominator
+  return (price * (10_000n - priceMoveBps) * E18) / (10_000n * (E18 + accrual))
 }
 
 /**
@@ -268,6 +271,79 @@ describe('getBorrowingPower and previewOpen answer the same question the same wa
    * either change must come with a new measurement rather than slip in as an edit. Every other test
    * here imports the constants, so without this one they could be lowered with nothing going red.
    */
+  /**
+   * The margin is the caller's to widen or narrow, and the result always says which margin it holds:
+   * a flow slower than the measured hour needs more, an immediate send may take less. Each override
+   * is pinned as the same boundary the default is pinned as, at ITS stressed price, so an override
+   * that was accepted and then ignored, or applied to one half of the stress and not the other, goes
+   * red rather than returning the default under the caller's numbers.
+   */
+  it('MK-100: an overridden margin is reported, and recommended is the boundary at its stressed price', async () => {
+    const s = scenarios[0] as Scenario
+    const base = await getBorrowingPower(fakeDeps(s), { collateral: s.collateral, price: s.price })
+    for (const [priceMoveBps, marginWindowSeconds] of [
+      [500n, 86_400n],
+      [50n, 60n],
+      [0n, 3600n],
+      [200n, 0n],
+    ] as const) {
+      const label = `priceMoveBps=${priceMoveBps} marginWindowSeconds=${marginWindowSeconds}`
+      const power = await getBorrowingPower(fakeDeps(s), {
+        collateral: s.collateral,
+        price: s.price,
+        priceMoveBps,
+        marginWindowSeconds,
+      })
+      const stressed = stressedPrice(s.price, priceMoveBps, marginWindowSeconds)
+      expect(power.margin.priceMoveBps, label).toBe(priceMoveBps)
+      expect(power.margin.windowSeconds, label).toBe(marginWindowSeconds)
+      expect(power.margin.stressedPrice, label).toBe(stressed)
+      expect(power.ceiling, `${label}: the ceiling does not depend on the margin`).toBe(
+        base.ceiling,
+      )
+      expect(opens(s, power.recommended, stressed).viable, label).toBe(true)
+      expect(opens(s, power.recommended + 1n, stressed).viable, label).toBe(false)
+    }
+    const wider = await getBorrowingPower(fakeDeps(s), {
+      collateral: s.collateral,
+      price: s.price,
+      priceMoveBps: 500n,
+    })
+    const narrower = await getBorrowingPower(fakeDeps(s), {
+      collateral: s.collateral,
+      price: s.price,
+      priceMoveBps: 50n,
+    })
+    expect(wider.recommended, 'a wider margin offers less').toBeLessThan(base.recommended)
+    expect(narrower.recommended, 'a narrower margin offers more').toBeGreaterThan(base.recommended)
+    expect(narrower.recommended).toBeLessThan(base.ceiling)
+  })
+
+  /**
+   * An override outside its range is refused before any read. A negative one would lift the stressed
+   * price above the real one, and the clamp to the ceiling would then return the liquidation
+   * threshold under the name `recommended`, which is the defect MK-100 exists to prevent.
+   */
+  it('MK-100: an override outside its range is refused before the chain is asked anything', async () => {
+    const s = scenarios[0] as Scenario
+    for (const bad of [
+      { priceMoveBps: -1n },
+      { priceMoveBps: 10_000n },
+      { priceMoveBps: 20_000n },
+      { marginWindowSeconds: -1n },
+    ]) {
+      const { deps, calls } = countingDeps(s)
+      const error = await getBorrowingPower(deps, { collateral: s.collateral, ...bad }).catch(
+        (e: unknown) => e,
+      )
+      expect(
+        error,
+        JSON.stringify(bad, (_, v) => (typeof v === 'bigint' ? `${v}` : v)),
+      ).toBeInstanceOf(InvalidAmount)
+      expect(calls, 'no read before the refusal').toEqual([])
+    }
+  })
+
   it('MK-100: the margin constants cover the measured worst hour', () => {
     expect(BORROWING_POWER_PRICE_MOVE_BPS).toBeGreaterThanOrEqual(191n)
     expect(BORROWING_POWER_MARGIN_WINDOW_SECONDS).toBeGreaterThanOrEqual(3600n)

@@ -64,9 +64,23 @@ export interface GetBorrowingPowerParams {
    * read from the chain rather than from this parameter.
    */
   account?: Address
-  /** Override {@link BORROWING_POWER_MARGIN_WINDOW_SECONDS} for `recommended`. */
+  /**
+   * Override {@link BORROWING_POWER_MARGIN_WINDOW_SECONDS} for `recommended`, in seconds: larger for a
+   * flow slower than an hour between reading the figure and the position being safe on its own,
+   * smaller for one that sends at once. `0n` removes the interest part. The value used is always
+   * returned on `margin.windowSeconds`, so the result says which margin it holds.
+   *
+   * @throws {InvalidAmount} for a negative value, which would put the stressed price above the real
+   *   one and hand back the ceiling under the name `recommended`.
+   */
   marginWindowSeconds?: bigint
-  /** Override {@link BORROWING_POWER_PRICE_MOVE_BPS} for `recommended`. `0n` removes the price part. */
+  /**
+   * Override {@link BORROWING_POWER_PRICE_MOVE_BPS} for `recommended`, in basis points, from `0n`,
+   * which removes the price part, up to but excluding `10_000n`, a fall of the whole price. The value
+   * used is always returned on `margin.priceMoveBps`.
+   *
+   * @throws {InvalidAmount} outside `0n <= priceMoveBps < 10_000n`.
+   */
   priceMoveBps?: bigint
 }
 
@@ -216,6 +230,27 @@ async function getBorrowingPowerUnchecked(
   // Validate the input rather than searching over it. A UI bound to a text input is the
   // caller this protects: a negative or zero collateral is a bug, not a small answer.
   if (collateral <= 0n) throw new InvalidAmount('collateral', collateral)
+  // A margin override outside its range does not fail on its own: a negative one lifts the stressed
+  // price above the real one, the solver's clamp then returns the ceiling as `recommended`, and the
+  // caller holds the liquidation threshold under the name that promises a margin (MK-100). Refuse it
+  // before any read, as the collateral is.
+  if (params.marginWindowSeconds !== undefined && params.marginWindowSeconds < 0n) {
+    throw new InvalidAmount(
+      'marginWindowSeconds',
+      params.marginWindowSeconds,
+      'Must be zero or more seconds.',
+    )
+  }
+  if (
+    params.priceMoveBps !== undefined &&
+    (params.priceMoveBps < 0n || params.priceMoveBps >= 10_000n)
+  ) {
+    throw new InvalidAmount(
+      'priceMoveBps',
+      params.priceMoveBps,
+      'Must be at least 0 and below 10000 basis points.',
+    )
+  }
 
   const tm = { address: addresses.troveManager, abi: troveManagerAbi as Abi } as const
   const bo = { address: addresses.borrowerOperations, abi: borrowerOperationsAbi as Abi } as const

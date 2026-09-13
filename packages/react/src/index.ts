@@ -12,6 +12,7 @@ export {
   useLiquidationPrice,
   useBorrowingPower,
   useBorrowingPowerDetail,
+  type BorrowingPowerHookParams,
   useAdjustTrovePreview,
   useBorrowPreview,
   useClosePreview,

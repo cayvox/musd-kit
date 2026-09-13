@@ -236,6 +236,24 @@ read by `scripts/oracle-moves.ts`: the worst fall inside any hour of that week w
 200 is that rounded up. The measurement, and what it cannot show, is on the constants' docstrings.
 Both are reported on `margin` and can be overridden per call.
 
+**Override the margin when your flow is not the assumed one.** A flow slower than an hour between
+reading the figure and the position standing on its own needs a wider margin; a transaction sent
+at once may take a narrower one. The measured values stay the default, and the result always carries
+the margin it was solved with, so the figure in hand is never ambiguous:
+
+```ts
+const slow = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 86_400n, priceMoveBps: 500n });
+slow.margin.windowSeconds;  // 86400n, the margin this `recommended` was solved with
+const fast = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 60n });
+fast.margin.priceMoveBps;   // 200n, the default, because it was not overridden
+```
+
+`priceMoveBps` must be at least `0n` and below `10_000n`, and `marginWindowSeconds` at least `0n`;
+anything else throws `InvalidAmount` before a read. A negative override is refused rather than
+accepted because it would lift the stressed price above the real one, and the solver's clamp would
+then return the ceiling under the name `recommended`. `0n` for both is allowed and returns the
+ceiling under both names, on purpose, for a caller who asks for no margin.
+
 ```ts
 const power = await musd.getBorrowingPower({ collateral, account });
 power.recommended;     // the draw to offer

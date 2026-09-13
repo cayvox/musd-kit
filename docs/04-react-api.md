@@ -51,6 +51,9 @@ const { data: recommended } = useBorrowingPower({ collateral: parseBtc('0.05') }
 // `account` defaults to the connected wallet (MK-106); pass one to ask about another account.
 const { data: power } = useBorrowingPowerDetail({ collateral: parseBtc('0.05') });
 // power.ceiling, power.recommendedIcr, power.margin: the same single fetch.
+const { data: slowFlow } = useBorrowingPower({ collateral: parseBtc('0.05'), marginWindowSeconds: 86_400n });
+// A margin override is forwarded to the core and is part of the query key, so each margin is its
+// own cached answer. Omitted, the measured default applies; the detail hook's `margin` says which.
 ```
 
 > **`useBorrowingPower` returns the recommended draw (MK-100).** Since 0.4.0 `data` leaves the

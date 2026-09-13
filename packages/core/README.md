@@ -24,6 +24,9 @@ const power = await musd.getBorrowingPower({ collateral, account })
 power.recommended // the draw to offer
 power.ceiling // a limit to display, never an amount to borrow
 power.margin // { windowSeconds, priceMoveBps, interestRateBps, accrualFraction, stressedPrice }
+
+// A slower flow needs a wider margin; `margin` always reports the one used.
+const slow = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 86_400n })
 ```
 
 Until 0.4.0 this function returned the ceiling alone, as a `bigint`. The full record, including the

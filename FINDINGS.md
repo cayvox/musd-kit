@@ -6843,6 +6843,15 @@ week is one regime, and one sample in sixteen blocks misses a dip that recovers 
 The observed ICR sits under the reported `recommendedIcr` by the seconds of interest between the open
 and the read, which the test bounds rather than equates.
 
+**The margin is the caller's to change, and never ambiguous.** `marginWindowSeconds` and
+`priceMoveBps` override the defaults per call, on `getBorrowingPower` and on both React hooks, which
+forward them and key each margin separately. The result's `margin` always carries the values used.
+An override outside `0 <= priceMoveBps < 10000` or a negative window throws `InvalidAmount` before any
+read: accepted, a negative value lifts the stressed price above the real one and the solver's clamp
+returns the ceiling as `recommended`. Pinned as the same boundary at the override's own stressed
+price (`borrowing-power-agreement.test.ts`) and rendered (`hooks-rendered.test.ts`); mutation ids
+`MK-100 override window`, `override move`, `override ignored`, `hook override`, `hook key`.
+
 ### Decided per figure
 
 The rule the decision follows: **the same treatment is owed where the SDK's figure is ACCEPTED at the

@@ -15,6 +15,9 @@ Since 0.4.0 `data` is the **recommended** draw: the largest open that still clea
 a measured adverse price move and an interest window, both stated on
 `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS` in `@musd-kit/core`.
 The contract's **ceiling** is available from `useBorrowingPowerDetail`, over the same single fetch.
+Both hooks take `marginWindowSeconds` and `priceMoveBps` to widen the margin for a slower flow or
+narrow it for an immediate send; omitted, the measured default applies, and the detail's `margin`
+reports the one used.
 Show the ceiling as a limit and never open at it: in normal mode it lands the position at exactly
 the 110% minimum collateral ratio, and a fork reproduction found it liquidatable one second later.
 

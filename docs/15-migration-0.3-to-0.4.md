@@ -57,7 +57,8 @@ an hour in.
 `recommended` is solved at `price * (1 - BORROWING_POWER_PRICE_MOVE_BPS / 10000)` divided by one plus
 `BORROWING_POWER_MARGIN_WINDOW_SECONDS` of interest: 200 bps and one hour, measured from Mezo mainnet
 by `scripts/oracle-moves.ts`. Override either per call with `priceMoveBps` and
-`marginWindowSeconds`; `0n` for both returns the ceiling under both names.
+`marginWindowSeconds`, on the function and on both hooks; `0n` for both returns the ceiling under
+both names. A negative override, or a price move of `10_000n` or more, throws `InvalidAmount`.
 
 If you had applied your own buffer to the 0.3 number, as its warning asked, remove it or you will
 apply two.
