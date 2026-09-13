@@ -247,7 +247,15 @@ export interface MusdClient {
   previewRedeem(params: PreviewRedeemParams): Promise<RedemptionPreview>
   /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
   getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
-  /** Largest valid draw (ICR ≥ binding ratio, netDebt ≥ minNetDebt). */
+  /**
+   * Largest valid draw for an OPEN (ICR ≥ binding ratio, netDebt ≥ minNetDebt).
+   *
+   * **WARNING: no safety margin. Do not open a Trove at this number (MK-100).** In normal mode it
+   * opens the position at exactly the 110% minimum ratio, and interest pushes it below 110% within
+   * seconds, where anyone can liquidate it and take all of the collateral. You must apply your own
+   * buffer, and check the ratio you would open at with `previewOpen` before sending. See
+   * `getBorrowingPower` for the Recovery Mode and system ratio cases.
+   */
   getBorrowingPower(params: GetBorrowingPowerParams): Promise<bigint>
 
   // --- lifecycle writes (see `trove/`; require a walletClient; simulate-before-send) ---

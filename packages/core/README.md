@@ -10,6 +10,30 @@ typed, reusable, and checked against the contracts rather than against intuition
 > for testnet and evaluation.** Every write path documents what it does on-chain and what it
 > does not guarantee. License: MIT.
 
+## ⚠️ Warning: `getBorrowingPower` has no safety margin (MK-100)
+
+**Do not open a Trove at the number `getBorrowingPower` returns.** It is the largest draw the
+contract will accept. In normal mode that opens the position at exactly the 110% minimum collateral
+ratio. Interest is added to the debt every second, so the position drops below 110% and **can be
+liquidated by anyone within seconds of opening.** A liquidation takes all of the collateral; you
+keep only the MUSD you drew. This was reproduced on a fork: opened at the reported number,
+liquidatable one second later, and liquidated.
+
+**You must apply your own buffer.** For example:
+
+```ts
+const max = await musd.getBorrowingPower({ collateral, account })
+// Your buffer is your decision. 80% here is an illustration, not a recommendation.
+const debt = (max * 80n) / 100n
+const preview = await musd.previewOpen({ collateral, debt, account })
+// preview.icr is the ratio you would open at. Liquidation starts below 1.1e18 (110%).
+```
+
+In Recovery Mode the number opens at exactly 150%, which is not liquidatable but has no margin
+either. The returned value is unchanged in 0.3.1 on purpose: this release only adds the warning,
+and changing the number is an open design decision. The full record is MK-100 in
+[`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md).
+
 ## Install
 
 ```sh

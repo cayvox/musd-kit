@@ -132,6 +132,7 @@ claim about it was not).
 | MK-094 | Nine protocol rules decided more than once, two of them already diverged | S2 | fixed for seven by single sourcing; two are prose with no compiler and are labelled as the weaker control they are |
 | MK-095 | The redemption accrual margin was sized for exactly the window it advertises, so it covered the read but not the block the transaction settles in. It only ever worked because the wrong base over-stated it by about 6 seconds of accrual | S2 | **fixed.** Sized for 900 seconds against an advertised 600, with the reason named and both ends of the claim still asserted on chain |
 | MK-096 | The packaging gate's consumer probe is a template literal, so no typecheck in the repository compiles it, and the only thing that does is a gate CI does not run | S2, process | **fixed.** The probe is updated and `pnpm gate:packaging` is a CI step, so a breaking public shape change fails on the commit rather than at release time by hand |
+| MK-100 | `getBorrowingPower` returns the liquidation threshold as the amount to borrow: in normal mode a Trove opened at it is liquidatable within seconds, and every earlier check asked only whether the open is accepted | S1 | **open, documented.** 0.3.1 ships the warning on every surface a consumer reads; the returned value is deliberately unchanged, because changing it is a design decision |
 
 ---
 
@@ -147,12 +148,12 @@ text read, the entry now says which part is evidence and which part is not.
 
 | Class | Count | What it means |
 |---|---|---|
-| **Reproducible** | 18 | The instrument is committed. The command is named below or in the entry |
+| **Reproducible** | 19 | The instrument is committed. The command is named below or in the entry |
 | **Observed once** | 5 | One execution, pinned by a run ID. Every one is enumerated below |
 | **Observed once, unlinked** | 3 | One execution whose artifact was not preserved. Grandfathered, and the label says it cannot be re-checked |
 | **Unestablished** | 8 | Inferred, or the instrument is gone, or the premise turned out to be wrong |
 
-**34 claims, counted as claims rather than as lines**, since several are quoted in more than one
+**35 claims, counted as claims rather than as lines**, since several are quoted in more than one
 place. A count of numerals would be larger and would mean less.
 
 ### The reproducible set, and the command for each
@@ -172,6 +173,7 @@ registered it, so those ten print as `EXPECTED MK-079` and only an unexplained m
 | Redemption bands in the sweep, **99 ran, 47 skipped**, per band, 0 mismatches, 0 throws | MK-048 | `MK_DIFF_OP=redeem MK_DIFF_CASES=1000 MK_DIFF_SEED=20260826 pnpm test:fork`, re-measured in the P14 wave, 1823s, exit 0 |
 | The Recovery Mode threshold at the pinned block, TCR 2.7731, so 45.9 percent | MK-059 | `cast call 0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0 "getEntireSystemColl()" --rpc-url https://rpc.test.mezo.org --block 15043414`, and the same for `getEntireSystemDebt()` |
 | The estimate is asked with an address, not an `Account` object | MK-037 | `pnpm exec vitest run --project unit packages/core/test/write-gas-fallback.test.ts` |
+| The borrowing power maximum opens at exactly MCR, is liquidatable after 1, 60, 600 and 3600 seconds while a control at 80% is not, and is liquidated; in Recovery Mode it opens at exactly CCR; with the system ratio binding the open is refused a second later | MK-100 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-borrowing-power-boundary.fork.test.ts` |
 
 **One caveat on the flake rates, stated once rather than eight times.** The instrument is committed
 and the command is nameable, so these are reproducible in the sense the rule means. They were
@@ -6651,6 +6653,131 @@ packs, installs into a scratch consumer and runs `tsc` four times, which is the 
 manual; the cost of leaving it manual turned out to be higher. `docs/09-review-and-validated-surface.md`
 said this row was "**Manual, at release preparation, not automated**" and that automating it "needs
 a pack, an install and a `tsc` run, which is its own job". It is automated now and that row says so.
+
+---
+
+## MK-100 · `getBorrowingPower` returns the liquidation threshold as the amount to borrow
+
+**Class** S1 · **Status** open, documented. The warning ships in 0.3.1; the returned value is
+unchanged pending a design decision · **Found by an external audit of the published 0.3.0,
+reproduced end to end here before it was filed**
+
+**The sentence to carry forward.** Every previous examination of this function asked whether the
+contract would accept the number, and none asked what happens after acceptance. The differential
+sweep cannot see it either, because its assertion is verdict against revert, and here the
+transaction succeeds.
+
+**Why S1.** The figure is exactly right as a statement about the open gate, and that is what makes
+it dangerous rather than harmless. It is published as the amount a caller may borrow ("the largest
+draw that OPENS a valid Trove", and, until this wave, `const { data: max } = useBorrowingPower(...)`
+on the landing page), it is plausible, and acting on it raises no error at any step: the open succeeds. The loss
+arrives afterwards, from someone else's transaction.
+
+**Ground truth, read from `mezo-org/musd` in this wave.**
+
+- `BorrowerOperations.sol:648-651`: at open the ratio is `_computeCR(msg.value, compositeDebt,
+  price)` on `draw + fee + 200`, with no interest in it, because the Trove has none yet.
+- `:654-657`: Recovery Mode requires `_requireICRisAboveCCR`, normal mode `_requireICRisAboveMCR`,
+  which is `require(_newICR >= MCR)` (`:1330-1335`). Normal mode also needs a resulting
+  `TCR >= CCR` (`:658-665`).
+- `TroveManager.sol:1146-1148`: liquidation is `if (vars.ICR < MCR)`, against `getCurrentICR`,
+  whose debt is `_getTotalDebt` (`:1513-1527`), which adds `calculateInterestOwed(principal,
+  interestRate, lastInterestUpdateTime, block.timestamp)`. The debt grows every second.
+- `ActivePool.sol:134-144`: the system debt the TCR gate reads adds
+  `interestRateManager.getAccruedInterest()`, so it grows every second too.
+- What a liquidation does to the borrower: `_liquidate` closes the Trove
+  (`TroveManager.sol:1101`, `_closeTrove(_borrower, Status.closedByLiquidation)`) and
+  `_closeTrove` zeroes its collateral (`:1409`). The collateral goes to the Stability Pool offset
+  or to redistribution (`:1087-1099`), less 0.5% and 200 MUSD to the liquidator (`:1080-1083`).
+  The borrower keeps the MUSD they drew and owes nothing.
+
+**SDK location.** `packages/core/src/math/getBorrowingPower.ts`: `solveClosedForm` (`:357`) caps at
+`min(icrCap, tcrCap)` (`:371-374`) with `targetRatio = isRecoveryMode ? CCR : MCR` (`:206`), walks
+up to the largest feasible draw, and returns it. Surfaced as `MusdClient.getBorrowingPower`
+(`packages/core/src/client/createMusdClient.ts:259`) and `useBorrowingPower`
+(`packages/react/src/hooks/reads.ts:78`). Callers of the rule, enumerated by package (§12): core
+(the function and the client method), react (the hook), `examples/open-and-manage/src/App.tsx`
+(displays it beside the draw input), `landing/src/components/Architecture.astro` (the snippet
+above), and `scripts/testnet-e2e.ts:411` (logs it, opens nothing at it).
+
+**Measured, reproducible:** `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork
+packages/core/test/zz-borrowing-power-boundary.fork.test.ts`. Every open is sent one second after
+the number was read, because a real chain cannot include it in the block it was read at:
+
+```
+[MK-100] getBorrowingPower(1 BTC)=69776684515484515484516 at price=77051107320000000000000
+  at open: max icr=1100000000000000000 (MCR=1100000000000000000)  control icr=1374019206948458342
+  warp     1s  max liquidatable=true   control(80%) liquidatable=false
+  warp    60s  max liquidatable=true   control(80%) liquidatable=false
+  warp   600s  max liquidatable=true   control(80%) liquidatable=false
+  warp  3600s  max liquidatable=true   control(80%) liquidatable=false
+  liquidate(max) after 1s: receipt=success status=3 opener MUSD kept=69776684515484515484516
+[MK-100] the regimes that do not land on MCR
+  Recovery Mode (tcr=1401587067735672135): power=25761865282310469314079 icr at open=1500000000000000000 (CCR=1500000000000000000) liquidatable after 3600s=false
+  System ratio binding (collateral=2828504838638170249926, tcr=1551757110707351293): power=95981723398357339243098024 vs the ICR-only cap 110865151397908058678040520; open sent 1s later: threw(SystemRatioBelowCCR)
+```
+
+That output is the file run alone. Inside the full fork suite (five consecutive runs on Node
+24.19.0 at block 15043414, all green) the normal mode rows print the same figures to the wei; the
+Recovery Mode and system ratio rows print slightly different `tcr`, `power` and `collateral`,
+because they depend on the system state earlier files leave behind and on wall clock accrual.
+Those two rows are asserted as bounds, not as exact values.
+
+In that run the borrower gave up 1 BTC, worth 77051.10732 MUSD at the fork's price, and kept
+69776.68 MUSD: about 9.4% of the collateral's value, arithmetic on the two printed numbers.
+
+**So the scope is precise, and narrower than "every answer".**
+
+| Regime | Where the maximum lands | What happens after |
+|---|---|---|
+| Normal mode, individual ratio binds (the ordinary case: TCR 2.77 at the pinned testnet block) | ICR exactly `MCR` | Accepted a block later, liquidatable within a second, liquidated. **This is the finding** |
+| Recovery Mode | ICR exactly `CCR` | Not liquidatable after an hour. No margin, but not this loss |
+| Normal mode, system ratio binds | System TCR exactly `CCR` | Refused a block later with `SystemRatioBelowCCR`, because the system debt accrued. Loud, no collateral at risk |
+
+**Why it survived, entry by entry.** MK-010 asked how many calls it makes. MK-067 and MK-069 asked
+whether it charges the fee the contract charges. MK-070 opened at it on chain in Recovery Mode and
+asserted one wei more reverts. MK-092 and MK-093 asked about round trips and block snapshots.
+`borrowing-power-agreement.test.ts` pins that the answer is viable and one wei more is not. The
+sweep's `borrowingPower` op compares a verdict against a revert. `docs/09` §3 marked the row
+**Validated**. Every one of those is a question about acceptance, and every one is correct.
+
+**And the class was already known.** MK-072 established that `maxBorrowingCapacity` and the entire
+debt at `ICR == MCR` are the same expression, and fixed it **on that field only**. The same
+equality is the definition of this function's normal mode answer. That is §12's defect: the
+enumeration was scoped to the field the finding was found on, not to the rule.
+
+### The same shape elsewhere, reported and not fixed in this wave
+
+The question: which figure the SDK reports as a maximum or a limit lands the caller on a threshold
+the contract accepts and then leaves them exposed.
+
+| Figure | Lands on | Evidence | What a caller meets |
+|---|---|---|---|
+| `getBorrowingPower`, normal mode | `ICR == MCR` | Reproducible, above | Accepted a block later, then liquidatable. **The only one accepted by default** |
+| `BorrowingCapacity.remaining` | `ICR == MCR` at the opening price | MK-072, from source (`BorrowerOperations.sol:1323-1328` against `:1330-1335`); its fork ladder is recorded in that entry but, as the entry says, has no committed instrument | The exact figure is refused one second later. A draw a hair under it is accepted and lands a hair above MCR |
+| `maxWithdrawableCollateral.amount`, `limitedBy: 'ICR'` | `ICR == MCR`, rounded up to clear it (`packages/core/src/math/previewAdjust.ts:575`) | MK-051's committed ladder, `withdraw-max-boundary.fork.test.ts` | Refused one second later at the exact figure; a hair under is accepted near MCR |
+| `AdjustPreview.minimumCollateralToClearIcr`, normal mode | `ICR == MCR`, rounded up (`previewAdjust.ts:342-345`) | **Unestablished here**: derived from source; an uncommitted external script observed it accepted and liquidatable one second later only in a block sharing the read's timestamp, which a real chain does not produce | A rescue sized from it either reverts a block later or, if accepted, leaves the rescued Trove at the liquidation threshold |
+| `maxWithdrawableCollateral.amount`, `limitedBy: 'TCR'` | System `TCR == CCR` (`previewAdjust.ts:576`) | **Unestablished here**, same caveat | Exposure is the whole system entering Recovery Mode, not a liquidation |
+| `Trove.liquidationPrice` | `floor(MCR * entireDebt / collateral)` (`packages/core/src/math/compute.ts:36-42`) | Derived from source: flooring puts the reported price at or below the true threshold | At exactly the reported price the Trove can already be liquidatable, and the figure moves with accrual. Adjacent, not the same shape |
+
+Redemption's `maxWithoutConsuming` and `nextViableAmount` and `previewClose.musdRequired` were
+checked and are not this shape: their failure mode is a refusal (MK-048, MK-050), and the exposure
+of an accepted redemption falls on other people's Troves, not the caller's.
+
+### Documented, not fixed
+
+0.3.1 changes no behaviour and no API. It adds the warning to the function's own docstring (what
+TypeDoc publishes and an editor shows on hover), `MusdClient.getBorrowingPower`, `useBorrowingPower`,
+both package READMEs, `docs/03-core-api.md`, `docs/04-react-api.md`, `docs/05-math-and-hints.md`,
+`docs/09-review-and-validated-surface.md`, the example app and the landing snippet. The warning
+says what the number is, that it leaves no margin, that a Trove opened at it can be liquidated
+within seconds, and that the caller must apply their own buffer.
+
+**What closes this.** A decision about what the function returns: a maximum with a margin built in,
+a maximum plus the ratio it lands at, or a function that takes the target ratio as an input. Any of
+them changes a published return value, which is why it is not in a warning release.
+`zz-borrowing-power-boundary.fork.test.ts` pins today's behaviour, so the change goes red there and
+names this entry.
 
 ---
 

@@ -125,6 +125,16 @@ SDK compares against the live entire debt rather than the stored `getTroveDebt`.
 `getBorrowingPower` also enforces the resulting system TCR in normal mode, which the
 contract requires on every normal mode open and which it previously ignored.
 
+**⚠️ The maximum is the liquidation threshold, so it has no safety margin (MK-100).** Solving for
+the largest draw the open gate accepts means solving for `ICR == MCR` whenever the individual
+ratio binds, and `MCR` is also where liquidation begins (`ICR < MCR`,
+`TroveManager.sol:1146-1148`). An open accrues no interest before its ratio check (`BorrowerOperations.sol:648-657`), so
+the number is still accepted a block later; the debt then accrues every second
+(`TroveManager.sol:1513-1527`), and the position is liquidatable almost at once. **A caller must
+apply their own buffer.** In Recovery Mode the Trove lands at exactly CCR, which is not
+liquidatable. When the system TCR binds instead, the open is refused a block later, because the
+system debt accrues too (`ActivePool.sol:134-144`).
+
 **It no longer decides any of these rules itself (MK-067, MK-069).** Its feasibility predicate
 is `evaluateOpen`, the evaluator behind `previewOpen`, so a maximum and a candidate verdict
 cannot disagree about where the boundary is. They did: this function charged the borrowing fee

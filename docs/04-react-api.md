@@ -41,7 +41,18 @@ happened to arrive together.
 // account, so the maximum is LARGER for such a caller than the figure returned without it.
 const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05'), account });
 // `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
+// NO SAFETY MARGIN (MK-100): do not open at it and do not wire it to a "max" button.
 ```
+
+> ⚠️ **`useBorrowingPower` has no safety margin. Do not open a Trove at the number it returns
+> (MK-100).** In normal mode it opens the position at exactly the 110% minimum collateral ratio.
+> Interest is added to the debt every second, so the position drops below 110% and **can be
+> liquidated by anyone within seconds of opening**; a liquidation takes all of the collateral and
+> the user keeps only the MUSD they drew. Reproduced on a fork by
+> `packages/core/test/zz-borrowing-power-boundary.fork.test.ts`. **You must apply your own
+> buffer**: offer a smaller draw, and show the ratio the user would open at (`previewOpen`'s `icr`)
+> before they sign. In Recovery Mode it opens at exactly 150%, with no margin either. The returned
+> value is unchanged in 0.3.1 on purpose; changing it is an open design decision.
 
 > ⚠️ **`useBorrowingPower` sizes an OPEN, not a top-up.** Its name invites use against a
 > Trove that already exists; it does not do that. Every Trove carries a

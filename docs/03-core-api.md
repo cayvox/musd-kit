@@ -207,12 +207,46 @@ musd.previewBorrow({ owner, amount });            // → verdict + binding const
 musd.previewRefinance(owner);                     // → fee, resulting principal/ICR, verdict
 
 musd.getBorrowingPower({ collateral, price? });   // → bigint: max draw for an OPEN only
+                                                 //   NO SAFETY MARGIN: opening at it is
+                                                 //   liquidatable within seconds (MK-100)
                                                  //   throws InvalidAmount for collateral <= 0
 musd.computeICR({ collateral, entireDebt, price });        // → bigint
 musd.computeLiquidationPrice({ collateral, entireDebt });  // → bigint
 musd.computeEntireDebt({ draw, rate, elapsedSeconds });    // → bigint (preview accrual; see 05 §2)
 musd.getHealthFactor({ icr });                             // → number
 ```
+
+### ⚠️ `getBorrowingPower` has no safety margin: do not open at it (MK-100)
+
+**The number is the largest draw the contract will accept, and that is all it is.** In normal
+mode it opens the position at exactly the 110% minimum collateral ratio
+(`_requireICRisAboveMCR`, `BorrowerOperations.sol:657`, defined at `:1330-1335`). Liquidation is
+`ICR < MCR` (`TroveManager.sol:1146-1148`), and the debt it is measured against accrues interest
+every second (`TroveManager.sol:1513-1527`). So **a position opened at this number can be
+liquidated by anyone within seconds of opening.** A liquidation takes all of the collateral; the
+borrower keeps only the MUSD they drew.
+
+Reproducible: `pnpm exec vitest run --project fork packages/core/test/zz-borrowing-power-boundary.fork.test.ts`
+opens at the reported number, finds the position liquidatable after 1, 60, 600 and 3600 seconds
+while a control at 80% of it is not, and then liquidates it. It is one file of the fork project, so
+CI's fork gate already runs it on every push; the command is for running it alone.
+
+**You must apply your own buffer**, and check the ratio you would open at before sending:
+
+```ts
+const max = await musd.getBorrowingPower({ collateral, account });
+// Your buffer is your decision. 80% here is an illustration, not a recommendation.
+const debt = (max * 80n) / 100n;
+const preview = await musd.previewOpen({ collateral, debt, account });
+// preview.icr is the ratio you would open at. Liquidation starts below 1.1e18 (110%).
+```
+
+Two other cases, measured by the same file. In Recovery Mode the number opens at exactly 150%
+(CCR), which is not liquidatable but has no margin. When the whole system's ratio is what limits
+it, the open sent a second later is refused with `SystemRatioBelowCCR`, because the system's debt
+accrues interest in the meantime (`ActivePool.sol:134-144`); that failure is loud and costs no
+collateral. **The returned value is deliberately unchanged in 0.3.1**: changing what a published
+function returns is an open design decision (MK-100).
 
 ### `getBorrowingPower` costs a handful of calls, not eighty
 
