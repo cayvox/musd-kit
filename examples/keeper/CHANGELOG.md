@@ -1,5 +1,12 @@
 # @musd-kit/example-keeper
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [02a2a70]
+  - @musd-kit/core@0.3.1
+
 ## 0.0.3
 
 ### Patch Changes
