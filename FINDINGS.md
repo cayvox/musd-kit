@@ -84,7 +84,7 @@ claim about it was not).
 | MK-046 | The live script compared a preview taken before a write against a read taken after it | S3 | fixed |
 | MK-047 | `previewOpen` says viable for an account that already holds a Trove, and the contract refuses | S2 | fixed, and the sweep gap that hid it is closed |
 | MK-048 | `redeem` reports an amount as redeemable that the chain then refuses, because the hint helper answers a different question | S2 | **closed.** Previewed, prechecked, and the preview agrees with the chain in both directions across 83 executed redemption cases |
-| MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | open, documented, needs retry |
+| MK-049 | A redemption's partial hint goes stale when the oracle price moves, so a correct call can still revert | S3 | **reclassified by MK-103.** The class understated it and retry is not a mitigation at the measured survival rate |
 | MK-050 | `previewClose.musdRequired` is a snapshot the chain has already outgrown by the time a close lands, so holding exactly it is refused | S3 | open, documented, deferred to 0.2.1 |
 | MK-051 | `maxWithdrawableCollateral` reports a figure that stops being withdrawable one second later, and the ledger recorded a preview-against-preview check as chain verification | S3 | open, documented, deferred to 0.2.1. The provenance claim is corrected |
 | MK-052 | The live run's optional redeem step could kill the run and leave a position open, because a reverted receipt reached `process.exit` instead of the `catch` that promised to absorb it | S2 | fixed. It happened, on a real run, and cost a close |
@@ -133,6 +133,15 @@ claim about it was not).
 | MK-095 | The redemption accrual margin was sized for exactly the window it advertises, so it covered the read but not the block the transaction settles in. It only ever worked because the wrong base over-stated it by about 6 seconds of accrual | S2 | **fixed.** Sized for 900 seconds against an advertised 600, with the reason named and both ends of the claim still asserted on chain |
 | MK-096 | The packaging gate's consumer probe is a template literal, so no typecheck in the repository compiles it, and the only thing that does is a gate CI does not run | S2, process | **fixed.** The probe is updated and `pnpm gate:packaging` is a CI step, so a breaking public shape change fails on the commit rather than at release time by hand |
 | MK-100 | `getBorrowingPower` returns the liquidation threshold as the amount to borrow: in normal mode a Trove opened at it is liquidatable within seconds, and every earlier check asked only whether the open is accepted | S1 | **open, documented.** 0.3.1 ships the warning on every surface a consumer reads; the returned value is deliberately unchanged, because changing it is a design decision |
+| MK-101 | `previewRefinance` omits the interest rate a refinance moves the Trove to and the borrowing capacity it resets, and five surfaces say capacity only ever ratchets downward | S1 | open |
+| MK-102 | The React read hooks present the previous query's data as a success after the key changes or the query is disabled, so a cleared input or a disconnected wallet keeps showing the old verdict | S1 | open |
+| MK-103 | A partial redemption sent through `redeem()` cancels on almost any price move before inclusion, and `previewRedeem` reports it viable with no price condition. Supersedes MK-049's class and its retry mitigation | S2 | open |
+| MK-104 | `redeem()` refuses the `nextViableAmount` that `previewRedeem` reported one block earlier, because it re-applies the accrual margin to a figure that already includes it | S2 | open |
+| MK-105 | Protocol reverts raised outside the simulate path, a stale oracle among them, reach the caller as untyped viem errors while the README and the React types promise a `MusdError` | S2 | open |
+| MK-106 | Omitting `account` makes the open preview and the borrowing power calculator assume the caller is not fee exempt, and the React hooks never default it to the connected wallet | S2 | open |
+| MK-107 | `previewRedeem` charges `maxIterations` for the sub-MCR Troves the contract skips for free before its loop, so it reports `NOTHING_REDEEMABLE` for redemptions the chain accepts | S2 | open |
+| MK-108 | The quickstart npm renders does not compile, and gates the open on `meetsMinimum` instead of `viable` | S2 | open |
+| MK-109 | Documentation and shipped surface disagree: a documented `getPeg` that does not exist, a write count and precheck claim in the packaged README that are false, stale React docs and types, and missing React re-exports | S3 | open |
 
 ---
 
@@ -6778,6 +6787,220 @@ a maximum plus the ratio it lands at, or a function that takes the target ratio 
 them changes a published return value, which is why it is not in a warning release.
 `zz-borrowing-power-boundary.fork.test.ts` pins today's behaviour, so the change goes red there and
 names this entry.
+
+---
+
+## MK-101 · `previewRefinance` omits the new rate and the capacity reset, and capacity is documented as ratchet only
+
+**Class** S1 · **Status** open · **Found by an external audit of the published 0.3.0, re-read from
+the contract here before it was filed**
+
+**Ground truth.** `_refinance` sets the Trove's rate to the global rate, whatever it is:
+`vars.newRate = vars.interestRateManagerCached.interestRate()` (`BorrowerOperations.sol:1069`) and
+`setTroveInterestRate(_borrower, vars.newRate)` (`:1075`). It then sets
+`maxBorrowingCapacity = _calculateMaxBorrowingCapacity(getTroveColl(_borrower), vars.price)`
+(`:1077-1084`) **unconditionally**, at the current price. The adjust path is the only place the
+capacity is `min(current, recalculated)` (`:879-897`), so a refinance can raise the capacity when the
+price has risen and cut it when the price has fallen, with no collateral change.
+
+**SDK location.** `RefinancePreview` (`packages/core/src/math/previewRefinance.ts:52-80`) carries
+the fee, the principal and the ratios, and no field for the rate the Trove carries now, the rate it
+will carry, or the capacity after. The ratchet only claim is made in
+`packages/core/src/errors/index.ts:78` and `:106`, `packages/core/src/math/getBorrowingPower.ts:71-72`,
+`packages/core/src/math/previewAdjust.ts:59`, `packages/core/src/math/previewBorrow.ts:45`,
+`packages/react/src/hooks/reads.ts:72`, `docs/03-core-api.md:317-318`, `docs/04-react-api.md:59`,
+`docs/05-math-and-hints.md:120` and `docs/14-migration-0.2-to-0.3.md:113`, and in test comments
+(`obligations.fork.test.ts:40`, `preview-verdicts.test.ts:261`, `zz-findings.fork.test.ts:42`, `:273`).
+
+**Why S1.** The preview says `viable: true` and reports a fee. It does not say that the operation
+moves the Trove to a different rate, which is the one number a refinance decision turns on, or that
+it can cut the capacity every later borrow is gated on. Acting on it raises no error.
+
+**Evidence at registration: observed by the external audit with an uncommitted script**, so not yet
+citable as a measurement here: on a mainnet fork the preview returned `viable: true` while the
+refinance moved a Trove from 100 to 500 bps, and capacity went 69772 to 90704 to 54545 across two
+refinances at different prices. The instrument is committed in the wave that fixes it.
+
+---
+
+## MK-102 · The React read hooks keep the previous query's data and report it as a success
+
+**Class** S1 · **Status** open · **Found by an external audit that rendered the hooks**
+
+**Ground truth, the library rather than the contract.** `useMusdQuery` passes
+`placeholderData: keepPreviousData` (`packages/react/src/internal/useMusdQuery.ts:34`). In TanStack
+Query v5 placeholder data is served while a query has no data of its own, and a query whose key
+changed, or which is disabled, has none. A disabled query never fetches, so the placeholder stays.
+
+**What that produces.** A cleared amount keeps the verdict for the last amount typed, a wallet that
+disconnects keeps showing the previous account's Trove, and a switched account first renders the
+other account's position. `status` reads `success` throughout; only `isPlaceholderData` tells them
+apart, and no example in the repository reads it.
+
+**Why S1.** A dashboard or a form renders a plausible wrong number as current, with no error. Writes
+still precheck before sending, so the loss is in what a user decides from the screen.
+
+**Evidence at registration: observed by the external audit** with React Testing Library against a
+fork; the rendered tests are committed with the fix. MK-085 fixed the query KEY for absent legs and
+its comment states the empty input concern; the placeholder is how the concern survived that fix.
+
+---
+
+## MK-103 · Partial redemptions through `redeem()` cancel on almost any price move before inclusion
+
+**Class** S2 · **Status** open · **Supersedes MK-049's class and its mitigation**
+
+**Ground truth.** A partial is priced twice. `HintHelpers.getRedemptionHints` computes the resulting
+NICR from collateral less `maxRedeemableMUSD * DECIMAL_PRECISION / _price` at the price it was given
+(`HintHelpers.sol:143-160`). `_redeemCollateralFromTrove` computes it at the price when the
+transaction mines (`TroveManager.sol:1224-1230`, `:1287-1290`) and cancels the partial when
+`_partialRedemptionHintNICR < vars.newNICR` or `> vars.upperBoundNICR` (`:1299-1306`), where the
+upper bound differs from `newNICR` only by `calculateInterestOwed(trove.principal, interestRate,
+block.timestamp - 600, block.timestamp)` at the GLOBAL rate (`:1276-1285`). A cancelled first partial
+breaks the loop (`:392`) and, with nothing drawn, reverts the call (`:406-408`).
+
+So the hint must land inside a band whose relative width is about 600 seconds of interest on the
+principal, while any price move shifts both edges. A price rise lowers the collateral drawn, raises
+`newNICR` above a hint computed at the lower price, and cancels.
+
+**SDK location.** `packages/core/src/redemption/redeem.ts:185-195` passes the helper's NICR, which
+sits on the LOWER edge of that band at the read price, so there is no tolerance for a rise at all.
+`previewRedeem` reports the partial `viable` with no price condition.
+
+**Evidence at registration: observed by the external audit, uncommitted.** On a mainnet fork a half
+headroom partial sent through `redeem()` reverted with `TroveManager: Unable to redeem any amount`
+after a price change of +$0.01, +$2 and -$2 between the send and the mine, and succeeded unchanged.
+Over 120 consecutive live mainnet blocks the audit counted 46 flat, 33 up and 41 down, about 44% of
+one block windows inside the band its example tolerated. `scripts/oracle-moves.ts` is committed in
+this wave as the instrument for the price side.
+
+**Why MK-049's retry is not a mitigation.** Each attempt faces a fresh block move, and a failed
+attempt spends gas. At the measured rate most attempts revert.
+
+---
+
+## MK-104 · `redeem()` refuses the `nextViableAmount` its own preview reported a block earlier
+
+**Class** S2 · **Status** open
+
+**Ground truth.** Consuming the first eligible Trove whole needs only
+`amount >= _getTotalDebt(_borrower) - MUSD_GAS_COMPENSATION` at execution
+(`TroveManager.sol:1218-1221`, `:1252`), where the debt is read after `_updateTroveInterest` (`:366`).
+
+**SDK location.** `evaluateRedeem` requires `remaining >= trove.netDebt + marginFor(trove)` for a
+whole consumption (`packages/core/src/math/previewRedeem.ts:293`), with a 900 second margin
+(`:234`). `previewRedeem` reports `nextViableAmount = netDebt + margin`. `redeem()` re-runs the same
+preview before sending (`packages/core/src/redemption/redeem.ts:172`), one block or more later, against
+a net debt that has grown, and adds the full margin again. The advertised figure is therefore short
+by the accrual since it was read, and `redeem()` throws `RedemptionBreachesDebtFloor` for an amount
+the chain accepts.
+
+**Evidence at registration: observed by the external audit, uncommitted.** Reading the figure and
+calling `redeem()` at the same instant succeeded; after 4, 60 and 300 seconds `redeem()` threw while
+`simulateContract` of the same amount succeeded. The docstring promises about ten minutes.
+
+---
+
+## MK-105 · Protocol reverts outside the simulate path arrive untyped
+
+**Class** S2 · **Status** open
+
+**Ground truth.** `PriceFeed.fetchPrice` reverts with `PriceFeed: Oracle is stale.` when the round is
+older than 60 seconds (`PriceFeed.sol:14`, `:51-54`). Every preview, read and write reads the price.
+
+**SDK location.** `simulateAndSend` maps what it catches through `mapRevert`
+(`packages/core/src/internal/write.ts:196-208` and its `catch`), but the reads that run before it do
+not: `effectiveBorrowingFee` (`packages/core/src/trove/index.ts:87`) and `currentPosition` (`:65`)
+among them, and every preview and read function. `previewOpen` is documented as "Non-throwing: it
+returns a verdict and numbers, never an error" (`packages/core/src/math/previewOpen.ts:101`); the
+core README says every protocol revert maps to a `MusdError` (`packages/core/README.md:80`); the React
+write hooks type `error` as `MusdError | null`.
+
+**Evidence at registration: observed by the external audit, uncommitted.** With a stale oracle shim,
+`previewOpen`, `openTrove` and `getTrove` each threw a viem `ContractFunctionExecutionError` that is
+not `instanceof MusdError` and has no `code`.
+
+---
+
+## MK-106 · An omitted `account` silently means "not fee exempt", and the React hooks never supply one
+
+**Class** S2 · **Status** open
+
+**Ground truth.** The borrowing fee is skipped for an exempt account
+(`BorrowerOperations.sol:637-643`), and the floor is checked against the draw plus whatever fee is
+charged (`:645`). The exempt set on mainnet is not empty (Q2).
+
+**SDK location.** `previewOpen` and `getBorrowingPower` take an optional `account` and assume not
+exempt without it, which is documented. `useBorrowingPower` forwards `account` only when the caller
+passes one (`packages/react/src/hooks/reads.ts`), though the hook runs inside a wagmi context that
+knows the connected address. The landing snippet omitted it until 0.3.1.
+
+**Consequence.** For an exempt caller the open preview can say `viable` for a draw the floor refuses,
+and the calculator understates the maximum. Loud, and confined to the exempt cohort.
+
+---
+
+## MK-107 · `previewRedeem` charges `maxIterations` for Troves the contract skips for free
+
+**Class** S2 · **Status** open
+
+**Ground truth.** When the first redemption hint is not valid, `redeemCollateral` walks up from the
+last Trove past every Trove below MCR BEFORE its loop, without touching `_maxIterations`
+(`TroveManager.sol:338-350`). `_maxIterations` is decremented only inside the loop (`:360-365`).
+`HintHelpers.getRedemptionHints` does the same (`HintHelpers.sol:98-103` before `:113-118`).
+
+**SDK location.** The walk in `previewRedeem` counts every Trove it visits, including the sub-MCR
+ones at the bottom (`packages/core/src/math/previewRedeem.ts:367`).
+
+**Evidence at registration: observed by the external audit on live testnet, read only, uncommitted.**
+With three sub-MCR Troves at the bottom, `maxIterations` of 1 to 4 made `previewRedeem` report
+`NOTHING_REDEEMABLE` while `simulateContract` of the same redemption succeeded. `redeem()` itself
+still sends in that case; a UI gated on the preview blocks a valid redemption.
+
+---
+
+## MK-108 · The quickstart npm renders does not compile, and gates the open on the wrong field
+
+**Class** S2 · **Status** open
+
+**SDK location.** `packages/core/README.md:52-78`, which ships in the tarball and is what npm renders.
+It uses `account.address` (`:63`) and `borrower` (`:77`), neither declared, and `parseBtc` and
+`parseMusd`, never imported. It opens when `preview.meetsMinimum` (`:68`), which is only the debt
+floor; `viable` is the verdict that covers the ratio and system gates (`previewOpen.ts:45-58`).
+
+**Evidence at registration: observed by the external audit** by pasting the block into a TypeScript
+file against the published package. A reader who fixes the compile errors and keeps the gate sends
+opens the ratio gates refuse.
+
+---
+
+## MK-109 · Documentation and the shipped surface disagree
+
+**Class** S3 · **Status** open
+
+Each item re-read in this wave:
+
+- `docs/03-core-api.md:744` shows `await musd.getPeg()`. It does not exist, and
+  `packages/core/src/read/system.ts:133` says it is intentionally not implemented.
+- `packages/core/README.md:106-108` says "Ten of eleven exposed writes have a preview ... and each
+  prechecks the same conditions before sending". `MusdClient` exposes twelve writes and nine
+  previews; `openTrove` prechecks only the fee cap, the floor and an existing Trove, and `refinance`
+  prechecks nothing (`packages/core/src/trove/index.ts`). MK-061 corrected the root README; the
+  packaged one kept the claim.
+- `packages/react/README.md:85-89` lists the hooks from 0.1.0 and omits six that ship. `:46` says the
+  package re-exports `@musd-kit/core`; it re-exports only some error classes and types, missing
+  `SystemRatioBelowCCR`, `CollateralWithdrawalBlocked`, `ExceedsBorrowingCapacity`,
+  `RedemptionBreachesDebtFloor`, `DeploymentVerificationFailed` and `InvalidAddressOverride`, which its
+  hooks can surface. Its usage example calls `parseBtc` and `parseMusd` without importing them.
+- `packages/react/src/hooks/writes.ts:35` and `:200` describe a `fee` field on `RedeemResult` that
+  MK-014 removed.
+- `packages/core/src/math/compute.ts:120` says pending redistribution collateral is not folded into
+  `collateral`; `getEntireDebtAndColl` folds it in (`TroveManager.sol:799`).
+- `docs/03-core-api.md:676` says close has four gates; MK-074 made it five.
+- `docs/09-review-and-validated-surface.md:203` says the React package is not measured by the coverage
+  gate at all; `vitest.config.mts:82` has included it since MK-087.
+- `examples/open-and-manage/README.md:18` says the open is guarded on `meetsMinimum`; the code has
+  guarded on `viable` since MK-005.
 
 ---
 

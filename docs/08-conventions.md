@@ -97,6 +97,24 @@ correctness.
 - **CI must be green to merge** (lint + typecheck + unit + the relevant fork gate).
 - **Changesets** (or equivalent) for versioning; every user-facing change has a
   changelog entry.
+- **Commit identity, a standing rule since 2026-09-13.** Every commit is authored AND committed as
+  `Cayvox Labs <info@cayvox.com>` and carries a Developer Certificate of Origin sign-off
+  (`git commit -s`, which writes `Signed-off-by: Cayvox Labs <info@cayvox.com>`). **Commits carry
+  no AI attribution of any kind**: no `Co-Authored-By` trailer naming a model or a tool, and no
+  "generated with" line. Pull request titles and bodies follow the same rule, because a merge can
+  carry either into history. The identity is the one GitHub already records for this account's
+  merge commits, so a commit made this way is attributed to `cayvox`.
+
+  **History is not rewritten to apply it.** Thirty commits on `main` carry an earlier AI trailer,
+  and two of them, `749730b` (tagged `v0.3.0`) and `5b731b2` (tagged `v0.3.1`), are the commits the
+  published npm provenance attestations name. Rewriting them would change those hashes and break
+  the chain that proves the packages came from this repository. The rule applies forward only.
+
+  **Signed off, not cryptographically signed.** `cayvox` has no SSH or GPG signing key registered on
+  GitHub (checked 2026-09-13 through `api.github.com/users/cayvox/ssh_signing_keys` and
+  `/gpg_keys`), so a commit cannot carry a signature GitHub would verify as `cayvox`. Registering a
+  signing key on the account is what it would take; signing with a key registered to a different
+  account would verify as that account, which is the opposite of this rule.
 
 ---
 
