@@ -1,6 +1,7 @@
 import type { Address } from 'viem'
 import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients'
 import { CCR, MCR, MUSD_GAS_COMPENSATION } from '../constants'
+import { withTypedErrors } from '../errors/mapRevert'
 import { TroveStatus } from '../read/types'
 import { computeICR, computeLiquidationPrice } from './compute'
 import type { MathDeps } from './deps'
@@ -98,7 +99,10 @@ export interface OpenPreview {
 }
 
 /**
- * Preview opening a Trove. Non-throwing: it returns a verdict and numbers, never an error.
+ * Preview opening a Trove. A refusal is a verdict with reasons, never an error: every gate the
+ * contract would apply comes back in `reasons`. What it does throw is a failure to READ the state
+ * the verdict needs, and that arrives typed (MK-105): `OracleStale` when the price feed refuses to
+ * answer (`PriceFeed.sol:51-54`), and `ContractCallFailed` for a transport failure.
  *
  * Mirrors `_openTrove` (`BorrowerOperations.sol:631-665`) rather than approximating it:
  *
@@ -128,6 +132,13 @@ export interface OpenPreview {
  * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewOpen(deps: MathDeps, params: PreviewOpenParams): Promise<OpenPreview> {
+  return withTypedErrors(() => previewOpenUnchecked(deps, params), { operation: 'previewOpen' })
+}
+
+async function previewOpenUnchecked(
+  deps: MathDeps,
+  params: PreviewOpenParams,
+): Promise<OpenPreview> {
   const { publicClient, addresses } = deps
   const { collateral, debt, account } = params
 

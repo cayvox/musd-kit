@@ -82,6 +82,7 @@ const marginOf = (principal: bigint, rateBps = RATE_BPS) =>
 const G1 = marginOf(ENTIRE1)
 
 const base = {
+  globalInterestRateBps: RATE_BPS,
   musdBalance: 1_000_000n * MUSD,
   minNetDebt: M,
   tcr: 2n * MUSD,
@@ -93,6 +94,8 @@ const base = {
       principal: ENTIRE1,
       netDebt: D1,
       interestRateBps: RATE_BPS,
+      collateral: 10n ** 21n,
+      interestOwed: 0n,
     },
   ],
 }
@@ -162,6 +165,8 @@ describe('MK-048, the gap the debt floor creates', () => {
           principal: ENTIRE1,
           netDebt: D1,
           interestRateBps: RATE_BPS,
+          collateral: 10n ** 21n,
+          interestOwed: 0n,
         },
         {
           owner: '0xbbb' as `0x${string}`,
@@ -169,6 +174,8 @@ describe('MK-048, the gap the debt floor creates', () => {
           principal: ENTIRE1,
           netDebt: D1,
           interestRateBps: RATE_BPS,
+          collateral: 10n ** 21n,
+          interestOwed: 0n,
         },
       ],
     }
@@ -209,6 +216,8 @@ describe('MK-048, the gap the debt floor creates', () => {
           principal: entire,
           netDebt: M,
           interestRateBps: RATE_BPS,
+          collateral: 10n ** 21n,
+          interestOwed: 0n,
         },
       ],
     }
@@ -253,6 +262,8 @@ describe('MK-048, the precheck as a typed throw rather than a revert', () => {
       getTCR: 2n * MUSD,
       balanceOf: 1_000_000n * MUSD,
       getTroveInterestRate: Number(RATE_BPS),
+      // MK-103. The global rate the contract's partial hint band uses.
+      interestRate: Number(RATE_BPS),
       getLast: '0x00000000000000000000000000000000000000aa',
       getPrev: ZERO,
       getCurrentICR: 2n * MUSD,
@@ -338,6 +349,8 @@ describe('MK-088, MK-089, the accrual margin is sized per Trove and on the princ
     principal: PRINCIPAL,
     netDebt: NET,
     interestRateBps: rateBps,
+    collateral: 10n ** 21n,
+    interestOwed: 0n,
   })
 
   it('the base is the PRINCIPAL, not the entire debt', () => {

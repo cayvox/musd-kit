@@ -1,8 +1,14 @@
 import type { Address } from 'viem'
-import { borrowerOperationsAbi, priceFeedAbi, troveManagerAbi } from '../clients'
+import {
+  borrowerOperationsAbi,
+  interestRateManagerAbi,
+  priceFeedAbi,
+  troveManagerAbi,
+} from '../clients'
 import { CCR, MCR } from '../constants'
+import { withTypedErrors } from '../errors/mapRevert'
 import { TroveStatus } from '../read/types'
-import { computeICR, netDebtOf, troveAmounts } from './compute'
+import { computeICR, maxBorrowingCapacityAt, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import { effectiveBorrowingFee } from './fee'
 
@@ -28,6 +34,13 @@ import { effectiveBorrowingFee } from './fee'
  *      `TroveManager.sol:529-530`), so it begins accruing interest immediately and it moves
  *      the Trove's sort key.
  *   6. The result must satisfy `ICR >= MCR` and a system `TCR >= CCR` (`:1054-1059`).
+ *   7. **The Trove moves to the GLOBAL rate, whatever it is** (MK-101):
+ *      `newRate = interestRateManager.interestRate()` (`:1069`), `setTroveInterestRate` (`:1075`).
+ *      That can be higher than the Trove's current rate. A refinance is not a rate cut by name.
+ *   8. **`maxBorrowingCapacity` is RESET from the current price, unconditionally** (MK-101):
+ *      `_calculateMaxBorrowingCapacity(getTroveColl, price)` (`:1077-1084`). It is not the adjust
+ *      path's `min(current, recalculated)` (`:879-897`), so a refinance after a price fall cuts the
+ *      capacity every later borrow is gated on, and after a rise it raises it.
  *
  * `refinancingFeePercentage` is read from the chain on every preview rather than hardcoded.
  * It is governable, and a hardcoded value is a stale fact waiting to happen.
@@ -73,6 +86,24 @@ export interface RefinancePreview {
   resultingIcr: bigint
   /** The system TCR the contract checks, which already includes the capitalized fee. */
   resultingTcr: bigint
+  /** `getTroveInterestRate(owner)`: the rate the Trove carries now, in basis points (MK-101). */
+  currentInterestRateBps: number
+  /**
+   * `interestRateManager.interestRate()`: the rate the Trove WILL carry after the refinance, in
+   * basis points (`BorrowerOperations.sol:1069`, `:1075`). **It can be higher than
+   * `currentInterestRateBps`**, in which case the refinance raises the rate AND charges `fee`.
+   * The preview does not refuse that, because the contract does not; it reports it (MK-101).
+   */
+  resultingInterestRateBps: number
+  /** `getTroveMaxBorrowingCapacity(owner)`, the capacity before the refinance (MK-101). */
+  currentCapacity: bigint
+  /**
+   * The capacity the refinance WRITES: `coll * price / (110 * 1e16)` at the current price
+   * (`BorrowerOperations.sol:1077-1084`), unconditionally. **Lower than `currentCapacity` when the
+   * price has fallen since the capacity was last set**, which cuts every later borrow; higher
+   * when it has risen (MK-101).
+   */
+  resultingCapacity: bigint
   /** Whether the system is in Recovery Mode right now. */
   isRecoveryMode: boolean
   /** BTC/USD used for every number above. */
@@ -95,6 +126,12 @@ export interface EvaluateRefinanceInput {
   price: bigint
   systemColl: bigint
   systemDebt: bigint
+  /** `getTroveInterestRate(owner)`, in basis points (MK-101). */
+  currentInterestRateBps: number
+  /** `interestRateManager.interestRate()`, the rate a refinance moves the Trove to (MK-101). */
+  globalInterestRateBps: number
+  /** `getTroveMaxBorrowingCapacity(owner)` (MK-101). */
+  currentCapacity: bigint
 }
 
 /**
@@ -114,6 +151,9 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
     price,
     systemColl,
     systemDebt,
+    currentInterestRateBps,
+    globalInterestRateBps,
+    currentCapacity,
   } = input
 
   const entireDebt = principal + interestOwed
@@ -164,6 +204,12 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
     resultingEntireDebt,
     resultingIcr,
     resultingTcr,
+    currentInterestRateBps,
+    resultingInterestRateBps: globalInterestRateBps,
+    currentCapacity,
+    // `getTroveColl` after `updateSystemAndTroveInterest` has applied pending rewards, which is
+    // the `collateral` `getEntireDebtAndColl` returns (`TroveManager.sol:796-801`).
+    resultingCapacity: maxBorrowingCapacityAt(collateral, price),
     isRecoveryMode,
     price,
   }
@@ -178,6 +224,15 @@ export function evaluateRefinance(input: EvaluateRefinanceInput): RefinancePrevi
  * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewRefinance(deps: MathDeps, owner: Address): Promise<RefinancePreview> {
+  return withTypedErrors(() => previewRefinanceUnchecked(deps, owner), {
+    operation: 'previewRefinance',
+  })
+}
+
+async function previewRefinanceUnchecked(
+  deps: MathDeps,
+  owner: Address,
+): Promise<RefinancePreview> {
   const { publicClient, addresses } = deps
   const price = await publicClient.readContract({
     address: addresses.priceFeed,
@@ -186,7 +241,17 @@ export async function previewRefinance(deps: MathDeps, owner: Address): Promise<
   })
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
 
-  const [status, entire, isRecoveryMode, systemColl, systemDebt, percentage] = await Promise.all([
+  const [
+    status,
+    entire,
+    isRecoveryMode,
+    systemColl,
+    systemDebt,
+    percentage,
+    currentRate,
+    globalRate,
+    currentCapacity,
+  ] = await Promise.all([
     publicClient.readContract({ ...tm, functionName: 'getTroveStatus', args: [owner] }),
     publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [owner] }),
     publicClient.readContract({ ...tm, functionName: 'checkRecoveryMode', args: [price] }),
@@ -197,6 +262,18 @@ export async function previewRefinance(deps: MathDeps, owner: Address): Promise<
       address: addresses.borrowerOperations,
       abi: borrowerOperationsAbi,
       functionName: 'refinancingFeePercentage',
+    }),
+    // MK-101. The two numbers a refinance decision turns on, which the preview did not carry.
+    publicClient.readContract({ ...tm, functionName: 'getTroveInterestRate', args: [owner] }),
+    publicClient.readContract({
+      address: addresses.interestRateManager,
+      abi: interestRateManagerAbi,
+      functionName: 'interestRate',
+    }),
+    publicClient.readContract({
+      ...tm,
+      functionName: 'getTroveMaxBorrowingCapacity',
+      args: [owner],
     }),
   ])
 
@@ -226,5 +303,8 @@ export async function previewRefinance(deps: MathDeps, owner: Address): Promise<
     price,
     systemColl,
     systemDebt,
+    currentInterestRateBps: Number(currentRate),
+    globalInterestRateBps: Number(globalRate),
+    currentCapacity,
   })
 }

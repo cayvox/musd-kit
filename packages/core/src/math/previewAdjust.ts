@@ -1,6 +1,7 @@
 import type { Address } from 'viem'
 import { borrowerOperationsAbi, musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
 import { CCR, MCR } from '../constants'
+import { withTypedErrors } from '../errors/mapRevert'
 import { TroveStatus } from '../read/types'
 import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
@@ -56,7 +57,10 @@ import { isBorrowingFeeCharged } from './fee'
  * a sibling of it. `previewBorrow` re-exports this type, so the public name is unchanged.
  */
 export interface BorrowingCapacity {
-  /** `maxBorrowingCapacity` as stored on chain. Fixed at open, ratchets only downward. */
+  /**
+   * `maxBorrowingCapacity` as stored on chain. Set at open, lowered on a collateral decrease, and
+   * reset from the current price by every refinance, up or down (MK-101).
+   */
   capacity: bigint
   /** The Trove's live entire debt, principal plus accrued interest, as the gate sees it. */
   entireDebt: bigint
@@ -70,7 +74,15 @@ export interface BorrowingCapacity {
    * OPENING price. A draw that consumes this figure in full therefore lands the position at
    * `ICR == MCR`, where one second of accrued interest is enough to make the same call revert
    * with `BorrowerOps: An operation that would result in ICR < MCR is not permitted`. Observed
-   * on a fork at 1s, 60s, 600s and 3600s.
+   * on a fork at 1s, 60s, 600s and 3600s, and pinned by `zz-limit-figures.fork.test.ts`: the exact
+   * figure sent one second after the read is refused with `ExceedsBorrowingCapacity`, before gas.
+   *
+   * **Why it has no recommended twin, where `getBorrowingPower` does (MK-100).** `_adjustTrove`
+   * brings interest current before any gate (`BorrowerOperations.sol:769`), so this exact figure is
+   * REFUSED a block later rather than accepted at the threshold; the refusal is loud. An open
+   * evaluates its gates with no accrual (`:648-657`), which is why the open time ceiling was
+   * accepted and needed a margin. A draw just UNDER this figure is still accepted near MCR, which is
+   * the reason to size draws with `previewBorrow` and show its `resultingIcr`.
    *
    * Use it to render headroom, not to size a draw. **To size a draw, ask
    * {@link previewBorrow}**, which evaluates the ratio gate as well as this one and correctly
@@ -178,6 +190,12 @@ export interface AdjustPreview {
    * the price is zero, or when the gate is already satisfied.
    *
    * This is the number a rescue needs and the reason a partial top-up is refused.
+   *
+   * **A floor at this block, not a rescue amount** (MK-100 per figure). It clears the gate against
+   * the debt READ here, and `_adjustTrove` accrues interest before its gates
+   * (`BorrowerOperations.sol:769`), so a top-up of exactly this much is refused a block later with
+   * `InsufficientCollateral` and the Trove stays liquidatable (`zz-limit-figures.fork.test.ts`). A
+   * rescued Trove that did clear it would sit on MCR. Add a margin above it.
    */
   minimumCollateralToClearIcr: bigint | null
   /** The system TCR after this adjustment. Reported in both modes; enforced only in normal. */
@@ -373,6 +391,15 @@ export async function previewAdjustTrove(
   deps: MathDeps,
   params: PreviewAdjustParams,
 ): Promise<AdjustPreview> {
+  return withTypedErrors(() => previewAdjustTroveUnchecked(deps, params), {
+    operation: 'previewAdjustTrove',
+  })
+}
+
+async function previewAdjustTroveUnchecked(
+  deps: MathDeps,
+  params: PreviewAdjustParams,
+): Promise<AdjustPreview> {
   const { publicClient, addresses } = deps
   const owner = params.owner
   const addCollateral = params.addCollateral ?? 0n
@@ -454,7 +481,16 @@ export async function previewAdjustTrove(
 }
 
 /** Preview withdrawing collateral. The adjust path with only a withdrawal (`:225-240`). */
-export function previewWithdrawCollateral(
+export async function previewWithdrawCollateral(
+  deps: MathDeps,
+  params: { owner: Address; amount: bigint },
+): Promise<AdjustPreview> {
+  return withTypedErrors(() => previewWithdrawCollateralUnchecked(deps, params), {
+    operation: 'previewWithdrawCollateral',
+  })
+}
+
+function previewWithdrawCollateralUnchecked(
   deps: MathDeps,
   params: { owner: Address; amount: bigint },
 ): Promise<AdjustPreview> {
@@ -509,6 +545,15 @@ export interface MaxWithdrawable {
  * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function maxWithdrawableCollateral(
+  deps: MathDeps,
+  owner: Address,
+): Promise<MaxWithdrawable> {
+  return withTypedErrors(() => maxWithdrawableCollateralUnchecked(deps, owner), {
+    operation: 'maxWithdrawableCollateral',
+  })
+}
+
+async function maxWithdrawableCollateralUnchecked(
   deps: MathDeps,
   owner: Address,
 ): Promise<MaxWithdrawable> {

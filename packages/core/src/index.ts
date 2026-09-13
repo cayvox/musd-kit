@@ -74,7 +74,8 @@ export {
   type Hints,
 } from './hints'
 
-// Preview math (the only client-side compute, preview side; non-throwing).
+// Preview math (the only client-side compute, preview side). A refusal is a verdict, not an
+// error; a failed read still throws, typed (MK-105).
 export {
   computeICR,
   computeLiquidationPrice,
@@ -83,6 +84,7 @@ export {
   accruedInterest,
   troveAmounts,
   netDebtOf,
+  maxBorrowingCapacityAt,
   isTroveLiquidatable,
   previewOpen,
   getBorrowingPower,
@@ -123,6 +125,11 @@ export {
   type RedeemBlockReason,
   type EvaluateRedeemInput,
   type EligibleTrove,
+  partialRedemptionBand,
+  REDEMPTION_PRICE_MOVE_TOLERANCE,
+  REDEMPTION_ADVICE_MARGIN_SECONDS,
+  REDEMPTION_SEND_MARGIN_SECONDS,
+  type PartialRedemption,
   previewClose,
   evaluateClose,
   type ClosePreview,
@@ -138,6 +145,10 @@ export {
   estimateCollateralDrawn,
   exceedsRateCap,
   type GetBorrowingPowerParams,
+  type BorrowingPower,
+  type BorrowingPowerMargin,
+  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
+  BORROWING_POWER_PRICE_MOVE_BPS,
 } from './math'
 
 // Lifecycle write types (the methods live on the client; require a walletClient).
@@ -180,6 +191,7 @@ export {
   SystemRatioBelowCCR,
   CollateralWithdrawalBlocked,
   RedemptionBreachesDebtFloor,
+  RedemptionPriceFragile,
   RecoveryModeRestriction,
   RepayExceedsDebt,
   StaleHint,
@@ -188,6 +200,7 @@ export {
   NothingToLiquidate,
   RedemptionFailed,
   Unauthorized,
+  OracleStale,
   // infrastructure
   MissingWalletClient,
   ContractCallFailed,

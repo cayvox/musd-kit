@@ -119,13 +119,33 @@ export default defineConfig({
        *
        * History of the core-only figures, kept because the ratchet's argument is its history:
        * statements 95.32 at wiring, 98.20 after the P4 S2 sweep, 98.62 after P13.
+       *
+       * **P21 raised both floors, and gave the React package one of its own** (MK-102, MK-109). The
+       * table above was the finding: every unrendered hook was an uncovered function. The rendered
+       * chain free tests (`hooks-rendered.test.ts`) now reach every hook, so the React figure is
+       * measured on its own glob, where a React regression cannot hide inside the much larger core.
+       * Same suite, same fork block 15043414, one run:
+       *
+       *   both packages   statements 98.65 · branches 93.86 · functions 100 · lines 98.65
+       *   react/src only  statements 99.12 · branches 95.68 · functions 100 · lines 99.12 (337 of 340)
+       *
+       * The React line floor has no slack at 99: one uncovered line is 98.82. That is the honest
+       * number rounded down, which is the rule; if a line is found to flicker between runs, the fix is
+       * to make its test deterministic, not to lower the floor.
        */
       thresholds: {
-        // Measured 94.87 / 92.36 / 88.18 / 94.87 over BOTH packages, rounded down.
-        lines: 94,
-        functions: 88,
-        branches: 92,
-        statements: 94,
+        // Measured 98.65 / 93.86 / 100 / 98.65 over BOTH packages, rounded down.
+        lines: 98,
+        functions: 100,
+        branches: 93,
+        statements: 98,
+        // Measured 99.12 / 95.68 / 100 / 99.12 over `packages/react/src` alone, rounded down.
+        'packages/react/src/**/*.ts': {
+          lines: 99,
+          functions: 100,
+          branches: 95,
+          statements: 99,
+        },
       },
     },
   },

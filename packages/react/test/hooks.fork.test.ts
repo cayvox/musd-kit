@@ -19,6 +19,7 @@ import { recordMitigation } from '../../core/test/harness/mitigationLog'
 import { openTroveRaw, testAccount } from '../../core/test/harness/openTroveRaw'
 import {
   useBorrowingPower,
+  useBorrowingPowerDetail,
   useCloseTrove,
   useHealthFactor,
   useLiquidationPrice,
@@ -179,13 +180,24 @@ describe('@musd-kit/react, read hooks (fork)', () => {
     expect(troveQueries.length).toBe(1)
   }, 60_000)
 
-  it('useBorrowingPower returns the same value as core.getBorrowingPower (preview, no position)', async () => {
+  it('useBorrowingPower returns core.getBorrowingPower RECOMMENDED, not the ceiling (MK-100)', async () => {
     const qc = newQueryClient()
     const wrapper = makeWrapper(makeConfig(rpcUrl, [holder.address]), qc)
     const collateral = (5n * BTC) / 100n
-    const { result } = renderHook(() => useBorrowingPower({ collateral }), { wrapper })
-    await waitFor(() => expect(result.current.isLoading).toBe(false), { timeout: 30_000 })
-    expect(result.current.data).toBe(await coreClient.getBorrowingPower({ collateral }))
+    const { result } = renderHook(
+      () => ({
+        value: useBorrowingPower({ collateral }),
+        detail: useBorrowingPowerDetail({ collateral }),
+      }),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.detail.isLoading).toBe(false), { timeout: 30_000 })
+    const core = await coreClient.getBorrowingPower({ collateral })
+    expect(core.recommended, 'fixture: a margin must exist to tell the two apart').toBeLessThan(
+      core.ceiling,
+    )
+    expect(result.current.value.data).toBe(core.recommended)
+    expect(result.current.detail.data?.ceiling).toBe(core.ceiling)
   }, 60_000)
 
   it('useTrove refetches on a new block (block-watching)', async () => {
@@ -393,6 +405,13 @@ describe('@musd-kit/react, typed errors + provider guard', () => {
 
   it('a write with no connected wallet surfaces MissingWalletClient (not a render throw)', async () => {
     // A config with the connector present but NOT connected → no walletClient.
+    //
+    // The earlier tests in this file CONNECT the mock connector, and wagmi persists that in the DOM's
+    // localStorage, so a fresh config would briefly REconnect with the stored address before settling
+    // back to disconnected. Since MK-102 a write hook resets when its account changes, so that
+    // transient cleared the error this test waits for, and the test passed alone and failed in the
+    // file. The state it describes is "never connected", so the storage is cleared to make it so.
+    window.localStorage.clear()
     const wrapper = makeWrapper(makeConfig(rpcUrl, [holder.address]), newQueryClient())
     const { result } = renderHook(() => useOpenTrove(), { wrapper })
     act(() => result.current.openTrove({ collateral: BTC, debt: 5_000n * MUSD }))

@@ -131,6 +131,7 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
       getEntireSystemColl: 5_000n * 10n ** 18n,
       getEntireSystemDebt: 100_000n * 10n ** 18n,
       fetchPrice: PRICE,
+      interestRate: 100n,
     }
     const publicClient = {
       multicall: async ({ contracts }: { contracts: { functionName: string }[] }) => {
@@ -171,7 +172,8 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
   it('costs a handful of calls, not one per binary search step', async () => {
     const { deps, feeCalls, multicalls } = mathDeps()
     const answer = await getBorrowingPower(deps, { collateral: 10n ** 18n })
-    expect(answer).toBeGreaterThan(0n)
+    expect(answer.ceiling).toBeGreaterThan(0n)
+    expect(answer.recommended).toBeGreaterThan(0n)
     // The old implementation needed roughly 77 getBorrowingFee calls for one BTC. ONE here
     // since MK-092: the confirmation figure is kept and reused for the minNetDebt floor check
     // rather than being asked for a second time with the same argument.
@@ -182,7 +184,7 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
   it('the answer is exactly the boundary: feasible, and one wei more is not', async () => {
     const { deps } = mathDeps()
     const coll = 10n ** 18n
-    const d = await getBorrowingPower(deps, { collateral: coll })
+    const { ceiling: d } = await getBorrowingPower(deps, { collateral: coll })
     const icr = (draw: bigint) => {
       const entireDebt = draw + (RATE * draw) / PRECISION + 200n * 10n ** 18n
       return (coll * PRICE) / entireDebt
@@ -194,6 +196,9 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
   it('returns 0 when the collateral cannot reach the debt floor at all', async () => {
     const { deps } = mathDeps()
     // Dust: the ICR cap is below the 200 gas reserve, so no open exists.
-    await expect(getBorrowingPower(deps, { collateral: 1n })).resolves.toBe(0n)
+    await expect(getBorrowingPower(deps, { collateral: 1n })).resolves.toMatchObject({
+      ceiling: 0n,
+      recommended: 0n,
+    })
   })
 })

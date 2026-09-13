@@ -2,6 +2,7 @@ import type { Address, PublicClient, WalletClient } from 'viem'
 import { type MusdAddresses, getAddresses } from '../addresses'
 import { type MusdContracts, createContracts, governableVariablesAbi } from '../clients'
 import { FIXED_CONSTANTS, type FixedConstants } from '../constants'
+import { withTypedErrors } from '../errors/mapRevert'
 import {
   type ComputeHintsParams,
   type ComputeNICRParams,
@@ -14,6 +15,7 @@ import {
   type AdjustPreview,
   type BorrowPreview,
   type BorrowingCapacity,
+  type BorrowingPower,
   type ClosePreview,
   type ComputeEntireDebtParams,
   type ComputeICRParams,
@@ -209,7 +211,7 @@ export interface MusdClient {
   /** The insertion-hint ritual → `{ upperHint, lowerHint, nicr }` for a position of the given shape. */
   computeHints(params: ComputeHintsParams): Promise<Hints>
 
-  // --- preview math (see `math/`; preview side, non-throwing) ---
+  // --- preview math (see `math/`; a refusal is a verdict, a failed read throws typed, MK-105) ---
   /** `(collateral × price) / entireDebt` (== contract `computeCR`). Pure. */
   computeICR(params: ComputeICRParams): bigint
   /** Price at which a position hits MCR = `(MCR × entireDebt) / collateral`. Pure. */
@@ -248,15 +250,14 @@ export interface MusdClient {
   /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
   getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
   /**
-   * Largest valid draw for an OPEN (ICR ≥ binding ratio, netDebt ≥ minNetDebt).
-   *
-   * **WARNING: no safety margin. Do not open a Trove at this number (MK-100).** In normal mode it
-   * opens the position at exactly the 110% minimum ratio, and interest pushes it below 110% within
-   * seconds, where anyone can liquidate it and take all of the collateral. You must apply your own
-   * buffer, and check the ratio you would open at with `previewOpen` before sending. See
-   * `getBorrowingPower` for the Recovery Mode and system ratio cases.
+   * How much a Trove opened now can borrow, as two named figures (MK-100): `ceiling`, the largest
+   * draw the contract accepts with NO margin, which in normal mode opens at exactly the 110%
+   * liquidation threshold, and `recommended`, the largest draw that still clears every open gate
+   * after a measured price move and interest window, reported in `margin`. **Offer `recommended`;
+   * never open at `ceiling`.** An open time calculator only; for an existing Trove use
+   * `previewBorrow`.
    */
-  getBorrowingPower(params: GetBorrowingPowerParams): Promise<bigint>
+  getBorrowingPower(params: GetBorrowingPowerParams): Promise<BorrowingPower>
 
   // --- lifecycle writes (see `trove/`; require a walletClient; simulate-before-send) ---
   /** `openTrove(debt, hints)` payable, opens a Trove with hints absorbed. */
@@ -314,7 +315,12 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
 
   function verifyDeployment(): Promise<void> {
     if (!verification) {
-      verification = runVerifyDeployment(publicClient, addresses).catch((error: unknown) => {
+      // Typed HERE, on the memoized promise, rather than per call at the client surface (MK-105):
+      // wrapping each call would hand concurrent callers different promises and break the one
+      // batch they are meant to share.
+      verification = withTypedErrors(() => runVerifyDeployment(publicClient, addresses), {
+        operation: 'verifyDeployment',
+      }).catch((error: unknown) => {
         verification = undefined
         throw error
       })
@@ -403,43 +409,81 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     addresses,
     contracts,
     fixed: FIXED_CONSTANTS,
-    getConstants,
+    getConstants: () => withTypedErrors(() => getConstants(), { operation: 'getConstants' }),
     invalidateConstants,
-    getBorrowingFee,
+    getBorrowingFee: (debt) =>
+      withTypedErrors(() => getBorrowingFee(debt), { operation: 'getBorrowingFee' }),
     verifyDeployment,
-    getTrove: (address) => getTrove(readDeps, address),
-    getSystemState: () => getSystemState(readDeps),
-    isLiquidatable: (address) => isLiquidatable(readDeps, address),
-    getOraclePrice: () => getOraclePrice(readDeps),
-    balanceOf: (address) => balanceOf(readDeps, address),
+    getTrove: (address) =>
+      withTypedErrors(() => getTrove(readDeps, address), { operation: 'getTrove' }),
+    getSystemState: () =>
+      withTypedErrors(() => getSystemState(readDeps), { operation: 'getSystemState' }),
+    isLiquidatable: (address) =>
+      withTypedErrors(() => isLiquidatable(readDeps, address), { operation: 'isLiquidatable' }),
+    getOraclePrice: () =>
+      withTypedErrors(() => getOraclePrice(readDeps), { operation: 'getOraclePrice' }),
+    balanceOf: (address) =>
+      withTypedErrors(() => balanceOf(readDeps, address), { operation: 'balanceOf' }),
     computeNICR,
-    computeHints: (params) => computeHints(readDeps, params),
+    computeHints: (params) =>
+      withTypedErrors(() => computeHints(readDeps, params), { operation: 'computeHints' }),
     computeICR,
     computeLiquidationPrice,
     getHealthFactor,
     computeEntireDebt,
-    previewOpen: (params) => previewOpen(mathDeps, params),
-    previewBorrow: (params) => previewBorrow(mathDeps, params),
-    previewRefinance: (owner) => previewRefinance(mathDeps, owner),
-    previewAdjustTrove: (params) => previewAdjustTrove(mathDeps, params),
-    previewWithdrawCollateral: (params) => previewWithdrawCollateral(mathDeps, params),
-    maxWithdrawableCollateral: (owner) => maxWithdrawableCollateral(mathDeps, owner),
-    previewClose: (owner) => previewClose(mathDeps, owner),
-    previewRedeem: (params) => previewRedeem(mathDeps, params),
-    getBorrowingCapacity: (owner) => getBorrowingCapacity(mathDeps, owner),
-    getBorrowingPower: (params) => getBorrowingPower(mathDeps, params),
-    openTrove: (params) => openTrove(writeDeps, params),
-    addCollateral: (params) => addCollateral(writeDeps, params),
-    borrow: (params) => borrow(writeDeps, params),
-    repay: (params) => repay(writeDeps, params),
-    withdrawCollateral: (params) => withdrawCollateral(writeDeps, params),
-    adjustTrove: (params) => adjustTrove(writeDeps, params),
-    close: () => close(writeDeps),
-    refinance: () => refinance(writeDeps),
-    claim: () => claim(writeDeps),
-    redeem: (params) => redeem(writeDeps, params),
-    liquidate: (borrower) => liquidate(writeDeps, borrower),
-    batchLiquidate: (borrowers) => batchLiquidate(writeDeps, borrowers),
-    getClaimableCollateral: (address) => getClaimableCollateral(readDeps, address),
+    previewOpen: (params) =>
+      withTypedErrors(() => previewOpen(mathDeps, params), { operation: 'previewOpen' }),
+    previewBorrow: (params) =>
+      withTypedErrors(() => previewBorrow(mathDeps, params), { operation: 'previewBorrow' }),
+    previewRefinance: (owner) =>
+      withTypedErrors(() => previewRefinance(mathDeps, owner), { operation: 'previewRefinance' }),
+    previewAdjustTrove: (params) =>
+      withTypedErrors(() => previewAdjustTrove(mathDeps, params), {
+        operation: 'previewAdjustTrove',
+      }),
+    previewWithdrawCollateral: (params) =>
+      withTypedErrors(() => previewWithdrawCollateral(mathDeps, params), {
+        operation: 'previewWithdrawCollateral',
+      }),
+    maxWithdrawableCollateral: (owner) =>
+      withTypedErrors(() => maxWithdrawableCollateral(mathDeps, owner), {
+        operation: 'maxWithdrawableCollateral',
+      }),
+    previewClose: (owner) =>
+      withTypedErrors(() => previewClose(mathDeps, owner), { operation: 'previewClose' }),
+    previewRedeem: (params) =>
+      withTypedErrors(() => previewRedeem(mathDeps, params), { operation: 'previewRedeem' }),
+    getBorrowingCapacity: (owner) =>
+      withTypedErrors(() => getBorrowingCapacity(mathDeps, owner), {
+        operation: 'getBorrowingCapacity',
+      }),
+    getBorrowingPower: (params) =>
+      withTypedErrors(() => getBorrowingPower(mathDeps, params), {
+        operation: 'getBorrowingPower',
+      }),
+    openTrove: (params) =>
+      withTypedErrors(() => openTrove(writeDeps, params), { operation: 'openTrove' }),
+    addCollateral: (params) =>
+      withTypedErrors(() => addCollateral(writeDeps, params), { operation: 'addCollateral' }),
+    borrow: (params) => withTypedErrors(() => borrow(writeDeps, params), { operation: 'borrow' }),
+    repay: (params) => withTypedErrors(() => repay(writeDeps, params), { operation: 'repay' }),
+    withdrawCollateral: (params) =>
+      withTypedErrors(() => withdrawCollateral(writeDeps, params), {
+        operation: 'withdrawCollateral',
+      }),
+    adjustTrove: (params) =>
+      withTypedErrors(() => adjustTrove(writeDeps, params), { operation: 'adjustTrove' }),
+    close: () => withTypedErrors(() => close(writeDeps), { operation: 'close' }),
+    refinance: () => withTypedErrors(() => refinance(writeDeps), { operation: 'refinance' }),
+    claim: () => withTypedErrors(() => claim(writeDeps), { operation: 'claim' }),
+    redeem: (params) => withTypedErrors(() => redeem(writeDeps, params), { operation: 'redeem' }),
+    liquidate: (borrower) =>
+      withTypedErrors(() => liquidate(writeDeps, borrower), { operation: 'liquidate' }),
+    batchLiquidate: (borrowers) =>
+      withTypedErrors(() => batchLiquidate(writeDeps, borrowers), { operation: 'batchLiquidate' }),
+    getClaimableCollateral: (address) =>
+      withTypedErrors(() => getClaimableCollateral(readDeps, address), {
+        operation: 'getClaimableCollateral',
+      }),
   }
 }

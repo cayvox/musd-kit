@@ -247,7 +247,14 @@ async function redeemCase(
   }
 
   const preview = await client.previewRedeem({ redeemer: account.address, amount })
-  const attempt = await attemptWrite(fork, () => client.redeem({ amount }))
+  // MK-103. The sweep compares the preview's verdict with what the CHAIN does, and the fork holds
+  // the price still. `redeem()` refuses a price fragile first-Trove partial before sending, which is
+  // client policy about a price move this fixture never makes, so scoring that refusal as the chain's
+  // outcome reported case 8 as FALSE_VIABLE for an amount the contract accepts. The policy is
+  // measured where the price moves, in `redeem-boundary.fork.test.ts`; here the send goes through.
+  const attempt = await attemptWrite(fork, () =>
+    client.redeem({ amount, acceptPriceFragilePartial: true }),
+  )
   const mismatch = compare(
     preview.viable,
     attempt,
@@ -386,7 +393,9 @@ async function borrowingPowerCase(
   c: DiffCase,
 ): Promise<CaseResult> {
   const price = await client.getOraclePrice()
-  const max = await client.getBorrowingPower({
+  // The CEILING is the figure with a boundary to test: the recommended draw sits a margin under it
+  // by design (MK-100), so "one wei more is refused" is a property of the ceiling alone.
+  const { ceiling: max } = await client.getBorrowingPower({
     collateral: c.collateral,
     price,
     account: account.address,

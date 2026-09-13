@@ -226,9 +226,10 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       }
       const searched = lo + (await feeOf(lo)) < minNetDebt ? 0n : lo
 
-      expect(await musd.getBorrowingPower({ collateral, price }), `collateral=${collateral}`).toBe(
-        searched,
-      )
+      expect(
+        (await musd.getBorrowingPower({ collateral, price })).ceiling,
+        `collateral=${collateral}`,
+      ).toBe(searched)
     }
   })
 
@@ -239,7 +240,7 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
     for (let i = 0; i < colls.length; i++) {
       const collateral = colls[i]
       if (!collateral) continue
-      const maxDraw = await c.getBorrowingPower({ collateral, price: p })
+      const maxDraw = (await c.getBorrowingPower({ collateral, price: p })).ceiling
       expect(maxDraw).toBeGreaterThan(0n)
       console.log(`[phase4] borrowingPower(${collateral}) = ${maxDraw}`)
 
@@ -355,7 +356,7 @@ describe('Phase 4, math/ preview compute (M1 dual-validation gate)', () => {
       // In Recovery Mode the contract charges NO borrowing fee (`BorrowerOperations.sol:637-643`),
       // so the entire debt is `draw + 200` and `_requireICRisAboveCCR` (`:1337-1342`) makes the
       // ceiling exactly `coll * price / CCR`.
-      const bpRM = await c.getBorrowingPower({ collateral: coll, price: p })
+      const bpRM = (await c.getBorrowingPower({ collateral: coll, price: p })).ceiling
       expect(bpRM, 'a maximum of zero would make everything below vacuous').toBeGreaterThan(0n)
       console.log(`[phase4] borrowingPower(RM, ${coll}) = ${bpRM}`)
 

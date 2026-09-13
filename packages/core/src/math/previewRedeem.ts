@@ -1,6 +1,13 @@
 import type { Address } from 'viem'
-import { musdAbi, priceFeedAbi, sortedTrovesAbi, troveManagerAbi } from '../clients'
+import {
+  interestRateManagerAbi,
+  musdAbi,
+  priceFeedAbi,
+  sortedTrovesAbi,
+  troveManagerAbi,
+} from '../clients'
 import { MCR } from '../constants'
+import { withTypedErrors } from '../errors/mapRevert'
 import { accruedInterest, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 
@@ -137,6 +144,13 @@ export interface RedemptionPreview {
    * times it is an hour of interest.
    */
   accrualMargin: bigint
+  /**
+   * The partial this redemption ends on, or `null` when every Trove it touches is consumed whole
+   * (MK-103). **A partial is priced twice**: when its hint is read and when it mines, and the
+   * contract cancels it when the price has moved further than a very narrow band allows. Read
+   * {@link PartialRedemption.priceFragile} before sending one.
+   */
+  partial: PartialRedemption | null
   /** The live `minNetDebt()` floor the cancellation compares against. */
   minNetDebt: bigint
   /** The caller's MUSD balance, which the contract checks at `:320`. */
@@ -147,6 +161,56 @@ export interface RedemptionPreview {
   price: bigint
 }
 
+/**
+ * The move, as a 1e18 fraction of the price, a partial redemption has to tolerate in EACH
+ * direction before this SDK calls it survivable (MK-103). **5 basis points.**
+ *
+ * Measured, not chosen: `scripts/oracle-moves.ts --end 11823000 --consecutive 2000` over Mezo
+ * mainnet blocks 11821000 to 11823000 put the 99th percentile of a TWO block move at 4.13 bps up
+ * and 3.87 bps down. Two blocks, because the hint is read at the head and the transaction mines one
+ * or two blocks later at about 3.83 seconds a block. 5 bps covers both, rounded up.
+ */
+export const REDEMPTION_PRICE_MOVE_TOLERANCE = 5n * 10n ** 14n
+
+/**
+ * One partial redemption, and the contract's band for it (MK-103).
+ *
+ * **What cancels a partial.** `_redeemCollateralFromTrove` computes the Trove's resulting NICR at
+ * the price when the transaction MINES (`TroveManager.sol:1224-1230`, `:1287-1290`) and cancels
+ * the partial unless `newNICR <= hint <= upperBoundNICR` (`:1299-1306`). The upper bound differs
+ * from `newNICR` only by 600 seconds of interest at the GLOBAL rate on the Trove's principal
+ * (`:1276-1285`), a relative width of about `rate * 600 / year`, 1.9e-7 at 1%. A price rise lowers
+ * the collateral drawn and lifts `newNICR` above the hint; a fall lowers the upper bound under it.
+ * A cancel on the FIRST Trove drawn reverts the whole call (`:392`, `:406-408`); a cancel later
+ * just redeems less.
+ *
+ * **What the SDK does about it.** It sends the CENTRE of the band as the hint, where
+ * `getRedemptionHints` returns its lower edge (`HintHelpers.sol:143-160`), which tolerated no rise at
+ * all. And it reports how far the price can move each way, so a caller can see that the band is
+ * narrow by construction: the tolerated move scales with `remaining collateral / collateral drawn`,
+ * so only a partial that draws a very small share of the Trove survives an ordinary block move.
+ */
+export interface PartialRedemption {
+  /** The Trove the partial lands on. */
+  trove: Address
+  /** MUSD the partial takes from it. */
+  lot: bigint
+  /** `true` when it is the first Trove drawn, where a cancel reverts the whole call. */
+  revertsCallIfCancelled: boolean
+  /** The NICR hint the SDK sends: the centre of `[newNICR, upperBoundNICR]` at `price`. */
+  hintNicr: bigint
+  /** The largest price RISE, as a 1e18 fraction of `price`, the partial survives with that hint. */
+  priceToleranceUp: bigint
+  /** The largest price FALL, as a 1e18 fraction of `price`, the partial survives with that hint. */
+  priceToleranceDown: bigint
+  /**
+   * `true` when either tolerance is below {@link REDEMPTION_PRICE_MOVE_TOLERANCE}, the measured
+   * two block move. **A fragile partial that `revertsCallIfCancelled` mostly reverts**, and
+   * `redeem()` refuses to send it unless told to (`acceptPriceFragilePartial`).
+   */
+  priceFragile: boolean
+}
+
 /** Inputs to {@link previewRedeem}. */
 export interface PreviewRedeemParams {
   /** The account that would redeem. Its MUSD balance is the gate at `:320`. */
@@ -155,6 +219,13 @@ export interface PreviewRedeemParams {
   amount: bigint
   /** Cap on the list walk, matching the contract's own parameter. Default 100. */
   maxIterations?: bigint
+  /**
+   * The accrual window, in seconds, a WHOLE consumption is sized for. Default
+   * {@link REDEMPTION_ADVICE_MARGIN_SECONDS}, 900, which is what {@link RedemptionPreview.nextViableAmount}
+   * carries. `redeem()` checks with {@link REDEMPTION_SEND_MARGIN_SECONDS}, 60, so advice read here
+   * is not refused by the client that acts on it (MK-104).
+   */
+  marginSeconds?: bigint
 }
 
 /** One eligible Trove, as the walk found it. */
@@ -173,6 +244,10 @@ export interface EligibleTrove {
   principal: bigint
   /** Entire debt minus the 200 MUSD gas reserve. */
   netDebt: bigint
+  /** Collateral with pending redistribution folded in, as `getEntireDebtAndColl` returns it (MK-103). */
+  collateral: bigint
+  /** Interest owed with live accrual and pending interest, the second debt component (MK-103). */
+  interestOwed: bigint
   /**
    * `getTroveInterestRate(owner)`, in basis points. **This Trove's rate, not a global and not
    * the redeemer's** (MK-088).
@@ -196,6 +271,10 @@ export interface EvaluateRedeemInput {
    * already skipped exactly as `:341-349` and `:375-378` skip them.
    */
   eligible: EligibleTrove[]
+  /** `interestRateManager.interestRate()`, which the contract's hint band uses (`:358`, `:1281`). */
+  globalInterestRateBps: bigint
+  /** Whole consumption margin in seconds. Default {@link REDEMPTION_ADVICE_MARGIN_SECONDS} (MK-104). */
+  marginSeconds?: bigint
 }
 
 // MK-071, then MK-089. The formula is not restated here AT ALL any more. It used to shadow
@@ -231,7 +310,20 @@ export interface EvaluateRedeemInput {
  * redemption HINT, which is a different quantity from a caller's settlement delay. Reading one as
  * the other is what produced the original figure.
  */
-const MARGIN_WINDOW_SECONDS = 900n
+export const REDEMPTION_ADVICE_MARGIN_SECONDS = 900n
+
+/**
+ * The whole consumption margin `redeem()` checks with, in seconds (MK-104).
+ *
+ * **Why it is not the advice margin.** `nextViableAmount` already carries 900 seconds of accrual
+ * from the block it was READ at. `redeem()` re-reads the Trove one block or more later and used to
+ * add the full 900 again, on a net debt that had grown in between, so it refused its own advice a
+ * block after giving it while the chain accepted the amount. The sending check only has to cover
+ * the gap between ITS read and inclusion. 60 seconds is fifteen blocks at the measured 3.83 seconds
+ * a block (`scripts/oracle-moves.ts`). The advice therefore stays acceptable to `redeem()` for
+ * 900 minus 60, 840 seconds, which covers the 600 it is advertised for.
+ */
+export const REDEMPTION_SEND_MARGIN_SECONDS = 60n
 
 /** The window a caller is told the answer holds for, which is shorter than it is sized for. */
 export const REDEMPTION_MARGIN_WINDOW_SECONDS = 600n
@@ -244,12 +336,74 @@ export const REDEMPTION_MARGIN_WINDOW_SECONDS = 600n
  * hardcoded `100n` when the redeemer held no Trove, which is the ordinary case for the
  * arbitrageur this preview exists for.
  */
-function marginFor(trove: Pick<EligibleTrove, 'principal' | 'interestRateBps'>): bigint {
-  return accruedInterest({
+function marginFor(
+  trove: Pick<EligibleTrove, 'principal' | 'interestRateBps'>,
+  seconds: bigint,
+): bigint {
+  return accruedInterest({ principal: trove.principal, rateBps: trove.interestRateBps, seconds })
+}
+
+const NICR_PRECISION = 10n ** 20n
+const E18 = 10n ** 18n
+const nominalCr = (coll: bigint, principal: bigint) =>
+  principal > 0n ? (coll * NICR_PRECISION) / principal : (1n << 256n) - 1n
+const ceilDiv = (a: bigint, b: bigint) => (a + b - 1n) / b
+
+/**
+ * The contract's band for one partial, restated term for term from `_redeemCollateralFromTrove`
+ * (`TroveManager.sol:1216-1290`) at the state the preview read, with the Trove's interest already
+ * brought current, which is what `_updateTroveInterest` does first (`:366`).
+ *
+ * Exported for the unit pins, which check it against an independent restatement.
+ */
+export function partialRedemptionBand(input: {
+  trove: EligibleTrove
+  lot: bigint
+  price: bigint
+  globalInterestRateBps: bigint
+  revertsCallIfCancelled: boolean
+}): PartialRedemption {
+  const { trove, lot, price, globalInterestRateBps, revertsCallIfCancelled } = input
+  // `:1224-1226`, `:1230`
+  const collateralLot = (lot * E18) / price
+  const newColl = trove.collateral - collateralLot
+  // `:1234-1247`: the lot pays interest first, then principal.
+  const newPrincipal =
+    lot > trove.interestOwed ? trove.principal - (lot - trove.interestOwed) : trove.principal
+  // `:1276-1285`: 600 seconds at the GLOBAL rate on the PRE redemption principal.
+  const band = accruedInterest({
     principal: trove.principal,
-    rateBps: trove.interestRateBps,
-    seconds: MARGIN_WINDOW_SECONDS,
+    rateBps: globalInterestRateBps,
+    seconds: 600n,
   })
+  const low = nominalCr(newColl, newPrincipal)
+  const high = nominalCr(newColl, newPrincipal - band)
+  const hintNicr = (low + high) / 2n
+
+  // Invert both inequalities for the collateral drawn at an unknown execution price `p`:
+  //   floor(newColl' * 1e20 / newPrincipal) <= hint   <=>  newColl' <= ceil((hint + 1) * P / 1e20) - 1
+  //   floor(newColl' * 1e20 / (P - band)) >= hint     <=>  newColl' >= ceil(hint * (P - band) / 1e20)
+  // and `collateralLot' = floor(lot * 1e18 / p)` falls as `p` rises.
+  const maxColl = ceilDiv((hintNicr + 1n) * newPrincipal, NICR_PRECISION) - 1n
+  const minColl = ceilDiv(hintNicr * (newPrincipal - band), NICR_PRECISION)
+  const lotAtLeast = trove.collateral - maxColl
+  const lotAtMost = trove.collateral - minColl
+  const priceHigh = lotAtLeast > 0n ? (lot * E18) / lotAtLeast : (1n << 256n) - 1n
+  const priceLow = (lot * E18) / (lotAtMost + 1n) + 1n
+  const priceToleranceUp = priceHigh > price ? ((priceHigh - price) * E18) / price : 0n
+  const priceToleranceDown = price > priceLow ? ((price - priceLow) * E18) / price : 0n
+
+  return {
+    trove: trove.owner,
+    lot,
+    revertsCallIfCancelled,
+    hintNicr,
+    priceToleranceUp,
+    priceToleranceDown,
+    priceFragile:
+      priceToleranceUp < REDEMPTION_PRICE_MOVE_TOLERANCE ||
+      priceToleranceDown < REDEMPTION_PRICE_MOVE_TOLERANCE,
+  }
 }
 
 /**
@@ -261,6 +415,7 @@ function marginFor(trove: Pick<EligibleTrove, 'principal' | 'interestRateBps'>):
  */
 export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   const { amount, musdBalance, minNetDebt, tcr, price, eligible } = input
+  const marginSeconds = input.marginSeconds ?? REDEMPTION_ADVICE_MARGIN_SECONDS
 
   const first = eligible[0]
   const firstTroveNetDebt = first?.netDebt ?? 0n
@@ -268,7 +423,8 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   // The Trove owes more by the block this lands in, so consuming it whole costs more than the net
   // debt read here. Without this the upper edge is off by exactly the accrual, and the sweep
   // caught it as a FALSE_VIABLE twice in a thousand cases.
-  const accrualMargin = first === undefined ? 0n : marginFor(first)
+  const accrualMargin =
+    first === undefined ? 0n : marginFor(first, REDEMPTION_ADVICE_MARGIN_SECONDS)
   const nextViableAmount = firstTroveNetDebt > 0n ? firstTroveNetDebt + accrualMargin : 0n
 
   const reasons: RedeemBlockReason[] = []
@@ -284,17 +440,27 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   let remaining = amount
   let redeemed = 0n
   let cancelledOnFirst = false
+  let partial: PartialRedemption | null = null
   for (let i = 0; i < eligible.length && remaining > 0n; i++) {
     const trove = eligible[i]
     if (trove === undefined) break
     // Consuming a Trove whole needs its net debt PLUS the margin, because the contract compares
     // against the debt at execution rather than the debt read here. Anything short of that is a
     // partial, and a partial that leaves less than the floor cancels and BREAKS.
-    const consumesWhole = remaining >= trove.netDebt + marginFor(trove)
+    const consumesWhole = remaining >= trove.netDebt + marginFor(trove, marginSeconds)
     const lot = consumesWhole ? trove.netDebt : remaining
     if (!consumesWhole && trove.netDebt - lot < minNetDebt) {
       if (i === 0) cancelledOnFirst = true
       break
+    }
+    if (!consumesWhole) {
+      partial = partialRedemptionBand({
+        trove,
+        lot,
+        price,
+        globalInterestRateBps: input.globalInterestRateBps,
+        revertsCallIfCancelled: i === 0,
+      })
     }
     redeemed += lot
     remaining -= lot
@@ -316,6 +482,7 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
     maxWithoutConsuming,
     nextViableAmount,
     accrualMargin,
+    partial: viable ? partial : null,
     minNetDebt,
     musdBalance,
     tcr,
@@ -337,6 +504,13 @@ export async function previewRedeem(
   deps: MathDeps,
   params: PreviewRedeemParams,
 ): Promise<RedemptionPreview> {
+  return withTypedErrors(() => previewRedeemUnchecked(deps, params), { operation: 'previewRedeem' })
+}
+
+async function previewRedeemUnchecked(
+  deps: MathDeps,
+  params: PreviewRedeemParams,
+): Promise<RedemptionPreview> {
   const { publicClient, addresses } = deps
   const { redeemer, amount } = params
   const maxIterations = params.maxIterations ?? 100n
@@ -349,7 +523,7 @@ export async function previewRedeem(
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
   const st = { address: addresses.sortedTroves, abi: sortedTrovesAbi } as const
 
-  const [tcr, musdBalance, minNetDebt] = await Promise.all([
+  const [tcr, musdBalance, minNetDebt, globalRate] = await Promise.all([
     publicClient.readContract({ ...tm, functionName: 'getTCR', args: [price] }),
     publicClient.readContract({
       address: addresses.musd,
@@ -358,13 +532,24 @@ export async function previewRedeem(
       args: [redeemer],
     }),
     deps.getMinNetDebt(),
+    // MK-103. The hint band is 600 seconds of interest at the GLOBAL rate (`TroveManager.sol:358`).
+    publicClient.readContract({
+      address: addresses.interestRateManager,
+      abi: interestRateManagerAbi,
+      functionName: 'interestRate',
+    }),
   ])
 
   // Start at the tail, the lowest ICR, and skip everything under MCR exactly as `:341-349` does.
   let cursor = await publicClient.readContract({ ...st, functionName: 'getLast' })
   const eligible: EligibleTrove[] = []
   const ZERO = '0x0000000000000000000000000000000000000000'
-  for (let i = 0n; i < maxIterations && cursor !== ZERO; i++) {
+  // MK-107. The contract skips the sub-MCR Troves at the tail BEFORE its loop and without touching
+  // `_maxIterations` (`TroveManager.sol:338-350`); only iterations inside the loop count (`:360-365`).
+  // This walk used to count them, so a small `maxIterations` reported NOTHING_REDEEMABLE for a
+  // redemption the chain accepts. `started` is false until the first eligible Trove is found.
+  let started = false
+  for (let i = 0n; (!started || i < maxIterations) && cursor !== ZERO; ) {
     const [icr, entire, rate] = await Promise.all([
       publicClient.readContract({ ...tm, functionName: 'getCurrentICR', args: [cursor, price] }),
       publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [cursor] }),
@@ -384,11 +569,15 @@ export async function previewRedeem(
     ])
     // `getEntireDebtAndColl` returns (coll, principal, interest, ...), and the loop compares the
     // LIVE entire debt, so principal plus accrued interest is the right quantity here.
-    const { principal, entireDebt } = troveAmounts(entire)
+    const { collateral, principal, interestOwed, entireDebt } = troveAmounts(entire)
+    if (icr >= MCR) started = true
+    if (started) i++
     if (icr >= MCR) {
       eligible.push({
         owner: cursor,
         entireDebt,
+        collateral,
+        interestOwed,
         // The base the protocol accrues on (`InterestRateMath.sol:12-22`), which is the stored
         // principal alone and never the entire debt.
         principal,
@@ -411,5 +600,7 @@ export async function previewRedeem(
     tcr,
     price,
     eligible,
+    globalInterestRateBps: BigInt(globalRate),
+    ...(params.marginSeconds !== undefined ? { marginSeconds: params.marginSeconds } : {}),
   })
 }

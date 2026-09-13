@@ -409,9 +409,15 @@ async function main(): Promise<void> {
     `  capacity ${formatMusd(capacity.capacity)}, remaining ${formatMusd(capacity.remaining)}`,
   )
   const power = await musd.getBorrowingPower({ collateral: COLLATERAL })
-  console.log(`  borrowingPower at open collateral ${formatMusd(power)} MUSD`)
+  console.log(
+    `  borrowingPower at open collateral: recommended ${formatMusd(power.recommended)} MUSD, ceiling ${formatMusd(power.ceiling)} MUSD`,
+  )
   record('getBorrowingCapacity', 'exercised', `capacity ${capacity.capacity}`)
-  record('getBorrowingPower', 'exercised', `power ${power}`)
+  record(
+    'getBorrowingPower',
+    'exercised',
+    `recommended ${power.recommended} ceiling ${power.ceiling}`,
+  )
 
   // ---- 3. previewAdjustTrove + addCollateral
   console.log('\n--- previewAdjustTrove + addCollateral ---')
@@ -576,23 +582,36 @@ async function main(): Promise<void> {
       const before = await musd.balanceOf(owner)
       const beforeBtc = await publicClient.getBalance({ address: owner })
       try {
-        // Retry once, with the amount and the hints recomputed, which is MK-049's documented
-        // mitigation: the partial hint carries an NICR derived at the price it was read at, and
-        // the contract recomputes it at the price the transaction MINES at. On a shared chain the
-        // oracle moves in between. One retry, never a loop.
-        let result = await musd.redeem({ amount })
+        // MK-103. This amount is a partial on the first eligible Trove, by design (see above), and
+        // since 0.4.0 `redeem()` refuses such a partial when its price tolerance is under the
+        // measured two block move, because on a live chain the contract cancels it on almost any
+        // move and the call reverts. This step exists to exercise the write on the real chain, so it
+        // prints the tolerances the preview reports and opts in, knowingly. One retry with the
+        // amount and hints recomputed stays, labelled for what it is: a second draw against the
+        // same odds, not a mitigation (MK-103 superseded MK-049's retry advice).
+        const sized = await musd.previewRedeem({ redeemer: owner, amount })
+        if (sized.partial) {
+          console.log(
+            `  partial on ${sized.partial.trove}: tolerance up ${sized.partial.priceToleranceUp} down ${sized.partial.priceToleranceDown} (1e18 fractions), fragile=${sized.partial.priceFragile}, first Trove=${sized.partial.revertsCallIfCancelled}`,
+          )
+        }
+        let result = await musd.redeem({ amount, acceptPriceFragilePartial: true })
         let outcome = await waitFor(result.hash, 'redeem', { fatal: false })
         if (!outcome.ok) {
           const again = await musd.previewRedeem({ redeemer: owner, amount: 1n })
           const retryAmount = again.maxWithoutConsuming > 0n ? again.maxWithoutConsuming : amount
           console.log(
-            `  retrying once at ${formatMusd(retryAmount)} MUSD, hints recomputed (MK-049)`,
+            `  retrying once at ${formatMusd(retryAmount)} MUSD, hints recomputed (MK-103)`,
           )
-          result = await musd.redeem({ amount: retryAmount })
+          result = await musd.redeem({ amount: retryAmount, acceptPriceFragilePartial: true })
           outcome = await waitFor(result.hash, 'redeem (retry)', { fatal: false })
         }
         if (!outcome.ok) {
-          record('redeem', 'skipped', `${outcome.why}. Two attempts, hints recomputed (MK-049)`)
+          record(
+            'redeem',
+            'skipped',
+            `${outcome.why}. Two attempts, hints recomputed; a first-Trove partial is price fragile (MK-103)`,
+          )
           throw new Error(RECORDED_ALREADY)
         }
         const after = await musd.balanceOf(owner)

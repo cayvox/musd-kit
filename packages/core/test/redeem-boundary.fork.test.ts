@@ -1,6 +1,8 @@
 import { http, type Address, createWalletClient } from 'viem'
 import { describe, expect, it } from 'vitest'
 import {
+  RedemptionBreachesDebtFloor,
+  RedemptionPriceFragile,
   createMusdClient,
   diagnoseRevertedWrite,
   getAddresses,
@@ -237,6 +239,199 @@ describe('MK-048, the redemption upper edge, by sending', () => {
         row(600, 'headroom + 1 wei'),
         'and one wei past the OLD edge stops being past it once the edge has moved',
       ).toContain('send=success')
+    } finally {
+      await fork.testClient.revert({ id: outer })
+    }
+  }, 900_000)
+
+  /**
+   * MK-104 and MK-103, through `redeem()` and at the contract, from one snapshot.
+   *
+   * **MK-104.** `nextViableAmount` carries 900 seconds of accrual from the block it is read at
+   * (`REDEMPTION_ADVICE_MARGIN_SECONDS`), and `redeem()` used to re-check it with ANOTHER 900 on top,
+   * so it refused its own advice a block later. It now checks with the 60 second sending margin, so
+   * the advice must be accepted by the client AND by the chain after 1, 60 and 600 seconds, the
+   * window it advertises. After an hour it has expired: the lot is a sub-floor partial on the first
+   * Trove, and the client must refuse it, typed and before gas, rather than send it to revert.
+   *
+   * **MK-103.** A partial on the first Trove is cancelled unless the hint lies in
+   * `[newNICR, upperBoundNICR]` at the EXECUTION price (`TroveManager.sol:1224-1230`, `:1276-1306`), and
+   * a cancel there reverts the call (`:392`, `:406-408`). The preview reports how far the price may
+   * move each way with the centred hint the SDK sends. This measures both claims from both sides:
+   * half the reported tolerance survives and twice it cancels, in each direction; and the helper's
+   * lower-edge hint, which `redeem()` used to send, cancels on the same half-tolerance rise the
+   * centred hint survives.
+   */
+  it('MK-104: redeem() accepts its own nextViableAmount inside the window; MK-103: the partial band is what the preview reports', async () => {
+    const fork = connectFork()
+    const account = testAccount(9649)
+    await fork.fundAccount(account.address, 60n * BTC)
+    const wallet = createWalletClient({ account, chain: mezoTestnet, transport: http(fork.rpcUrl) })
+    const client = createMusdClient({
+      chainId: 31611,
+      publicClient: fork.publicClient,
+      walletClient: wallet,
+    })
+    const tm = { address: T.troveManager, abi: troveManagerAbi } as const
+
+    const outer = await fork.testClient.snapshot()
+    const rows: string[] = []
+    try {
+      const seed = await fork.publicClient.waitForTransactionReceipt({
+        hash: (await client.openTrove({ collateral: 50n * BTC, debt: 400_000n * MUSD })).hash,
+      })
+      expect(seed.status, 'fixture: the seeding open must succeed').toBe('success')
+
+      const probe = await client.previewRedeem({ redeemer: account.address, amount: 1n })
+      const target = probe.firstEligibleTrove as Address
+      expect(target, 'fixture: there must be an eligible Trove').not.toBeNull()
+      const advice = probe.nextViableAmount
+      const statusOf = () =>
+        fork.publicClient.readContract({ ...tm, functionName: 'getTroveStatus', args: [target] })
+
+      let base = await fork.testClient.snapshot()
+      const restore = async () => {
+        await fork.testClient.revert({ id: base })
+        base = await fork.testClient.snapshot()
+        expect(await statusOf(), 'the revert must put the target back to active').toBe(1)
+      }
+
+      // ---- MK-104: the advice, sent through the client after a delay ----
+      const adviceOutcome = new Map<number, string>()
+      for (const seconds of [1, 60, 600, 3600]) {
+        await fork.warpTime(seconds)
+        let outcome: string
+        try {
+          const { hash } = await client.redeem({ amount: advice })
+          const receipt = await fork.publicClient.waitForTransactionReceipt({ hash })
+          outcome = `${receipt.status} targetStatus=${await statusOf()}`
+        } catch (error) {
+          outcome = `threw(${(error as Error).name})`
+        }
+        adviceOutcome.set(seconds, outcome)
+        rows.push(
+          `  MK-104 warp ${String(seconds).padStart(5)}s  redeem(nextViableAmount) -> ${outcome}`,
+        )
+        await restore()
+      }
+
+      // ---- MK-103: a partial on the first Trove, its band measured by moving the price ----
+      const amount = probe.maxWithoutConsuming / 2n
+      const preview = await client.previewRedeem({ redeemer: account.address, amount })
+      const partial = preview.partial
+      expect(partial, 'fixture: half the headroom is a partial').not.toBeNull()
+      if (partial === null) throw new Error('unreachable')
+      expect(partial.trove).toBe(target)
+      expect(partial.revertsCallIfCancelled, 'fixture: it is the first Trove drawn').toBe(true)
+      const up = partial.priceToleranceUp
+      const down = partial.priceToleranceDown
+      expect(up, 'fixture: a zero tolerance would make the ladder vacuous').toBeGreaterThan(0n)
+      expect(down, 'fixture: a zero tolerance would make the ladder vacuous').toBeGreaterThan(0n)
+      const price = preview.price
+      const E18 = 10n ** 18n
+
+      const [first, helperNicr] = await fork.publicClient.readContract({
+        address: T.hintHelpers,
+        abi: hintHelpersAbi,
+        functionName: 'getRedemptionHints',
+        args: [amount, price, 100n],
+      })
+      const sendWithHint = async (nicr: bigint) => {
+        const [upper, lower] = await fork.publicClient.readContract({
+          address: T.sortedTroves,
+          abi: sortedTrovesAbi,
+          functionName: 'findInsertPosition',
+          args: [nicr, ZERO, ZERO],
+        })
+        const hash = await wallet.writeContract({
+          ...tm,
+          account,
+          chain: mezoTestnet,
+          functionName: 'redeemCollateral',
+          args: [amount, first, upper, lower, nicr, 100n],
+          gas: 8_000_000n,
+        })
+        return (await fork.publicClient.waitForTransactionReceipt({ hash })).status
+      }
+      const cases: [string, bigint, 'centre' | 'helper'][] = [
+        ['no move', price, 'centre'],
+        ['rise of half the up tolerance', (price * (E18 + up / 2n)) / E18, 'centre'],
+        ['rise of half the up tolerance', (price * (E18 + up / 2n)) / E18, 'helper'],
+        ['rise of twice the up tolerance', (price * (E18 + up * 2n)) / E18, 'centre'],
+        ['fall of half the down tolerance', (price * (E18 - down / 2n)) / E18, 'centre'],
+        ['fall of twice the down tolerance', (price * (E18 - down * 2n)) / E18, 'centre'],
+      ]
+      const band = new Map<string, string>()
+      for (const [label, movedPrice, hint] of cases) {
+        await fork.setPrice(movedPrice)
+        const status = await sendWithHint(hint === 'centre' ? partial.hintNicr : helperNicr)
+        band.set(`${label}/${hint}`, status)
+        rows.push(`  MK-103 ${label.padEnd(32)} hint=${hint.padEnd(6)} -> ${status}`)
+        await restore()
+      }
+
+      // ---- MK-103: the client's refusal, and the explicit opt in ----
+      let refused: unknown
+      try {
+        await client.redeem({ amount })
+      } catch (error) {
+        refused = error
+      }
+      let optedIn: string
+      try {
+        const { hash } = await client.redeem({ amount, acceptPriceFragilePartial: true })
+        optedIn = (await fork.publicClient.waitForTransactionReceipt({ hash })).status
+      } catch (error) {
+        optedIn = `threw(${(error as Error).name})`
+      }
+      rows.push(
+        `  MK-103 redeem(partial) priceFragile=${partial.priceFragile} -> ${(refused as Error | undefined)?.name ?? 'sent'}; with acceptPriceFragilePartial -> ${optedIn}`,
+      )
+      await restore()
+
+      console.log(
+        [
+          `[MK-103, MK-104] target=${target} nextViableAmount=${advice} netDebt=${probe.firstTroveNetDebt}`,
+          `  partial lot=${partial.lot} hint=${partial.hintNicr} helperHint=${helperNicr} toleranceUp=${up} toleranceDown=${down} (1e18 fractions)`,
+          ...rows,
+        ].join('\n'),
+      )
+
+      for (const seconds of [1, 60, 600]) {
+        expect(
+          adviceOutcome.get(seconds),
+          `the client and the chain accept the advice after ${seconds}s, and the Trove is consumed whole`,
+        ).toBe('success targetStatus=4')
+      }
+      expect(
+        adviceOutcome.get(3600),
+        'an hour later the advice has expired and is refused, typed',
+      ).toBe(`threw(${RedemptionBreachesDebtFloor.name})`)
+
+      expect(band.get('no move/centre')).toBe('success')
+      expect(band.get('rise of half the up tolerance/centre'), 'inside the up tolerance').toBe(
+        'success',
+      )
+      expect(
+        band.get('rise of half the up tolerance/helper'),
+        "the helper's lower edge cancels on the same rise",
+      ).toBe('reverted')
+      expect(band.get('rise of twice the up tolerance/centre'), 'outside the up tolerance').toBe(
+        'reverted',
+      )
+      expect(band.get('fall of half the down tolerance/centre'), 'inside the down tolerance').toBe(
+        'success',
+      )
+      expect(
+        band.get('fall of twice the down tolerance/centre'),
+        'outside the down tolerance',
+      ).toBe('reverted')
+
+      expect(partial.priceFragile, 'fixture: at this size the partial is fragile').toBe(true)
+      expect(refused, 'redeem() refuses a fragile first-Trove partial by default').toBeInstanceOf(
+        RedemptionPriceFragile,
+      )
+      expect(optedIn, 'and sends it when told to, at an unmoved price').toBe('success')
     } finally {
       await fork.testClient.revert({ id: outer })
     }

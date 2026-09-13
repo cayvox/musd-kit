@@ -30,8 +30,16 @@ export interface ComputeLiquidationPriceParams {
 }
 
 /**
- * The BTC/USD price at which ICR hits MCR = `(MCR × entireDebt) / collateral`.
- * Below this price the position becomes liquidatable. Returns 0 for zero collateral.
+ * The BTC/USD price at which ICR hits MCR = `(MCR × entireDebt) / collateral`, floored. Returns 0 for
+ * zero collateral.
+ *
+ * **A threshold to display, read at one block, and not a promise about the price you see** (MK-100,
+ * MK-109). Liquidation is `ICR < MCR` (`TroveManager.sol:1146-1148`). When the division is exact the
+ * position is not liquidatable at this price and is one wei of price below it. When it is inexact,
+ * the floor puts this figure a fraction of a wei under the true threshold, so at exactly this price
+ * the position can already be liquidatable. And the entire debt grows every second
+ * (`TroveManager.sol:1513-1527`), so the true threshold rises after the read. Show it as the price
+ * near which liquidation begins, with the health factor beside it, not as a floor a user may wait for.
  */
 export function computeLiquidationPrice({
   collateral,
@@ -117,11 +125,18 @@ export type EntireDebtAndColl = readonly [bigint, bigint, bigint, bigint, bigint
 
 /** A Trove's live amounts, with each component named rather than indexed. */
 export interface TroveAmounts {
-  /** `trove.coll`. Pending redistribution collateral is a SEPARATE element and is not folded in. */
+  /**
+   * `trove.coll` WITH pending redistribution collateral folded in: the getter adds
+   * `getPendingCollateral` before returning (`TroveManager.sol:797`, `:799`). The separate
+   * `pendingCollateral` element is the part of this already included, not an addition to it (MK-109).
+   */
   collateral: bigint
-  /** `trove.principal`. The base interest accrues on, and the SortedTroves sort key. */
+  /**
+   * `trove.principal` with pending redistribution principal folded in (`TroveManager.sol:798`,
+   * `:800`). That sum is what `getNominalICR` sorts on (`:566-577`).
+   */
   principal: bigint
-  /** Stored interest plus live accrual to this block. */
+  /** Stored interest, plus live accrual to this block (`:788-793`), plus pending interest (`:801`). */
   interestOwed: bigint
   /** `principal + interestOwed`, the quantity every ratio gate compares. */
   entireDebt: bigint
@@ -239,4 +254,18 @@ export function computeEntireDebt({
     principal +
     accruedInterest({ principal, rateBps: BigInt(rate), seconds: BigInt(elapsedSeconds) })
   )
+}
+
+/**
+ * `_calculateMaxBorrowingCapacity(coll, price) = coll * price / (110 * 1e16)`
+ * (`BorrowerOperations.sol:1323-1328`), the one copy of it (MK-101, `docs/08-conventions.md` §11).
+ *
+ * **Where the contract WRITES it, which is the part the documentation got wrong.** At open, from the
+ * opening price (`:692-699`). On a collateral decrease, as `min(current, recalculated)`
+ * (`:879-897`), the only place it ratchets. And on EVERY refinance, unconditionally, from the price
+ * at the refinance (`:1077-1084`): a refinance after a price rise raises it, and after a fall cuts
+ * it, with no collateral change at all.
+ */
+export function maxBorrowingCapacityAt(collateral: bigint, price: bigint): bigint {
+  return (collateral * price) / (110n * 10n ** 16n)
 }

@@ -11,11 +11,12 @@ context with no extra provider (decision O4).
 
 ## What it shows
 
-- **Preview / open** (`OpenCard`): collateral + debt inputs; live `useBorrowingPower` (shown as
-  information only: **it has no safety margin, and a Trove opened at it can be liquidated within
-  seconds, MK-100**) and a
-  `previewOpen` readout (fee, total debt, resulting ICR, liquidation price, `meetsMinimum`);
-  `useOpenTrove`, guarded on `meetsMinimum` / Recovery-Mode rules.
+- **Preview / open** (`OpenCard`): collateral + debt inputs; live `useBorrowingPower` (the
+  recommended draw, which leaves a measured margin) beside the contract ceiling from
+  `useBorrowingPowerDetail` (**a limit, not an amount: a Trove opened at it can be liquidated within
+  seconds, MK-100**), and a `previewOpen` readout (fee, total debt, resulting ICR, liquidation price,
+  `meetsMinimum`); `useOpenTrove`, guarded on `viable`, which covers the debt floor, the individual
+  ratio, Recovery Mode and the system ratio (MK-108).
 - **Monitor / manage** (`PositionCard`): `useTrove` for the connected address, collateral,
   entire debt, ICR, `useHealthFactor`, `useLiquidationPrice`, plus `useRepay`. A
   `SystemBar` shows `useOraclePrice` and Recovery-Mode status.

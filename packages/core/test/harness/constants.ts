@@ -40,6 +40,15 @@ export const ORACLE_SHIM_RUNTIME =
   '0x6080604052348015600e575f5ffd5b50600436106030575f3560e01c8063313ce567146034578063feaf968c14604d575b5f5ffd5b5f5460405160ff90911681526020015b60405180910390f35b6001546002546005546040805169ffffffffffffffffffff9485168152602081019390935242908301819052606083015291909116608082015260a001604456fea264697066735822122053221683ccd442d5ea99f045fc6176fd883edcf36d49b8ea6a9bcb118f128b3b64736f6c63430008230033' as const
 
 /**
+ * Runtime bytecode of `StaleOracleShim.sol` (committed alongside this file), compiled the same way
+ * as {@link ORACLE_SHIM_RUNTIME}: `solc 0.8.35 --optimize --optimize-runs 200 --bin-runtime`. Same
+ * interface and slots, but `startedAt` and `updatedAt` come from slots 3 and 4 rather than the block
+ * clock, so a test can make the feed stale (MK-105). Install it only inside a snapshot.
+ */
+export const STALE_ORACLE_SHIM_RUNTIME =
+  '0x6080604052348015600e575f5ffd5b50600436106030575f3560e01c8063313ce567146034578063feaf968c14604d575b5f5ffd5b5f5460405160ff90911681526020015b60405180910390f35b6001546002546003546004546005546040805169ffffffffffffffffffff968716815260208101959095528401929092526060830152909116608082015260a001604456fea2646970667358221220984f2c6242d6023fd28959471e4f5aa47c3b3a0f187d65fb2ded5273b744824c64736f6c63430008230033' as const
+
+/**
  * Last-resort seed for the oracle shim, used ONLY when the upstream endpoint cannot
  * serve `latestRoundData()` at {@link RECORDED_ORACLE_SEED.block} any more, and ONLY when
  * the fork is anchored at exactly that block (MK-020).
