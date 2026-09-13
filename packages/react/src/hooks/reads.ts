@@ -59,6 +59,14 @@ export function useLiquidationPrice({
 /**
  * Largest valid draw for an **open**, for a given collateral (core `getBorrowingPower`).
  *
+ * **WARNING: this number has no safety margin. Do not open a Trove at it, and do not wire it to a
+ * "max" button (MK-100).** In normal mode it opens the position at exactly the 110% minimum
+ * collateral ratio. Interest is added to the debt every second, so a position opened at this
+ * number drops below 110% and can be liquidated by anyone within seconds; a liquidation takes all
+ * of the collateral and you keep only the MUSD you drew. **You must apply your own buffer**: offer
+ * a smaller draw, and show the ratio the user would open at from `previewOpen` before they sign.
+ * In Recovery Mode it opens at exactly 150%, which has no margin either.
+ *
  * This is an OPEN time calculator and its name is easy to misread: it does NOT tell you how
  * much an EXISTING Trove can still borrow. Every Trove carries a `maxBorrowingCapacity`
  * fixed at the opening price, which never rises afterwards, and a debt increase is gated on

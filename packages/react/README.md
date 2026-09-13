@@ -9,6 +9,21 @@ wagmi setup) already established. There is **no musd-kit provider**.
 > endorsed by Mezo**. An unofficial community **Mezo MUSD SDK**. **Status: pre-1.0 (`0.x`),
 > for testnet and evaluation.** License: MIT.
 
+## ⚠️ Warning: `useBorrowingPower` has no safety margin (MK-100)
+
+**Do not open a Trove at the number `useBorrowingPower` returns, and do not wire it to a "max"
+button.** It is the largest draw the contract will accept. In normal mode that opens the position
+at exactly the 110% minimum collateral ratio. Interest is added to the debt every second, so the
+position drops below 110% and **can be liquidated by anyone within seconds of opening.** A
+liquidation takes all of the collateral; the user keeps only the MUSD they drew. This was
+reproduced on a fork: opened at the reported number, liquidatable one second later, and liquidated.
+
+**You must apply your own buffer**: offer a smaller draw, and show the ratio the user would open at
+(`previewOpen`'s `icr` in `@musd-kit/core`; liquidation starts below `1.1e18`) before they sign. In
+Recovery Mode the number opens at exactly 150%, which has no margin either. The returned value is
+unchanged in 0.3.1 on purpose; changing it is an open design decision recorded as MK-100 in
+[`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md).
+
 ## Install
 
 ```sh

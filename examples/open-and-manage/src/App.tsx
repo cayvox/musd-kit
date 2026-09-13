@@ -90,6 +90,12 @@ function OpenCard({ address }: { address: Address }) {
   // MK-067. The account is passed, not omitted: the borrowing fee is skipped entirely for a fee
   // exempt account, so without it an exempt caller is shown a smaller maximum than the protocol
   // allows. `usePreviewOpen` has always taken it for the same reason.
+  //
+  // MK-100. WARNING: this number has NO SAFETY MARGIN. It opens a Trove at exactly the 110%
+  // minimum ratio, and interest makes that position liquidatable within seconds. It is shown here
+  // as information only. Never prefill the draw with it or wire it to a "max" button; a real app
+  // must apply its own buffer and show the resulting ICR (the `previewOpen` row below) before the
+  // user signs.
   const { data: maxBorrowable } = useBorrowingPower({ collateral, account: address })
   const { data: preview } = usePreviewOpen(collateral, draw)
   const { openTrove, isPending, error, hash } = useOpenTrove()
@@ -111,6 +117,9 @@ function OpenCard({ address }: { address: Address }) {
       </label>
 
       <Row label="Borrowing power">{fmt(maxBorrowable)} MUSD</Row>
+      <Row label="Warning (MK-100)">
+        Borrowing power has no safety margin. A Trove opened at it can be liquidated within seconds.
+      </Row>
       <Row label="Borrowing fee">{fmt(preview?.fee)} MUSD</Row>
       <Row label="Total debt (incl. 200 reserve)">{fmt(preview?.entireDebt)} MUSD</Row>
       <Row label="Resulting ICR">{pct(preview?.icr)}</Row>

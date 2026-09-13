@@ -45,6 +45,27 @@ export const MAX_BORROWING_POWER_ITERATIONS = 256
  * The largest draw that OPENS a valid Trove. This is an **open time calculator and nothing
  * else**: it sizes a draw for a position that does not exist yet.
  *
+ * **WARNING: this number has no safety margin. Do not open a Trove at it (MK-100).**
+ *
+ * It is the largest draw the contract will accept. In normal mode that opens the position at
+ * exactly the 110% minimum collateral ratio (MCR). A Trove below 110% can be liquidated by anyone,
+ * and interest is added to the debt every second, so **a position opened at this number can be
+ * liquidated within seconds of opening.** A liquidation takes all of the collateral; you keep
+ * only the MUSD you drew. This was reproduced on a fork: opened at the reported number,
+ * liquidatable one second later, and liquidated (`zz-borrowing-power-boundary.fork.test.ts`).
+ *
+ * **You must apply your own buffer.** Draw less than this, choose the collateral ratio you want to
+ * hold through a price drop, and check what you are about to open with {@link previewOpen}: its
+ * `icr` is the ratio you will open at, and liquidation starts below `1.1e18`.
+ *
+ * Two other cases. In Recovery Mode the number opens at exactly 150% (CCR), which is not
+ * liquidatable but has no margin either. When the whole system's ratio is what limits the number,
+ * the open is refused a block later with `SystemRatioBelowCCR`, because the system's debt accrues
+ * interest in the meantime; that failure is loud and costs no collateral.
+ *
+ * The returned value is deliberately unchanged in this release. Changing what a published
+ * function returns is a design decision, and it is recorded as open in MK-100.
+ *
  * It is NOT the right function for a Trove that already exists. Every Trove carries a
  * `maxBorrowingCapacity`, fixed at the OPENING price as `coll * price / (110 * 1e16)`
  * (`BorrowerOperations.sol:1323-1328`), ratcheted only downward on a collateral decrease
