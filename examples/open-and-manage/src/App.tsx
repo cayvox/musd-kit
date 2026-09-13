@@ -8,6 +8,7 @@ import {
   RecoveryModeRestriction,
   RepayExceedsDebt,
   useBorrowingPower,
+  useBorrowingPowerDetail,
   useHealthFactor,
   useLiquidationPrice,
   useOpenTrove,
@@ -91,12 +92,13 @@ function OpenCard({ address }: { address: Address }) {
   // exempt account, so without it an exempt caller is shown a smaller maximum than the protocol
   // allows. `usePreviewOpen` has always taken it for the same reason.
   //
-  // MK-100. WARNING: this number has NO SAFETY MARGIN. It opens a Trove at exactly the 110%
-  // minimum ratio, and interest makes that position liquidatable within seconds. It is shown here
-  // as information only. Never prefill the draw with it or wire it to a "max" button; a real app
-  // must apply its own buffer and show the resulting ICR (the `previewOpen` row below) before the
-  // user signs.
-  const { data: maxBorrowable } = useBorrowingPower({ collateral, account: address })
+  // MK-100. `useBorrowingPower` is the RECOMMENDED draw: it leaves the measured margin stated on
+  // `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS`. The contract's
+  // ceiling comes from `useBorrowingPowerDetail`, over the same query, and is shown as a limit only:
+  // a Trove opened at it starts at exactly the 110% minimum ratio and is liquidatable within
+  // seconds. Never prefill the draw with the ceiling or wire it to a "max" button.
+  const { data: recommended } = useBorrowingPower({ collateral, account: address })
+  const { data: power } = useBorrowingPowerDetail({ collateral, account: address })
   const { data: preview } = usePreviewOpen(collateral, draw)
   const { openTrove, isPending, error, hash } = useOpenTrove()
 
@@ -116,9 +118,10 @@ function OpenCard({ address }: { address: Address }) {
         <input value={debt} onChange={(e) => setDebt(e.target.value)} style={{ width: '100%' }} />
       </label>
 
-      <Row label="Borrowing power">{fmt(maxBorrowable)} MUSD</Row>
-      <Row label="Warning (MK-100)">
-        Borrowing power has no safety margin. A Trove opened at it can be liquidated within seconds.
+      <Row label="Borrowing power">{fmt(recommended)} MUSD</Row>
+      <Row label="Opens at ICR">{pct(power?.recommendedIcr)}</Row>
+      <Row label="Contract ceiling (MK-100)">
+        {fmt(power?.ceiling)} MUSD, opens at exactly 110% and is liquidatable within seconds
       </Row>
       <Row label="Borrowing fee">{fmt(preview?.fee)} MUSD</Row>
       <Row label="Total debt (incl. 200 reserve)">{fmt(preview?.entireDebt)} MUSD</Row>

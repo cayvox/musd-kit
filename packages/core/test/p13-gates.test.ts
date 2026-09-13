@@ -131,6 +131,9 @@ describe('MK-075, previewRefinance reports its reasons in contract call order', 
     price: PRICE,
     systemColl: 10_000n * BTC,
     systemDebt: 100_000n * MUSD,
+    currentInterestRateBps: 100,
+    globalInterestRateBps: 100,
+    currentCapacity: 90_000n * MUSD,
   }
 
   it('RECOVERY_MODE binds before TROVE_NOT_ACTIVE, because `:1023` precedes `:1024`', () => {

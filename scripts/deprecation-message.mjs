@@ -69,6 +69,33 @@ export const DEPRECATIONS = Object.freeze({
     react:
       'Depends on @musd-kit/core@0.2.0, which is wrong on two Recovery Mode surfaces (MK-058, MK-059, MK-067), reachable through useBorrowPreview and useBorrowingPower. See docs/14-migration-0.2-to-0.3.md. Upgrade to 0.3.0.',
   }),
+
+  /**
+   * Not yet applied: it can be once 0.4.0 is `latest`.
+   *
+   * Every claim is a register row and was checked in the PUBLISHED 0.3.0 tarballs rather than in the
+   * source: core's `getBorrowingPower` is the single ceiling search with no margin (MK-100), core has
+   * no refinance rate or capacity fields (MK-101), and react's `useMusdQuery` still passes
+   * `keepPreviousData` (MK-102). All three are fixed in 0.4.0.
+   */
+  '0.3.0': Object.freeze({
+    core: "0.3.0 returns the liquidation threshold as the amount to borrow: a Trove opened at getBorrowingPower's figure is liquidatable within seconds (MK-100), and previewRefinance omits the rate and capacity a refinance moves to (MK-101). See FINDINGS.md and docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.0.",
+    react:
+      'Depends on @musd-kit/core@0.3.0, whose borrowing power figure is the liquidation threshold (MK-100), shown by useBorrowingPower as the amount to borrow. Its read hooks also report a previous query as current (MK-102). See docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.0.',
+  }),
+
+  /**
+   * Not yet applied: it can be once 0.4.0 is `latest`.
+   *
+   * 0.3.1 is 0.3.0's code with MK-100's warning added to the documentation, and nothing else
+   * (`node scripts/compare-published.mjs --base 0.3.0 --head 0.3.1`), so it carries the same
+   * defects, and the message says that it warned rather than fixed, which is what distinguishes it.
+   */
+  '0.3.1': Object.freeze({
+    core: "0.3.1 warns about but does not fix MK-100: a Trove opened at getBorrowingPower's figure is liquidatable within seconds. previewRefinance still omits the rate and capacity a refinance moves to (MK-101). See FINDINGS.md and docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.0.",
+    react:
+      'Depends on @musd-kit/core@0.3.1, which warns about but does not fix MK-100: useBorrowingPower shows the liquidation threshold as the amount to borrow. Its read hooks also report a previous query as current (MK-102). See docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.0.',
+  }),
 })
 
 /** Thrown for anything that would otherwise send a message that does not describe its version. */

@@ -11,6 +11,7 @@ import type {
 } from '@musd-kit/core'
 import { MissingWalletClient } from '@musd-kit/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 import type { Address, Hex } from 'viem'
 import { useAccount, useChainId } from 'wagmi'
 import { musdQueryKeys } from '../internal/keys'
@@ -32,7 +33,7 @@ export interface MusdWriteResult<TParams, TData> {
   error: MusdError | null
   /** The submitted tx hash (once available), or `null`. */
   hash: Hex | null
-  /** The full core result (e.g. `RedeemResult` carries `truncatedAmount` + `fee`). */
+  /** The full core result (e.g. `RedeemResult` carries `truncatedAmount`, `redemptionRate` and `estimatedFeeCollateral`). */
   data: TData | undefined
   /** Reset the mutation back to idle. */
   reset: () => void
@@ -65,6 +66,19 @@ function useMusdWrite<TParams, TData extends { hash?: Hex | null }>(
       }
     },
   })
+
+  // MK-102, the write side. A mutation's `data`, `hash` and `isSuccess` belong to the account and
+  // chain that sent it. Without this, switching the wallet kept showing the previous account's
+  // hash and success state under the new one. The reset runs on a CHANGE only, never on mount.
+  const identity = `${chainId}:${address ?? ''}`
+  const lastIdentity = useRef(identity)
+  const reset = mutation.reset
+  useEffect(() => {
+    if (lastIdentity.current !== identity) {
+      lastIdentity.current = identity
+      reset()
+    }
+  }, [identity, reset])
 
   return {
     mutate: mutation.mutate,
@@ -197,7 +211,7 @@ export function useRefinance(): UseRefinanceResult {
   return { ...w, refinance: () => w.mutate(), refinanceAsync: () => w.mutateAsync() }
 }
 
-/** Result of {@link useRedeem}. `data` is the `RedeemResult` (`{ hash, truncatedAmount, fee }`). */
+/** Result of {@link useRedeem}. `data` is the `RedeemResult` (`hash`, `truncatedAmount`, `redemptionRate`, `estimatedFeeCollateral`, `estimatedCollateralDrawn`, `gas`). */
 export interface UseRedeemResult extends MusdWriteResult<RedeemParams, RedeemResult> {
   /** Redeem MUSD for BTC (alias of `mutate`). */
   redeem: MusdWriteResult<RedeemParams, RedeemResult>['mutate']

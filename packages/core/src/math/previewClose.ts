@@ -1,6 +1,7 @@
 import type { Address } from 'viem'
 import { musdAbi, priceFeedAbi, sortedTrovesAbi, troveManagerAbi } from '../clients'
 import { CCR } from '../constants'
+import { withTypedErrors } from '../errors/mapRevert'
 import { TroveStatus } from '../read/types'
 import { computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
@@ -191,6 +192,10 @@ export function evaluateClose(input: EvaluateCloseInput): ClosePreview {
  * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewClose(deps: MathDeps, owner: Address): Promise<ClosePreview> {
+  return withTypedErrors(() => previewCloseUnchecked(deps, owner), { operation: 'previewClose' })
+}
+
+async function previewCloseUnchecked(deps: MathDeps, owner: Address): Promise<ClosePreview> {
   const { publicClient, addresses } = deps
   const price = await publicClient.readContract({
     address: addresses.priceFeed,

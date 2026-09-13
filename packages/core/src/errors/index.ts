@@ -10,7 +10,7 @@
 import { MusdErrorCode as Codes, type MusdErrorCode } from './codes'
 
 export { MusdErrorCode, ALL_MUSD_ERROR_CODES } from './codes'
-export { mapRevert } from './mapRevert'
+export { mapRevert, withTypedErrors } from './mapRevert'
 
 /**
  * Base for every SDK error: a discriminated `code`, the original cause preserved, and
@@ -73,9 +73,11 @@ export class BelowMinimumDebt extends MusdError {
 /**
  * A debt increase the contract's borrowing capacity gate would reject (MK-002).
  *
- * Every Trove carries a `maxBorrowingCapacity`, fixed at open from the OPENING price as
- * `coll * price / (110 * 1e16)` (`BorrowerOperations.sol:1323-1328`), ratcheted only
- * DOWNWARD on a collateral decrease (`:879-897`), and never raised when the price rises.
+ * Every Trove carries a `maxBorrowingCapacity`, `coll * price / (110 * 1e16)`
+ * (`BorrowerOperations.sol:1323-1328`), set at open from the OPENING price, lowered to
+ * `min(current, recalculated)` on a collateral decrease (`:879-897`), not raised by a price rise
+ * or a top-up on the adjust path, and RESET from the current price by every refinance
+ * (`:1077-1084`), which can raise it or cut it (MK-101).
  * A debt increase requires `maxBorrowingCapacity >= netDebtChange + debt`
  * (`:1358-1365`), where `netDebtChange` is the draw plus its borrowing fee and `debt` is
  * the Trove's debt AFTER `updateSystemAndTroveInterest`, so accrued interest counts.
@@ -102,8 +104,8 @@ export class ExceedsBorrowingCapacity extends MusdError {
     super(
       Codes.EXCEEDS_BORROWING_CAPACITY,
       known
-        ? `Borrowing ${netDebtChange} (draw plus fee) against a debt of ${entireDebt} would need ${entireDebt + netDebtChange} of capacity, but the Trove's maxBorrowingCapacity is ${capacity}, leaving ${remaining}. Capacity is fixed at the opening price and never rises, so a higher collateral price does not raise it.`
-        : "This operation exceeds the Trove's maxBorrowingCapacity. Capacity is fixed at the opening price and never rises, so a higher collateral price does not raise it. The exact figures are not available here: this was decoded from a contract revert rather than caught by the pre-send guard, which is the path that carries them.",
+        ? `Borrowing ${netDebtChange} (draw plus fee) against a debt of ${entireDebt} would need ${entireDebt + netDebtChange} of capacity, but the Trove's maxBorrowingCapacity is ${capacity}, leaving ${remaining}. Capacity is set at the opening price, is not raised by a higher collateral price or a top-up, and is reset from the current price only by a refinance.`
+        : "This operation exceeds the Trove's maxBorrowingCapacity. Capacity is set at the opening price, is not raised by a higher collateral price or a top-up, and is reset from the current price only by a refinance. The exact figures are not available here: this was decoded from a contract revert rather than caught by the pre-send guard, which is the path that carries them.",
       {
         ...(known ? { context: { capacity, entireDebt, netDebtChange, remaining } } : {}),
         ...(cause !== undefined ? { cause } : {}),
@@ -165,8 +167,12 @@ export class TroveAlreadyExists extends MusdError {
 
 /** A zero / negative / nonsensical numeric input. */
 export class InvalidAmount extends MusdError {
-  constructor(field: string, value: bigint) {
-    super(Codes.INVALID_AMOUNT, `Invalid ${field}: ${value}. Must be a positive amount.`, {
+  /**
+   * @param requirement what a valid value is, when it is not "a positive amount": a borrowing power
+   *   margin override may be zero, so it says its own range (MK-100).
+   */
+  constructor(field: string, value: bigint, requirement = 'Must be a positive amount.') {
+    super(Codes.INVALID_AMOUNT, `Invalid ${field}: ${value}. ${requirement}`, {
       context: { field, value },
     })
     this.name = 'InvalidAmount'
@@ -301,6 +307,37 @@ export class RedemptionBreachesDebtFloor extends MusdError {
       context ? { context } : {},
     )
     this.name = 'RedemptionBreachesDebtFloor'
+  }
+}
+
+/**
+ * A partial redemption on the first Trove drawn would cancel, and revert the whole call, on an
+ * ordinary price move before it mines (MK-103).
+ *
+ * The contract cancels a partial unless the Trove's resulting NICR, computed at the price when the
+ * transaction MINES, sits inside a band about 600 seconds of interest wide (`TroveManager.sol:1276-1306`),
+ * and a cancel on the first Trove drawn reverts the call (`:406-408`). The two tolerances on this
+ * error are how far the price could move up and down, as 1e18 fractions, before that happens; the
+ * required tolerance is the measured two block move (`REDEMPTION_PRICE_MOVE_TOLERANCE`).
+ *
+ * **Two ways forward.** Redeem at least `nextViableAmount`, which consumes the first Trove whole and
+ * is not priced against a hint at all (`:1252`). Or send anyway with
+ * `acceptPriceFragilePartial: true`, knowing most such sends revert and cost gas.
+ */
+export class RedemptionPriceFragile extends MusdError {
+  constructor(context: {
+    requested: bigint
+    priceToleranceUp: bigint
+    priceToleranceDown: bigint
+    requiredTolerance: bigint
+    nextViableAmount: bigint
+  }) {
+    super(
+      Codes.REDEMPTION_PRICE_FRAGILE,
+      `This redemption ends in a partial on the first Trove it draws, and the contract cancels that partial, reverting the call, if the price moves more than ${context.priceToleranceUp} up or ${context.priceToleranceDown} down (1e18 fractions) before it mines, where an ordinary two block move is ${context.requiredTolerance}. Redeem at least ${context.nextViableAmount} to consume the Trove whole, or pass acceptPriceFragilePartial: true to send anyway.`,
+      { context },
+    )
+    this.name = 'RedemptionPriceFragile'
   }
 }
 
@@ -504,6 +541,26 @@ export class DeploymentVerificationFailed extends MusdError {
     )
     this.name = 'DeploymentVerificationFailed'
     this.failures = failures
+  }
+}
+
+/**
+ * The price feed refused to answer because its oracle round is too old (MK-105).
+ *
+ * `PriceFeed.fetchPrice` requires `block.timestamp - updatedAt <= MAX_PRICE_DELAY`, with
+ * `MAX_PRICE_DELAY = 60` seconds (`PriceFeed.sol:14`, `:51-54`), and every preview, read and
+ * write in this SDK reads the price. Nothing a caller does fixes it; it clears when the oracle
+ * publishes a fresh round. It used to arrive as an untyped viem error, from the reads that run
+ * before a write's simulation, which is exactly the path the typed mapping did not cover.
+ */
+export class OracleStale extends MusdError {
+  constructor(cause?: unknown) {
+    super(
+      Codes.ORACLE_STALE,
+      'The price feed refused to answer: its oracle round is older than 60 seconds. Nothing here can fix that; retry once the oracle publishes a fresh round.',
+      cause === undefined ? undefined : { cause },
+    )
+    this.name = 'OracleStale'
   }
 }
 

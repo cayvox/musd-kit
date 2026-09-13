@@ -97,6 +97,24 @@ correctness.
 - **CI must be green to merge** (lint + typecheck + unit + the relevant fork gate).
 - **Changesets** (or equivalent) for versioning; every user-facing change has a
   changelog entry.
+- **Commit identity, a standing rule since 2026-09-13.** Every commit is authored AND committed as
+  `Cayvox Labs <info@cayvox.com>` and carries a Developer Certificate of Origin sign-off
+  (`git commit -s`, which writes `Signed-off-by: Cayvox Labs <info@cayvox.com>`). **Commits carry
+  no AI attribution of any kind**: no `Co-Authored-By` trailer naming a model or a tool, and no
+  "generated with" line. Pull request titles and bodies follow the same rule, because a merge can
+  carry either into history. The identity is the one GitHub already records for this account's
+  merge commits, so a commit made this way is attributed to `cayvox`.
+
+  **History is not rewritten to apply it.** Thirty commits on `main` carry an earlier AI trailer,
+  and two of them, `749730b` (tagged `v0.3.0`) and `5b731b2` (tagged `v0.3.1`), are the commits the
+  published npm provenance attestations name. Rewriting them would change those hashes and break
+  the chain that proves the packages came from this repository. The rule applies forward only.
+
+  **Signed off, not cryptographically signed.** `cayvox` has no SSH or GPG signing key registered on
+  GitHub (checked 2026-09-13 through `api.github.com/users/cayvox/ssh_signing_keys` and
+  `/gpg_keys`), so a commit cannot carry a signature GitHub would verify as `cayvox`. Registering a
+  signing key on the account is what it would take; signing with a key registered to a different
+  account would verify as that account, which is the opposite of this rule.
 
 ---
 
@@ -165,6 +183,7 @@ selected window.
 | 10 | **Commit the instrument for every measurement you intend to cite**, before citing it. A number quoted in a finding, a pull request body or the documentation is only citable if the code that produced it is in the repository and someone else can run it, and the command is recorded beside the number | The command, verbatim, next to every number. A measurement whose instrument is not committed is not reportable as a measurement; see the labels below |
 | 11 | **A boundary that moves with time is established by SENDING, across the delay a caller will actually have, and is reported with that delay.** A simulation evaluates at the current block; a transaction executes in a later one. So a value read at block N and simulated at block N is an exact equality that passes, and the same value sent is refused, because the contract accrues before it reads (`TroveManager.sol:366` then `:1218-1221`). Vary the elapsed time, hold the method constant, and state the window the answer holds for. **A number obtained by simulation is labelled `simulated` wherever it is cited** and cannot be cited as chain behaviour | The ladder: the amount, the delays tried, and the outcome at each. A margin sized for a window is asserted at BOTH ends, the delay it covers and the delay it does not |
 | 12 | **When a document tells a reader to run a command, confirm that nothing in the repository already performs it, and point at that instead.** Grep the repository for the command before writing it into a document: a workflow, a script or a CI step that already does the job makes the documented version the worse route and usually the less safe one, and it is the route nobody ever executes (MK-083) | The grep, and either "nothing performs this" or the file that does. A document that names a command a workflow already runs is corrected to name the workflow, keeping one sentence on why the raw command is not the route |
+| 13 | **Every pin the wave adds names its mutation, and the mutation gate is run.** `node scripts/mutation-check.mjs --check` first, then `node scripts/mutation-check.mjs`, and `--all` when a fork or packaging gate pin was added or its code changed. A test is a pin only once its defect has been put back and the test went red (MK-110) | The gate's output for every new or changed mutation: its id and the tests that caught it. A mutation caught by nothing fails the wave. A new pin with no mutation entry is reported as a test, not as a pin |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached

@@ -7,6 +7,7 @@ export {
   accruedInterest,
   troveAmounts,
   netDebtOf,
+  maxBorrowingCapacityAt,
   isTroveLiquidatable,
   type ComputeICRParams,
   type ComputeLiquidationPriceParams,
@@ -34,7 +35,14 @@ export {
   evaluateBorrow,
   type EvaluateBorrowInput,
 } from './previewBorrow'
-export { getBorrowingPower, type GetBorrowingPowerParams } from './getBorrowingPower'
+export {
+  getBorrowingPower,
+  type GetBorrowingPowerParams,
+  type BorrowingPower,
+  type BorrowingPowerMargin,
+  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
+  BORROWING_POWER_PRICE_MOVE_BPS,
+} from './getBorrowingPower'
 export {
   previewRefinance,
   evaluateRefinance,
@@ -75,6 +83,11 @@ export {
   type RedeemBlockReason,
   type EvaluateRedeemInput,
   type EligibleTrove,
+  partialRedemptionBand,
+  REDEMPTION_PRICE_MOVE_TOLERANCE,
+  REDEMPTION_ADVICE_MARGIN_SECONDS,
+  REDEMPTION_SEND_MARGIN_SECONDS,
+  type PartialRedemption,
 } from './previewRedeem'
 
 // MK-042. Closing has its own gate set, two of them conditional on a live chain read.

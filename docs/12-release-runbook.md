@@ -7,6 +7,53 @@ check** so you can tell it worked, rather than assuming it did.
 
 ---
 
+## The 0.3.0 release, as it actually ran
+
+**Published 2026-09-13.** `@musd-kit/core@0.3.0` and `@musd-kit/react@0.3.0`, from commit
+`749730b855a24bf88fa64a57c0136a84a8cfa4d2`, by
+[release run 34752401058](https://github.com/cayvox/musd-kit/actions/runs/34752401058), tagged
+`v0.3.0`, with SLSA provenance naming this repository and that commit.
+
+| Precondition | Evidence at the time of publishing |
+|---|---|
+| 1, `main` green at its tip | [run 34707799518](https://github.com/cayvox/musd-kit/actions/runs/34707799518), all four jobs, `headSha` equal to the tip |
+| 2, no open S1 | twelve S1 rows in the index table, every one `fixed` |
+| 3, versions intended | core and react at 0.3.0; the registry held 0.1.0 and 0.2.0 only |
+| 4, changelogs | top entry `## 0.3.0` in both, read at the released commit |
+| 5, live testnet run | `GO`, exit 0, **19 exercised, 4 skipped each with a reason**, position closed. `docs/13-live-testnet-ledger.md` |
+| 6, packaged artifact | `pnpm gate:packaging`, `GATE PASSED` on all four rows at `packages@0.3.0`, 105 exports each way |
+| 7, sweep against THIS tree | [run 34746081139](https://github.com/cayvox/musd-kit/actions/runs/34746081139), head equal to the released commit, 1000 cases, **0 FALSE_VIABLE, 0 unexpected**, ten FALSE_BLOCKED all registered to MK-079 |
+
+**Three things went wrong, and none of them was the artifact.**
+
+**The version commit turned `main` red** (MK-097). `changeset version` reformatted the `files` array
+in both manifests and `biome check` rejected it; §0a's verification list had no row for the checks
+the commit has to pass. Repaired in `749730b`, formatting only. **That repair moved the released
+commit**, so the sweep already dispatched against `1cfb263` no longer measured the released tree and
+precondition 7 had to be met again.
+
+**Precondition 7 was then satisfied by the weekly scheduled run rather than a dispatch** (MK-099).
+It landed on `749730b` by timing. Its parameters were checked from the run rather than inferred:
+`seed=20260826 cases=1000`, fork block `15043414`, four slices covering `0..1000` with no gap, which
+is what a default dispatch produces.
+
+**The first two publish attempts failed on authentication**
+([34749832323](https://github.com/cayvox/musd-kit/actions/runs/34749832323),
+[34750705753](https://github.com/cayvox/musd-kit/actions/runs/34750705753)), both with
+`npm error code E404` on `PUT .../@musd-kit%2fcore`. **A 404 on publish is npm's permission mask,
+not a missing package**: the package is publicly readable, and npm declines to disclose existence to
+an unauthorised caller. Nothing was published by either attempt and the registry was unchanged, so
+there was nothing to roll back. Resolved by replacing the `NPM_TOKEN` secret.
+
+**Deprecation and the tag.** `0.2.0` was deprecated by
+[run 34753101330](https://github.com/cayvox/musd-kit/actions/runs/34753101330) and the stored
+registry text was compared to the text the lookup produces **by sha256 rather than by eye**: 378
+bytes matching for core, 216 for react. The `v0.3.0` tag push re-entered `release.yml` as MK-055
+predicted, and the guard skipped the publish step and ran the verification instead
+([run 34753169030](https://github.com/cayvox/musd-kit/actions/runs/34753169030)).
+
+---
+
 ## The 0.2.0 release, as it actually ran
 
 **Published 2026-08-28.** `@musd-kit/core@0.2.0` and `@musd-kit/react@0.2.0`, from commit
@@ -38,12 +85,13 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 | # | Check | How | What "passed" looks like |
 |---|---|---|---|
 | 1 | `main` is green **at its tip** | `gh run list --branch main --limit 5 --json conclusion,headSha` then `git rev-parse origin/main` | A run whose `headSha` **equals** the tip, `conclusion: success`. A run on an ancestor is not this check (MK-036) |
-| 2 | No open S1 | `FINDINGS.md`, the index table | No row with class `S1` and a status other than `fixed` |
+| 2 | No open S1 | `FINDINGS.md`, the index table | No row with class `S1` and a status other than `fixed`. **The one exception, a release that changes no behaviour and exists to document an open S1, is §0b, and it has conditions of its own** |
 | 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json`. **These do not become correct by themselves: §0a is the action that sets them** | Both at the same version, and it is not already on npm |
 | 4 | The changelogs describe this release | `packages/*/CHANGELOG.md`. **Written by the same command as step 3, see §0a** | The top entry is the version from step 3 |
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
 | 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
-| 7 | **A full sweep has run against THIS tree** | `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status` | A run whose `headSha` **equals the commit being released**, `conclusion: success`. See below: an earlier run does not satisfy this, and `--ref` will not take a raw SHA |
+| 7 | **A full sweep has run against THIS tree** | Usually `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status`. A dispatch is the usual route only because a release almost never sits on the commit the last Sunday run saw | A sweep run whose `headSha` **equals the commit being released**, whose parameters are the defaults (`seed=20260826`, `cases=1000`, fork block `15043414`, read from the run's own `[differential]` lines rather than from the workflow file), whose four slices cover `0..1000` with no gap, and `conclusion: success`. **The trigger event is not part of the condition** (MK-099): a scheduled run that lands on the release commit satisfies it, and a dispatch that lands on an earlier commit does not |
+| 8 | **The previous release's record is on `main`** | `docs/13-live-testnet-ledger.md` and the `as it actually ran` sections at the top of this file, read on `origin/main`, not on a branch | A section for EVERY version already on npm (`npm view @musd-kit/core versions`), including one released without a live run, which says so and why. A record that exists only on an open pull request does not count (MK-111) |
 
 **Step 5 is the one that is easy to skip and should not be.** The fork suite proves the SDK against
 a fork; nothing but this proves it against the real deployment, the real oracle and real gas.
@@ -116,8 +164,10 @@ predicted:
 | `@musd-kit/example-keeper` | 0.0.2 | 0.0.3 | patch | no, `private` |
 | `@musd-kit/example-open-and-manage` | 0.0.2 | 0.0.3 | patch | no, `private` |
 
-The three changesets consumed are `borrow-evaluator-delegation`, `fee-rule-one-implementation` and
-`react-borrow-preview-union`.
+**The changesets consumed are whatever `pnpm changeset status` lists, and this document does not
+copy that list** (MK-098). It used to name three by filename; the P17 wave added a fourth and the
+sentence went stale without anything noticing. Read the command's output instead: it is the tool's
+own answer and it cannot drift from the tree.
 
 **The two examples move and that is expected.** They are `"private": true`, so `pnpm publish -r`
 skips them and nothing reaches the registry: `npm view @musd-kit/example-keeper` returns `E404`.
@@ -155,7 +205,15 @@ they are told: the version number will not push it to them.
 | both changelogs | the top entry under the package heading is `## 0.3.0`, followed by `### Minor Changes` |
 | the changesets are consumed | the three `.md` files named above are gone from `.changeset/`; `README.md` and `config.json` stay |
 | nothing else moved | the diff touches only `package.json`, `CHANGELOG.md` and `.changeset/`. No source file, no lockfile |
-| the version is free | `npm view @musd-kit/core version` returns the PREVIOUS version, `0.2.0`, not `0.3.0` |
+| the version is free | `npm view @musd-kit/core version` returns the PREVIOUS version, not the one you are about to publish |
+| **the commit passes the gates it has to pass** | The standing checklist in `docs/08-conventions.md`, at minimum `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm -r --filter "./examples/*" typecheck`, `pnpm build:site`. **Run them before you push, not after** |
+
+**That last row is not decoration and it was added because its absence cost a red `main`**
+(MK-097). `changeset version` is a code generator that rewrites tracked files: for 0.3.0 it expanded
+the `files` array in both manifests from one line to four and `biome check` refused it, so CI failed
+on `Lint` at the tip of `main` with the fork gate skipped. The five rows above all passed on that
+commit, because they check what the command produced semantically and say nothing about what the
+commit has to survive. A generated file is subject to the same gates as a hand written one.
 
 Then commit, push, and let CI go green at the tip before continuing: that is precondition 1, and
 this commit is now the tip.
@@ -165,6 +223,67 @@ declares `"@musd-kit/core": "workspace:*"`, which pnpm replaces with the exact v
 Verified on what actually shipped: `npm view @musd-kit/react@0.2.0 dependencies` returns
 `{ '@musd-kit/core': '0.2.0' }`. So `react@0.3.0` will depend on `core@0.3.0` exactly, and the two
 packages must publish together.
+
+---
+
+## 0b. Releasing with an open S1, and what a release that changes no behaviour may skip
+
+**Precondition 2 is absolute for any release that changes behaviour.** A fix for something else does
+not get to ship beside a known S1, because the version number would tell consumers to upgrade into
+it. This section was written after 0.3.1, which shipped with MK-100 open and was the first release to
+need an exception; until now the exception existed only in that wave's instructions.
+
+### When an open S1 does not block
+
+All of these, not some:
+
+| # | Condition | How it is checked |
+|---|---|---|
+| a | **The release changes no behaviour, proven** | `node scripts/compare-published.mjs --base <previous version>` exits 0 and prints `NO BEHAVIOUR CHANGE` against the working tree you are about to version. Method below |
+| b | **Every open S1 is the subject of the release** | For each open S1 row, the release puts a warning on every surface a consumer reads for that surface: the function's docstring (what TypeDoc publishes and an editor shows on hover), the README of each affected package (what npm renders), the docs site pages, every example that uses it, and the landing page if it shows it |
+| c | **The S1 is registered first, with its reproduction committed** | Its `FINDINGS.md` entry exists before the release commit, and names a command someone else can run |
+| d | **The register cannot be read as fixed** | The index row's status reads `open, documented` and names the release that carries the warning |
+| e | **The changelog says what it is** | The changeset says documentation only, no behaviour and no API change, and names the S1 |
+
+**And do not deprecate the previous version for it.** Its code is the new version's code, byte for
+byte, so a deprecation message would claim a difference the tarballs do not have. Deprecation belongs
+to the release that fixes the S1.
+
+### The proof, and why it has the shape it has
+
+`scripts/compare-published.mjs` packs both packages (from npm for a published version, from a fresh
+build for the working tree) and compares them file by file:
+
+| File | Must be | Why |
+|---|---|---|
+| `dist/index.js`, `dist/index.cjs` | byte identical | this is the code a consumer runs |
+| `dist/index.d.ts`, `dist/index.d.cts` | identical once the TypeScript printer removes comments | the comments ARE the documentation being released, so byte identity is impossible and would be the wrong test; the types themselves may not move |
+| `package.json` | identical apart from `version` and the pinned `@musd-kit/core` | the pin moves with the version (§0a) |
+| `README.md`, `LICENSE`, `*.map` | reported, not gated | prose, and source maps that embed the source's comments |
+| the file list | identical | a file added or removed is a change |
+
+Reproduced for the release that needed it: `node scripts/compare-published.mjs --base 0.3.0 --head
+0.3.1` prints `identical` for both runtime builds of both packages, `comments only` for the four
+declaration files, `version only` for both manifests, and `NO BEHAVIOUR CHANGE`.
+
+### Which preconditions fall away when the proof holds
+
+| # | Precondition | For a no behaviour release | Why |
+|---|---|---|---|
+| 1 | `main` green at its tip | **Stays** | lint, typecheck, the docs build and the link check all read the files the release changes |
+| 2 | No open S1 | **Replaced** by a to e above | |
+| 3 | Versions | **Stays**, and the bump is a patch | nothing in the API moved |
+| 4 | Changelogs | **Stays**, and must carry e | |
+| 5 | Live testnet run | **Falls away, and transfers nothing** | the run exercises the runtime code, which is the previous version's. It carries forward only evidence the previous version actually had: if the previous version has no live run on record, neither does this one, and nothing may imply otherwise. At the time of writing `docs/13-live-testnet-ledger.md` records a run for 0.2.0 only, so 0.3.0 and 0.3.1 have none on record |
+| 6 | Packaging gate | **Stays** | the README and the declarations inside the tarball are exactly what changed, and the gate compiles the packaged quickstart (MK-108) |
+| 7 | Sweep against this tree | **Falls away** | the sweep compares verdicts against transaction outcomes, and both are functions of the runtime code, which is identical. For the record: 0.3.1 was released from `5b731b2` by [run 34761476541](https://github.com/cayvox/musd-kit/actions/runs/34761476541); the most recent sweep then had run against `749730b`, the 0.3.0 commit |
+
+**After publishing, check the surface the release was for.** `npm view @musd-kit/core readme` and the
+same for react must contain the warning, because the registry, not the repository, is what a
+consumer reads, and `verify-published` checks imports rather than prose.
+
+**A release that changes behaviour is never this exception**, however small the change. If the proof
+exits 1, precondition 2 applies in full and the release waits for the fix.
 
 ---
 
@@ -492,5 +611,13 @@ truth; unpublishing pretends the release did not occur.
   duration of the push (`gh workflow disable release.yml`, tag, `gh workflow enable release.yml`)
   and confirmed re-enabled afterwards. For a future release, tag a commit that carries the guard and
   none of this applies.
+- **Open the record pull request, and merge it before the next release begins.** It carries the
+  `as it actually ran` section at the top of this file and the version's section in
+  `docs/13-live-testnet-ledger.md`. **The ledger is kept per release, not per script change**: every
+  version that reaches npm gets a section, whether or not a live run happened for it, and a version
+  released without one says so and cites the §0b proof that let it. Changing `scripts/testnet-e2e.ts`
+  does not by itself earn a section; a release does. Precondition 8 checks this on `main` for the
+  previous version, because 0.3.0's record sat on an unmerged pull request while two releases went
+  out (MK-111).
 - Announce, if you are announcing. The migration guide is the link that matters to anyone already
   running the previous version: `docs/11-migration-0.1-to-0.2.md`.

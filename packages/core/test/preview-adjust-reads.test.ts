@@ -425,7 +425,9 @@ describe('MK-010, the closed form boundary walk', () => {
     // is asserted rather than the number, because the number is a function of the rate.
     const math = fakeDeps({ getBorrowingFee: 1n })
     const power = await getBorrowingPower(math, { collateral: BTC })
-    expect(power).toBeGreaterThan(0n)
+    expect(power.ceiling).toBeGreaterThan(0n)
+    expect(power.recommended).toBeGreaterThan(0n)
+    expect(power.recommended).toBeLessThanOrEqual(power.ceiling)
   })
 
   it('a zero collateral is rejected rather than searched over', async () => {

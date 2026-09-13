@@ -35,6 +35,7 @@ branch by `instanceof` or by `code` in a switch.
 | `TroveAlreadyExists` | opening when one is already open | `{ address }` |
 | `InvalidAmount` | zero / negative / nonsensical input | `{ field, value }` |
 | `InvalidAddressOverride` | an `addresses` override with an unknown key, a non-address value, or the zero address (MK-009) | `{ contractName, value, why }` |
+| `RedemptionPriceFragile` | `redeem()` would end on a partial of the FIRST Trove whose price tolerance is under the measured two block move, so a cancel would revert the call (MK-103). Pass `acceptPriceFragilePartial: true` to send it anyway | `{ requested, priceToleranceUp, priceToleranceDown, requiredTolerance, nextViableAmount }` |
 
 ### 2.2 Protocol reverts (mapped from on-chain revert data)
 
@@ -47,6 +48,7 @@ branch by `instanceof` or by `code` in a switch.
 | `RedemptionTruncated` | redeemed less than requested due to `minNetDebt` floor | not always an error, may be returned as info; see `05` §6.2 |
 | `InsufficientMusdBalance` | not enough MUSD to repay/redeem | `{ required, balance }` |
 | `Unauthorized` | caller not permitted (e.g. governance-only path) | n/a |
+| `OracleStale` | `PriceFeed: Oracle is stale.`, the round is older than `MAX_PRICE_DELAY = 60` seconds (`PriceFeed.sol:14`, `:51-54`). Raised from ANY read, preview or write, since every one reads the price (MK-105) | the original error in `cause` |
 
 ### 2.3 Infrastructure
 
@@ -55,7 +57,7 @@ branch by `instanceof` or by `code` in a switch.
 | `UnsupportedChain` | `chainId` not 31611/31612 and no override given |
 | `MissingWalletClient` | a write attempted with no `walletClient` |
 | `DeploymentVerificationFailed` | the contracts at the resolved addresses are not a consistent MUSD deployment: missing code, or cross wiring that does not resolve (MK-008). Carries `failures: string[]`, all of them, not the first |
-| `ContractCallFailed` | an unexpected/unmapped revert, wraps the raw cause, never swallowed |
+| `ContractCallFailed` | an unexpected/unmapped revert, or a call that failed without reverting (an endpoint refusing the request), wraps the raw cause, never swallowed. The message says "reverted" only when a revert was actually found in the cause |
 
 ---
 
@@ -63,6 +65,11 @@ branch by `instanceof` or by `code` in a switch.
 
 - **One place.** Revert-reason decoding lives in `errors/` only; write paths call
   the mapper, they do not decode inline.
+- **Every path, not only the simulation (MK-105).** Every `MusdClient` method and every exported
+  preview runs inside `withTypedErrors`, so a revert raised by a read before a write's simulation, a
+  stale oracle among them, arrives as a `MusdError` like one raised inside it. A `MusdError` thrown by
+  a guard passes through unchanged. `zz-typed-errors.fork.test.ts` pins it against the real
+  `PriceFeed` revert on thirteen surfaces.
 - **Never swallow.** An unmapped revert becomes `ContractCallFailed` with the
   original error preserved in `cause`, it is never turned into a generic message
   that hides what happened.

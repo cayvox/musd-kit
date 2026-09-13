@@ -39,7 +39,8 @@
  *     :1323-1328 _calculateMaxBorrowingCapacity(coll, price) = coll * price / (110 * 1e16)
  *     :1358-1365 _requireHasBorrowingCapacity: `maxBorrowingCapacity >= netDebtChange + debt`
  *     :879-897   the capacity ratchet: recomputed ONLY when collateral decreases, and
- *                stored as `min(current, recalculated)`, so it never rises with price
+ *                stored as `min(current, recalculated)`, so a price rise does not raise it
+ *                on the adjust path (a refinance resets it from the current price, MK-101)
  *     :499-509   getRedemptionRate(collateralDrawn) returns a fee AMOUNT in BTC wei
  *     :129,:151  redemptionRate is the RATE, a 1e18 fraction, initialized to 0.75%
  *   TroveManager.sol
@@ -270,7 +271,7 @@ describe('Open findings, pinned by failing tests (P2)', () => {
   }, 300_000)
 
   // ---------------------------------------------------------------- MK-002 ----
-  it('MK-002 (fixed): previewBorrow respects maxBorrowingCapacity, which never rises with price', async () => {
+  it('MK-002 (fixed): previewBorrow respects maxBorrowingCapacity, which a price rise does not raise', async () => {
     const fork = connectFork()
     const borrower = testAccount(2003)
     const original = await livePrice()
@@ -736,7 +737,11 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // block, which is a real dependency, and it was previously spelled `refreshOracle()`.
       await fork.mineBlocks(1)
       await reportRedemptionMargin(fork.publicClient, 'zz-findings/MK-014', 100n * MUSD)
-      const result = await client.redeem({ amount: 100n * MUSD })
+      // MK-103. 100 MUSD ends in a partial on the first Trove, and since 0.4.0 `redeem()` refuses a
+      // first-Trove partial whose price tolerance is under the measured two block move, because on
+      // a live chain it mostly reverts. The fork holds the price still, so it would not, and this
+      // test is about the result's field names rather than about that policy: it opts in.
+      const result = await client.redeem({ amount: 100n * MUSD, acceptPriceFragilePartial: true })
       recordMitigation({ name: 'zzFindingsRedeemRetry', attempts: 1, outcome: 'ok' })
       await wait(result.hash)
 

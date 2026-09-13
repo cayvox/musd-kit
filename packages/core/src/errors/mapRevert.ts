@@ -18,7 +18,9 @@ import {
   ICRBelowMCR,
   InsufficientMusdBalance,
   LastTroveInSystem,
+  MusdError,
   NothingToLiquidate,
+  OracleStale,
   RecoveryModeRestriction,
   RedemptionFailed,
   RepayExceedsDebt,
@@ -73,7 +75,10 @@ export function decodeRevertReason(error: unknown): string | undefined {
  * substring of each verified reason (ground-truth §11), case-insensitive. Unrecognized →
  * `ContractCallFailed` (raw reason + original error preserved; never swallowed).
  */
-export function mapRevert(error: unknown, context?: RevertContext): Error {
+export function mapRevert(error: unknown, context?: RevertContext): MusdError {
+  // Already typed: a guard or an inner call mapped it. Mapping it again would bury the precise
+  // error inside a `ContractCallFailed` (MK-105, where every client method now routes here).
+  if (error instanceof MusdError) return error
   const { reason, errorName } = decode(error)
   const text = reason ?? ''
   const has = (re: RegExp) => re.test(text)
@@ -83,6 +88,8 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
   // MK-043. The three Recovery Mode reverts say DIFFERENT things and used to share one
   // message, so a user blocked from withdrawing any collateral was told to satisfy a ratio
   // that would not have helped. Split, most specific first.
+  // MK-105. The one revert every path can hit, from the price read itself.
+  if (has(/Oracle is stale/i)) return new OracleStale(error)
   if (has(/Collateral withdrawal not permitted/i)) return new CollateralWithdrawalBlocked(error)
   if (has(/ICR >= CCR/i) || has(/recovery mode/i)) return new RecoveryModeRestriction(error)
   if (has(/ICR < MCR is not permitted/i)) return new ICRBelowMCR(error)
@@ -124,5 +131,34 @@ export function mapRevert(error: unknown, context?: RevertContext): Error {
 
   //, Unrecognized: never swallow,
   const fn = context?.operation ?? 'contract call'
-  return new ContractCallFailed(`${fn} reverted: ${reason ?? revertReason(error)}`, error)
+  // MK-105. Not every failure that reaches here is a revert: a rate limited endpoint or a dropped
+  // connection arrives too, now that reads route through this function. Say which it was, so
+  // "reverted" is only ever printed for something the contract refused.
+  const reverted =
+    error instanceof BaseError &&
+    error.walk((e) => e instanceof ContractFunctionRevertedError) !== null
+  return new ContractCallFailed(
+    `${fn} ${reverted ? 'reverted' : 'failed'}: ${reason ?? revertReason(error)}`,
+    error,
+  )
+}
+
+/**
+ * Run a chain reading operation and route anything it throws through {@link mapRevert} (MK-105).
+ *
+ * **Why this exists.** `simulateAndSend` always mapped what it caught, and the README promised a
+ * typed `MusdError` for every protocol revert. The reads that run BEFORE a simulation, and every
+ * preview and read function, did not map anything, so a stale oracle reached the caller as a raw
+ * viem `ContractFunctionExecutionError` with no `code`. Every exported async entry point runs
+ * through this, and an error that is already a `MusdError` passes through untouched.
+ */
+export async function withTypedErrors<T>(
+  run: () => Promise<T>,
+  context: RevertContext,
+): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    throw mapRevert(error, context)
+  }
 }

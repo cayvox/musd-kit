@@ -41,6 +41,7 @@ import {
   MUSD_GAS_COMPENSATION as GAS_COMPENSATION,
   type MusdClient,
   MusdError,
+  RedemptionPriceFragile,
   createMusdClient,
   formatBtc,
   formatMusd,
@@ -409,9 +410,15 @@ async function main(): Promise<void> {
     `  capacity ${formatMusd(capacity.capacity)}, remaining ${formatMusd(capacity.remaining)}`,
   )
   const power = await musd.getBorrowingPower({ collateral: COLLATERAL })
-  console.log(`  borrowingPower at open collateral ${formatMusd(power)} MUSD`)
+  console.log(
+    `  borrowingPower at open collateral: recommended ${formatMusd(power.recommended)} MUSD, ceiling ${formatMusd(power.ceiling)} MUSD`,
+  )
   record('getBorrowingCapacity', 'exercised', `capacity ${capacity.capacity}`)
-  record('getBorrowingPower', 'exercised', `power ${power}`)
+  record(
+    'getBorrowingPower',
+    'exercised',
+    `recommended ${power.recommended} ceiling ${power.ceiling}`,
+  )
 
   // ---- 3. previewAdjustTrove + addCollateral
   console.log('\n--- previewAdjustTrove + addCollateral ---')
@@ -576,23 +583,73 @@ async function main(): Promise<void> {
       const before = await musd.balanceOf(owner)
       const beforeBtc = await publicClient.getBalance({ address: owner })
       try {
-        // Retry once, with the amount and the hints recomputed, which is MK-049's documented
-        // mitigation: the partial hint carries an NICR derived at the price it was read at, and
-        // the contract recomputes it at the price the transaction MINES at. On a shared chain the
-        // oracle moves in between. One retry, never a loop.
-        let result = await musd.redeem({ amount })
+        // MK-103. This amount is a partial on the first eligible Trove, by design (see above), and
+        // since 0.4.0 `redeem()` refuses such a partial when its price tolerance is under the
+        // measured two block move, because on a live chain the contract cancels it on almost any
+        // move and the call reverts. This step exists to exercise the write on the real chain, so it
+        // prints the tolerances the preview reports and opts in, knowingly. One retry with the
+        // amount and hints recomputed stays, labelled for what it is: a second draw against the
+        // same odds, not a mitigation (MK-103 superseded MK-049's retry advice).
+        const sized = await musd.previewRedeem({ redeemer: owner, amount })
+        if (sized.partial) {
+          console.log(
+            `  partial on ${sized.partial.trove}: tolerance up ${sized.partial.priceToleranceUp} down ${sized.partial.priceToleranceDown} (1e18 fractions), fragile=${sized.partial.priceFragile}, first Trove=${sized.partial.revertsCallIfCancelled}`,
+          )
+        }
+        // The DEFAULT path first, because a run that goes straight to the opt in never shows the
+        // behaviour 0.4.0 changed. For a fragile first-Trove partial the default must refuse before
+        // anything is signed. If it does not refuse, it has sent a transaction, and that is recorded
+        // as the guard failing rather than folded into the result.
+        const fragileFirst = Boolean(
+          sized.partial?.revertsCallIfCancelled && sized.partial.priceFragile,
+        )
+        let optedIn = false
+        if (fragileFirst) {
+          let refused: unknown
+          let sentAnyway: { hash: `0x${string}` } | undefined
+          try {
+            sentAnyway = await musd.redeem({ amount })
+          } catch (error) {
+            refused = error
+          }
+          if (refused instanceof RedemptionPriceFragile) {
+            console.log('  default redeem(): refused before signing, RedemptionPriceFragile')
+            record(
+              'redeem, default path',
+              'exercised',
+              `refused before signing with RedemptionPriceFragile, as 0.4.0 intends (MK-103). tolerance up ${sized.partial?.priceToleranceUp} down ${sized.partial?.priceToleranceDown}`,
+            )
+          } else if (sentAnyway) {
+            record(
+              'redeem, default path',
+              'skipped',
+              `GUARD FAILED: a fragile first-Trove partial was SENT without the opt in, ${sentAnyway.hash} (MK-103)`,
+            )
+            throw new Error(RECORDED_ALREADY)
+          } else {
+            throw refused
+          }
+          optedIn = true
+        } else {
+          console.log('  no fragile first-Trove partial at this amount: the default path sends it')
+        }
+        let result = await musd.redeem({ amount, acceptPriceFragilePartial: optedIn })
         let outcome = await waitFor(result.hash, 'redeem', { fatal: false })
         if (!outcome.ok) {
           const again = await musd.previewRedeem({ redeemer: owner, amount: 1n })
           const retryAmount = again.maxWithoutConsuming > 0n ? again.maxWithoutConsuming : amount
           console.log(
-            `  retrying once at ${formatMusd(retryAmount)} MUSD, hints recomputed (MK-049)`,
+            `  retrying once at ${formatMusd(retryAmount)} MUSD, hints recomputed (MK-103)`,
           )
-          result = await musd.redeem({ amount: retryAmount })
+          result = await musd.redeem({ amount: retryAmount, acceptPriceFragilePartial: optedIn })
           outcome = await waitFor(result.hash, 'redeem (retry)', { fatal: false })
         }
         if (!outcome.ok) {
-          record('redeem', 'skipped', `${outcome.why}. Two attempts, hints recomputed (MK-049)`)
+          record(
+            'redeem',
+            'skipped',
+            `${outcome.why}. Two attempts, hints recomputed; a first-Trove partial is price fragile (MK-103)`,
+          )
           throw new Error(RECORDED_ALREADY)
         }
         const after = await musd.balanceOf(owner)
@@ -606,7 +663,7 @@ async function main(): Promise<void> {
         record(
           'redeem',
           'exercised',
-          `burned ${formatMusd(before - after)} MUSD against another account's Trove. rate=${result.redemptionRate} estimatedFeeCollateral=${result.estimatedFeeCollateral} estimatedCollateralDrawn=${result.estimatedCollateralDrawn}`,
+          `${optedIn ? 'sent WITH acceptPriceFragilePartial after the default refused' : 'sent on the default path, no fragile first-Trove partial'}; burned ${formatMusd(before - after)} MUSD against another account's Trove. rate=${result.redemptionRate} estimatedFeeCollateral=${result.estimatedFeeCollateral} estimatedCollateralDrawn=${result.estimatedCollateralDrawn}`,
         )
       } catch (e) {
         const err = e as Error

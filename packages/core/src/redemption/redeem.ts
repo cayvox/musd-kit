@@ -10,12 +10,18 @@ import {
   InsufficientMusdBalance,
   MaxFeeExceeded,
   RedemptionBreachesDebtFloor,
+  RedemptionPriceFragile,
   assertPositiveAmount,
 } from '../errors'
 import { findHintsForNICR } from '../hints'
 import { type GasDecision, type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
 import { estimateCollateralDrawn, exceedsRateCap } from '../math/fee'
-import { previewRedeem } from '../math/previewRedeem'
+import {
+  type PartialRedemption,
+  REDEMPTION_PRICE_MOVE_TOLERANCE,
+  REDEMPTION_SEND_MARGIN_SECONDS,
+  previewRedeem,
+} from '../math/previewRedeem'
 
 const TM_ABI: Abi = troveManagerAbi
 
@@ -49,6 +55,14 @@ export interface RedeemParams {
    * `Redemption` event after the receipt, or do not send while the rate is moving.
    */
   maxFeePercentage?: bigint
+  /**
+   * Send a partial redemption on the first Trove drawn even when it is price fragile (MK-103).
+   *
+   * Default `false`: `redeem()` throws {@link RedemptionPriceFragile} before spending gas when the
+   * partial would cancel, and so revert the call, on a price move smaller than the measured two block
+   * move. Set it when you have decided that the chance of a same price block is worth the gas.
+   */
+  acceptPriceFragilePartial?: boolean
 }
 
 /**
@@ -112,6 +126,11 @@ export interface RedeemResult {
    * everywhere else.
    */
   gas: GasDecision
+  /**
+   * The partial this redemption was sent with, including the centred hint and its price
+   * tolerances, or `null` when every Trove it touches is consumed whole (MK-103).
+   */
+  partial: PartialRedemption | null
 }
 
 /**
@@ -167,7 +186,15 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
       getMinNetDebt: deps.getMinNetDebt,
       isAccountFeeExempt: deps.isAccountFeeExempt,
     },
-    { redeemer: wallet.account.address, amount, maxIterations },
+    // MK-104. The SENDING margin, not the advice margin: `nextViableAmount` already carries 900
+    // seconds of accrual from the block it was read at, and adding them again here refused that
+    // advice a block after giving it.
+    {
+      redeemer: wallet.account.address,
+      amount,
+      maxIterations,
+      marginSeconds: REDEMPTION_SEND_MARGIN_SECONDS,
+    },
   )
   if (!redemption.viable && redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR') {
     throw new RedemptionBreachesDebtFloor({
@@ -177,16 +204,37 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
     })
   }
 
+  // MK-103. Refuse, before gas, a partial whose cancel would revert the call on an ordinary move.
+  const partial = redemption.viable ? redemption.partial : null
+  if (
+    partial?.revertsCallIfCancelled &&
+    partial.priceFragile &&
+    !params.acceptPriceFragilePartial
+  ) {
+    throw new RedemptionPriceFragile({
+      requested: amount,
+      priceToleranceUp: partial.priceToleranceUp,
+      priceToleranceDown: partial.priceToleranceDown,
+      requiredTolerance: REDEMPTION_PRICE_MOVE_TOLERANCE,
+      nextViableAmount: redemption.nextViableAmount,
+    })
+  }
+
   if (exceedsRateCap(redemptionRate, params.maxFeePercentage)) {
     throw new MaxFeeExceeded(params.maxFeePercentage as bigint, redemptionRate, redemptionRate)
   }
 
-  const [firstRedemptionHint, partialNICR, truncatedAmount] = await deps.publicClient.readContract({
+  // The hints are computed at the price the preview evaluated, so the partial's band and the first
+  // hint describe the same state.
+  const [firstRedemptionHint, helperNICR, truncatedAmount] = await deps.publicClient.readContract({
     address: deps.addresses.hintHelpers,
     abi: hintHelpersAbi,
     functionName: 'getRedemptionHints',
-    args: [amount, price, maxIterations],
+    args: [amount, redemption.price, maxIterations],
   })
+  // MK-103. The CENTRE of the contract's band rather than the helper's lower edge, which tolerated
+  // no price rise at all. With no partial there is nothing to hint, and the helper's value stands.
+  const partialNICR = partial?.hintNicr ?? helperNICR
   const { upperHint, lowerHint } = await findHintsForNICR(
     { publicClient: deps.publicClient, addresses: deps.addresses },
     partialNICR,
@@ -223,5 +271,6 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
     estimatedFeeCollateral,
     estimatedCollateralDrawn,
     gas,
+    partial,
   }
 }

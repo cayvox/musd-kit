@@ -9,6 +9,12 @@
  * is the same defect as citing a simulated number as chain behaviour (`docs/08-conventions.md` §10
  * step 11). So this prints every setting beside every result.
  *
+ * **It also compiles the quickstart that npm renders** (MK-108). The `## Quickstart` block is read out
+ * of `package/README.md` INSIDE the packed core tarball, which is the file npm displays, and
+ * typechecked against the same install under the two ESM rows. It uses top level `await`, which a
+ * CommonJS module cannot contain, so the CommonJS rows do not compile it and say so. The block
+ * shipped in 0.3.0 used three undeclared names and gated on the wrong field, and nothing compiled it.
+ *
  * It packs the real tarballs and typechecks a consumer against them from OUTSIDE the workspace,
  * because a workspace typecheck resolves `@musd-kit/core` through path mapping and never reads the
  * `exports` map, which is exactly where MK-040 lived for a whole release.
@@ -43,8 +49,8 @@ const run = (cmd, args, cwd, quiet = true) =>
  * since. Keep it updated with any public shape change, and read the failure as "the probe is
  * stale" before reading it as "the package is broken".
  */
-const PROBE = `import { createMusdClient, evaluateRedeem, accruedInterest, netDebtOf, LastTroveInSystem, MCR, type GasDecision, type OpenPreview, type RedeemResult, type RedemptionPreview, type ClosePreview, type WriteResult } from '@musd-kit/core'
-import { useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useRefinancePreview, type AdjustPreviewLegs } from '@musd-kit/react'
+const PROBE = `import { createMusdClient, evaluateRedeem, accruedInterest, netDebtOf, LastTroveInSystem, MCR, BORROWING_POWER_MARGIN_WINDOW_SECONDS, BORROWING_POWER_PRICE_MOVE_BPS, OracleStale, RedemptionPriceFragile, type BorrowingPower, type GasDecision, type OpenPreview, type RedeemResult, type RedemptionPreview, type RefinancePreview, type ClosePreview, type WriteResult } from '@musd-kit/core'
+import { useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useBorrowingPowerDetail, useRefinancePreview, type AdjustPreviewLegs, type BorrowPreview } from '@musd-kit/react'
 const d: GasDecision = { source: 'explicit', limit: 1n }
 const w: WriteResult = { hash: '0x00', gas: d }
 declare const p: OpenPreview
@@ -52,9 +58,18 @@ declare const r: RedeemResult
 declare const c: ClosePreview
 // MK-088. Each eligible Trove carries its OWN principal and rate; there is no shared rate.
 const rp: RedemptionPreview = evaluateRedeem({
-  amount: 1n, musdBalance: 1n, minNetDebt: 1n, tcr: MCR, price: 1n,
-  eligible: [{ owner: '0x00', entireDebt: 1n, principal: 1n, netDebt: 1n, interestRateBps: 100n }],
+  amount: 1n, musdBalance: 1n, minNetDebt: 1n, tcr: MCR, price: 1n, globalInterestRateBps: 100n,
+  eligible: [{ owner: '0x00', entireDebt: 1n, principal: 1n, netDebt: 1n, interestRateBps: 100n, collateral: 1n, interestOwed: 0n }],
 })
+// MK-103. The partial a redemption ends on, with its price tolerances.
+const fragile: boolean | undefined = rp.partial?.priceFragile
+// MK-100. Two figures, named, and the margin they differ by.
+declare const power: BorrowingPower
+const figures: [bigint, bigint, bigint, bigint] = [power.ceiling, power.recommended, power.margin.stressedPrice, BORROWING_POWER_PRICE_MOVE_BPS * BORROWING_POWER_MARGIN_WINDOW_SECONDS]
+// MK-101. The rate a refinance moves to and the capacity it resets.
+declare const refi: RefinancePreview
+const refiFigures: [number, bigint] = [refi.resultingInterestRateBps, refi.resultingCapacity]
+declare const borrowPreview: BorrowPreview
 // MK-085. An absent leg stays absent, which is what the shape exists to express.
 const legs: AdjustPreviewLegs = { addCollateral: 1n }
 // MK-089, MK-094. The single-sourced protocol helpers, reachable from the package.
@@ -62,7 +77,7 @@ const i: bigint = accruedInterest({ principal: 1n, rateBps: 100n, seconds: 600n 
 const check: [boolean, bigint, bigint, bigint, bigint, bigint, bigint, bigint] = [
   p.viable, p.resultingTcr, r.redemptionRate, MCR, rp.accrualMargin, rp.nextViableAmount, c.musdRequired, i,
 ]
-void [createMusdClient, useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useRefinancePreview, LastTroveInSystem, legs, w, check]
+void [createMusdClient, useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useBorrowingPowerDetail, useRefinancePreview, LastTroveInSystem, OracleStale, RedemptionPriceFragile, legs, w, check, figures, refiFigures, borrowPreview]
 `
 
 const ROWS = [
@@ -95,8 +110,26 @@ run(
   ['i', '--silent', ...tarballs, 'viem@^2', 'react@^18', 'wagmi@^2', '@tanstack/react-query@^5'],
   CONSUMER,
 )
-run('npm', ['i', '--silent', '-D', 'typescript@5', '@types/react@18'], CONSUMER)
+run('npm', ['i', '--silent', '-D', 'typescript@5', '@types/react@18', '@types/node@20'], CONSUMER)
 writeFileSync(join(CONSUMER, 'probe.ts'), PROBE)
+
+// MK-108. The quickstart, exactly as the packed README carries it.
+const README_DIR = join(WORK, 'readme')
+mkdirSync(README_DIR, { recursive: true })
+run('tar', ['xzf', tarballs[0], '-C', README_DIR, 'package/README.md'], ROOT)
+const packedReadme = readFileSync(join(README_DIR, 'package/README.md'), 'utf8')
+const quickstartSection = packedReadme.split('\n## Quickstart\n')[1]?.split('\n## ')[0] ?? ''
+const QUICKSTART = /```ts\n([\s\S]*?)\n```/.exec(quickstartSection)?.[1]
+if (!QUICKSTART) {
+  throw new Error(
+    'the packed core README has no ```ts block under "## Quickstart"; the gate would be vacuous',
+  )
+}
+// `export {}` makes the file a module, so its top level `await` is legal where modules allow it.
+writeFileSync(join(CONSUMER, 'quickstart.ts'), `${QUICKSTART}\nexport {}\n`)
+
+/** The ESM rows compile the quickstart too; top level `await` cannot exist in a CommonJS module. */
+const compilesQuickstart = (row) => row.type === 'module'
 
 const tscFor = (row, skipLibCheck) => {
   const pkgPath = join(CONSUMER, 'package.json')
@@ -118,7 +151,7 @@ const tscFor = (row, skipLibCheck) => {
         jsx: 'react-jsx',
         lib: ['es2022', 'dom'],
       },
-      include: ['probe.ts'],
+      include: compilesQuickstart(row) ? ['probe.ts', 'quickstart.ts'] : ['probe.ts'],
     }),
   )
   try {
@@ -134,15 +167,16 @@ let failed = 0
 const report = (skipLibCheck) => {
   console.log(`\nconfiguration: skipLibCheck=${skipLibCheck}, strict=true, target=es2022`)
   console.log(
-    `  package.json "type"      module            moduleResolution   result   packages@${version}`,
+    `  package.json "type"      module            moduleResolution   result   files                    packages@${version}`,
   )
   for (const row of ROWS) {
     const r = tscFor(row, skipLibCheck)
     const label = row.type ?? '(absent, CommonJS)'
+    const files = compilesQuickstart(row) ? 'probe + README quickstart' : 'probe only'
     console.log(
       `  ${label.padEnd(24)} ${row.module.padEnd(17)} ${row.moduleResolution.padEnd(18)} ${
         r.ok ? 'PASS' : 'FAIL'
-      }`,
+      }     ${files}`,
     )
     if (!r.first) continue
     console.log(`      first error: ${r.first}`)

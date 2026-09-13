@@ -6,6 +6,13 @@ the provider, it does not supply one (decision O4). Read hooks return
 `{ data, isLoading, error }` and refetch on new blocks via TanStack Query; write
 hooks return a `writeContract`-style function plus status.
 
+**A read hook shows only the answer to the question it is asking (MK-102).** When its inputs change,
+or it is disabled because an input is missing, `data` is `undefined` and `status` is `pending` until
+the new question is answered; the previous answer is not kept as a placeholder, and nothing is kept
+for a key no hook observes. A refetch of the SAME question on a new block keeps the last answer
+visible while it runs. A write hook resets its `data`, `hash` and status when the connected account
+or chain changes.
+
 A wagmi developer should recognize every signature on sight. Each hook delegates to
 `@musd-kit/core`; the React layer adds only the reactive wrapper.
 
@@ -39,25 +46,28 @@ happened to arrive together.
 // A borrowing-power calculator, no live position needed (preview math)
 // Pass `account` whenever you have one (MK-067): the borrowing fee is skipped for a fee exempt
 // account, so the maximum is LARGER for such a caller than the figure returned without it.
-const { data: maxBorrowable } = useBorrowingPower({ collateral: parseBtc('0.05'), account });
-// `data` is the largest valid MUSD draw (a bigint) for that collateral at the live price.
-// NO SAFETY MARGIN (MK-100): do not open at it and do not wire it to a "max" button.
+const { data: recommended } = useBorrowingPower({ collateral: parseBtc('0.05') });
+// `data` is core getBorrowingPower's RECOMMENDED draw (a bigint), never its ceiling (MK-100).
+// `account` defaults to the connected wallet (MK-106); pass one to ask about another account.
+const { data: power } = useBorrowingPowerDetail({ collateral: parseBtc('0.05') });
+// power.ceiling, power.recommendedIcr, power.margin: the same single fetch.
+const { data: slowFlow } = useBorrowingPower({ collateral: parseBtc('0.05'), marginWindowSeconds: 86_400n });
+// A margin override is forwarded to the core and is part of the query key, so each margin is its
+// own cached answer. Omitted, the measured default applies; the detail hook's `margin` says which.
 ```
 
-> ⚠️ **`useBorrowingPower` has no safety margin. Do not open a Trove at the number it returns
-> (MK-100).** In normal mode it opens the position at exactly the 110% minimum collateral ratio.
-> Interest is added to the debt every second, so the position drops below 110% and **can be
-> liquidated by anyone within seconds of opening**; a liquidation takes all of the collateral and
-> the user keeps only the MUSD they drew. Reproduced on a fork by
-> `packages/core/test/zz-borrowing-power-boundary.fork.test.ts`. **You must apply your own
-> buffer**: offer a smaller draw, and show the ratio the user would open at (`previewOpen`'s `icr`)
-> before they sign. In Recovery Mode it opens at exactly 150%, with no margin either. The returned
-> value is unchanged in 0.3.1 on purpose; changing it is an open design decision.
+> **`useBorrowingPower` returns the recommended draw (MK-100).** Since 0.4.0 `data` leaves the
+> measured margin stated on `BORROWING_POWER_PRICE_MOVE_BPS` and
+> `BORROWING_POWER_MARGIN_WINDOW_SECONDS`; opened at it, a Trove was not liquidatable after an hour
+> on a fork. The contract's ceiling, from `useBorrowingPowerDetail`, is a limit to display: in normal
+> mode a Trove opened at it is liquidatable within seconds. Until 0.3.1 this hook returned the
+> ceiling.
 
 > ⚠️ **`useBorrowingPower` sizes an OPEN, not a top-up.** Its name invites use against a
 > Trove that already exists; it does not do that. Every Trove carries a
-> `maxBorrowingCapacity` fixed at the opening price which never rises afterwards, and a
-> debt increase is gated on it (`BorrowerOperations.sol:1358-1365`). For an existing
+> `maxBorrowingCapacity`, set at the opening price, lowered on a collateral decrease and
+> reset from the current price by a refinance (MK-101), and a debt increase is gated on it
+> (`BorrowerOperations.sol:1358-1365`). For an existing
 > position use `useBorrowPreview` or `useBorrowingCapacity` (MK-002).
 
 ```tsx
@@ -102,7 +112,7 @@ core; the React layer adds only the reactive wrapper.
 
 ## 3. The v1 hook set (as shipped, Phase 8)
 
-**Read (14):** `useTrove`, `useBorrowingPower`, `useBorrowPreview`, `useBorrowingCapacity`,
+**Read (15):** `useTrove`, `useBorrowingPower`, `useBorrowingPowerDetail`, `useBorrowPreview`, `useBorrowingCapacity`,
 `useRefinancePreview`, `useLiquidationPrice`, `useHealthFactor`, `useMusdBalance`,
 `useOraclePrice`, `useAdjustTrovePreview`, `useWithdrawCollateralPreview`,
 `useMaxWithdrawableCollateral`, `useClosePreview`, `useRedeemPreview`.

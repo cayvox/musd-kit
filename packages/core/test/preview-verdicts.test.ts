@@ -258,7 +258,7 @@ describe('evaluateBorrow, the borrow verdict (MK-002)', () => {
 
     // And with the status gate cleared, the ratio binds rather than capacity. This is the
     // case a caller actually sees: they are told to fix the ratio, which they can, rather
-    // than to raise capacity, which never rises (`BorrowerOperations.sol:879-897`).
+    // than to raise capacity, which the adjust path never raises (`BorrowerOperations.sol:879-897`).
     const active = evaluateBorrow(
       borrowInput({
         capacity: 0n,
@@ -385,6 +385,9 @@ function refinanceInput(over: Partial<EvaluateRefinanceInput> = {}): EvaluateRef
     price: PRICE,
     systemColl: 1_000n * E18,
     systemDebt: 1_000_000n * E18,
+    currentInterestRateBps: 100,
+    globalInterestRateBps: 100,
+    currentCapacity: 90_000n * E18,
     ...over,
   }
 }

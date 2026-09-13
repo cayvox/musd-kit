@@ -1,6 +1,7 @@
 import type { Address, PublicClient } from 'viem'
 import type { MusdAddresses } from '../addresses'
 import { hintHelpersAbi, sortedTrovesAbi } from '../clients'
+import { withTypedErrors } from '../errors/mapRevert'
 import { type ComputeNICRParams, computeNICR } from './computeNICR'
 
 /** Default deterministic sampling seed for `getApproxHint` (tests rely on this). */
@@ -58,6 +59,10 @@ export interface HintsDeps {
  * not compute the principal itself; `trove/index.ts` projects it per operation.
  */
 export async function computeHints(deps: HintsDeps, params: ComputeHintsParams): Promise<Hints> {
+  return withTypedErrors(() => computeHintsUnchecked(deps, params), { operation: 'computeHints' })
+}
+
+async function computeHintsUnchecked(deps: HintsDeps, params: ComputeHintsParams): Promise<Hints> {
   const nicr = computeNICR({ collateral: params.collateral, principal: params.principal })
   const opts: { numTrials?: number; randomSeed?: bigint } = {}
   if (params.numTrials !== undefined) opts.numTrials = params.numTrials

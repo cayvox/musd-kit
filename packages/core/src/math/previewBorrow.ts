@@ -1,5 +1,6 @@
 import type { Address } from 'viem'
 import { troveManagerAbi } from '../clients'
+import { withTypedErrors } from '../errors/mapRevert'
 import { troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import {
@@ -40,10 +41,10 @@ import {
  *   - Capacity is set ONCE, at open, from the OPENING price:
  *     `maxBorrowingCapacity = coll * price / (110 * 1e16)`
  *     (`BorrowerOperations.sol:692-698` calling `:1323-1328`).
- *   - It is recomputed ONLY when collateral DECREASES, and stored as
- *     `min(current, recalculated)` (`BorrowerOperations.sol:879-897`). So it ratchets
- *     downward and **never rises**, not when the price rises and not when collateral is
- *     added.
+ *   - On the adjust path it is recomputed ONLY when collateral DECREASES, and stored as
+ *     `min(current, recalculated)` (`BorrowerOperations.sol:879-897`), so a price rise or a
+ *     top-up does not raise it. **A refinance RESETS it** from the current price
+ *     (`:1077-1084`), unconditionally, which can raise or cut it (MK-101).
  *   - A debt increase requires `maxBorrowingCapacity >= netDebtChange + debt`
  *     (`BorrowerOperations.sol:1358-1365`, called at `:851` only when `_isDebtIncrease`).
  *   - `netDebtChange` is the draw PLUS its borrowing fee, and the fee is skipped in
@@ -146,6 +147,15 @@ export interface PreviewBorrowParams {
  * `netDebtChange + debt`, and `netDebtChange` already includes the fee.
  */
 export async function getBorrowingCapacity(
+  deps: MathDeps,
+  owner: Address,
+): Promise<BorrowingCapacity> {
+  return withTypedErrors(() => getBorrowingCapacityUnchecked(deps, owner), {
+    operation: 'getBorrowingCapacity',
+  })
+}
+
+async function getBorrowingCapacityUnchecked(
   { publicClient, addresses }: MathDeps,
   owner: Address,
 ): Promise<BorrowingCapacity> {
@@ -186,6 +196,13 @@ export async function getBorrowingCapacity(
  * statement is on `MathDeps` in `math/deps.ts` (MK-013, MK-093).
  */
 export async function previewBorrow(
+  deps: MathDeps,
+  params: PreviewBorrowParams,
+): Promise<BorrowPreview> {
+  return withTypedErrors(() => previewBorrowUnchecked(deps, params), { operation: 'previewBorrow' })
+}
+
+async function previewBorrowUnchecked(
   deps: MathDeps,
   params: PreviewBorrowParams,
 ): Promise<BorrowPreview> {

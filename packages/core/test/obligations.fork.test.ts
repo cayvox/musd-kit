@@ -37,7 +37,7 @@ describe('Obligations owed to the differential harness', () => {
   /**
    * MK-002. `maxBorrowingCapacity` is recomputed ONLY when collateral decreases, and stored as
    * `min(current, recalculated)` (`BorrowerOperations.sol:879-897`), so it ratchets DOWNWARD
-   * and never rises.
+   * and is not raised by a price rise on the adjust path (a refinance resets it, MK-101).
    *
    * What the existing tests pin is that it does not RISE with price, which is the half the
    * reported defect turned on. What none of them do is perform a collateral withdrawal and

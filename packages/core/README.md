@@ -10,29 +10,27 @@ typed, reusable, and checked against the contracts rather than against intuition
 > for testnet and evaluation.** Every write path documents what it does on-chain and what it
 > does not guarantee. License: MIT.
 
-## ⚠️ Warning: `getBorrowingPower` has no safety margin (MK-100)
+## Borrowing power is two figures, and only one of them is safe to open at (MK-100)
 
-**Do not open a Trove at the number `getBorrowingPower` returns.** It is the largest draw the
-contract will accept. In normal mode that opens the position at exactly the 110% minimum collateral
-ratio. Interest is added to the debt every second, so the position drops below 110% and **can be
-liquidated by anyone within seconds of opening.** A liquidation takes all of the collateral; you
-keep only the MUSD you drew. This was reproduced on a fork: opened at the reported number,
-liquidatable one second later, and liquidated.
-
-**You must apply your own buffer.** For example:
+`getBorrowingPower` returns a **`ceiling`** and a **`recommended`** draw. The `ceiling` is the largest
+draw the contract accepts, with no margin: in normal mode it opens the position at exactly the 110%
+minimum collateral ratio, and interest pushes it below 110% within seconds, where anyone can liquidate
+it and take all of the collateral. **Offer `recommended`.** It is solved against a price stressed by a
+measured adverse move and an interest window, both reported on the result (`margin`) and both stated
+on `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS`.
 
 ```ts
-const max = await musd.getBorrowingPower({ collateral, account })
-// Your buffer is your decision. 80% here is an illustration, not a recommendation.
-const debt = (max * 80n) / 100n
-const preview = await musd.previewOpen({ collateral, debt, account })
-// preview.icr is the ratio you would open at. Liquidation starts below 1.1e18 (110%).
+const power = await musd.getBorrowingPower({ collateral, account })
+power.recommended // the draw to offer
+power.ceiling // a limit to display, never an amount to borrow
+power.margin // { windowSeconds, priceMoveBps, interestRateBps, accrualFraction, stressedPrice }
+
+// A slower flow needs a wider margin; `margin` always reports the one used.
+const slow = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 86_400n })
 ```
 
-In Recovery Mode the number opens at exactly 150%, which is not liquidatable but has no margin
-either. The returned value is unchanged in 0.3.1 on purpose: this release only adds the warning,
-and changing the number is an open design decision. The full record is MK-100 in
-[`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md).
+Until 0.4.0 this function returned the ceiling alone, as a `bigint`. The full record, including the
+fork measurement, is MK-100 in [`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md).
 
 ## Install
 
@@ -45,28 +43,27 @@ npm install @musd-kit/core viem
 ## Quickstart
 
 ```ts
-import { createMusdClient } from '@musd-kit/core'
-import { mezoTestnet } from '@mezo-org/chains'
-import { http, createPublicClient, createWalletClient } from 'viem'
+import { createMusdClient, mezoTestnet, parseBtc, parseMusd } from '@musd-kit/core'
+import { http, type Address, createPublicClient, createWalletClient } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
+const account = privateKeyToAccount(process.env.KEY as `0x${string}`)
 const publicClient = createPublicClient({ chain: mezoTestnet, transport: http() })
-const walletClient = createWalletClient({
-  account: privateKeyToAccount(process.env.KEY as `0x${string}`),
-  chain: mezoTestnet,
-  transport: http(),
-})
+const walletClient = createWalletClient({ account, chain: mezoTestnet, transport: http() })
 
 const musd = createMusdClient({ chainId: mezoTestnet.id, publicClient, walletClient })
 
 // Read, contract-authoritative: never recomputed client-side.
 const trove = await musd.getTrove(account.address)
-// trove.entireDebt, trove.icr, trove.healthFactor, trove.liquidationPrice, …
+console.log(trove.entireDebt, trove.icr, trove.healthFactor, trove.liquidationPrice)
 
-// Preview, the only client-side math. See docs/09 for what its validation covers.
-const preview = await musd.previewOpen({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })
-if (preview.meetsMinimum) {
-  await musd.openTrove({ collateral: parseBtc('0.05'), debt: parseMusd('2500') })
+// Preview, the only client-side math. `viable` is the verdict: it covers the debt floor, the
+// individual ratio, Recovery Mode and the system ratio. `meetsMinimum` is the floor alone.
+const collateral = parseBtc('0.05')
+const debt = parseMusd('2500')
+const preview = await musd.previewOpen({ collateral, debt, account: account.address })
+if (preview.viable) {
+  await musd.openTrove({ collateral, debt })
 }
 
 // Manage, hints + simulate-before-send + typed errors are absorbed.
@@ -74,11 +71,17 @@ await musd.borrow({ amount: parseMusd('500') })
 await musd.repay({ amount: parseMusd('500') })
 
 // Keeper surface (permissionless).
+const borrower: Address = '0x0000000000000000000000000000000000000001'
 if (await musd.isLiquidatable(borrower)) await musd.liquidate(borrower)
 ```
 
-Every protocol revert maps to a discriminated `MusdError` you can branch on
-(`BelowMinimumDebt`, `ICRBelowMCR`, `RecoveryModeRestriction`, `NothingToLiquidate`, …).
+The quickstart above is compiled against the packed tarball on every push by `pnpm gate:packaging`,
+so a change that breaks it fails CI (MK-108).
+
+Every error the client raises is a discriminated `MusdError` you can branch on, protocol reverts
+included (`BelowMinimumDebt`, `ICRBelowMCR`, `RecoveryModeRestriction`, `OracleStale`, …). A failure
+that is not a revert, such as an endpoint refusing the request, arrives as `ContractCallFailed` with
+the original error as its `cause` (MK-105).
 
 ## Design (two rules)
 
@@ -103,10 +106,15 @@ exposure.
 
 ## What it does, and the one thing it cannot
 
-**Every write you can call, you can ask about first.** Ten of eleven exposed writes have a preview
-returning a verdict, machine readable reasons, the binding constraint and the raw numbers, and each
-prechecks the same conditions before sending. `claim` is the eleventh and has no preview because
-`_claimCollateral` (`BorrowerOperations.sol:1119-1124`) has no condition to check.
+**Most writes you can call, you can ask about first.** The client exposes twelve writes and nine
+previews. `addCollateral`, `borrow`, `repay`, `withdrawCollateral` and `adjustTrove` precheck through
+the same evaluator `previewAdjustTrove` uses, `close` through `previewClose`, and `redeem` through
+`previewRedeem`, so a refusal those previews would report is thrown before any gas is spent.
+`openTrove` prechecks the fee cap, the debt floor and an existing Trove, and leaves the ratio gates
+to the simulation; ask `previewOpen` first. `refinance` has `previewRefinance` and no precheck of
+its own. `liquidate` and `batchLiquidate` have `isLiquidatable` rather than a preview, and `claim`
+has nothing to preview because `_claimCollateral` (`BorrowerOperations.sol:1119-1124`) has no
+condition. Every write simulates before it sends (MK-109).
 
 **The rule that surprises people, surfaced rather than documented:** the individual ratio
 requirement is ABSOLUTE (`BorrowerOperations.sol:1201`, defined at `:1330-1335`). It tests the

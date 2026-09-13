@@ -2,6 +2,7 @@ import type {
   AdjustPreview,
   BorrowPreview,
   BorrowingCapacity,
+  BorrowingPower,
   ClosePreview,
   MaxWithdrawable,
   RedemptionPreview,
@@ -10,7 +11,7 @@ import type {
 } from '@musd-kit/core'
 import type { UseQueryResult } from '@tanstack/react-query'
 import type { Address } from 'viem'
-import { useChainId } from 'wagmi'
+import { useAccount, useChainId } from 'wagmi'
 import { type AdjustPreviewLegs, musdQueryKeys } from '../internal/keys'
 import { useMusdQuery } from '../internal/useMusdQuery'
 
@@ -56,52 +57,91 @@ export function useLiquidationPrice({
   })
 }
 
-/**
- * Largest valid draw for an **open**, for a given collateral (core `getBorrowingPower`).
- *
- * **WARNING: this number has no safety margin. Do not open a Trove at it, and do not wire it to a
- * "max" button (MK-100).** In normal mode it opens the position at exactly the 110% minimum
- * collateral ratio. Interest is added to the debt every second, so a position opened at this
- * number drops below 110% and can be liquidated by anyone within seconds; a liquidation takes all
- * of the collateral and you keep only the MUSD you drew. **You must apply your own buffer**: offer
- * a smaller draw, and show the ratio the user would open at from `previewOpen` before they sign.
- * In Recovery Mode it opens at exactly 150%, which has no margin either.
- *
- * This is an OPEN time calculator and its name is easy to misread: it does NOT tell you how
- * much an EXISTING Trove can still borrow. Every Trove carries a `maxBorrowingCapacity`
- * fixed at the opening price, which never rises afterwards, and a debt increase is gated on
- * it (`BorrowerOperations.sol:1358-1365`). For a Trove that already exists use
- * {@link useBorrowPreview} or {@link useBorrowingCapacity} (MK-002).
- *
- * Refetches on new blocks (the binding ratio, the price and the system TCR can all move).
- */
-export function useBorrowingPower({
-  collateral,
-  account,
-}: {
+/** The borrowing power hooks' parameters, shared so the two cannot drift apart. */
+export interface BorrowingPowerHookParams {
   collateral: bigint | undefined
-  /**
-   * The account that would open (MK-067). Pass the connected address whenever you have one:
-   * the borrowing fee is skipped entirely for a fee exempt account
-   * (`BorrowerOperations.sol:637-643`), so for such a caller the true maximum is larger than
-   * the figure returned without it. Omitted, the answer assumes not exempt.
-   */
+  /** The account that would open. Defaults to the connected wallet (MK-106). */
   account?: Address | undefined
-}): UseQueryResult<bigint, Error> {
+  /**
+   * Core's `marginWindowSeconds`: a larger window for a slower flow, a smaller one for an immediate
+   * send. Omitted, the measured default applies. The value used is on the detail's `margin`.
+   */
+  marginWindowSeconds?: bigint | undefined
+  /** Core's `priceMoveBps`, from `0n` up to but excluding `10_000n`. Omitted, the measured default. */
+  priceMoveBps?: bigint | undefined
+}
+
+/** Shared query for {@link useBorrowingPower} and {@link useBorrowingPowerDetail}: one fetch. */
+function useBorrowingPowerQuery<TSelected>(
+  params: BorrowingPowerHookParams,
+  select: (power: BorrowingPower) => TSelected,
+): UseQueryResult<TSelected, Error> {
   const chainId = useChainId()
-  return useMusdQuery<bigint>({
-    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, account),
+  const { collateral, account } = params
+  // MK-106. The hook runs inside a wagmi context that knows the connected wallet, so an omitted
+  // `account` means that wallet rather than "not fee exempt". An explicit account still wins.
+  const { address: connected } = useAccount()
+  const who = account ?? connected
+  // MK-100, MK-085. Built once from presence and handed to both the key and the call, so an omitted
+  // override stays omitted and means the measured default in both places.
+  const margin = {
+    ...(params.marginWindowSeconds !== undefined
+      ? { marginWindowSeconds: params.marginWindowSeconds }
+      : {}),
+    ...(params.priceMoveBps !== undefined ? { priceMoveBps: params.priceMoveBps } : {}),
+  }
+  return useMusdQuery<BorrowingPower, TSelected>({
+    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, who, margin),
     fetch: (client) =>
       client.getBorrowingPower({
         collateral: collateral as bigint,
-        ...(account !== undefined ? { account } : {}),
+        ...(who !== undefined ? { account: who } : {}),
+        ...margin,
       }),
-    // Zero is disabled rather than queried: `getBorrowingPower` now rejects a non-positive
-    // collateral with `InvalidAmount` instead of searching over it (MK-010), and an empty
-    // text input parsing to `0n` is the ordinary state of a calculator being typed into, not
-    // an error to render.
+    // Zero is disabled rather than queried: `getBorrowingPower` rejects a non-positive collateral
+    // with `InvalidAmount` (MK-010), and an empty input parsing to `0n` is the ordinary state of a
+    // calculator being typed into, not an error to render.
     enabled: collateral !== undefined && collateral > 0n,
+    select,
   })
+}
+
+/**
+ * **The recommended draw** for an **open** at a given collateral: core `getBorrowingPower`'s
+ * `recommended`, never its `ceiling` (MK-100).
+ *
+ * This is the figure to offer, and it is what `data` holds, so a consumer who uses the hook the way
+ * the documentation shows cannot open a Trove at the liquidation threshold. It leaves the margin
+ * `getBorrowingPower` reports: a Trove opened at it survives the measured adverse price move and
+ * interest window stated on `BORROWING_POWER_PRICE_MOVE_BPS` and
+ * `BORROWING_POWER_MARGIN_WINDOW_SECONDS`. Until 0.4.0 this hook returned the ceiling, which in
+ * normal mode opens at exactly 110% and was liquidated a second later on a fork. For the ceiling,
+ * the margin and both starting ratios, use {@link useBorrowingPowerDetail}.
+ *
+ * `account` defaults to the connected wallet (MK-106), because the borrowing fee is skipped for a
+ * fee exempt account (`BorrowerOperations.sol:637-643`) and the answer differs for it.
+ *
+ * It sizes an OPEN, not a top-up: an existing Trove is gated on its `maxBorrowingCapacity`
+ * (`BorrowerOperations.sol:1358-1365`), which is set at open, lowered on a collateral decrease and
+ * reset by a refinance (MK-101). For a Trove that already exists use {@link useBorrowPreview} or
+ * {@link useBorrowingCapacity} (MK-002).
+ *
+ * Refetches on new blocks (the binding ratio, the price and the system TCR can all move).
+ */
+export function useBorrowingPower(params: BorrowingPowerHookParams): UseQueryResult<bigint, Error> {
+  return useBorrowingPowerQuery(params, (power) => power.recommended)
+}
+
+/**
+ * Both borrowing power figures, the margin between them and the ratios each opens at (MK-100):
+ * core `getBorrowingPower`'s whole result. `ceiling` is a limit to DISPLAY, and a Trove opened at
+ * it is liquidatable within seconds in normal mode; offer `recommended`. Shares one fetch with
+ * {@link useBorrowingPower}.
+ */
+export function useBorrowingPowerDetail(
+  params: BorrowingPowerHookParams,
+): UseQueryResult<BorrowingPower, Error> {
+  return useBorrowingPowerQuery(params, (power) => power)
 }
 
 /**
