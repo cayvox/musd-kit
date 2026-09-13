@@ -27,22 +27,27 @@ Everything in the register is restated in our own words against public ground tr
 
 ## 2. Fitness for purpose
 
-Stated plainly, and kept current. **This is the verdict at 0.2.0, which is published**: both
-packages went to npm on 2026-08-28 from commit `371d5d9953f7f305cba0b4cfd2599e451f91aea8`, tagged
-`v0.2.0`, with SLSA provenance attesting to this repository. Every S1 in the register is closed, and
-the S2 entries still open are limits an integrator designs around rather than bugs they hit by
-accident.
+Stated plainly, and kept current. **This is the verdict at 0.3.0, which is published**: both
+packages went to npm on **2026-09-13** from commit `749730b855a24bf88fa64a57c0136a84a8cfa4d2`,
+tagged `v0.3.0`, by
+[release run 34752401058](https://github.com/cayvox/musd-kit/actions/runs/34752401058), with SLSA
+provenance whose `resolvedDependencies` names this repository and that exact commit. `0.2.0` is
+deprecated ([run 34753101330](https://github.com/cayvox/musd-kit/actions/runs/34753101330)). Every
+S1 in the register is closed, and the S2 entries still open are limits an integrator designs around
+rather than bugs they hit by accident.
 
-**One thing about that release is worth carrying into this verdict rather than burying in the
-register.** The post publish gate that was supposed to decide whether 0.2.0 stood had never executed
-once, for either release (MK-053). It was repaired and then run against the already published
-0.2.0, which passed on every axis. So the verdict below rests on a check that now exists in fact and
-not only in a workflow file.
+**The post publish gate ran, and it is the check this verdict rests on.** `verify-published` polls
+the registry, installs from npm into a clean project and imports both packages as ESM and CJS. It
+passed for 0.3.0 in the release run, and passed a second time when the `v0.3.0` tag push re-entered
+the workflow ([run 34753169030](https://github.com/cayvox/musd-kit/actions/runs/34753169030)),
+where the MK-055 guard skipped the publish step because the version already existed and let the
+verification run. That path had never been exercised on a tag before. For 0.1.0 and 0.2.0 this gate
+had never executed at all (MK-053).
 
 | Use | Verdict |
 |---|---|
 | Reading positions and system state on testnet | Suitable |
-| Previews and calculators for a position that does not exist yet | **Suitable.** Every S1 this verdict was waiting on is closed: MK-001, MK-002, MK-003, MK-004, MK-005, MK-006, MK-018, MK-019. A 1000 case differential sweep against real transaction outcomes, run end to end on this tree, found **zero FALSE_VIABLE**, which is the direction that costs a caller a failed transaction. Its ten FALSE_BLOCKED are one defect in the harness's own argument mapping (MK-079) and implicate no `packages/*/src` file |
+| Previews and calculators for a position that does not exist yet | **Suitable.** Every S1 this verdict was waiting on is closed: MK-001, MK-002, MK-003, MK-004, MK-005, MK-006, MK-018, MK-019. A 1000 case differential sweep against real transaction outcomes, run end to end on this tree, found **zero FALSE_VIABLE**, which is the direction that costs a caller a failed transaction. Its ten FALSE_BLOCKED are one defect in the harness's own argument mapping (MK-079). **That row used to add "and implicate no `packages/*/src` file", which was false and is withdrawn** (MK-086): the same mis-mapping was in the shipped React adjust preview hook, which is MK-085, fixed in 0.3.0. The sweep could not have seen it, because it drives the core client and never renders a hook |
 | Managing an existing trove: borrow, repay, adjust, refinance | **Suitable.** Every exposed write with a condition a preview can evaluate now has one, and prechecks it before sending (MK-042). That closes the limit this row carried through three revisions: it named two writes, then four, and now none. `claim` has no preview because `_claimCollateral` has no condition. The remaining limit is the fee cap, which is a protocol property rather than a gap here (MK-011) |
 | Liquidation keepers | **Suitable on testnet.** MK-001 is closed: `isLiquidatable` is `ICR < MCR` with no Recovery Mode widening, which is what the protocol does |
 | Real money on mainnet | **No.** Single author, unaudited, pre 1.0. Use it to evaluate, read, and prototype |

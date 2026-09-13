@@ -9,6 +9,55 @@ someone who was not present can read what was exercised, what was not, and what 
 
 ---
 
+## The 0.3.0 release
+
+**Run 2026-09-13**, against commit `749730b855a24bf88fa64a57c0136a84a8cfa4d2`, the commit that was
+then published. Account `0x18B0Da56B272b4FAAbdd8D60E3797e8cC17d248D`.
+
+**Result: `GO, live lifecycle verified on Mezo testnet.`, exit 0. 19 exercised, 4 skipped, every
+skip with a reason.**
+
+Funding, computed from the chain rather than from a constant, immediately before the run:
+price `77359.475 USD/BTC`, `minNetDebt` 1800 MUSD, draw 1800, fee 1.8, `gasPrice` 146 wei, peak
+collateral `0.041661322029395881 BTC`, gas reserve `0.001 BTC`, **total to fund
+`0.042661322029395881 BTC`** against a balance of `0.050093705011986073 BTC`.
+
+| Surface | Outcome |
+|---|---|
+| `previewOpen` | verdict held, `entireDebt` matched within accrual |
+| `openTrove` | mined, position created |
+| `getTrove` | parity oracle for every step |
+| `getBorrowingCapacity` | capacity `2547780150687249953680` |
+| `getBorrowingPower` | power `2345376531956434937366` |
+| `previewAdjustTrove`, add leg | `resultingCollateral` matched to the wei |
+| `addCollateral` | mined |
+| `previewBorrow` | `resultingEntireDebt` matched to the wei |
+| `borrow` | drew 100 MUSD |
+| `previewAdjustTrove`, repay leg | verdict held on chain |
+| `repay` | repaid 50 MUSD |
+| `previewWithdrawCollateral` | `resultingCollateral` matched to the wei |
+| `withdrawCollateral` | withdrew `0.002667646999043249 BTC` |
+| `maxWithdrawableCollateral` | max viable and max+1 refused, by the SDK preview rather than by the chain (MK-051) |
+| `adjustTrove` | combined add and borrow, `entireDebt` matched to the wei |
+| `previewRefinance` | verdict held on chain |
+| `refinance` | moved to the current global rate |
+| `previewClose` | `musdRequired` matched `entireDebt` minus the gas reserve |
+| `close` | position closed, account left with no Trove |
+| `redeem` | **skipped**, `E2E_ALLOW_REDEEM` is not 1: a redemption hits another account |
+| `liquidate`, `batchLiquidate` | **skipped**, need a Trove below MCR, which cannot be created on live testnet |
+| `claim` | **skipped**, no surplus to claim, which is expected |
+
+**Net cost was gas alone.** Balance `0.050093705011986073` before, `0.050093704567810127` after, a
+difference of `4.44e-10 BTC`, consistent with roughly 3M gas at 146 wei. The collateral came back on
+close.
+
+**The key never appeared in output.** The log holds eight 64 hex strings, which are the same shape
+as a private key; each was hashed and compared against a hash of the key from the environment, and
+none matched. All eight are the transaction hashes for `openTrove`, `addCollateral`, `borrow`,
+`repay`, `withdrawCollateral`, `adjustTrove`, `refinance` and `close`.
+
+---
+
 ## The 0.2.0 release
 
 **Published 2026-08-28**, and recorded here because this file is where this project keeps the things
