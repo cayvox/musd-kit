@@ -117,7 +117,8 @@ wave only the first of the two would take one (MK-067).
 **Borrowing against an existing Trove is a different calculation.** `getBorrowingPower`
 solves the OPEN constraints only. An existing Trove is additionally gated by
 `maxBorrowingCapacity >= netDebtChange + debt` (`:1358-1365`), where capacity was fixed at
-the **opening price** (`:1323-1328`), ratchets only downward (`:879-897`), and never rises.
+the **opening price** (`:1323-1328`), is lowered on a collateral decrease (`:879-897`), and is
+reset from the current price by every refinance (`:1077-1084`, MK-101).
 That is `previewBorrow` (MK-002). Note the `debt` in that comparison is read after
 `updateSystemAndTroveInterest` (`:769`), so it includes accrued interest, which is why the
 SDK compares against the live entire debt rather than the stored `getTroveDebt`.
@@ -125,15 +126,22 @@ SDK compares against the live entire debt rather than the stored `getTroveDebt`.
 `getBorrowingPower` also enforces the resulting system TCR in normal mode, which the
 contract requires on every normal mode open and which it previously ignored.
 
-**⚠️ The maximum is the liquidation threshold, so it has no safety margin (MK-100).** Solving for
-the largest draw the open gate accepts means solving for `ICR == MCR` whenever the individual
-ratio binds, and `MCR` is also where liquidation begins (`ICR < MCR`,
-`TroveManager.sol:1146-1148`). An open accrues no interest before its ratio check (`BorrowerOperations.sol:648-657`), so
-the number is still accepted a block later; the debt then accrues every second
-(`TroveManager.sol:1513-1527`), and the position is liquidatable almost at once. **A caller must
-apply their own buffer.** In Recovery Mode the Trove lands at exactly CCR, which is not
-liquidatable. When the system TCR binds instead, the open is refused a block later, because the
-system debt accrues too (`ActivePool.sol:134-144`).
+**The maximum is the liquidation threshold, so the function returns a second figure with a margin
+(MK-100).** Solving for the largest draw the open gate accepts means solving for `ICR == MCR`
+whenever the individual ratio binds, and `MCR` is also where liquidation begins (`ICR < MCR`,
+`TroveManager.sol:1146-1148`). An open accrues no interest before its ratio check
+(`BorrowerOperations.sol:648-657`), so that `ceiling` is still accepted a block later; the debt then
+accrues every second (`TroveManager.sol:1513-1527`), and the position is liquidatable almost at once.
+
+`recommended` runs the same solver against a stressed price, `price * (10000 - priceMoveBps) /
+10000 / (1 + accrual)`, where `accrual` is `windowSeconds` of interest at the live global rate,
+rounded up. Every open gate is a comparison of `collateral * price` against a multiple of debt, so
+clearing the gates at the stressed price is clearing them after that fall together with that
+accrual. The constants are 200 bps and 3600 seconds, measured by `scripts/oracle-moves.ts`, and the
+docstrings on `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS` state
+the measurement. In Recovery Mode the ceiling lands on CCR, which is not liquidatable. When the
+system TCR binds instead, the ceiling is refused a block later, because the system debt accrues too
+(`ActivePool.sol:134-144`), and the recommended figure opens.
 
 **It no longer decides any of these rules itself (MK-067, MK-069).** Its feasibility predicate
 is `evaluateOpen`, the evaluator behind `previewOpen`, so a maximum and a candidate verdict

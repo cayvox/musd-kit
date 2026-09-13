@@ -134,10 +134,12 @@ cases:
 
 - `math/`, `hints/`, `read/`, `errors/` carry the **highest** coverage, target
   near-complete branch coverage. These are the correctness-critical modules.
-- A coverage floor is enforced in CI for the `core` package; PRs that drop below it
-  fail. It is configured in `vitest.config.mts` (`coverage.thresholds`, v8 provider over
-  `packages/core/src/**`, excluding `_generated/` which is ABI and address data rather
-  than logic) and run by `pnpm test:coverage` in the fork-gate job.
+- A coverage floor is enforced in CI over both published packages, and a second floor over
+  `packages/react/src` alone; PRs that drop below either fail. It is configured in
+  `vitest.config.mts` (`coverage.thresholds`, v8 provider over `packages/core/src/**` and
+  `packages/react/src/**`, excluding `_generated/` which is ABI and address data rather than
+  logic) and run by `pnpm test:coverage` in the fork-gate job. This line said `core` only for
+  two waves after the React package was included (MK-109).
 - **The floor is a ratchet: it only ever moves upward at a fixed scope.** It is set to the
   honestly measured number rounded down, not to an aspiration. Raise it when real coverage
   rises. Never lower it to turn a red build green, that converts the gate into decoration.
@@ -146,7 +148,12 @@ cases:
   (core alone) to 94.87 / 92.36 / 88.18 / 94.87 (both packages), measured in one run at fork
   block 15043414. The core half did not get worse; it improved. Keeping the glob narrow to
   protect the number is the failure this rule exists to prevent, so the move is recorded
-  rather than avoided. Floors are now 94 / 92 / 88 / 94.
+  rather than avoided. Floors were 94 / 92 / 88 / 94.
+- **P21 raised them, and the React package got its own** (MK-102). Rendered tests for every hook
+  took both packages to 98.65 / 93.86 / 100 / 98.65 and `packages/react/src` alone to
+  99.12 / 95.68 / 100 / 99.12, measured in one run at fork block 15043414. Floors are now
+  98 / 93 / 100 / 98 overall and 99 / 95 / 100 / 99 for React (statements / branches / functions /
+  lines).
 - **Scope, stated so the number cannot mislead.** `pnpm test:coverage` runs **both**
   vitest projects, so the fork suite counts toward the measurement, not just the unit
   layer. What is measured is `packages/core/src/**` and `packages/react/src/**`, minus

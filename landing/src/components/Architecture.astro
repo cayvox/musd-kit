@@ -20,10 +20,10 @@ const { data: trove } = useTrove({ address })`,
     key: 'react',
     name: 'React hooks',
     sub: 'useTrove · useOpenTrove · useBorrowingPower',
-    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. Selectors over one shared query, so health factor and liquidation price share a single fetch. Warning: useBorrowingPower has no safety margin. A Trove opened at the number it returns can be liquidated within seconds, so apply your own buffer (MK-100).',
+    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. Selectors over one shared query, so health factor and liquidation price share a single fetch. useBorrowingPower returns the recommended draw, which leaves a measured margin; the contract ceiling comes from useBorrowingPowerDetail and is a limit, not an amount (MK-100).',
     code: `const { openTrove, isPending, error } = useOpenTrove()
-// NO SAFETY MARGIN (MK-100): never open at this number
-const { data: power } = useBorrowingPower({ collateral })`,
+// The recommended draw, with a measured margin (MK-100)
+const { data: recommended } = useBorrowingPower({ collateral })`,
     lang: 'tsx',
     box: { l: 50, t: 132, w: 244 },
   },

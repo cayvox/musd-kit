@@ -38,7 +38,7 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 | # | Check | How | What "passed" looks like |
 |---|---|---|---|
 | 1 | `main` is green **at its tip** | `gh run list --branch main --limit 5 --json conclusion,headSha` then `git rev-parse origin/main` | A run whose `headSha` **equals** the tip, `conclusion: success`. A run on an ancestor is not this check (MK-036) |
-| 2 | No open S1 | `FINDINGS.md`, the index table | No row with class `S1` and a status other than `fixed` |
+| 2 | No open S1 | `FINDINGS.md`, the index table | No row with class `S1` and a status other than `fixed`. **The one exception, a release that changes no behaviour and exists to document an open S1, is §0b, and it has conditions of its own** |
 | 3 | Versions are what you intend to publish | `packages/core/package.json`, `packages/react/package.json`. **These do not become correct by themselves: §0a is the action that sets them** | Both at the same version, and it is not already on npm |
 | 4 | The changelogs describe this release | `packages/*/CHANGELOG.md`. **Written by the same command as step 3, see §0a** | The top entry is the version from step 3 |
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
@@ -165,6 +165,67 @@ declares `"@musd-kit/core": "workspace:*"`, which pnpm replaces with the exact v
 Verified on what actually shipped: `npm view @musd-kit/react@0.2.0 dependencies` returns
 `{ '@musd-kit/core': '0.2.0' }`. So `react@0.3.0` will depend on `core@0.3.0` exactly, and the two
 packages must publish together.
+
+---
+
+## 0b. Releasing with an open S1, and what a release that changes no behaviour may skip
+
+**Precondition 2 is absolute for any release that changes behaviour.** A fix for something else does
+not get to ship beside a known S1, because the version number would tell consumers to upgrade into
+it. This section was written after 0.3.1, which shipped with MK-100 open and was the first release to
+need an exception; until now the exception existed only in that wave's instructions.
+
+### When an open S1 does not block
+
+All of these, not some:
+
+| # | Condition | How it is checked |
+|---|---|---|
+| a | **The release changes no behaviour, proven** | `node scripts/compare-published.mjs --base <previous version>` exits 0 and prints `NO BEHAVIOUR CHANGE` against the working tree you are about to version. Method below |
+| b | **Every open S1 is the subject of the release** | For each open S1 row, the release puts a warning on every surface a consumer reads for that surface: the function's docstring (what TypeDoc publishes and an editor shows on hover), the README of each affected package (what npm renders), the docs site pages, every example that uses it, and the landing page if it shows it |
+| c | **The S1 is registered first, with its reproduction committed** | Its `FINDINGS.md` entry exists before the release commit, and names a command someone else can run |
+| d | **The register cannot be read as fixed** | The index row's status reads `open, documented` and names the release that carries the warning |
+| e | **The changelog says what it is** | The changeset says documentation only, no behaviour and no API change, and names the S1 |
+
+**And do not deprecate the previous version for it.** Its code is the new version's code, byte for
+byte, so a deprecation message would claim a difference the tarballs do not have. Deprecation belongs
+to the release that fixes the S1.
+
+### The proof, and why it has the shape it has
+
+`scripts/compare-published.mjs` packs both packages (from npm for a published version, from a fresh
+build for the working tree) and compares them file by file:
+
+| File | Must be | Why |
+|---|---|---|
+| `dist/index.js`, `dist/index.cjs` | byte identical | this is the code a consumer runs |
+| `dist/index.d.ts`, `dist/index.d.cts` | identical once the TypeScript printer removes comments | the comments ARE the documentation being released, so byte identity is impossible and would be the wrong test; the types themselves may not move |
+| `package.json` | identical apart from `version` and the pinned `@musd-kit/core` | the pin moves with the version (§0a) |
+| `README.md`, `LICENSE`, `*.map` | reported, not gated | prose, and source maps that embed the source's comments |
+| the file list | identical | a file added or removed is a change |
+
+Reproduced for the release that needed it: `node scripts/compare-published.mjs --base 0.3.0 --head
+0.3.1` prints `identical` for both runtime builds of both packages, `comments only` for the four
+declaration files, `version only` for both manifests, and `NO BEHAVIOUR CHANGE`.
+
+### Which preconditions fall away when the proof holds
+
+| # | Precondition | For a no behaviour release | Why |
+|---|---|---|---|
+| 1 | `main` green at its tip | **Stays** | lint, typecheck, the docs build and the link check all read the files the release changes |
+| 2 | No open S1 | **Replaced** by a to e above | |
+| 3 | Versions | **Stays**, and the bump is a patch | nothing in the API moved |
+| 4 | Changelogs | **Stays**, and must carry e | |
+| 5 | Live testnet run | **Falls away, and transfers nothing** | the run exercises the runtime code, which is the previous version's. It carries forward only evidence the previous version actually had: if the previous version has no live run on record, neither does this one, and nothing may imply otherwise. At the time of writing `docs/13-live-testnet-ledger.md` records a run for 0.2.0 only, so 0.3.0 and 0.3.1 have none on record |
+| 6 | Packaging gate | **Stays** | the README and the declarations inside the tarball are exactly what changed, and the gate compiles the packaged quickstart (MK-108) |
+| 7 | Sweep against this tree | **Falls away** | the sweep compares verdicts against transaction outcomes, and both are functions of the runtime code, which is identical. For the record: 0.3.1 was released from `5b731b2` by [run 34761476541](https://github.com/cayvox/musd-kit/actions/runs/34761476541); the most recent sweep then had run against `749730b`, the 0.3.0 commit |
+
+**After publishing, check the surface the release was for.** `npm view @musd-kit/core readme` and the
+same for react must contain the warning, because the registry, not the repository, is what a
+consumer reads, and `verify-published` checks imports rather than prose.
+
+**A release that changes behaviour is never this exception**, however small the change. If the proof
+exits 1, precondition 2 applies in full and the release waits for the fix.
 
 ---
 

@@ -109,9 +109,11 @@ then the mode's ratio gates (`:840-845`), and only then `_requireHasBorrowingCap
 (`:850-852`).
 
 `bindingConstraint` is documented as the constraint the chain would report first, so for a borrow
-that breaches both capacity and a ratio it now names the ratio. That matters in practice: capacity
-never rises (`:879-897`), so telling a user their binding constraint is capacity tells them to do
-something impossible.
+that breaches both capacity and a ratio it now names the ratio. That matters in practice: the adjust
+path never raises capacity (`:879-897`), so telling a user their binding constraint is capacity
+sends them to the one gate a top-up cannot move. **Correction (MK-101):** this guide said capacity
+never rises. A refinance resets it from the current price (`:1077-1084`), so after a price rise it
+does rise, and after a fall a refinance cuts it.
 
 ---
 
