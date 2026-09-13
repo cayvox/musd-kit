@@ -51,6 +51,13 @@ describe('MK-084, a deprecation message describes the version it is attached to'
 
     expect(messageFor('0.2.0', 'core')).toContain('0.2.0 is wrong on two Recovery Mode surfaces')
     expect(messageFor('0.2.0', 'core')).toContain('docs/14-migration-0.2-to-0.3.md')
+    // The two releases 0.4.0 supersedes. 0.3.1's text must say it WARNED, since that is the only
+    // thing that tells it apart from 0.3.0, whose runtime code it shares byte for byte.
+    expect(messageFor('0.3.0', 'core')).toContain('(MK-100)')
+    expect(messageFor('0.3.0', 'core')).toContain('docs/15-migration-0.3-to-0.4.md')
+    expect(messageFor('0.3.1', 'core')).toContain('warns about but does not fix MK-100')
+    expect(messageFor('0.3.1', 'react')).toContain('warns about but does not fix MK-100')
+    expect(messageFor('0.3.0', 'react')).not.toContain('warns')
   })
 
   it('and the two packages get DIFFERENT messages, because react is a dependant', () => {
@@ -111,8 +118,10 @@ describe('MK-084, a deprecation message describes the version it is attached to'
   /* --- the refusals. A loud failure is the correct outcome, per MK-084 --- */
 
   it('refuses an unknown version, and names the versions it does know', () => {
-    expect(() => messageFor('0.3.0', 'core')).toThrow(/no deprecation message is written for 0.3.0/)
-    expect(() => messageFor('0.3.0', 'core')).toThrow(/Known versions: 0.1.0, 0.2.0/)
+    // 0.3.0 was the example of an unknown version until its message was written, so the example is
+    // a version nobody will publish.
+    expect(() => messageFor('9.9.9', 'core')).toThrow(/no deprecation message is written for 9.9.9/)
+    expect(() => messageFor('9.9.9', 'core')).toThrow(/Known versions: 0.1.0, 0.2.0, 0.3.0, 0.3.1/)
   })
 
   it('refuses an empty version and an unknown package', () => {
@@ -129,9 +138,9 @@ describe('MK-084, a deprecation message describes the version it is attached to'
   })
 
   it('the CLI exits NON ZERO for an unknown version, so the workflow step fails', () => {
-    const r = cli('0.3.0', 'core')
+    const r = cli('9.9.9', 'core')
     expect(r.code).not.toBe(0)
-    expect(r.out).toMatch(/no deprecation message is written for 0.3.0/)
+    expect(r.out).toMatch(/no deprecation message is written for 9.9.9/)
   })
 
   /* --- what is already on the registry must stay reproducible --- */
