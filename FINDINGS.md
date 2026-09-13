@@ -132,6 +132,9 @@ claim about it was not).
 | MK-094 | Nine protocol rules decided more than once, two of them already diverged | S2 | fixed for seven by single sourcing; two are prose with no compiler and are labelled as the weaker control they are |
 | MK-095 | The redemption accrual margin was sized for exactly the window it advertises, so it covered the read but not the block the transaction settles in. It only ever worked because the wrong base over-stated it by about 6 seconds of accrual | S2 | **fixed.** Sized for 900 seconds against an advertised 600, with the reason named and both ends of the claim still asserted on chain |
 | MK-096 | The packaging gate's consumer probe is a template literal, so no typecheck in the repository compiles it, and the only thing that does is a gate CI does not run | S2, process | **fixed.** The probe is updated and `pnpm gate:packaging` is a CI step, so a breaking public shape change fails on the commit rather than at release time by hand |
+| MK-097 | The version step's verification list checks what the command produced and not what the commit must pass, so `changeset version`'s reformatting of the manifests turned `main` red at the commit the release was about to ship | S2, process | fixed. The list gains the standing checklist, and the repair is recorded with its cost: a red `main`, a repair commit, and a second sweep requirement |
+| MK-098 | The version step's changeset table names three entries against the four actually consumed | S3 | fixed by naming the command that produces the list instead of copying the list |
+| MK-099 | Precondition 7's How column says dispatch while its What passed column says head plus success, and a scheduled run on the release commit satisfies the second | S3 | fixed. The condition is stated in full as head, parameters, coverage and green; the trigger event is not part of it |
 | MK-100 | `getBorrowingPower` returns the liquidation threshold as the amount to borrow: in normal mode a Trove opened at it is liquidatable within seconds, and every earlier check asked only whether the open is accepted | S1 | **fixed** in 0.4.0. Two named figures, `ceiling` and a `recommended` draw with a measured margin; `useBorrowingPower` returns `recommended`. Proven on a fork after the open, not only at it. 0.3.1 carried the warning |
 | MK-101 | `previewRefinance` omits the interest rate a refinance moves the Trove to and the borrowing capacity it resets, and five surfaces say capacity only ever ratchets downward | S1 | **fixed.** The preview reports both rates and both capacities; every ratchet claim corrected |
 | MK-102 | The React read hooks present the previous query's data as a success after the key changes or the query is disabled, so a cleared input or a disconnected wallet keeps showing the old verdict | S1 | **fixed.** No placeholder, `gcTime: 0`, a disabled query reports nothing, writes reset on an account change; rendered tests for every hook |
@@ -143,6 +146,7 @@ claim about it was not).
 | MK-108 | The quickstart npm renders does not compile, and gates the open on `meetsMinimum` instead of `viable` | S2 | **fixed.** The packaging gate compiles the quickstart out of the packed tarball |
 | MK-109 | Documentation and shipped surface disagree: a documented `getPeg` that does not exist, a write count and precheck claim in the packaged README that are false, stale React docs and types, and missing React re-exports | S3 | **fixed**, item by item, with `liquidationPrice`'s rounding documented |
 | MK-110 | Three pins in the P21 wave checked nothing while green: a mutation entry that drifted onto a different line, a test that could not see the defect it was named for, and a computation no fixture could tell apart from its defect. The mutation gate runs only the mutations it lists, and nothing runs it but a person | S2 | **fixed for the three**, and a mutation row added to the wave checklist. **The class can recur**: see the entry |
+| MK-111 | The 0.3.0 release record, including three registered findings, sat on a pull request that was never merged, so `main` showed a live run for 0.2.0 only and a register that skipped from MK-096 to MK-100 while 0.3.0 and 0.3.1 were published | S3, process | **fixed.** The record is carried onto `main`; the runbook keeps the ledger per release and checks the previous record on `main` as precondition 8 |
 
 ---
 
@@ -6674,6 +6678,121 @@ a pack, an install and a `tsc` run, which is its own job". It is automated now a
 
 ---
 
+## MK-097 · The version step's verification list omits the checks its own output must pass, and it turned `main` red
+
+**Class** S2, process · **Status** fixed · **Found during the 0.3.0 release, by precondition 1
+failing at the commit the release was about to ship**
+
+**What happened.** `pnpm changeset version` ran on `main` as §0a documents. Its "What to verify
+after it" table has five rows and every one of them passed: both versions read `0.3.0`, both
+changelogs opened with `## 0.3.0`, all four changesets were consumed, the diff touched only
+manifests, changelogs and `.changeset/`, and `npm view` still returned `0.2.0` so the number was
+free. The commit was pushed on that evidence.
+
+**CI then went red at `main`'s tip**
+([run 34704441456](https://github.com/cayvox/musd-kit/actions/runs/34704441456)), on step 6, `Lint`,
+in all three Node legs, with the fork gate skipped because it `needs: checks`:
+
+```
+-  "files": ["dist", "README.md", "LICENSE"],
++  "files": [
++    "dist",
++    "README.md",
++    "LICENSE"
++  ],
+```
+
+`changeset version` rewrites the manifests with its own JSON writer, which expanded the `files`
+array, and `biome check` rejects that formatting. **The generated output was never checked against
+the formatter the repository enforces**, because §0a's list does not include `pnpm lint`, or
+`pnpm typecheck`, or anything else from the standing wave checklist in `docs/08-conventions.md`.
+
+**Why the earlier release did not hit it.** `ae1785e`, the 0.2.0 version commit, changed one line
+(`1 insertion, 1 deletion`) and did not touch `files`. The array was already single-line and
+changeset had no reason to rewrite it. So there was no prior red release commit to learn from, and
+the gap sat unexercised.
+
+**This is the family named in MK-083 and MK-080: a document describing its neighbour rather than
+itself.** §0a's list verifies what the command *produced* semantically and says nothing about what
+the commit has to *pass*. A generator that writes tracked files is code, and its output is subject
+to the same gates as hand written code.
+
+### Fixed
+
+§0a's verification table gains a final row: run the standing checklist before pushing, naming lint,
+typecheck, unit, examples, site and links at minimum, with the reason stated. The repair for 0.3.0
+was `749730b`, formatting only, verified by parsing both manifests and comparing them to the
+previous commit as JSON (`IDENTICAL as JSON` for each) rather than by reading the diff.
+
+**Cost, recorded because it is the argument for the row.** One red commit on `main`, one repair
+commit, and a **second sweep requirement**: the sweep dispatched against `1cfb263` no longer
+measured the released tree once `749730b` existed, so precondition 7 had to be satisfied again.
+
+---
+
+## MK-098 · The version step's changeset table names three entries and there are four
+
+**Class** S3 · **Status** fixed · **Found while running §0a for 0.3.0**
+
+§0a's "What it does, for this release" closes with: "The three changesets consumed are
+`borrow-evaluator-delegation`, `fee-rule-one-implementation` and `react-borrow-preview-union`."
+
+There were **four**. The P17 wave added `react-preview-presence-and-redemption-rate` for MK-085 and
+MK-088, and the tree at the version commit shows all four consumed with only `README.md` and
+`config.json` left in `.changeset/`.
+
+**The predicted bumps were unaffected**, which is why this is S3 rather than S2:
+`pnpm changeset status` run read only before the step listed core and react at minor and the two
+private examples at patch, exactly as the table predicts. What was wrong was the count and the file
+list, which is the part a reader uses to check that nothing was lost.
+
+**Same family as MK-097 and MK-062.** A table describing a specific release, left in place while
+the release it describes moved underneath it.
+
+### Fixed
+
+The section no longer enumerates that wave's changesets at all. It names the command that produces
+the list, `pnpm changeset status`, and says to read its output, because a list of file names in a
+document is a copy of something the tool already knows and will go stale on the next wave exactly
+as it did on this one.
+
+---
+
+## MK-099 · Precondition 7 states its condition as a dispatch when what it means is the head and the parameters
+
+**Class** S3 · **Status** fixed · **Found when the weekly scheduled sweep landed on the release
+commit**
+
+**What the runbook said.** Precondition 7's **How** column is
+`gh workflow run sweep.yml --ref main`, and its **What passed looks like** column is "A run whose
+`headSha` equals the commit being released, `conclusion: success`". The two columns state different
+conditions, and only the second is the one that matters.
+
+**What happened.** After the MK-097 repair, `main` settled at `749730b` and the weekly scheduled
+sweep fired at 07:47Z and ran against exactly that commit
+([run 34746081139](https://github.com/cayvox/musd-kit/actions/runs/34746081139)). Read literally,
+the **How** column would have required a second two hour dispatch producing duplicate evidence
+about an identical tree.
+
+**Checked rather than assumed, because a schedule taking different parameters would not be the same
+evidence.** The harness echoes its parameters into the run, and the scheduled run printed
+`seed=20260826 cases=1000` in all four slices, at fork block `15043414`. The workflow resolves
+`MK_DIFF_SEED: ${{ github.event.inputs.seed || '20260826' }}` and the same shape for `cases`, and a
+`schedule` event carries no `inputs`, so the `||` fallback hands a schedule precisely the values a
+default dispatch would use. The four slices covered `0..250`, `250..500`, `500..750`, `750..1000`
+with `ran=250` in each: 1000 cases, contiguous, no gap.
+
+### Fixed
+
+Precondition 7's **What passed looks like** column now states the condition in full: a sweep run
+whose head equals the commit being released, whose seed, case count and fork block match the
+defaults, whose slices cover the range without a gap, and which is green. The **How** column keeps
+the dispatch with one sentence explaining why it is the usual route: a release almost never sits on
+the commit the last Sunday run saw, **not** that a scheduled trigger is weaker evidence. The
+trigger event is not part of the condition.
+
+---
+
 ## MK-100 · `getBorrowingPower` returns the liquidation threshold as the amount to borrow
 
 **Class** S1 · **Status** fixed, in the P21 wave, for 0.4.0. The warning shipped in 0.3.1 with the
@@ -7336,6 +7455,44 @@ when a fork or gate pin changed. That closes the absence that let (1) and (2) si
 make the gate exhaustive, and it does not put it in CI; a mutation per changed line would be a
 different instrument, and CI time for the unit gate was not measured in this wave. **So a new
 computation added without a mutation entry is exactly as unchecked as (3) was.**
+
+---
+
+## MK-111 · A release record lived on an unmerged pull request, and two releases went out without it
+
+**Class** S3, process · **Status** fixed · **Found by** the P22 instruction that the ledger held a run
+for 0.2.0 only, then traced here
+
+**What happened, verified rather than recalled.** 0.3.0 was published on 2026-09-13 from `749730b`
+(release run 34752401058, `workflow_dispatch`, success). Its record, written the same day in
+`376b9f3`, is on `origin/docs/p18-release-0.3.0` and pull request 36, which `gh pr list --state all`
+shows as still `OPEN`. That commit added the `The 0.3.0 release, as it actually ran` section to
+`docs/12`, the 0.3.0 live run to `docs/13` (`GO`, 19 exercised, 4 skipped), the 0.3.0 fitness verdict
+to `docs/09`, and three register entries, MK-097, MK-098 and MK-099. None of it reached `main`.
+0.3.1 was then published from `5b731b2` (run 34761476541), and the P21 wave numbered its findings from
+MK-100 on a `main` whose register ended at MK-096.
+
+**What it cost.** For as long as it lasted, `main`'s ledger said the only live run was for 0.2.0, its
+register had a gap of three IDs with no entries, and the runbook lacked MK-097's own lesson, the lint
+and typecheck row for the version commit, which is exactly the omission that turned `main` red for
+0.3.0. The P21 report repeated the ledger's gap as "0.3.0 and 0.3.1 have none on record", which was
+true of `main` and false of the repository.
+
+**Why nothing caught it.** Precondition 2 reads the register on whatever tree is being released, and
+nothing asked whether the previous release's record had landed. A record pull request is the last
+step of a release, so its absence is visible only at the start of the next one, where nothing looked.
+
+**Fixed.** `376b9f3`'s content is carried onto this branch in a new commit, with its claims re-checked
+first: the four run IDs it cites resolve to the workflows, commits and conclusions it states; the
+registry stores both 0.2.0 deprecation messages; and the 0.3.0 run's account holds the recorded
+closing balance with its Trove closed. One sentence was not carried as written: `docs/09`'s "every S1
+in the register is closed", false since 0.3.1 shipped with MK-100 open. And one correction `main` had
+also been missing is carried in with it: MK-086 withdrew `docs/09`'s claim that the sweep's ten
+FALSE_BLOCKED "implicate no `packages/*/src` file", and `main` still printed the withdrawn clause. `docs/13` gains a 0.3.1 section that says
+no live run was made and why. The runbook gains precondition 8, the previous release's record on
+`main`, and states the ledger is kept per release rather than per script change. The original commit
+is left where it is: history is not rewritten, and pull request 36 is closed as superseded, pointing
+here.
 
 ---
 
