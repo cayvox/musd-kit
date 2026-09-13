@@ -1,5 +1,13 @@
 # @musd-kit/example-open-and-manage
 
+## 0.0.5
+
+### Patch Changes
+
+- Updated dependencies [5b12250]
+  - @musd-kit/core@0.4.0
+  - @musd-kit/react@0.4.0
+
 ## 0.0.4
 
 ### Patch Changes
