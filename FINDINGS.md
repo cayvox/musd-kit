@@ -147,6 +147,7 @@ claim about it was not).
 | MK-109 | Documentation and shipped surface disagree: a documented `getPeg` that does not exist, a write count and precheck claim in the packaged README that are false, stale React docs and types, and missing React re-exports | S3 | **fixed**, item by item, with `liquidationPrice`'s rounding documented |
 | MK-110 | Three pins in the P21 wave checked nothing while green: a mutation entry that drifted onto a different line, a test that could not see the defect it was named for, and a computation no fixture could tell apart from its defect. The mutation gate runs only the mutations it lists, and nothing runs it but a person | S2 | **fixed for the three**, and a mutation row added to the wave checklist. **The class can recur**: see the entry |
 | MK-111 | The 0.3.0 release record, including three registered findings, sat on a pull request that was never merged, so `main` showed a live run for 0.2.0 only and a register that skipped from MK-096 to MK-100 while 0.3.0 and 0.3.1 were published | S3, process | **fixed.** The record is carried onto `main`; the runbook keeps the ledger per release and checks the previous record on `main` as precondition 8 |
+| MK-112 | The mutation gate checks only the mutations it lists, each against every test, so a computation or a pin without an entry is never put to it; and no workflow runs it, so it runs only when a person does | S2, process | **open, the next wave.** Established in MK-110; registered on its own so the fix is tracked rather than folded into a closed entry |
 
 ---
 
@@ -7454,7 +7455,8 @@ pin a wave adds names its mutation in the script, and the wave reports the gate'
 when a fork or gate pin changed. That closes the absence that let (1) and (2) sit unrun. It does not
 make the gate exhaustive, and it does not put it in CI; a mutation per changed line would be a
 different instrument, and CI time for the unit gate was not measured in this wave. **So a new
-computation added without a mutation entry is exactly as unchecked as (3) was.**
+computation added without a mutation entry is exactly as unchecked as (3) was.** That open half is
+tracked as MK-112.
 
 ---
 
@@ -7483,7 +7485,7 @@ nothing asked whether the previous release's record had landed. A record pull re
 step of a release, so its absence is visible only at the start of the next one, where nothing looked.
 
 **Fixed.** `376b9f3`'s content is carried onto this branch in a new commit, with its claims re-checked
-first: the four run IDs it cites resolve to the workflows, commits and conclusions it states; the
+first: the run IDs it cites resolve to the workflows, commits and conclusions it states; the
 registry stores both 0.2.0 deprecation messages; and the 0.3.0 run's account holds the recorded
 closing balance with its Trove closed. One sentence was not carried as written: `docs/09`'s "every S1
 in the register is closed", false since 0.3.1 shipped with MK-100 open. And one correction `main` had
@@ -7493,6 +7495,46 @@ no live run was made and why. The runbook gains precondition 8, the previous rel
 `main`, and states the ledger is kept per release rather than per script change. The original commit
 is left where it is: history is not rewritten, and pull request 36 is closed as superseded, pointing
 here.
+
+**Precondition 8 then failed on its first use, as written, and that was the rule working.** At the
+0.4.0 version commit `26ff61b` its pass condition demanded a record for every version on npm, and
+`docs/12` had no `as it actually ran` section for 0.3.1, the previous release, while neither file had
+one for 0.1.0. The release stopped there rather than waiving it. The 0.3.1 section was then written
+from evidence read back from GitHub, the registry and git, and the row was reworded to what that
+evidence supports: the previous release, and every release since both files were created on
+2026-08-27. **0.1.0 has no record and none is back filled**: it was published on 2026-06-22, before
+the ledger and the runbook existed, and although `scripts/testnet-e2e.ts` existed from 2026-06-16, no
+output from a run against 0.1.0 is committed, so whether one happened is unknown. The runbook names it
+as the only version exempt, and the list is closed.
+
+---
+
+## MK-112 · The mutation gate checks only its listed entries, and nothing runs it
+
+**Class** S2, process, a control weaker than it reads · **Status** open, deliberately left for the wave
+after the 0.4.0 release · **Established in** MK-110
+
+**What is established, with the evidence.**
+
+- **It checks only the mutations it lists.** `scripts/mutation-check.mjs` applies the entries of its
+  `MUTATIONS` array, 52 at `26ff61b`, one at a time (`grep -c "^    id: " scripts/mutation-check.mjs`).
+  Each one is judged against the whole unit project, or named fork files and the packaging gate under
+  `--all`, so any test that notices a listed mutation catches it. What is never asked is whether a
+  computation with no entry is pinned, or whether a test with no entry checks anything: the
+  repository has 440 `it(` call sites against those 52 entries at this tree
+  (`git grep -n "it(\|it.fails(" -- 'packages/*/test/*.ts' 'packages/*/test/**/*.ts' | wc -l`, a static
+  count that undercounts looped cases; MK-110 measured 437 before the margin override tests). MK-110's
+  third case, a band base no fixture could distinguish, was found only because an unrelated entry
+  drifted onto it.
+- **Nothing runs it.** `grep -n mutation .github/workflows/*.yml` matches nothing, so the gate runs
+  when a person runs it. MK-110's wave checklist row 13 makes a wave report it; it does not make CI run
+  it, and a commit outside a wave is not asked.
+
+**What is not established.** How long the unit gate takes on CI hardware, which decides whether it
+can run per push, per pull request or on a schedule; and which method would reach unlisted code,
+whether generated mutations over changed lines, an off-the-shelf mutation tool, or a rule that every
+exported computation names an entry. Those are the next wave's questions, and nothing here chooses
+between them.
 
 ---
 

@@ -7,6 +7,42 @@ check** so you can tell it worked, rather than assuming it did.
 
 ---
 
+## The 0.3.1 release, as it actually ran
+
+**Published 2026-09-13T14:14:30Z** (`npm view @musd-kit/core time`). `@musd-kit/core@0.3.1` and
+`@musd-kit/react@0.3.1`, from commit `5b731b21d9de98a846369209301391bb9d9f4bf7`, by
+[release run 34761476541](https://github.com/cayvox/musd-kit/actions/runs/34761476541), with
+provenance published to the transparency log for both (`logIndex` 2818486149 for core and 2818486736
+for react, printed by that run). Tagged `v0.3.1`, which is a lightweight tag, where `v0.2.0` and
+`v0.3.0` are annotated (`git for-each-ref refs/tags`).
+
+**Written on 2026-09-14, a day late, from the evidence below rather than from memory** (MK-111). Every
+row was read back from GitHub, the registry or git when this section was written.
+
+| Precondition | Evidence at the time of publishing |
+|---|---|
+| 1, `main` green at its tip | [run 34761132217](https://github.com/cayvox/musd-kit/actions/runs/34761132217) at `5b731b2`, all four jobs `success` |
+| 2, no open S1 | **Not met, knowingly.** MK-100 was open. The release existed to document it, under an exception stated only in that wave's instructions; §0b, which now states it, was written afterwards in the P21 wave |
+| 3, versions intended | core and react at 0.3.1; the registry held 0.1.0, 0.2.0 and 0.3.0 |
+| 4, changelogs | top entry `## 0.3.1` in both, read at `5b731b2` |
+| 5, live testnet run | **None.** By §0b it falls away for a release whose runtime is byte identical to the previous one, and transfers nothing: the only live evidence about this code is 0.3.0's run |
+| 6, packaged artifact | the fork gate job of run 34761132217 printed `GATE PASSED` at `packages@0.3.1`. Whether it was also run locally is not recorded |
+| 7, sweep against THIS tree | **None at `5b731b2`.** The most recent sweep was [run 34746081139](https://github.com/cayvox/musd-kit/actions/runs/34746081139), at `749730b`, the 0.3.0 commit. §0b lets this fall away under the proof below |
+
+**The proof that nothing but documentation changed**, reproduced when this was written:
+`node scripts/compare-published.mjs --base 0.3.0 --head 0.3.1` prints `identical` for both runtime
+builds of both packages, `comments only` for the declarations, and `NO BEHAVIOUR CHANGE`.
+
+**After publishing.** `verify-published` passed in the release run. The `v0.3.1` tag push re-entered
+the workflow ([run 34762232559](https://github.com/cayvox/musd-kit/actions/runs/34762232559)), whose
+publish step printed `@musd-kit/core@0.3.1 is already published, skipping the publish step`, and whose
+`verify-published` passed again. The README npm serves for 0.3.1 carries the MK-100 warning for both
+packages (`npm view @musd-kit/core@0.3.1 readme`). **0.3.0 was not deprecated**, and the registry still
+stores no message for it: its code is 0.3.1's, so a deprecation would have claimed a difference the
+tarballs do not have.
+
+---
+
 ## The 0.3.0 release, as it actually ran
 
 **Published 2026-09-13.** `@musd-kit/core@0.3.0` and `@musd-kit/react@0.3.0`, from commit
@@ -91,7 +127,15 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 | 5 | **The live testnet run passed** | `pnpm tsx scripts/testnet-e2e.ts` | `GO, live lifecycle verified on Mezo testnet.` and exit 0. See §1 |
 | 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
 | 7 | **A full sweep has run against THIS tree** | Usually `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status`. A dispatch is the usual route only because a release almost never sits on the commit the last Sunday run saw | A sweep run whose `headSha` **equals the commit being released**, whose parameters are the defaults (`seed=20260826`, `cases=1000`, fork block `15043414`, read from the run's own `[differential]` lines rather than from the workflow file), whose four slices cover `0..1000` with no gap, and `conclusion: success`. **The trigger event is not part of the condition** (MK-099): a scheduled run that lands on the release commit satisfies it, and a dispatch that lands on an earlier commit does not |
-| 8 | **The previous release's record is on `main`** | `docs/13-live-testnet-ledger.md` and the `as it actually ran` sections at the top of this file, read on `origin/main`, not on a branch | A section for EVERY version already on npm (`npm view @musd-kit/core versions`), including one released without a live run, which says so and why. A record that exists only on an open pull request does not count (MK-111) |
+| 8 | **The previous release's record is on `main`, and no release since the ledger began lacks one** | `docs/13-live-testnet-ledger.md` and the `as it actually ran` sections at the top of this file, read on `origin/main`, not on a branch | Both files carry a section for the version `npm view @musd-kit/core dist-tags` shows as `latest` before this release, and for every version published since 2026-08-27, when both files were created. A version released without a live run has a section that says so and why. A record that exists only on an open pull request does not count. **Versions that predate the ledger are not required to have one, and are named below rather than back filled** (MK-111) |
+
+**Versions that predate the ledger have no record, and this runbook does not invent one.** The ledger
+and this runbook were both created on 2026-08-27 (`docs/13` in `b4e7f15`, this file in `0533bd5`,
+`git log --diff-filter=A`). One published version is older: **0.1.0**, published 2026-06-22 by release
+run 27951952166. `scripts/testnet-e2e.ts` existed from 2026-06-16 (`4b8915a`), but no output from a run
+against 0.1.0 is committed anywhere, so whether it ran is unknown and 0.1.0 has no record. That list is
+closed: a version published after 2026-08-27 cannot be added to it, and precondition 8 fails for one
+missing a record.
 
 **Step 5 is the one that is easy to skip and should not be.** The fork suite proves the SDK against
 a fork; nothing but this proves it against the real deployment, the real oracle and real gas.

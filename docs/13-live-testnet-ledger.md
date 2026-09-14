@@ -7,10 +7,11 @@ someone who was not present can read what was exercised, what was not, and what 
 **Produced by** `scripts/testnet-e2e.ts` and `scripts/testnet-fund.ts`. Re-runnable: see
 `docs/12-release-runbook.md` §1.
 
-**Kept per release, not per script change.** Every version published to npm has a section here,
-newest first, including a version released without a run, which says so and why
-(`docs/12-release-runbook.md` §6 and precondition 8). A change to the script earns no section on its
-own; the release that ships it does.
+**Kept per release, not per script change.** Every version published since this file was created on
+2026-08-27 has a section here, newest first, including a version released without a run, which says
+so and why (`docs/12-release-runbook.md` §6 and precondition 8). A change to the script earns no
+section on its own; the release that ships it does. **0.1.0, published 2026-06-22, predates this file
+and has no section**: no output from a live run against it is committed, so none is written here.
 
 ---
 
