@@ -149,7 +149,8 @@ claim about it was not).
 | MK-111 | The 0.3.0 release record, including three registered findings, sat on a pull request that was never merged, so `main` showed a live run for 0.2.0 only and a register that skipped from MK-096 to MK-100 while 0.3.0 and 0.3.1 were published | S3, process | **fixed.** The record is carried onto `main`; the runbook keeps the ledger per release and checks the previous record on `main` as precondition 8 |
 | MK-112 | The mutation gate checks only the mutations it lists, each against every test, so a computation or a pin without an entry is never put to it; and no workflow runs it, so it runs only when a person does | S2, process | **open, the next wave.** Established in MK-110; registered on its own so the fix is tracked rather than folded into a closed entry |
 | MK-113 | The live run's close parity check demanded exact equality between `previewClose` and a `getTrove` read taken after it, so it failed whenever the two landed in different blocks, and the 0.4.0 run died with a Trove open while both figures were right | S3, instrument | **fixed.** It uses MK-046's accrual bound, as the other debt checks already did |
-| MK-114 | `previewRedeem` treats `maxIterations: 0n` as a walk of one eligible Trove, while the deployed contract treats zero as no limit, so the preview reports less than the chain redeems and `redeem()` prechecks only the first Trove of a call the chain walks without limit | S1 | **fixed** in 0.4.1. Zero is no limit in the preview and the write, matching the contract; a value outside `uint256` throws. The same question was asked of every sentinel the SDK forwards, and this was the only one it restates |
+| MK-114 | `previewRedeem` treats `maxIterations: 0n` as a walk of one eligible Trove, while the deployed contract treats zero as no limit, so the preview reports less than the chain redeems and `redeem()` prechecks only the first Trove of a call the chain walks without limit | S1 | **fixed, published in 0.4.1**, and 0.4.0 deprecated for it. Zero is no limit in the preview and the write, matching the contract; a value outside `uint256` throws. The same question was asked of every sentinel the SDK forwards, and this was the only one it restates |
+| MK-115 | `main` went red at the 0.4.1 version commit twice, both times before any test, because `foundryup` could not download the pinned Foundry's attestation (HTTP 504); nothing in the repository was implicated | S3, CI infrastructure | **fixed by re-running** the failed job; the third attempt passed all four jobs. Registered after the re-run, in the release record, and the entry says why |
 
 ---
 
@@ -7712,6 +7713,40 @@ different things about the same value, and they did.
   3 tests; `MK-114 bound` (`i <= maxIterations`, the mutant that surfaced this) caught by 2;
   `MK-114 range` and `MK-114 write range` (no range check, and `redeem()` reading before refusing) by 1
   each; `MK-114 fork` by the fork test.
+
+---
+
+## MK-115 · `main` went red at the 0.4.1 version commit because the pinned Foundry could not be downloaded
+
+**Class** S3, CI infrastructure · **Status** fixed by re-running, no repository change · **Found by**
+precondition 1 of the 0.4.1 release, on push run 34856420392 at `ae93edd`
+
+**What happened, read from the run rather than inferred.** Attempt 1 of the `Fork gate + coverage`
+job failed in `Install Foundry (anvil)` at 14:36:39 UTC, before any test ran:
+`foundryup --install 1.7.1` reported `failed to download
+https://github.com/foundry-rs/foundry/releases/download/v1.7.1/foundry_v1.7.1_linux_amd64.attestation.txt:
+HTTP 504 Gateway Timeout`. The three `Checks` jobs passed. Attempt 2, re-run at 14:42:22 UTC, failed
+at the same step on a different URL of the same download, `.../attestations/26850510/download: HTTP 504
+Gateway Timeout`. Attempt 3, re-run at 14:44:34 UTC after both URLs were fetched locally with HTTP 200,
+passed all four jobs: 48 test files passed and 1 skipped, coverage 98.67 / 94 / 100 / 98.67, `GATE
+PASSED`, 563 internal links and 0 broken. The sweep dispatched against the same commit at 14:34 UTC,
+run 34856435271, installed the same Foundry version without error. `githubstatus.com` reported all
+systems operational when checked at 14:43 UTC.
+
+**Nothing in the repository was implicated.** The step that failed downloads a pinned tool, and its
+input is the version string MK-041 pinned, which did not change. The failure was a gateway timeout from
+the host serving the download.
+
+**Why it is registered at all.** `docs/08-conventions.md` §10 row 9 says a red `main` is repaired first
+and its cause registered before the fix. The cause was known before the re-run, and the re-run is the
+whole fix. **It is committed after the fact, in the release record pull request, and that is a
+deviation stated rather than hidden**: a commit to `main` before the re-run would have moved the
+release commit away from `ae93edd`, and with it every precondition already evidenced there.
+
+**What a future reader should take from it.** A red `Install Foundry (anvil)` step with an HTTP 5xx from
+`github.com` is not a test result. Read the step log, re-run the failed job, and record the attempts;
+a re-run that passes on the same `headSha` meets precondition 1, because the condition is the commit
+and its checks, not the attempt number.
 
 ---
 

@@ -27,26 +27,30 @@ Everything in the register is restated in our own words against public ground tr
 
 ## 2. Fitness for purpose
 
-Stated plainly, and kept current. **This is the verdict at 0.4.0, which is published**: both packages
-went to npm on **2026-09-14** from commit `252af4ba67ae781edb6c3104f779c535e22d31fd`, tagged `v0.4.0`,
-by [release run 34818756472](https://github.com/cayvox/musd-kit/actions/runs/34818756472), with SLSA
-provenance naming this repository and that commit. **0.3.0 and 0.3.1 are deprecated**
+Stated plainly, and kept current. **This is the verdict at 0.4.1, which is published**: both packages
+went to npm on **2026-09-14** from commit `ae93edd2644ea2a52963c5063d6596f7532f207f`, tagged `v0.4.1`,
+by [release run 34863299631](https://github.com/cayvox/musd-kit/actions/runs/34863299631), with SLSA
+provenance naming this repository and that commit. **0.4.0 is deprecated**
+([run 34865168674](https://github.com/cayvox/musd-kit/actions/runs/34865168674)): its `previewRedeem`
+read `maxIterations: 0n` as one eligible Trove while the contract reads zero as no limit, so it reported
+less than a redemption redeems (MK-114). **0.3.0 and 0.3.1 remain deprecated**
 ([run 34820204101](https://github.com/cayvox/musd-kit/actions/runs/34820204101),
-[run 34820259978](https://github.com/cayvox/musd-kit/actions/runs/34820259978)): both return the
-liquidation threshold as the amount to borrow (MK-100), and 0.3.1 only warned about it. Every S1 in
+[run 34820259978](https://github.com/cayvox/musd-kit/actions/runs/34820259978)) for MK-100. Every S1 in
 the register is closed at the released commit.
 
 **The history this paragraph replaces, kept short.** The 0.3.0 verdict was written on a pull request
 that was never merged and said every S1 was closed, which 0.3.1 falsified the same afternoon by
-shipping with MK-100 open (MK-111). The 0.4.0 record is written in the release's own record pull
-request instead, which is precondition 8's point.
+shipping with MK-100 open (MK-111). Since 0.4.0 the record is written in the release's own record pull
+request. The 0.4.0 verdict said every S1 was closed, and that was true of the register: MK-114 was not
+yet found. It was found by the mutation gate the wave after, which is the reason this paragraph names
+what was known rather than what was true.
 
-**The post publish gate ran twice for 0.4.0, and it is the check this verdict rests on.**
+**The post publish gate ran twice for 0.4.1, and it is the check this verdict rests on.**
 `verify-published` installs from npm into a clean project, imports both packages as ESM and CJS, checks
-the file lists and the provenance. It passed in the release run and again when the `v0.4.0` tag push
-re-entered the workflow ([run 34820357205](https://github.com/cayvox/musd-kit/actions/runs/34820357205)),
+the file lists and the provenance. It passed in the release run and again when the `v0.4.1` tag push
+re-entered the workflow ([run 34865250958](https://github.com/cayvox/musd-kit/actions/runs/34865250958)),
 where the MK-055 guard skipped the publish. The artifacts were also verified from a clean directory
-outside the repository; the record is `docs/12-release-runbook.md`, the 0.4.0 section.
+outside the repository; the record is `docs/12-release-runbook.md`, the 0.4.1 section.
 
 | Use | Verdict |
 |---|---|

@@ -15,6 +15,79 @@ and has no section**: no output from a live run against it is committed, so none
 
 ---
 
+## The 0.4.1 release
+
+**Run 2026-09-14, three times, against commit `ae93edd2644ea2a52963c5063d6596f7532f207f`, the commit
+that was then published.** Account `0x18B0Da56B272b4FAAbdd8D60E3797e8cC17d248D`. The third run is the
+evidence for precondition 5; the first two are recorded because they happened, and each says what it
+did and did not show.
+
+**Result of the third run: `GO, live lifecycle verified on Mezo testnet.`, exit 0. 20 exercised, 4
+skipped, every skip with a reason, position closed.** Run with `E2E_ALLOW_REDEEM=1` and
+`E2E_REDEEM_MUSD=10`, as the 0.4.0 run was.
+
+Funding, from the chain immediately before the run: price `78386.28955 USD/BTC`, **total to fund
+`0.042115583075841609 BTC`**. The account started with a Trove left open by the second run; the script
+closed it first (block 15531015) and then held `0.050346076343802456 BTC`, ending at
+`0.050346075860052042 BTC`.
+
+| Surface | Outcome |
+|---|---|
+| `previewOpen`, `openTrove`, `getTrove` | verdict held, `entireDebt` drift 0 wei, position created (block 15531017) |
+| `getBorrowingCapacity` | capacity `2548272732808720914022` |
+| `getBorrowingPower` | recommended `2295009419821352057197`, ceiling `2345926806002718195827` |
+| `previewAdjustTrove` and `addCollateral` | add leg, `resultingCollateral` matched to the wei |
+| `previewBorrow` and `borrow` | drew 100 MUSD |
+| `previewAdjustTrove` and `repay` | repaid 50 MUSD |
+| `previewWithdrawCollateral` and `withdrawCollateral` | withdrew `0.002635266782275915 BTC` |
+| `maxWithdrawableCollateral` | max viable and max+1 refused by the SDK preview (MK-051) |
+| `adjustTrove` | combined add and borrow, `entireDebt` matched to the wei |
+| `previewRefinance` and `refinance` | moved to the current global rate |
+| `redeem`, default path | **refused before signing**, `RedemptionPriceFragile`, tolerance 0.2228 bps each way (MK-103) |
+| `redeem`, with `acceptPriceFragilePartial` | **sent, reverted** in block 15531035; the one retry was refused before signing by its own simulation (below) |
+| `liquidate`, `batchLiquidate` | **skipped**, need a Trove below MCR |
+| `claim` | **skipped**, no surplus |
+| `previewClose` and `close` | `musdRequired` drift 0; closed (block 15531039), no Trove left |
+
+The log holds ten 64 hex strings, all transaction hashes: nine mined with status `1` and the redemption
+with status `0`. Each log of the three runs was searched for the key read from the environment, and
+none contains it.
+
+**Why the redemption reverted, established on chain.** Its calldata, replayed with `eth_call` from the
+account, **succeeds at block 15531033 and reverts at 15531034 and 15531035** with `TroveManager: Unable
+to redeem any amount`, the first-Trove cancel (`TroveManager.sol:406-408`). `PriceFeed.fetchPrice()` was
+`78440429520000000000000` at 15531033 and `78432205000000000000000` at 15531034, a fall of **1.0485 bps**
+against a reported down tolerance of **0.2228 bps**. So the hint was valid at the price it was built
+against and the contract cancelled it once the price left the band the preview reported, which is MK-103
+behaving as documented. The partial hint the call sent, `1423345959211737`, is read from the same
+calldata. Gas used was 273858.
+
+**MK-114 itself is not exercised live, and the run does not claim it.** The script redeems with the
+default `maxIterations`, and a 10 MUSD request on a first Trove with 99.69 MUSD of headroom never
+reaches a second Trove. The chain evidence for zero is the deployed helper's answer at the pinned block
+and the fork comparison, both in the MK-114 entry.
+
+### The two runs before it at the same commit
+
+- **First run, without `E2E_ALLOW_REDEEM`**: `GO`, exit 0, 19 exercised and 4 skipped, position closed
+  (block 15530955). `redeem` was skipped because the variable was not set, which left the surface this
+  release changes unexercised; that is why the run was repeated with it.
+- **Second run, with `E2E_ALLOW_REDEEM=1` and `E2E_REDEEM_MUSD=10`**: `GO`, exit 0, 19 exercised and 5
+  skipped, **position left open**. The default path refused the fragile partial; the opt in was refused
+  by its own simulation with `RedemptionFailed`, so nothing was sent. The close was then skipped for a
+  shortfall of `0.027916566470219295` MUSD (MK-045): the account's spare MUSD had been spent by the
+  borrowing fees of the runs before it.
+
+**The shortfall was covered by a transfer, not a draw.** 10 MUSD from the funding account
+`0x7e6D833C6b5DE1e2a740db78899daFBCCfE4D076`, which holds MUSD it cannot use for its own close, to the
+end to end account: `0xc932db3016b966ffe4497220d945f3805f04d844a3fbe8f3b6f1fcbacec21a3a`, block
+15531002, one `Transfer` of exactly `10000000000000000000`. The end to end account went from
+1877.272512870935022245 to 1887.272512870935022245 MUSD and the funder from 1740 to 1730. This is the
+route this ledger named under "The MK-048 verification, live" ("MUSD transferred from an account that
+already holds MUSD it does not need for its own close"), sent with `cast send` and the key read from the environment.
+
+---
+
 ## The 0.4.0 release
 
 **Run 2026-09-14, against commit `252af4ba67ae781edb6c3104f779c535e22d31fd`, the commit that was then
