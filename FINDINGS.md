@@ -149,6 +149,7 @@ claim about it was not).
 | MK-111 | The 0.3.0 release record, including three registered findings, sat on a pull request that was never merged, so `main` showed a live run for 0.2.0 only and a register that skipped from MK-096 to MK-100 while 0.3.0 and 0.3.1 were published | S3, process | **fixed.** The record is carried onto `main`; the runbook keeps the ledger per release and checks the previous record on `main` as precondition 8 |
 | MK-112 | The mutation gate checks only the mutations it lists, each against every test, so a computation or a pin without an entry is never put to it; and no workflow runs it, so it runs only when a person does | S2, process | **open, the next wave.** Established in MK-110; registered on its own so the fix is tracked rather than folded into a closed entry |
 | MK-113 | The live run's close parity check demanded exact equality between `previewClose` and a `getTrove` read taken after it, so it failed whenever the two landed in different blocks, and the 0.4.0 run died with a Trove open while both figures were right | S3, instrument | **fixed.** It uses MK-046's accrual bound, as the other debt checks already did |
+| MK-114 | `previewRedeem` treats `maxIterations: 0n` as a walk of one eligible Trove, while the deployed contract treats zero as no limit, so the preview reports less than the chain redeems and `redeem()` prechecks only the first Trove of a call the chain walks without limit | S1 | **test-written.** Registered before the fix, with a failing test that states the contract's behaviour; see the entry |
 
 ---
 
@@ -7582,6 +7583,71 @@ not accrue with time. **What the failed run left behind:** the account's Trove o
 testnet; the script closes a pre-existing Trove first when it can, which is what the next run does.
 Since the script changed, the release commit changed with it, and the sweep dispatched against
 `f36dc99` (run 34811442500) was cancelled rather than left to measure a tree that would not ship.
+
+---
+
+## MK-114 · `maxIterations: 0n` means no limit to the contract and one eligible Trove to the preview
+
+**Class** S1, a silently wrong number · **Status** test-written · **Found by** the P23 mutation wave, while
+classifying a mutant of the walk bound that no unit test caught: `i < maxIterations` changed to
+`i <= maxIterations` at `packages/core/src/math/previewRedeem.ts:552`
+
+**What the deployed contract does with zero, established on chain rather than from source.**
+`HintHelpers.getRedemptionHints` at the bundled testnet address, read at the pinned fork block
+15043414 with the price `fetchPrice()` returns there, `77051107320000000000000`:
+
+```sh
+cast call 0x4e4cBA3779d56386ED43631b4dCD6d8EacEcBCF6 \
+  "getRedemptionHints(uint256,uint256,uint256)(address,uint256,uint256)" \
+  400000000000000000000000 77051107320000000000000 <maxIterations> \
+  --rpc-url https://rpc.test.mezo.org --block 15043414
+```
+
+| `maxIterations` | `partialRedemptionHintNICR` | `truncatedAmount` |
+|---|---|---|
+| 0 | 1957108775441742 | 400000000000000000000000, the whole request |
+| 100 | 0 | 298067201277553214220198 |
+| 229, 230, 231 | 1957108775441742 | 400000000000000000000000 |
+
+The same call for a request of `1e26` MUSD returned `truncatedAmount` `1e26` at 0, and 1808.458,
+3615.138, 5421.815 and 298067.201 MUSD at 1, 2, 3 and 100. `getSize()` on `SortedTroves` is 230 and
+`getEntireSystemDebt()` is 428254028132726879581940337 at that block. **So zero behaves as no limit
+and not as zero iterations**: it reaches what 229 reaches, where 100 stops short. The source says
+the same (`HintHelpers.sol:107-109`, and `TroveManager.sol:353-355` for `redeemCollateral`, both
+replacing zero with `type(uint256).max`), but the calls above are the evidence, since they are
+answered by the deployed code.
+
+**What the SDK does with zero.** `previewRedeem` takes `params.maxIterations ?? 100n`
+(`previewRedeem.ts:516`), so `0n` passes through, and walks while `!started || i < maxIterations`
+(`:552`) with `i` incremented once the first eligible Trove is found (`:573-574`). At zero the walk takes
+the first eligible Trove and stops. Reproduced chain free with three eligible Troves of 30,030 MUSD
+net debt each and a request of 40,000 MUSD: `maxIterations` `0n` and `1n` report `redeemable`
+30,030 MUSD after one `getCurrentICR` read; `2n` and `100n` report 40,000 MUSD.
+
+**What that costs.**
+
+- `previewRedeem({ maxIterations: 0n })` reports `redeemable` short of what the chain redeems,
+  whenever the request needs more than one eligible Trove. No error is raised.
+- `redeem({ maxIterations: 0n })` sends zero to both `getRedemptionHints` (`redeem.ts:233`) and
+  `redeemCollateral` (`redeem.ts:249`), so the transaction itself walks without limit. Its prechecks
+  come from the preview, which saw one Trove: a partial on a later Trove gets no band, so the call
+  falls back to the helper's lower edge hint that MK-103 replaced, and the result reports
+  `partial: null` for a call that redeemed partially.
+
+**Which versions.** 0.1.0 has no `previewRedeem` (its tarball's `dist/index.js` has no occurrence).
+0.2.0 to 0.3.1 walk `i < maxIterations && cursor !== ZERO` from `i = 0n` (read at each tag), so at
+zero they visit nothing and report `NOTHING_REDEEMABLE`. 0.4.0 has the one Trove walk above, since
+MK-107 moved the increment. None of these was executed against the older tags.
+
+**Why nothing caught it.** Nothing in the SDK validates the value, no document says what zero means,
+and no test passes zero. The walk's docstring says it is bounded "matching the contract's own
+parameter" (`previewRedeem.ts:496`), which is true for every value except the one the contract gives
+a meaning of its own.
+
+**Pinned before the fix.** `packages/core/test/mk114-max-iterations.test.ts` states the contract's
+reading as `it.fails`, so the suite stays green while the defect is present and turns red the
+moment the preview reads zero the way the chain does:
+`pnpm exec vitest run --project unit packages/core/test/mk114-max-iterations.test.ts`.
 
 ---
 
