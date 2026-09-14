@@ -7,6 +7,81 @@ check** so you can tell it worked, rather than assuming it did.
 
 ---
 
+## The 0.4.0 release, as it actually ran
+
+**Published 2026-09-14T07:51:02Z** (core) and **07:51:05Z** (react) (`npm view @musd-kit/core time`),
+from commit `252af4ba67ae781edb6c3104f779c535e22d31fd`, by
+[release run 34818756472](https://github.com/cayvox/musd-kit/actions/runs/34818756472), with
+provenance published to the transparency log (`logIndex` 2828028169 for core and 2828029259 for react,
+printed by that run). The SLSA statements the registry serves for both name
+`git+https://github.com/cayvox/musd-kit@refs/heads/main`, commit `252af4b`, workflow
+`.github/workflows/release.yml`. Tagged `v0.4.0`, annotated, tagger Cayvox Labs.
+
+**Written in the release's own record pull request, the same day, from evidence gathered at the
+released commit** (MK-111). No row is inherited from `26ff61b` or `f36dc99`, the two earlier version
+commits of this release.
+
+| Precondition | Evidence at the released commit |
+|---|---|
+| 1, `main` green at its tip | [CI run 34813590624](https://github.com/cayvox/musd-kit/actions/runs/34813590624), `headSha` `252af4b`, all four jobs `success`; the local checklist ran before the push (below) |
+| 2, no open S1 | 15 S1 rows in the index at `252af4b`, every one `fixed` |
+| 3, versions intended | core and react at 0.4.0; `npm view @musd-kit/<pkg>@0.4.0` returned `E404` for both before publishing; `latest` was 0.3.1 |
+| 4, changelogs | top entry `## 0.4.0` in both, read at `252af4b` |
+| 5, live testnet run | `GO`, exit 0, at `252af4b`: 20 exercised, 4 skipped each with a reason, position closed. `docs/13-live-testnet-ledger.md` |
+| 6, packaged artifact | local `pnpm gate:packaging` at `252af4b`: `GATE PASSED`, `packages@0.4.0`, the README quickstart compiled under both ESM rows; and the same gate in CI run 34813590624 |
+| 7, sweep against THIS tree | [sweep run 34814202481](https://github.com/cayvox/musd-kit/actions/runs/34814202481), `headSha` `252af4b` checked while it ran: 1000 cases in four slices of 250, 60 skipped, **0 FALSE_VIABLE, 0 unexpected**, 10 FALSE_BLOCKED all `EXPECTED MK-079`, no `EXPECTED-BUT-ABSENT` |
+| 8, previous release's record on `main` | at `252af4b`, `docs/12` and `docs/13` carry sections for 0.3.1, 0.3.0 and 0.2.0, the three versions published since 2026-08-27; 0.1.0 is named as predating both |
+
+**The standing checklist, before the push** (`docs/08-conventions.md` §10), Node 24.19.0 at fork block
+15043414: unit 427 passed with `anvil` off `PATH` and the RPC URL unset; five fork runs, 110 passed and
+1 skipped each, the oracle seeded to `77051107320000000000000` in all five; coverage 537 passed,
+98.67 / 93.98 / 100 / 98.67; typecheck; the examples' build and typecheck; lint and `check:paths`;
+`build:site`, 563 internal links, 0 broken; the packaging gate; `mutation-check --check`, 52 of 52
+matching. Before dispatching, `pnpm test` unpinned against current testnet, as the release job runs it:
+537 passed at testnet block 15523933. The release job's own unpinned run passed 537 at block 15524776.
+
+**Three version commits, and why.** The release stopped twice before the one that shipped, each time on
+a failed verification rather than a waiver.
+
+- **`26ff61b` stopped at precondition 8.** The row then asked for a record of every version on npm, and
+  there was none for 0.3.1 in this file. The 0.3.1 section was written from evidence, the row narrowed
+  to what that evidence supports, and 0.1.0 named as predating the ledger (MK-111). That commit's
+  sweep and live run passed, and are not evidence for this release.
+- **`f36dc99` stopped at precondition 5.** Its live run exited 1 at the close check, which compared two
+  reads a block apart for exact equality (MK-113). The script was fixed; that commit's sweep, run
+  34811442500, was cancelled rather than left to measure a tree that would not ship.
+- **`252af4b` shipped**, with every precondition re-evidenced at it.
+
+**After publishing.** `verify-published` passed in the release run: both packages visible on the poll after 18
+that found nothing, ESM and CJS imports OK, both file lists matching the allowlist, both provenance statements
+attesting to this repository. The `v0.4.0` tag push re-entered the workflow
+([run 34820357205](https://github.com/cayvox/musd-kit/actions/runs/34820357205)), whose publish step
+printed `@musd-kit/core@0.4.0 is already published, skipping the publish step`, and whose verification
+passed again.
+
+**Verified independently, from a clean directory outside the repository.** A fresh `npm install` of
+both packages: `npm audit signatures` verified registry signatures and attestations for both, none
+invalid or missing; the SLSA statements name commit `252af4b`; `@musd-kit/react@0.4.0` depends on
+`@musd-kit/core` `0.4.0` exactly; ESM and CJS each expose 114 core and 58 react exports; a live testnet
+`getBorrowingPower` returned `recommended` below `ceiling` with a 200 bps, 3600 second margin, an
+override of 500 bps was reported and smaller, a negative override threw `InvalidAmount`, and an
+unreachable RPC threw `ContractCallFailed`, a `MusdError`; a TypeScript probe and the quickstart
+extracted from the installed README compiled under `node16`. And inside the repository,
+`node scripts/compare-published.mjs --base 0.4.0` against a local build of `252af4b` printed
+`identical` for every file in both tarballs, source maps and READMEs included.
+
+**The README npm serves.** The registry document's top-level `readme`, the field npmjs.com renders on
+the package page, equals 0.4.0's tarball README for both packages, and `latest` is 0.4.0. **The rendered
+page itself was not seen**: `www.npmjs.com` answered HTTP 403 to both `curl` and a fetch tool.
+
+**Deprecations.** 0.3.0 by [run 34820204101](https://github.com/cayvox/musd-kit/actions/runs/34820204101)
+and 0.3.1 by [run 34820259978](https://github.com/cayvox/musd-kit/actions/runs/34820259978), both at
+`252af4b`. Each message was resolved from `scripts/deprecation-message.mjs` before dispatch and checked
+against its own published tarball, and the text the registry stores afterwards equals it by sha256 for
+all four: 302, 273, 273 and 271 bytes. 0.4.0 carries no deprecation; 0.2.0's is unchanged.
+
+---
+
 ## The 0.3.1 release, as it actually ran
 
 **Published 2026-09-13T14:14:30Z** (`npm view @musd-kit/core time`). `@musd-kit/core@0.3.1` and
