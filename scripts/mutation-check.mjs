@@ -403,8 +403,45 @@ const MUTATIONS = [
     from: '    if (started) i++',
     to: '    i++',
   },
+  {
+    id: 'MK-114 zero',
+    what: 'read maxIterations 0n as a bound of zero eligible Troves again, instead of no limit',
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: '(!started || unbounded || i < maxIterations)',
+    to: '(!started || i < maxIterations)',
+  },
+  {
+    id: 'MK-114 bound',
+    what: 'the mutant that surfaced MK-114: walk one eligible Trove past the bound',
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: 'unbounded || i < maxIterations)',
+    to: 'unbounded || i <= maxIterations)',
+  },
+  {
+    id: 'MK-114 range',
+    what: 'accept a maxIterations no uint256 can hold',
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: '  if (maxIterations < 0n || maxIterations > MAX_UINT256) {',
+    to: '  if (false) {',
+  },
+  {
+    id: 'MK-114 write range',
+    what: 'let redeem() read the chain before refusing a maxIterations no uint256 can hold',
+    file: 'packages/core/src/redemption/redeem.ts',
+    from: '  assertMaxIterations(maxIterations)\n',
+    to: '',
+  },
 
   // Fork and gate pins. Run with --all.
+  {
+    id: 'MK-114 fork',
+    what: 'read maxIterations 0n as one eligible Trove, then redeem at zero on chain',
+    runner: 'fork',
+    files: ['packages/core/test/redeem-max-iterations.fork.test.ts'],
+    file: 'packages/core/src/math/previewRedeem.ts',
+    from: '(!started || unbounded || i < maxIterations)',
+    to: '(!started || i < maxIterations)',
+  },
   {
     id: 'MK-100 fork',
     what: 'solve the recommended figure at the real price, then open at it and wait an hour',

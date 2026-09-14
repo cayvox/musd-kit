@@ -96,6 +96,23 @@ export const DEPRECATIONS = Object.freeze({
     react:
       'Depends on @musd-kit/core@0.3.1, which warns about but does not fix MK-100: useBorrowingPower shows the liquidation threshold as the amount to borrow. Its read hooks also report a previous query as current (MK-102). See docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.0.',
   }),
+
+  /**
+   * Not yet applied: it can be once 0.4.1 is `latest`.
+   *
+   * Checked in the PUBLISHED 0.4.0 tarballs, installed from the registry: core's `previewRedeem` walks
+   * `(!started || i < maxIterations)` with `maxIterations = params.maxIterations ?? 100n`, so `0n`
+   * stops after the first eligible Trove, where `redeemCollateral` reads zero as no limit (MK-114).
+   * React's `usePreviewRedeem` passes only `{ redeemer, amount }`, so it always walks 100 and is not
+   * affected; `useRedeem` passes the caller's parameters to `redeem()`, whose precheck is. The guide
+   * named is the 0.4 one, whose section 7 covers 0.4.1: a patch with no API change gets a section in
+   * its line's guide rather than a guide of its own.
+   */
+  '0.4.0': Object.freeze({
+    core: '0.4.0 previewRedeem reads maxIterations 0n as one eligible Trove where the contract reads zero as no limit, so it reports less than the redemption redeems, and redeem() prechecks only that Trove (MK-114). See FINDINGS.md and docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.1.',
+    react:
+      'Depends on @musd-kit/core@0.4.0, whose redeem() prechecks only the first eligible Trove when maxIterations is 0n, which the contract reads as no limit (MK-114), reachable through useRedeem. See docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.1.',
+  }),
 })
 
 /** Thrown for anything that would otherwise send a message that does not describe its version. */

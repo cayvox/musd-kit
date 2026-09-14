@@ -17,22 +17,36 @@ import { findHintsForNICR } from '../hints'
 import { type GasDecision, type WriteDeps, requireWallet, simulateAndSend } from '../internal/write'
 import { estimateCollateralDrawn, exceedsRateCap } from '../math/fee'
 import {
+  DEFAULT_REDEMPTION_MAX_ITERATIONS,
   type PartialRedemption,
   REDEMPTION_PRICE_MOVE_TOLERANCE,
   REDEMPTION_SEND_MARGIN_SECONDS,
+  assertMaxIterations,
   previewRedeem,
 } from '../math/previewRedeem'
 
 const TM_ABI: Abi = troveManagerAbi
 
-/** Sane default trove-scan bound for a redemption (override per call). */
-export const DEFAULT_REDEMPTION_MAX_ITERATIONS = 100n
+/**
+ * The default walk bound for a redemption (override per call). Defined beside the preview, which
+ * reads it too, and re-exported here where it has always been exported from (MK-114).
+ */
+export { DEFAULT_REDEMPTION_MAX_ITERATIONS }
 
 /** Parameters for {@link MusdClient.redeem}. */
 export interface RedeemParams {
   /** MUSD to redeem for BTC (burned from the caller). */
   amount: bigint
-  /** Cap the number of Troves scanned/redeemed (default {@link DEFAULT_REDEMPTION_MAX_ITERATIONS}). */
+  /**
+   * Cap on the eligible Troves the call redeems from, sent to `getRedemptionHints` and
+   * `redeemCollateral` as their `_maxIterations`. Default {@link DEFAULT_REDEMPTION_MAX_ITERATIONS}.
+   *
+   * **`0n` means no limit** (MK-114), which is what both contract functions do with zero
+   * (`TroveManager.sol:353-355`, `HintHelpers.sol:107-109`), and the precheck walk reads it the same
+   * way. It is accepted rather than refused because it is the contract's documented meaning, typing
+   * `0n` is a deliberate act, and the work it asks for is bounded by `amount`: the loop stops once the
+   * request is covered. Negative values and values above the largest `uint256` throw `InvalidAmount`.
+   */
   maxIterations?: bigint
   /**
    * SDK-side cap on the redemption RATE, as a 1e18 scaled fraction, compared against
@@ -147,6 +161,7 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
   const { amount } = params
   assertPositiveAmount('amount', amount)
   const maxIterations = params.maxIterations ?? DEFAULT_REDEMPTION_MAX_ITERATIONS
+  assertMaxIterations(maxIterations)
 
   const [price, redemptionRate, balance] = await Promise.all([
     deps.publicClient.readContract({

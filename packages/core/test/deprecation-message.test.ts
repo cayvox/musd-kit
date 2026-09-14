@@ -58,6 +58,8 @@ describe('MK-084, a deprecation message describes the version it is attached to'
     expect(messageFor('0.3.1', 'core')).toContain('warns about but does not fix MK-100')
     expect(messageFor('0.3.1', 'react')).toContain('warns about but does not fix MK-100')
     expect(messageFor('0.3.0', 'react')).not.toContain('warns')
+    expect(messageFor('0.4.0', 'core')).toContain('(MK-114)')
+    expect(messageFor('0.4.0', 'react')).toContain('reachable through useRedeem')
   })
 
   it('and the two packages get DIFFERENT messages, because react is a dependant', () => {
@@ -121,7 +123,9 @@ describe('MK-084, a deprecation message describes the version it is attached to'
     // 0.3.0 was the example of an unknown version until its message was written, so the example is
     // a version nobody will publish.
     expect(() => messageFor('9.9.9', 'core')).toThrow(/no deprecation message is written for 9.9.9/)
-    expect(() => messageFor('9.9.9', 'core')).toThrow(/Known versions: 0.1.0, 0.2.0, 0.3.0, 0.3.1/)
+    expect(() => messageFor('9.9.9', 'core')).toThrow(
+      /Known versions: 0.1.0, 0.2.0, 0.3.0, 0.3.1, 0.4.0/,
+    )
   })
 
   it('refuses an empty version and an unknown package', () => {

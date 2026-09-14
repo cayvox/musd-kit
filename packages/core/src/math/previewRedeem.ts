@@ -7,6 +7,7 @@ import {
   troveManagerAbi,
 } from '../clients'
 import { MCR } from '../constants'
+import { InvalidAmount } from '../errors'
 import { withTypedErrors } from '../errors/mapRevert'
 import { accruedInterest, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
@@ -217,7 +218,19 @@ export interface PreviewRedeemParams {
   redeemer: Address
   /** MUSD to redeem. */
   amount: bigint
-  /** Cap on the list walk, matching the contract's own parameter. Default 100. */
+  /**
+   * Cap on the eligible Troves the walk visits, read exactly as the contract reads its own
+   * `_maxIterations`. Default {@link DEFAULT_REDEMPTION_MAX_ITERATIONS}, 100.
+   *
+   * **`0n` means no limit** (MK-114), because that is what `redeemCollateral` and
+   * `getRedemptionHints` do with zero (`TroveManager.sol:353-355`, `HintHelpers.sol:107-109`). The
+   * walk still stops as soon as the eligible Troves it has read cover `amount`, or at the end of
+   * the list, so no limit costs as many reads as the request needs and no more. Troves below MCR
+   * are skipped without counting, as the contract skips them (MK-107).
+   *
+   * @throws {InvalidAmount} when negative or above the largest `uint256`: the contract takes a `uint256`, so
+   *   no such value can be sent.
+   */
   maxIterations?: bigint
   /**
    * The accrual window, in seconds, a WHOLE consumption is sized for. Default
@@ -324,6 +337,28 @@ export const REDEMPTION_ADVICE_MARGIN_SECONDS = 900n
  * 900 minus 60, 840 seconds, which covers the 600 it is advertised for.
  */
 export const REDEMPTION_SEND_MARGIN_SECONDS = 60n
+
+/**
+ * The walk bound a redemption uses when the caller names none, shared by {@link previewRedeem} and
+ * `redeem()` so the preview and the write cannot default to different walks (MK-114).
+ */
+export const DEFAULT_REDEMPTION_MAX_ITERATIONS = 100n
+
+const MAX_UINT256 = (1n << 256n) - 1n
+
+/**
+ * Refuse a `maxIterations` the contract cannot be sent (MK-114). Zero is NOT refused: it is the
+ * contract's own spelling of no limit, and both the preview and the write read it that way.
+ */
+export function assertMaxIterations(maxIterations: bigint): void {
+  if (maxIterations < 0n || maxIterations > MAX_UINT256) {
+    throw new InvalidAmount(
+      'maxIterations',
+      maxIterations,
+      'Must be a uint256: 0 for no limit, or the number of eligible Troves to visit.',
+    )
+  }
+}
 
 /** The window a caller is told the answer holds for, which is shorter than it is sized for. */
 export const REDEMPTION_MARGIN_WINDOW_SECONDS = 600n
@@ -513,7 +548,8 @@ async function previewRedeemUnchecked(
 ): Promise<RedemptionPreview> {
   const { publicClient, addresses } = deps
   const { redeemer, amount } = params
-  const maxIterations = params.maxIterations ?? 100n
+  const maxIterations = params.maxIterations ?? DEFAULT_REDEMPTION_MAX_ITERATIONS
+  assertMaxIterations(maxIterations)
 
   const price = await publicClient.readContract({
     address: addresses.priceFeed,
@@ -548,8 +584,13 @@ async function previewRedeemUnchecked(
   // `_maxIterations` (`TroveManager.sol:338-350`); only iterations inside the loop count (`:360-365`).
   // This walk used to count them, so a small `maxIterations` reported NOTHING_REDEEMABLE for a
   // redemption the chain accepts. `started` is false until the first eligible Trove is found.
+  //
+  // MK-114. Zero is no limit, because the contract replaces it with `type(uint256).max` before its
+  // loop (`TroveManager.sol:353-355`). This walk used to compare `i < 0n`, so it stopped after the
+  // first eligible Trove and reported less than the chain redeems.
   let started = false
-  for (let i = 0n; (!started || i < maxIterations) && cursor !== ZERO; ) {
+  const unbounded = maxIterations === 0n
+  for (let i = 0n; (!started || unbounded || i < maxIterations) && cursor !== ZERO; ) {
     const [icr, entire, rate] = await Promise.all([
       publicClient.readContract({ ...tm, functionName: 'getCurrentICR', args: [cursor, price] }),
       publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [cursor] }),
