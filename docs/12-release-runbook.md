@@ -7,6 +7,84 @@ check** so you can tell it worked, rather than assuming it did.
 
 ---
 
+## The 0.4.1 release, as it actually ran
+
+**Published 2026-09-14.** The publish step printed `+ @musd-kit/core@0.4.1` at 15:48:33Z and
+`+ @musd-kit/react@0.4.1` at 15:48:37Z; the registry records 15:50:00.810Z for core and 15:49:52.638Z for
+react (`npm view @musd-kit/<pkg> time`). From commit `ae93edd2644ea2a52963c5063d6596f7532f207f`, by
+[release run 34863299631](https://github.com/cayvox/musd-kit/actions/runs/34863299631), with provenance
+published to the transparency log (`logIndex` 2832509610 for core and 2832510245 for react). The SLSA
+statements the registry serves for both name `https://github.com/cayvox/musd-kit`, `refs/heads/main`,
+`.github/workflows/release.yml` and commit `ae93edd`. Tagged `v0.4.1`, annotated, tagger Cayvox Labs.
+
+**A patch for one S1, MK-114**: `previewRedeem` read `maxIterations: 0n` as one eligible Trove while the
+contract reads zero as no limit. Registered first (`b7a47c7`), fixed in `dda8296`, merged as pull request
+40, versioned in `ae93edd`. `node scripts/compare-published.mjs --base 0.4.0` against that tree printed
+`BEHAVIOUR OR SURFACE CHANGED: 4 file(s)`, all in core; react's runtime and declarations were identical
+apart from the version.
+
+| Precondition | Evidence at the released commit |
+|---|---|
+| 1, `main` green at its tip | [CI run 34856420392](https://github.com/cayvox/musd-kit/actions/runs/34856420392), `headSha` `ae93edd`. **Attempts 1 and 2 failed** before any test, in `Install Foundry (anvil)`, on HTTP 504 from the Foundry download (MK-115); attempt 3 passed all four jobs: 48 test files, coverage 98.67 / 94 / 100 / 98.67, `GATE PASSED`, 563 links and 0 broken |
+| 2, no open S1 | 16 S1 rows in the index at `ae93edd`, every one `fixed`, MK-114 among them |
+| 3, versions intended | core and react at 0.4.1; `npm view @musd-kit/<pkg>@0.4.1 version` returned `E404` for both before publishing; `latest` was 0.4.0 |
+| 4, changelogs | top entry `## 0.4.1` in both, read on `origin/main` at `ae93edd` |
+| 5, live testnet run | `GO`, exit 0, at `ae93edd`, with `E2E_ALLOW_REDEEM=1`: 20 exercised, 4 skipped each with a reason, position closed. Two earlier runs at the same commit are recorded beside it. `docs/13-live-testnet-ledger.md` |
+| 6, packaged artifact | local `pnpm gate:packaging` at `ae93edd`: `GATE PASSED`; and the same gate in attempt 3 of CI run 34856420392 |
+| 7, sweep against THIS tree | [sweep run 34856435271](https://github.com/cayvox/musd-kit/actions/runs/34856435271), `headSha` `ae93edd`, its own lines reading `seed=20260826 cases=1000 block=15043414` and `commit=ae93edd...`: four slices of 250 covering `0..1000`, 60 skipped, **0 FALSE_VIABLE, 0 unexpected, threw 0**, 10 FALSE_BLOCKED all `EXPECTED MK-079` (cases 209, 252, 329, 370, 449, 455, 486, 720, 817, 893), no `EXPECTED-BUT-ABSENT` |
+| 8, previous release's record on `main` | at `ae93edd`, `docs/12` and `docs/13` carry sections for 0.4.0, 0.3.1, 0.3.0 and 0.2.0; 0.1.0 is named as predating both |
+
+**The standing checklist, before the push** (`docs/08-conventions.md` §10), Node 24.19.0 at fork block
+15043414, on `ae93edd`: unit 434 passed with `anvil` off `PATH` and the RPC URL unset; coverage 545
+passed, 98.67 / 93.99 / 100 / 98.67; typecheck; the examples' build and typecheck; lint and
+`check:paths`; `build:site`, 563 internal links across 228 pages, 0 broken; the packaging gate;
+`mutation-check --check`, 57 of 57 matching. **The first of the five fork runs was red** (4631 s): 16 of
+the differential cases threw `InternalRpcError` and two obligations tests timed out waiting for receipts.
+That is the degraded upstream link MK-078's correction describes, anvil fetching uncached state from
+`rpc.test.mezo.org`, and during the same window a `gh` call from the same machine failed with
+`dial tcp 140.82.121.5:443: i/o timeout`. No test assertion failed. Runs 2 to 5 passed 111 with 1
+skipped, and a sixth was run so that five consecutive runs are green: 111 passed, 1 skipped. The oracle
+was seeded to `77051107320000000000000` in all six. The same checklist had passed on `dda8296` before
+pull request 40 was opened, and `node scripts/mutation-check.mjs --all` caught 57 of 57 there.
+
+**The version step rewrote the manifests' `files` arrays again**, as MK-097 recorded for 0.3.0. They were
+formatted back before the version commit, and `pnpm lint` passed on it before the push.
+
+**After publishing.** `verify-published` passed in the release run: both packages visible on the eighth
+poll, ESM and CJS imports OK, both file lists matching the allowlist, both provenance statements attesting
+to this repository. The `v0.4.1` tag push re-entered the workflow
+([run 34865250958](https://github.com/cayvox/musd-kit/actions/runs/34865250958)), whose publish step
+printed `@musd-kit/core@0.4.1 is already published, skipping the publish step`, and whose verification
+passed again.
+
+**Verified independently, from a clean directory outside the repository.** A fresh `npm install` of both
+packages at 0.4.1: `npm audit signatures` verified registry signatures for 472 packages and attestations
+for 126, none invalid or missing; `@musd-kit/react@0.4.1` depends on `@musd-kit/core` `0.4.1` exactly;
+ESM and CJS each expose 114 core and 58 react exports, with `DEFAULT_REDEMPTION_MAX_ITERATIONS` `100n`.
+Both installed builds contain `const unbounded = maxIterations === 0n` and the walk
+`(!started || unbounded || i < maxIterations)`. The installed `previewRedeem`, over a stub list of three
+Troves of 30,030 MUSD for a 40,000 MUSD request, reported 40,000 after two Trove reads at `0n`, 30,030
+after one at `1n`, and 40,000 after two at `2n`; `-1n` threw `InvalidAmount`, a `MusdError`. Against live
+testnet, a 50 MUSD preview was viable at `0n` and at the default, and a 100 MUSD preview returned
+`PARTIAL_BREACHES_DEBT_FLOOR` at both, as it must with 99.69 MUSD of headroom on the first Trove. And
+inside the repository, `node scripts/compare-published.mjs --base 0.4.1` against a local build of `ae93edd`
+printed `identical` for every file in both tarballs, and `NO BEHAVIOUR CHANGE`.
+
+**The README npm serves.** The registry document's top-level `readme` equals 0.4.1's tarball README by
+sha256 for both packages, and `latest` is 0.4.1 for both.
+
+**Deprecation of 0.4.0, decided against the rule rather than by default.** §3 allows it "Only if the
+previous version returns wrong numbers"; 0.4.0 does, since `previewRedeem(...).redeemable` at
+`maxIterations: 0n` is less than the chain redeems (MK-114). §0b says deprecation belongs to the release
+that fixes the S1, which 0.4.1 is. So 0.4.0 was deprecated, by
+[run 34865168674](https://github.com/cayvox/musd-kit/actions/runs/34865168674) at `ae93edd`. The messages
+were resolved from `scripts/deprecation-message.mjs` before dispatch and checked against the published
+0.4.0 tarball installed from the registry; the text the registry stores afterwards equals them exactly,
+275 bytes for core and 244 for react. 0.4.1 carries no deprecation, and the messages on 0.3.1 and earlier
+are unchanged.
+
+---
+
 ## The 0.4.0 release, as it actually ran
 
 **Published 2026-09-14T07:51:02Z** (core) and **07:51:05Z** (react) (`npm view @musd-kit/core time`),
