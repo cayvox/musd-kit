@@ -618,6 +618,31 @@ a Trove's headroom and then moves to the next one, which needs one call per Trov
 (`HintHelpers.sol:138-162`). It reported `headroom + 1`, `netDebt / 2` and `netDebt - 1` as fully
 redeemable on a live chain where all three revert.
 
+### `maxIterations`: zero means no limit, exactly as the contract reads it (MK-114)
+
+`previewRedeem` and `redeem` take `maxIterations`, the number of eligible Troves one call may redeem
+from, and `redeem` sends it unchanged to `getRedemptionHints` and `redeemCollateral`.
+
+| value | what the SDK does | why |
+|---|---|---|
+| omitted | `DEFAULT_REDEMPTION_MAX_ITERATIONS`, `100n`, in the preview and in the write alike | one exported default, so the precheck and the call cannot walk different lists |
+| `0n` | **no limit**: the walk continues until the eligible Troves cover `amount`, or the list ends | both contract functions replace zero with `type(uint256).max` (`TroveManager.sol:353-355`, `HintHelpers.sol:107-109`) |
+| `1n` and up | at most that many eligible Troves; Troves below MCR are skipped without counting (MK-107) | the contract decrements only inside its loop (`:360-365`) |
+| negative, or above the largest `uint256` | throws `InvalidAmount` before any read | the parameter is a `uint256`, so no such value can be sent |
+
+**Zero is accepted rather than refused, and that was a decision.** Refusing it would protect a caller
+who typed `0n` meaning "none", at the price of refusing the contract's own meaning of the value the
+SDK forwards to it. It is accepted because a `bigint` zero has to be written deliberately (omitting
+the field is how a caller gets the default), and because what it asks for is bounded by the request
+rather than by the list: the walk stops as soon as the Troves it has read cover `amount`, so a
+100 MUSD redemption at zero reads one or two Troves, not every Trove in the system. A request larger
+than everything redeemable does walk the whole list, on chain and in the preview alike.
+
+**Until 0.4.1 the preview read zero differently from the chain.** 0.4.0 walked one eligible Trove at
+`0n` and reported less than the call redeemed, and `redeem()` prechecked only that Trove; 0.2.0 to
+0.3.1 walked none. Measured on the deployed helper at block 15043414: a 400,000 MUSD request is
+returned whole at `0` and truncated to 298,067 MUSD at `100`. The register entry has the calls.
+
 ### A partial redemption on the first Trove is price fragile, and `redeem()` refuses it by default (MK-103)
 
 **A partial is priced twice.** The hint is computed at the price it was read at, and
@@ -795,7 +820,7 @@ an error means something went wrong.
 // Redeem MUSD for BTC, uses getRedemptionHints, applies the live redemptionRate()
 // (to ALL redeemers, the "0% for loan holders" rule was disproven in Phase 6, see
 //  01-ground-truth §8), handles truncatedAmount.
-await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10n });
+await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10n }); // 0n is no limit, as on chain (MK-114)
 
 // Keeper surface, typed, with a precheck
 if (await musd.isLiquidatable(borrower)) {

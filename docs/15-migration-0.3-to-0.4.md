@@ -26,6 +26,7 @@ go: `^0.3.1` does not resolve to it (`docs/12-release-runbook.md` §0a).
 | `EvaluateRedeemInput`, `EligibleTrove` and `EvaluateRefinanceInput` gain required fields | type | MK-101, MK-103 | compile error **only if you construct** them, for the pure evaluators or in a test double |
 | `RefinancePreview`, `RedemptionPreview` and `RedeemResult` gain fields | type | MK-101, MK-103 | compile error **only if you construct** one |
 | `previewRedeem` stops charging `maxIterations` for Troves the contract skips | behaviour | MK-107 | `NOTHING_REDEEMABLE` where the chain accepts the redemption becomes `viable` |
+| **0.4.1:** `maxIterations: 0n` is no limit in `previewRedeem` and `redeem`, and a value outside `uint256` throws | **value, same type** | MK-114 | **no compile error.** At `0n` the preview reports the full redeemable amount where 0.4.0 reported one Trove's; a negative value throws `InvalidAmount` |
 
 **Nothing was removed.** No function, class, constant or type disappeared, and no property was
 deleted from a result.
@@ -143,3 +144,25 @@ catch (e) { if (e instanceof OracleStale) retryLater() }
 
 `previewOpen` was documented as never throwing. A refusal is still a verdict, never an error; a
 failure to read the state the verdict needs throws, typed.
+
+## 7. 0.4.1: `maxIterations: 0n` means no limit (MK-114)
+
+A patch within 0.4, with no API change, so it lives here rather than in a guide of its own.
+`redeemCollateral` and `getRedemptionHints` read a zero `_maxIterations` as no limit
+(`TroveManager.sol:353-355`, `HintHelpers.sol:107-109`), and the deployed helper answers that way. 0.4.0's
+`previewRedeem` walked one eligible Trove at `0n`, so it reported less than the call redeemed, and
+`redeem()` prechecked only that Trove while sending zero to the chain.
+
+```ts
+// 0.4.0: one eligible Trove, whatever the request
+await musd.previewRedeem({ redeemer, amount, maxIterations: 0n })
+
+// 0.4.1: as far as the request needs, as on chain; omit the field for the default of 100
+await musd.previewRedeem({ redeemer, amount, maxIterations: 0n })
+```
+
+**If you passed `0n` meaning "do not walk"**, there was never such a call on chain: the contract has
+always read it as no limit. Pass a positive bound instead. **If you passed a negative value**, it now
+throws `InvalidAmount` before any read; before, the preview returned a figure for a value no
+transaction could carry. The full table is in `docs/03-core-api.md`, under `maxIterations`.
+
