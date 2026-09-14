@@ -15,6 +15,79 @@ and has no section**: no output from a live run against it is committed, so none
 
 ---
 
+## The 0.4.0 release
+
+**Run 2026-09-14, against commit `252af4ba67ae781edb6c3104f779c535e22d31fd`, the commit that was then
+published.** Account `0x18B0Da56B272b4FAAbdd8D60E3797e8cC17d248D`, with `E2E_ALLOW_REDEEM=1` and
+`E2E_REDEEM_MUSD=10`.
+
+**Result: `GO, live lifecycle verified on Mezo testnet.`, exit 0. 20 exercised, 4 skipped, every skip
+with a reason, position closed.**
+
+Funding, from the chain immediately before the run: price `77447.305 USD/BTC`, **total to fund
+`0.042614075531743809 BTC`**. The account started this run with a Trove left open by the previous
+attempt (below); the script closed it first (block 15523869) and then held `0.05034607775507554 BTC`,
+ending at `0.0503460772313385 BTC`.
+
+| Surface | Outcome |
+|---|---|
+| `previewOpen`, `openTrove`, `getTrove` | verdict held, `entireDebt` within accrual, position created |
+| `getBorrowingCapacity` | capacity `2547561294990562833171` |
+| `getBorrowingPower` | recommended `2294010232340341130458`, ceiling `2344907225777331873662` |
+| `previewAdjustTrove` and `addCollateral` | add leg, `resultingCollateral` matched to the wei |
+| `previewBorrow` and `borrow` | drew 100 MUSD, `resultingEntireDebt` within accrual |
+| `previewAdjustTrove` and `repay` | repaid 50 MUSD |
+| `previewWithdrawCollateral` and `withdrawCollateral` | withdrew `0.002666539959478735 BTC` |
+| `maxWithdrawableCollateral` | max viable and max+1 refused by the SDK preview (MK-051) |
+| `adjustTrove` | combined add and borrow, `entireDebt` within accrual |
+| `previewRefinance` and `refinance` | moved to the current global rate |
+| `redeem`, default path | **refused before signing**, `RedemptionPriceFragile`, tolerance 0.2201 bps each way (MK-103) |
+| `redeem`, with `acceptPriceFragilePartial` | **sent, reverted, retried once, reverted** (below) |
+| `liquidate`, `batchLiquidate` | **skipped**, need a Trove below MCR |
+| `claim` | **skipped**, no surplus |
+| `previewClose` and `close` | `musdRequired` within accrual, drift 0; closed, no Trove left |
+
+All eleven transactions are on chain from the account: nine with status `1` and the two redemption
+attempts with status `0`. The log holds eleven 64 hex strings; each was hashed and compared with a hash
+of the 66 character key from the environment, and none matched.
+
+### The fragile partial path, and what it does and does not show
+
+**What the run did.** It sized a 10 MUSD redemption, a partial on the first eligible Trove
+`0xbe65D538E887D09a73354172c4411335fC2cbDb6`, which the preview reported fragile: 0.2201 bps of
+tolerance each way against the 5 bps `REDEMPTION_PRICE_MOVE_TOLERANCE`. The default `redeem()` refused
+it before signing. The opt in sent it, and it reverted in block 15523890. The one retry, re-sized to the
+recomputed headroom of 99.67 MUSD, reverted in block 15523892.
+
+**Why each reverted, established on chain.** Replaying each transaction's calldata succeeds at its parent
+block and reverts at its own block with `TroveManager: Unable to redeem any amount`, the first-Trove
+cancel (`TroveManager.sol:406-408`). Gas used was about 274000 of about 548000, so not exhaustion.
+`PriceFeed.fetchPrice()` rose between the parent block and the inclusion block both times: by
+**0.6316 bps** for the first attempt, whose up tolerance was 0.2201 bps, and by **0.0774 bps** for the
+retry, whose band, recomputed with `partialRedemptionBand` from the Trove's state at its parent block,
+had an up tolerance of **0.0222 bps**; that recomputation reproduces the hint the retry actually sent,
+exactly.
+
+**Across this release's three live runs**, the opt in path was sent four times: once at `26ff61b`, landed
+(block 15514374); once at `f36dc99`, landed (block 15523288); twice at `252af4b`, both cancelled as
+above. **That shows the path works end to end: refused by default, sent on request, and cancelled by
+the contract exactly when the price moves past the band the preview reported.** It is not a survival
+rate. Four attempts, on a testnet oracle whose moves between these blocks are not a sample of anything,
+cannot say how often a fragile partial lands, and nothing here should be read as saying it. The
+measured rate question belongs to `scripts/oracle-moves.ts` and MK-103, not to this ledger.
+
+### The two runs before it, which are not evidence for the release
+
+- **`26ff61b`, 2026-09-13**: `GO`, 21 exercised and 3 skipped; the default path refused a fragile 9.683
+  MUSD partial and the opt in landed. That commit then stopped at precondition 8 (MK-111), so the run
+  describes a tree that did not ship.
+- **`f36dc99`, 2026-09-14**: exit 1. The default path refused a fragile 10 MUSD partial, the opt in
+  landed in block 15523288, and the run then died at the close check, which compared `previewClose`
+  and `getTrove` for exact equality across blocks 15523288 and 15523289, one block of interest apart
+  (MK-113). It left a Trove open, closed first by the `252af4b` run.
+
+---
+
 ## The 0.3.1 release: no live run, by the rule that allowed it
 
 **Published 2026-09-13T14:14:30Z** (`npm view @musd-kit/core time`), from commit
