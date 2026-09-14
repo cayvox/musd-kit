@@ -1,5 +1,12 @@
 # @musd-kit/example-keeper
 
+## 0.0.6
+
+### Patch Changes
+
+- Updated dependencies [dda8296]
+  - @musd-kit/core@0.4.1
+
 ## 0.0.5
 
 ### Patch Changes
