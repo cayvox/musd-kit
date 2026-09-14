@@ -719,10 +719,16 @@ async function main(): Promise<void> {
     `  requires ${formatMusd(closePreview.musdRequired)} MUSD, shortfall ${formatMusd(closePreview.musdShortfall)}, canMint ${closePreview.canMint}`,
   )
   const beforeClose = await musd.getTrove(owner)
-  assertEq(
+  // MK-113. A debt quantity, so MK-046's rule applies: the read AFTER the preview may carry more
+  // interest than the preview, and on a live chain the two land in different blocks some of the
+  // time. This was `assertEq` until the 0.4.0 live run, where `previewClose` read block 15523288 and
+  // `getTrove` read 15523289, one block of interest apart, and the run died with a Trove open
+  // while each figure matched the chain at its own block to the wei.
+  assertDebtEq(
     'previewClose.musdRequired',
-    closePreview.musdRequired,
     beforeClose.entireDebt - parseMusd('200'),
+    closePreview.musdRequired,
+    BigInt(beforeClose.interestRate),
   )
   if (!closePreview.viable) {
     // MK-045. A Trove cannot be closed with only the MUSD it drew, and this is a PROTOCOL
@@ -770,7 +776,11 @@ async function main(): Promise<void> {
     const closed = await musd.getTrove(owner)
     if (closed.exists) die('close mined but getTrove still reports the Trove as existing')
     console.log('  closed, getTrove.exists is false ✓')
-    record('previewClose', 'exercised', 'musdRequired matched entireDebt minus the gas reserve')
+    record(
+      'previewClose',
+      'exercised',
+      'musdRequired matched entireDebt minus the gas reserve, within accrual',
+    )
     record('close', 'exercised', 'position closed, account left with no Trove')
   }
 

@@ -148,6 +148,7 @@ claim about it was not).
 | MK-110 | Three pins in the P21 wave checked nothing while green: a mutation entry that drifted onto a different line, a test that could not see the defect it was named for, and a computation no fixture could tell apart from its defect. The mutation gate runs only the mutations it lists, and nothing runs it but a person | S2 | **fixed for the three**, and a mutation row added to the wave checklist. **The class can recur**: see the entry |
 | MK-111 | The 0.3.0 release record, including three registered findings, sat on a pull request that was never merged, so `main` showed a live run for 0.2.0 only and a register that skipped from MK-096 to MK-100 while 0.3.0 and 0.3.1 were published | S3, process | **fixed.** The record is carried onto `main`; the runbook keeps the ledger per release and checks the previous record on `main` as precondition 8 |
 | MK-112 | The mutation gate checks only the mutations it lists, each against every test, so a computation or a pin without an entry is never put to it; and no workflow runs it, so it runs only when a person does | S2, process | **open, the next wave.** Established in MK-110; registered on its own so the fix is tracked rather than folded into a closed entry |
+| MK-113 | The live run's close parity check demanded exact equality between `previewClose` and a `getTrove` read taken after it, so it failed whenever the two landed in different blocks, and the 0.4.0 run died with a Trove open while both figures were right | S3, instrument | **fixed.** It uses MK-046's accrual bound, as the other debt checks already did |
 
 ---
 
@@ -7535,6 +7536,52 @@ can run per push, per pull request or on a schedule; and which method would reac
 whether generated mutations over changed lines, an off-the-shelf mutation tool, or a rule that every
 exported computation names an entry. Those are the next wave's questions, and nothing here chooses
 between them.
+
+---
+
+## MK-113 · The live run's close check was MK-046's defect, in the one place MK-046's fix did not reach
+
+**Class** S3, a defect in a release instrument, not in either package · **Status** fixed · **Found by**
+the first 0.4.0 live run, at `f36dc99`, which exited 1
+
+**What happened.** `scripts/testnet-e2e.ts` reads `previewClose(owner)`, then `getTrove(owner)`, and
+required `closePreview.musdRequired === beforeClose.entireDebt - 200 MUSD` with `assertEq`. The run
+died there after a successful redemption:
+
+```
+  requires 1877.300435679083402139 MUSD, shortfall 0, canMint true
+
+✗ previewClose.musdRequired: chain says 1877300435679083402139, the preview said 1877300438312164573762
+```
+
+The labels are the wrong way round for this call: `assertEq` names its first argument the chain and
+its second the preview, and the call passed the preview first. So the preview was the lower figure,
+by 2,633,081,171 wei.
+
+**Established from the chain, not inferred.** `getEntireDebtAndColl` for the run's account, read at
+each block (`cast call ... --block`): principal `2077300403625422453695` throughout; interest
+`32053660948444` at block 15523288 and `34686742120067` at 15523289, four seconds later. Principal
+plus interest, less the 200 MUSD reserve, is `1877300435679083402139` at 15523288 and
+`1877300438312164573762` at 15523289: the two printed figures, exactly. **So each read matched the
+chain at its own block to the wei**, the two reads landed one block apart, and the difference is that
+block's interest. The SDK was right; the check compared two moments.
+
+**Why it had passed before.** On the 0.3.0 and 26ff61b runs both reads happened to land in one block.
+An equality between two reads of a quantity that grows with time is true only when no block passes
+between them, which a live chain does not promise.
+
+**Why nothing caught it.** MK-046 found exactly this for `entireDebt after open` and introduced
+`assertDebtEq` (`scripts/testnet-e2e.ts`), which accepts a drift that is positive and at most
+`MAX_DRIFT_SECONDS` of interest. It was applied to the three debt checks MK-046's wave touched and not
+to the close check, which compares the same kind of quantity. That is `docs/08-conventions.md` §12's
+defect again: the fix was scoped to the call sites it was found at, not to the rule.
+
+**Fixed.** The close check uses `assertDebtEq` with the Trove's own rate, the later read as the actual
+and the preview as the expected. The two remaining `assertEq` calls compare collateral, which does
+not accrue with time. **What the failed run left behind:** the account's Trove open, status `1`, on
+testnet; the script closes a pre-existing Trove first when it can, which is what the next run does.
+Since the script changed, the release commit changed with it, and the sweep dispatched against
+`f36dc99` (run 34811442500) was cancelled rather than left to measure a tree that would not ship.
 
 ---
 
