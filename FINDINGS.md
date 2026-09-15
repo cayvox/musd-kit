@@ -323,7 +323,7 @@ registered it, so those ten print as `EXPECTED MK-079` and only an unexplained m
 | `capacity.remaining`, `maxWithdrawableCollateral().amount` and `minimumCollateralToClearIcr`, each sent one second after the read, are refused (`ExceedsBorrowingCapacity`, `InsufficientCollateral`, `InsufficientCollateral`) while a control inside each succeeds | MK-100 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-limit-figures.fork.test.ts` |
 | 0.3.1 against 0.3.0, both packages: runtime builds byte identical, declarations identical without comments, manifests differ only in version | MK-100, `docs/12-release-runbook.md` §0b | `node scripts/compare-published.mjs --base 0.3.0 --head 0.3.1` |
 | Decision sites by status: at `870b76f`, 474 sites, 319 caught by the unit project, 36 by the fork project only, 119 by nothing; after the P25 wave, 437, 3, and 34 registered survivors (29 equivalent, 5 unreachable); every hand written entry caught by a test citing it | MK-112, MK-116 to MK-236 | `MEZO_TESTNET_RPC_URL=https://rpc.test.mezo.org MEZO_FORK_BLOCK=15043414 node scripts/mutation-check.mjs --record --all --jobs 3 --report <file>`, run on the P25 tree for the after figures; the before figures are the same command with `scripts/mutation/sites.json` absent, run on this wave's gate before any of its pin tests were written, so on `870b76f`'s tests. **They were measured in three runs, not one**: a unit pass, and two fork passes, because the first stopped at 121 of 155 mutants when the machine slept |
-| The gate's cost: `--check` 0.66 s; the unit pass 2714 s for 524 mutants; the fork pass 4890 s for 37; 7759 s in all, three jobs, one laptop | MK-112, `docs/07-testing.md` §4d | the same command, timed by the lines it prints, on an Apple M5 with 10 cores under `caffeinate -ims` |
+| The gate's cost: `--check` 0.66 s; the unit pass 2714 s for 524 mutants; the fork pass 4890 s for 37; 7759 s in all, three jobs, one laptop. On CI the push path's worst case, every unit mutant, about 32 minutes in four shards | MK-112, `docs/07-testing.md` §4d | the same command, timed by the lines it prints, on an Apple M5 with 10 cores under `caffeinate -ims`; on CI, `Mutation gate` run 34937019525, its job times and `mutants in` lines |
 
 **One caveat on the flake rates, stated once rather than eight times.** The instrument is committed
 and the command is nameable, so these are reproducible in the sense the rule means. They were
@@ -7948,8 +7948,9 @@ in file and line order, with its class. The site's own record, with the same ID,
 
 - **uncaught, a test gap (85).** The mutant changes something a caller observes and no test noticed.
   **All 85 are fixed in this wave**: each row names the test that now catches it, and the gate records
-  the site as caught. None of them was a defect in shipped behaviour: every test was written from the
-  contract's rule, cited in the test, and passed against the code as shipped.
+  the site as caught. None of them was a defect in shipped behaviour: each test asserts the rule it pins, a
+  contract line where the decision restates the contract and the documented behaviour where it is
+  the SDK's own, and every one passed against `packages/*/src` unchanged from `870b76f`.
 - **equivalent (29).** No observable difference exists for any input in the stated domain, including
   chain reads and what a public function returns or throws. The proof is in the row.
 - **unreachable (5).** No input reaches the mutated code: a finding about the source. **Left in place**:

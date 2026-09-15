@@ -553,6 +553,21 @@ every anvil waiting on its upstream request), by one run of
 | The six fork entries and the packaging gate entry | 7 | the remainder, about 140 s | |
 | **All of it** | 561 | **7759 s**, start to exit | |
 
+And on CI, by the push that opened this wave's pull request, `Mutation gate`
+[run 34937019525](https://github.com/cayvox/musd-kit/actions/runs/34937019525) at `c652e55`. That push
+changed the gate itself, so `--changed` selected every unit mutant: the worst case of the push path.
+
+| Part, on `ubuntu-latest` | Mutants | Time |
+|---|---|---|
+| `Anchors and register` (`--check`), including setup | none | 28 s |
+| `Unit pass for the change`, four shards, two jobs each | 521 (131, 130, 130, 130): every unit entry and every site but the 3 `caught-fork` | the slowest shard **1861 s** inside the step, 31 min 37 s from the first shard's start to the last one's end |
+| The same workflow, start to end | | about 32 minutes |
+| The fork pass on CI | 37 plus the 7 fork and gate entries | **not measured.** `gh workflow run` needs the workflow on the default branch, and it is not there until this merges. An estimate from the laptop's 360 s per run is not a measurement, and is not stated as one |
+
+A push that touches neither the gate nor a test file selects only the mutants of the source files it
+changed, so it costs less than the row above; how much less depends on the change, and no such push has
+been measured yet.
+
 **The fork pass costs what it costs because of what a survivor is.** Before this wave's tests the register
 had 155 sites the unit project did not catch, and the fork pass over them did not finish in one sitting on
 this machine; after them it has 37. Each site a unit test catches leaves the fork pass, so the pass
@@ -565,8 +580,9 @@ seconds and runs first on every push: an unreviewed decision site, a drifted ent
 survivor fails there before any mutant runs.
 
 **The unit pass fits on a push only in shards, and only for what the change selects.** One unit mutant is
-one run of the whole unit project. The whole pass is 2714 seconds with three jobs on a 10 core laptop. That is too long to put in front of every push in full
-and short enough to run in parallel beside CI rather than behind it. So on a push, `--changed` runs the
+one run of the whole unit project. The whole pass is 2714 seconds with three jobs on a 10 core laptop, and about 32 minutes on CI in four
+shards, where the `CI` workflow for the same push took 8 minutes 19 seconds. That is too long to put in
+front of every push in full, and short enough to run in parallel beside CI rather than behind it. So on a push, `--changed` runs the
 mutants of the source files the change touched, the mutants whose recorded catching test file the change
 touched, and, when the change touches the gate itself, everything. A branch compares against
 `origin/main`; `main` compares against the push's previous tip.
