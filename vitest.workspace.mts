@@ -1,4 +1,6 @@
 import { configDefaults, defineWorkspace } from 'vitest/config'
+// MK-112. Inert unless `MUSD_MUTATION_PATCH` is set, which only `scripts/mutation-check.mjs` does.
+import { mutationPatch } from './scripts/mutation/patch-plugin.mjs'
 
 /**
  * Two projects, split so the chain-free layer is provably chain-free (MK-016).
@@ -13,6 +15,7 @@ import { configDefaults, defineWorkspace } from 'vitest/config'
  */
 export default defineWorkspace([
   {
+    plugins: [mutationPatch()],
     test: {
       name: 'unit',
       // Everything EXCEPT the fork files. No globalSetup, so no anvil and no RPC URL.
@@ -29,6 +32,7 @@ export default defineWorkspace([
     },
   },
   {
+    plugins: [mutationPatch()],
     test: {
       name: 'fork',
       // Only `*.fork.test.ts` files hit the fork.
