@@ -48,10 +48,10 @@ export const governableVariablesAbi = [
 
 /**
  * The typed contract bundle. Reads (`.read.*`) are fully inferred from the official
- * `as const` ABIs. Write methods (`.write.*`) are layered in from Phase 5 once a
- * `walletClient` is threaded through; for now the bundle is typed read-side
- * (`PublicClient`) to keep the declaration output bounded, the full on-chain ABIs
- * are large.
+ * `as const` ABIs. **It is typed read side only** (`PublicClient`), to keep the declaration output
+ * bounded, since the full on-chain ABIs are large: `.write.*` exists at runtime when a `walletClient`
+ * was supplied, but is not typed here. Send through the client's write methods, which simulate, add
+ * hints and throw typed errors (MK-246).
  */
 export interface MusdContracts {
   borrowerOperations: GetContractReturnType<typeof borrowerOperationsAbi, PublicClient, Address>
@@ -65,8 +65,8 @@ export interface MusdContracts {
 
 /**
  * Build typed viem contract instances for the dev-facing MUSD set. Reads use the
- * `publicClient`; a `walletClient`, when provided, enables write methods at runtime
- * (typed from Phase 5). ABIs are the official `as const` artifacts (decision O10).
+ * `publicClient`; a `walletClient`, when provided, enables write methods at runtime,
+ * untyped on {@link MusdContracts}. ABIs are the official `as const` artifacts (decision O10).
  */
 export function createContracts(
   addresses: MusdAddresses,

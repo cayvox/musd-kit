@@ -269,3 +269,27 @@ export function computeEntireDebt({
 export function maxBorrowingCapacityAt(collateral: bigint, price: bigint): bigint {
   return (collateral * price) / (110n * 10n ** 16n)
 }
+
+/**
+ * The borrowing capacity an adjustment WRITES, the one copy of `BorrowerOperations.sol:879-899` (MK-242).
+ *
+ * `_adjustTrove` touches the stored capacity only when collateral decreases, the branch guarded by
+ * `!vars.isCollIncrease && vars.collChange > 0` (`:880`), and then stores
+ * `min(current, _calculateMaxBorrowingCapacity(newColl, price))` (`:881-898`). A collateral increase is
+ * never that branch, so **adding collateral back does not restore capacity a withdrawal removed**: only a
+ * refinance writes it upward (`:1077-1084`, MK-101).
+ *
+ * `collateralDecreases` is the contract's condition as the SDK's legs express it: a withdrawal with no
+ * collateral added. An adjustment with both legs is refused before it reaches `:880`
+ * (`_requireSingularCollChange`, `:788`), so it has no resulting capacity to report.
+ */
+export function capacityAfterAdjustment(input: {
+  currentCapacity: bigint
+  resultingCollateral: bigint
+  collateralDecreases: boolean
+  price: bigint
+}): bigint {
+  if (!input.collateralDecreases) return input.currentCapacity
+  const recalculated = maxBorrowingCapacityAt(input.resultingCollateral, input.price)
+  return recalculated < input.currentCapacity ? recalculated : input.currentCapacity
+}

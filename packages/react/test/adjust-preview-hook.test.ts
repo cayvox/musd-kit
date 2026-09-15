@@ -134,15 +134,16 @@ describe('MK-085, useAdjustTrovePreview keeps an omitted leg omitted', () => {
     expect(p?.resultingIcr).toBe((BTC * PRICE) / (5_200n * MUSD))
   })
 
-  it('a debt increase of ZERO is still refused, because presence is preserved in both directions', async () => {
+  it('MK-244: a zero debt leg beside a top up is no debt leg, as the write path sends it', async () => {
     const { result } = renderPreview({ owner: OWNER, addCollateral: BTC, increaseDebt: 0n })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
     // `_adjustTrove` takes `_isDebtIncrease` independently of `_mUSDChange`
-    // (`BorrowerOperations.sol:757-758`) and refuses `(0, true)` at `:785-787`. A caller who
-    // states a zero draw still gets that answer; the fix is about absence, not about zero.
-    expect(result.current.data?.viable).toBe(false)
-    expect(result.current.data?.bindingConstraint).toBe('ZERO_DEBT_INCREASE')
+    // (`BorrowerOperations.sol:757-758`), so a zero leg has two encodings: `(0, true)`, refused at
+    // `:785-787`, and `(0, false)`, accepted beside a collateral change (`:1377-1386`). Until 0.5.0 the
+    // preview chose the refused one on presence (MK-060); it reads values now, as `adjustTrove` sends.
+    expect(result.current.data?.viable).toBe(true)
+    expect(result.current.data?.reasons).toEqual([])
   })
 
   it('the repayment gates run, which they cannot when every call is a debt increase', async () => {

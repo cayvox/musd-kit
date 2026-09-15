@@ -62,9 +62,11 @@ export async function getTrove(deps: ReadDeps, address: Address): Promise<Trove>
 
   // getEntireDebtAndColl → (coll, principal, interest, pendingColl, pendingPrincipal, pendingInterest).
   // Everything here is computed TO NOW (C3): we deliberately do NOT use
-  // getTroveInterestOwed/getTroveDebt, those return the STORED (stale) snapshot, which
-  // does not advance until the Trove is touched (verified on the fork: after a 30-day
-  // warp, getTroveInterestOwed stayed 0 while getEntireDebtAndColl.interest grew).
+  // getTroveInterestOwed, which returns the STORED interest and does not advance until the Trove
+  // is touched (`TroveManager.sol:613-617`; verified on the fork: after a 30-day warp it stayed 0
+  // while getEntireDebtAndColl.interest grew). getTroveDebt DOES accrue to the block
+  // (`:591-595` into `_getTotalDebt`, `:1513-1527`), and until MK-246 this comment said it did not;
+  // what it omits is pending redistribution, which getEntireDebtAndColl folds in (`:796-801`).
   // entireDebt = principal + interest == the debt getCurrentICR uses (proven via computeCR).
   const [coll, principal, interestOwed] = edc
   const entireDebt = principal + interestOwed

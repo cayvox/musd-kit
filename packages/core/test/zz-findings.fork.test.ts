@@ -758,20 +758,22 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       ).toBe(rate)
 
       // The amount is a genuinely different number from the rate, computed by the contract
-      // from the collateral drawn (BorrowerOperations.sol:499-508), not a relabelling.
-      expect(result.estimatedCollateralDrawn).toBeGreaterThan(0n)
+      // from the collateral drawn (BorrowerOperations.sol:499-508), not a relabelling. The fee that
+      // SETTLED is read from the receipt since MK-241, and the contract's own getter on the settled
+      // collateral must agree with it.
+      expect(result.settled.collateralDrawn).toBeGreaterThan(0n)
       const expectedAmount = await connectFork().publicClient.readContract({
         address: T.borrowerOperations,
         abi: borrowerOperationsAbi,
         functionName: 'getRedemptionRate',
-        args: [result.estimatedCollateralDrawn],
+        args: [result.settled.collateralDrawn],
       })
       expect(
-        result.estimatedFeeCollateral,
-        'MK-014: the fee amount must come from getRedemptionRate(collateralDrawn)',
+        result.settled.collateralFee,
+        'MK-014: the fee amount must be getRedemptionRate(collateralDrawn)',
       ).toBe(expectedAmount)
       expect(
-        result.estimatedFeeCollateral,
+        result.settled.collateralFee,
         'MK-014: at this size the amount and the rate must not coincide',
       ).not.toBe(result.redemptionRate)
     } finally {

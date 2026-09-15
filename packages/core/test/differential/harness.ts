@@ -393,8 +393,8 @@ async function borrowingPowerCase(
   c: DiffCase,
 ): Promise<CaseResult> {
   const price = await client.getOraclePrice()
-  // The CEILING is the figure with a boundary to test: the recommended draw sits a margin under it
-  // by design (MK-100), so "one wei more is refused" is a property of the ceiling alone.
+  // The CEILING is the figure with a boundary to test: a margin draw sits a caller chosen margin under
+  // it by design (MK-100, MK-240), so "one wei more is refused" is a property of the ceiling alone.
   const { ceiling: max } = await client.getBorrowingPower({
     collateral: c.collateral,
     price,

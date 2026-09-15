@@ -8,6 +8,7 @@ export {
   troveAmounts,
   netDebtOf,
   maxBorrowingCapacityAt,
+  capacityAfterAdjustment,
   isTroveLiquidatable,
   type ComputeICRParams,
   type ComputeLiquidationPriceParams,
@@ -39,9 +40,10 @@ export {
   getBorrowingPower,
   type GetBorrowingPowerParams,
   type BorrowingPower,
-  type BorrowingPowerMargin,
-  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
-  BORROWING_POWER_PRICE_MOVE_BPS,
+  drawForMargin,
+  type DrawForMarginParams,
+  type DrawMargin,
+  type MarginDraw,
 } from './getBorrowingPower'
 export {
   previewRefinance,

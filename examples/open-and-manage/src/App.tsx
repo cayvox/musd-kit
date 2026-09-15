@@ -8,7 +8,7 @@ import {
   RecoveryModeRestriction,
   RepayExceedsDebt,
   useBorrowingPower,
-  useBorrowingPowerDetail,
+  useDrawForMargin,
   useHealthFactor,
   useLiquidationPrice,
   useOpenTrove,
@@ -92,13 +92,23 @@ function OpenCard({ address }: { address: Address }) {
   // exempt account, so without it an exempt caller is shown a smaller maximum than the protocol
   // allows. `usePreviewOpen` has always taken it for the same reason.
   //
-  // MK-100. `useBorrowingPower` is the RECOMMENDED draw: it leaves the measured margin stated on
-  // `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS`. The contract's
-  // ceiling comes from `useBorrowingPowerDetail`, over the same query, and is shown as a limit only:
-  // a Trove opened at it starts at exactly the 110% minimum ratio and is liquidatable within
-  // seconds. Never prefill the draw with the ceiling or wire it to a "max" button.
-  const { data: recommended } = useBorrowingPower({ collateral, account: address })
-  const { data: power } = useBorrowingPowerDetail({ collateral, account: address })
+  // MK-100, MK-240. `useBorrowingPower` is the contract's CEILING, shown as a limit only: in normal
+  // mode a Trove opened at it sits at exactly 110% and is liquidatable within seconds. Never prefill
+  // the draw with it or wire it to a "max" button. A draw sized to survive holding the position needs
+  // a horizon and a price fall, and those are the USER's choices: the two inputs start empty, and
+  // `useDrawForMargin` asks nothing until both are filled in.
+  const [holdDays, setHoldDays] = useState('')
+  const [fallPercent, setFallPercent] = useState('')
+  const horizonSeconds = holdDays === '' ? undefined : BigInt(Math.round(Number(holdDays) * 86_400))
+  const priceFallBps =
+    fallPercent === '' ? undefined : BigInt(Math.round(Number(fallPercent) * 100))
+  const { data: power } = useBorrowingPower({ collateral, account: address })
+  const { data: sized } = useDrawForMargin({
+    collateral,
+    account: address,
+    horizonSeconds,
+    priceFallBps,
+  })
   const { data: preview } = usePreviewOpen(collateral, draw)
   const { openTrove, isPending, error, hash } = useOpenTrove()
 
@@ -118,8 +128,27 @@ function OpenCard({ address }: { address: Address }) {
         <input value={debt} onChange={(e) => setDebt(e.target.value)} style={{ width: '100%' }} />
       </label>
 
-      <Row label="Borrowing power">{fmt(recommended)} MUSD</Row>
-      <Row label="Opens at ICR">{pct(power?.recommendedIcr)}</Row>
+      <label style={{ display: 'block', marginBottom: 8 }}>
+        Hold for (days), your choice
+        <input
+          value={holdDays}
+          onChange={(e) => setHoldDays(e.target.value)}
+          style={{ width: '100%' }}
+        />
+      </label>
+      <label style={{ display: 'block', marginBottom: 8 }}>
+        Survive a BTC fall of (%), your choice
+        <input
+          value={fallPercent}
+          onChange={(e) => setFallPercent(e.target.value)}
+          style={{ width: '100%' }}
+        />
+      </label>
+      <Row label="Draw for that margin">
+        {sized
+          ? `${fmt(sized.draw)} MUSD, opens at ICR ${pct(sized.drawIcr)}, survives a ${fallPercent}% fall over ${holdDays} days and nothing more`
+          : 'choose a horizon and a fall'}
+      </Row>
       <Row label="Contract ceiling (MK-100)">
         {fmt(power?.ceiling)} MUSD, opens at exactly 110% and is liquidatable within seconds
       </Row>

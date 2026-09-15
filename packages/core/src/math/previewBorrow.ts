@@ -38,7 +38,7 @@ import {
  *
  * The contract facts that made this preview necessary at all are unchanged and still hold:
  *
- *   - Capacity is set ONCE, at open, from the OPENING price:
+ *   - Capacity is first set at open, from the OPENING price:
  *     `maxBorrowingCapacity = coll * price / (110 * 1e16)`
  *     (`BorrowerOperations.sol:692-698` calling `:1323-1328`).
  *   - On the adjust path it is recomputed ONLY when collateral DECREASES, and stored as
@@ -51,8 +51,9 @@ import {
  *     Recovery Mode and for fee exempt accounts (`:810-818`).
  *   - `debt` in that comparison is read AFTER `updateSystemAndTroveInterest(_borrower)`
  *     (`:769`), so it is current to the block and INCLUDES accrued interest. The SDK
- *     therefore compares against the live entire debt from `getEntireDebtAndColl`, not the
- *     stored `getTroveDebt`, which is stale until someone triggers an update.
+ *     therefore compares against the live entire debt from `getEntireDebtAndColl`, which folds in
+ *     pending redistribution as that update does (`TroveManager.sol:796-801`). `getTroveDebt` accrues to
+ *     the block but omits it (`:591-595`, `:1513-1527`), which is what makes it the wrong read (MK-246).
  */
 
 /**

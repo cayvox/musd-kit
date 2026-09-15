@@ -173,7 +173,6 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
     const { deps, feeCalls, multicalls } = mathDeps()
     const answer = await getBorrowingPower(deps, { collateral: 10n ** 18n })
     expect(answer.ceiling).toBeGreaterThan(0n)
-    expect(answer.recommended).toBeGreaterThan(0n)
     // The old implementation needed roughly 77 getBorrowingFee calls for one BTC. ONE here
     // since MK-092: the confirmation figure is kept and reused for the minNetDebt floor check
     // rather than being asked for a second time with the same argument.
@@ -198,7 +197,6 @@ describe('MK-010, getBorrowingPower validates its input and stops iterating', ()
     // Dust: the ICR cap is below the 200 gas reserve, so no open exists.
     await expect(getBorrowingPower(deps, { collateral: 1n })).resolves.toMatchObject({
       ceiling: 0n,
-      recommended: 0n,
     })
   })
 })

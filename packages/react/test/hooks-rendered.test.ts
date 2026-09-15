@@ -82,8 +82,15 @@ function makeClient(): MusdClient {
     })),
     getBorrowingPower: recorded('getBorrowingPower', (p: { collateral: bigint }) => ({
       ceiling: p.collateral * 100n,
-      recommended: p.collateral * 98n,
     })),
+    drawForMargin: recorded(
+      'drawForMargin',
+      (p: { collateral: bigint; priceFallBps: bigint; horizonSeconds: bigint }) => ({
+        ceiling: p.collateral * 100n,
+        draw: p.collateral * (100n - p.priceFallBps / 100n),
+        margin: { priceFallBps: p.priceFallBps, horizonSeconds: p.horizonSeconds },
+      }),
+    ),
     previewBorrow: recorded('previewBorrow', (p: { amount: bigint }) => ({
       amount: p.amount,
       viable: p.amount < 1_000n * MUSD,
@@ -474,6 +481,30 @@ describe('the read hooks, rendered: each asks the core exactly its question', ()
       name: 'useBorrowingPower without collateral',
       render: () => reads.useBorrowingPower({ collateral: undefined }),
     },
+    {
+      name: 'MK-240 useDrawForMargin without a horizon',
+      render: () =>
+        reads.useDrawForMargin({ collateral: BTC, horizonSeconds: undefined, priceFallBps: 200n }),
+    },
+    {
+      name: 'MK-240 useDrawForMargin without a price fall',
+      render: () =>
+        reads.useDrawForMargin({ collateral: BTC, horizonSeconds: 3600n, priceFallBps: undefined }),
+    },
+    {
+      name: 'MK-240 useDrawForMargin without collateral',
+      render: () =>
+        reads.useDrawForMargin({
+          collateral: undefined,
+          horizonSeconds: 3600n,
+          priceFallBps: 200n,
+        }),
+    },
+    {
+      name: 'MK-240 useDrawForMargin at zero collateral',
+      render: () =>
+        reads.useDrawForMargin({ collateral: 0n, horizonSeconds: 3600n, priceFallBps: 200n }),
+    },
   ]
   for (const d of disabled) {
     it(`${d.name} asks nothing and shows nothing`, async () => {
@@ -501,28 +532,49 @@ describe('the read hooks, rendered: each asks the core exactly its question', ()
   })
 })
 
-describe('MK-100, MK-106: useBorrowingPower, rendered', () => {
-  it('data is the RECOMMENDED figure, never the ceiling', async () => {
+describe('MK-100, MK-106, MK-240: the borrowing power hooks, rendered', () => {
+  it('MK-240: useBorrowingPower data is the ceiling result, never a bare amount to borrow', async () => {
     const { wrapper } = setup()
     const { result } = renderHook(() => reads.useBorrowingPower({ collateral: BTC }), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data).toBe(BTC * 98n)
-    expect(result.current.data).not.toBe(BTC * 100n)
+    expect(typeof result.current.data, 'a bare number reads as an answer').toBe('object')
+    expect(result.current.data).toEqual({ ceiling: BTC * 100n })
+    expect(calls.map((c) => c.method)).toEqual(['getBorrowingPower'])
   })
 
-  it('useBorrowingPowerDetail returns both figures over the same single fetch', async () => {
+  it('MK-240: useDrawForMargin forwards the margin the caller chose, and each margin is its own question', async () => {
     const { wrapper } = setup()
     const { result } = renderHook(
       () => ({
-        value: reads.useBorrowingPower({ collateral: BTC }),
-        detail: reads.useBorrowingPowerDetail({ collateral: BTC }),
+        day: reads.useDrawForMargin({
+          collateral: BTC,
+          horizonSeconds: 86_400n,
+          priceFallBps: 500n,
+        }),
+        week: reads.useDrawForMargin({
+          collateral: BTC,
+          horizonSeconds: 604_800n,
+          priceFallBps: 1_000n,
+        }),
+        none: reads.useDrawForMargin({ collateral: BTC, horizonSeconds: 0n, priceFallBps: 0n }),
       }),
       { wrapper },
     )
-    await waitFor(() => expect(result.current.detail.isSuccess).toBe(true))
-    expect(result.current.detail.data).toEqual({ ceiling: BTC * 100n, recommended: BTC * 98n })
-    expect(result.current.value.data).toBe(BTC * 98n)
-    expect(countOf('getBorrowingPower')).toBe(1)
+    await waitFor(() => expect(result.current.day.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.week.isSuccess).toBe(true))
+    await waitFor(() => expect(result.current.none.isSuccess).toBe(true))
+    const asked = calls.filter((c) => c.method === 'drawForMargin').map((c) => c.args[0])
+    // Three margins, three fetches: sharing one would show one margin's answer as another's. A zero
+    // margin is a margin, and is asked, not treated as absent.
+    expect(asked).toHaveLength(3)
+    expect(asked).toContainEqual({ collateral: BTC, horizonSeconds: 86_400n, priceFallBps: 500n })
+    expect(asked).toContainEqual({
+      collateral: BTC,
+      horizonSeconds: 604_800n,
+      priceFallBps: 1_000n,
+    })
+    expect(asked).toContainEqual({ collateral: BTC, horizonSeconds: 0n, priceFallBps: 0n })
+    expect(result.current.day.data?.margin).toEqual({ horizonSeconds: 86_400n, priceFallBps: 500n })
   })
 
   it('an omitted account is the CONNECTED wallet, not "not exempt" (MK-106)', async () => {
@@ -535,34 +587,20 @@ describe('MK-100, MK-106: useBorrowingPower, rendered', () => {
     ])
   })
 
-  it('a margin override is forwarded, and each margin is its own question', async () => {
+  it('MK-106: useDrawForMargin also defaults the account to the connected wallet', async () => {
+    state.account = CONNECTED
     const { wrapper } = setup()
     const { result } = renderHook(
-      () => ({
-        wide: reads.useBorrowingPower({
-          collateral: BTC,
-          priceMoveBps: 500n,
-          marginWindowSeconds: 86_400n,
-        }),
-        fast: reads.useBorrowingPowerDetail({ collateral: BTC, marginWindowSeconds: 60n }),
-        plain: reads.useBorrowingPower({ collateral: BTC }),
-      }),
+      () => reads.useDrawForMargin({ collateral: BTC, horizonSeconds: 3600n, priceFallBps: 200n }),
       { wrapper },
     )
-    await waitFor(() => expect(result.current.plain.isSuccess).toBe(true))
-    await waitFor(() => expect(result.current.wide.isSuccess).toBe(true))
-    await waitFor(() => expect(result.current.fast.isSuccess).toBe(true))
-    const asked = calls.filter((c) => c.method === 'getBorrowingPower').map((c) => c.args[0])
-    // Three different margins, three fetches: sharing one would show one margin's answer as another's.
-    expect(asked).toHaveLength(3)
-    expect(asked).toContainEqual({
-      collateral: BTC,
-      priceMoveBps: 500n,
-      marginWindowSeconds: 86_400n,
-    })
-    expect(asked).toContainEqual({ collateral: BTC, marginWindowSeconds: 60n })
-    // An omitted override stays omitted, so the core applies the measured default.
-    expect(asked).toContainEqual({ collateral: BTC })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(calls).toEqual([
+      {
+        method: 'drawForMargin',
+        args: [{ collateral: BTC, horizonSeconds: 3600n, priceFallBps: 200n, account: CONNECTED }],
+      },
+    ])
   })
 
   it('an explicit account wins over the connected wallet', async () => {

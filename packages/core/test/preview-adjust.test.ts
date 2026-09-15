@@ -264,6 +264,7 @@ describe('MK-042, the clamping branches, which only fire on degenerate inputs', 
       price: PRICE,
       systemColl: 0n,
       systemDebt: 20_000_000n * MUSD,
+      capacity: 0n,
     })
     expect(m.amount).toBe(0n)
   })

@@ -1,11 +1,10 @@
 import type { PublicClient } from 'viem'
 import { describe, expect, it } from 'vitest'
 import {
-  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
-  BORROWING_POWER_PRICE_MOVE_BPS,
   CCR,
   InvalidAmount,
   MCR,
+  drawForMargin,
   evaluateOpen,
   getAddresses,
   getBorrowingPower,
@@ -116,18 +115,21 @@ function opens(s: Scenario, draw: bigint, atPrice = s.price): ReturnType<typeof 
 }
 
 /**
- * The stressed price the recommended figure must clear, restated from its definition rather than
- * read off the result (MK-100): the price after a fall of `BORROWING_POWER_PRICE_MOVE_BPS`, divided
- * by one plus `BORROWING_POWER_MARGIN_WINDOW_SECONDS` of interest at the rate, rounded up.
+ * A margin a caller might choose, written here because the library no longer chooses one (MK-240).
+ * The values are arbitrary test inputs, not advice: 200 bps over a day.
  */
-function stressedPrice(
-  price: bigint,
-  priceMoveBps = BORROWING_POWER_PRICE_MOVE_BPS,
-  windowSeconds = BORROWING_POWER_MARGIN_WINDOW_SECONDS,
-): bigint {
+const FALL_BPS = 200n
+const HORIZON_SECONDS = 86_400n
+
+/**
+ * The stressed price a margin draw must clear, restated from its definition rather than read off the
+ * result (MK-100, MK-240): the price after a fall of `priceFallBps`, divided by one plus
+ * `horizonSeconds` of interest at the rate, rounded up.
+ */
+function stressedPrice(price: bigint, priceFallBps: bigint, horizonSeconds: bigint): bigint {
   const denominator = 10_000n * SECONDS_PER_YEAR
-  const accrual = (INTEREST_RATE_BPS * windowSeconds * E18 + denominator - 1n) / denominator
-  return (price * (10_000n - priceMoveBps) * E18) / (10_000n * (E18 + accrual))
+  const accrual = (INTEREST_RATE_BPS * horizonSeconds * E18 + denominator - 1n) / denominator
+  return (price * (10_000n - priceFallBps) * E18) / (10_000n * (E18 + accrual))
 }
 
 /**
@@ -232,110 +234,125 @@ describe('getBorrowingPower and previewOpen answer the same question the same wa
     })
 
     /**
-     * MK-100. The recommended figure is the same boundary, at the stressed price: it clears every
-     * open gate AFTER the stated fall and accrual, and one wei more does not. That is the whole
-     * content of the margin, so it is pinned as a boundary rather than as "smaller than the ceiling",
-     * which a margin of any size would satisfy.
+     * MK-240, and MK-100 before it. A margin draw is the same boundary, at the stressed price the
+     * CALLER's margin sets: it clears every open gate AFTER that fall and that accrual, and one wei more
+     * does not. That is the whole content of the margin, so it is pinned as a boundary rather than as
+     * "smaller than the ceiling", which a margin of any size would satisfy.
      */
-    it(`${s.label}: the recommended figure is the boundary at the stressed price`, async () => {
+    it(`${s.label}: MK-240 drawForMargin is the boundary at the caller's stressed price`, async () => {
       const account = s.feeExempt ? ACCOUNT : undefined
-      const power = await getBorrowingPower(fakeDeps(s), {
+      const result = await drawForMargin(fakeDeps(s), {
         collateral: s.collateral,
         price: s.price,
+        horizonSeconds: HORIZON_SECONDS,
+        priceFallBps: FALL_BPS,
         ...(account !== undefined ? { account } : {}),
       })
-      const stressed = stressedPrice(s.price)
-      expect(power.margin.stressedPrice, 'the reported stressed price').toBe(stressed)
-      expect(power.margin.windowSeconds).toBe(BORROWING_POWER_MARGIN_WINDOW_SECONDS)
-      expect(power.margin.priceMoveBps).toBe(BORROWING_POWER_PRICE_MOVE_BPS)
-      expect(power.margin.interestRateBps).toBe(INTEREST_RATE_BPS)
-      expect(power.recommended, 'a zero would make this vacuous').toBeGreaterThan(0n)
-      expect(power.recommended).toBeLessThan(power.ceiling)
-      const at = opens(s, power.recommended, stressed)
+      const stressed = stressedPrice(s.price, FALL_BPS, HORIZON_SECONDS)
+      expect(result.margin.stressedPrice, 'the reported stressed price').toBe(stressed)
+      expect(result.margin.horizonSeconds).toBe(HORIZON_SECONDS)
+      expect(result.margin.priceFallBps).toBe(FALL_BPS)
+      expect(result.margin.interestRateBps).toBe(INTEREST_RATE_BPS)
+      expect(result.draw, 'a zero would make this vacuous').toBeGreaterThan(0n)
+      expect(result.draw).toBeLessThan(result.ceiling)
+      const at = opens(s, result.draw, stressed)
       expect(at.viable, `refused at the stressed price: ${JSON.stringify(at.reasons)}`).toBe(true)
-      expect(opens(s, power.recommended + 1n, stressed).viable, 'one wei more at stress').toBe(
-        false,
-      )
+      expect(opens(s, result.draw + 1n, stressed).viable, 'one wei more at stress').toBe(false)
       // And the ICR it reports is the one a Trove opened at it starts at, at the real price.
-      expect(power.recommendedIcr).toBe(opens(s, power.recommended).icr)
-      expect(power.ceilingIcr).toBe(opens(s, power.ceiling).icr)
+      expect(result.drawIcr).toBe(opens(s, result.draw).icr)
+      expect(result.ceilingIcr).toBe(opens(s, result.ceiling).icr)
     })
   }
 
   /**
-   * The constants are a measurement, and this is the floor the measurement sets (MK-100).
-   *
-   * `scripts/oracle-moves.ts --end 11823000 --days 7 --step 16` over Mezo mainnet put the worst fall
-   * inside any sampled hour at 190.78 bps. A price move constant under that no longer covers the
-   * measured week, and a window under an hour no longer covers the delay the fork proof asserts, so
-   * either change must come with a new measurement rather than slip in as an edit. Every other test
-   * here imports the constants, so without this one they could be lowered with nothing going red.
+   * MK-240. The ceiling result carries no amount to borrow. `recommended`, `recommendedIcr` and
+   * `margin` were on it until 0.5.0, and `recommended` was the draw both READMEs told callers to offer.
+   * Pinned on the key set, so a figure that reads as an answer cannot be added back to the ceiling
+   * result without this going red.
    */
+  it('MK-240: getBorrowingPower returns the ceiling and no amount to borrow', async () => {
+    for (const s of scenarios) {
+      const power = await getBorrowingPower(fakeDeps(s), {
+        collateral: s.collateral,
+        price: s.price,
+        ...(s.feeExempt ? { account: ACCOUNT } : {}),
+      })
+      expect(Object.keys(power).sort(), s.label).toEqual([
+        'ceiling',
+        'ceilingIcr',
+        'isRecoveryMode',
+        'price',
+      ])
+    }
+  })
+
   /**
-   * The margin is the caller's to widen or narrow, and the result always says which margin it holds:
-   * a flow slower than the measured hour needs more, an immediate send may take less. Each override
-   * is pinned as the same boundary the default is pinned as, at ITS stressed price, so an override
-   * that was accepted and then ignored, or applied to one half of the stress and not the other, goes
-   * red rather than returning the default under the caller's numbers.
+   * The margin is the caller's, and the result says which margin it holds. Each margin is pinned as the
+   * boundary at ITS stressed price, so a margin that was accepted and then ignored, or applied to one
+   * half of the stress and not the other, goes red rather than returning some other margin's answer.
    */
-  it('MK-100: an overridden margin is reported, and recommended is the boundary at its stressed price', async () => {
+  it("MK-240: each margin is reported, and draw is the boundary at that margin's stressed price", async () => {
     const s = scenarios[0] as Scenario
     const base = await getBorrowingPower(fakeDeps(s), { collateral: s.collateral, price: s.price })
-    for (const [priceMoveBps, marginWindowSeconds] of [
+    const drawAt = async (priceFallBps: bigint, horizonSeconds: bigint) =>
+      drawForMargin(fakeDeps(s), {
+        collateral: s.collateral,
+        price: s.price,
+        priceFallBps,
+        horizonSeconds,
+      })
+    for (const [priceFallBps, horizonSeconds] of [
       [500n, 86_400n],
       [50n, 60n],
       [0n, 3600n],
       [200n, 0n],
+      [1000n, 604_800n],
     ] as const) {
-      const label = `priceMoveBps=${priceMoveBps} marginWindowSeconds=${marginWindowSeconds}`
-      const power = await getBorrowingPower(fakeDeps(s), {
-        collateral: s.collateral,
-        price: s.price,
-        priceMoveBps,
-        marginWindowSeconds,
-      })
-      const stressed = stressedPrice(s.price, priceMoveBps, marginWindowSeconds)
-      expect(power.margin.priceMoveBps, label).toBe(priceMoveBps)
-      expect(power.margin.windowSeconds, label).toBe(marginWindowSeconds)
-      expect(power.margin.stressedPrice, label).toBe(stressed)
-      expect(power.ceiling, `${label}: the ceiling does not depend on the margin`).toBe(
+      const label = `priceFallBps=${priceFallBps} horizonSeconds=${horizonSeconds}`
+      const result = await drawAt(priceFallBps, horizonSeconds)
+      const stressed = stressedPrice(s.price, priceFallBps, horizonSeconds)
+      expect(result.margin.priceFallBps, label).toBe(priceFallBps)
+      expect(result.margin.horizonSeconds, label).toBe(horizonSeconds)
+      expect(result.margin.stressedPrice, label).toBe(stressed)
+      expect(result.ceiling, `${label}: the ceiling does not depend on the margin`).toBe(
         base.ceiling,
       )
-      expect(opens(s, power.recommended, stressed).viable, label).toBe(true)
-      expect(opens(s, power.recommended + 1n, stressed).viable, label).toBe(false)
+      expect(opens(s, result.draw, stressed).viable, label).toBe(true)
+      expect(opens(s, result.draw + 1n, stressed).viable, label).toBe(false)
     }
-    const wider = await getBorrowingPower(fakeDeps(s), {
-      collateral: s.collateral,
-      price: s.price,
-      priceMoveBps: 500n,
-    })
-    const narrower = await getBorrowingPower(fakeDeps(s), {
-      collateral: s.collateral,
-      price: s.price,
-      priceMoveBps: 50n,
-    })
-    expect(wider.recommended, 'a wider margin offers less').toBeLessThan(base.recommended)
-    expect(narrower.recommended, 'a narrower margin offers more').toBeGreaterThan(base.recommended)
-    expect(narrower.recommended).toBeLessThan(base.ceiling)
+    const day = await drawAt(200n, 86_400n)
+    const wider = await drawAt(500n, 86_400n)
+    const longer = await drawAt(200n, 30n * 86_400n)
+    const narrower = await drawAt(50n, 86_400n)
+    expect(wider.draw, 'a larger fall offers less').toBeLessThan(day.draw)
+    expect(longer.draw, 'a longer horizon offers less').toBeLessThan(day.draw)
+    expect(narrower.draw, 'a smaller fall offers more').toBeGreaterThan(day.draw)
+    expect(narrower.draw).toBeLessThan(base.ceiling)
   })
 
   /**
-   * An override outside its range is refused before any read. A negative one would lift the stressed
-   * price above the real one, and the clamp to the ceiling would then return the liquidation
-   * threshold under the name `recommended`, which is the defect MK-100 exists to prevent.
+   * MK-240. Neither input has a default. A JavaScript caller that omits one, or a TypeScript caller that
+   * casts past the required type, is refused before the chain is asked anything, rather than handed an
+   * answer to a margin somebody else chose. A negative horizon would lift the stressed price above the
+   * real one and return the ceiling as `draw`, which is the defect MK-100 exists to prevent.
    */
-  it('MK-100: an override outside its range is refused before the chain is asked anything', async () => {
+  it('MK-240: a missing or out of range margin is refused before the chain is asked anything', async () => {
     const s = scenarios[0] as Scenario
     for (const bad of [
-      { priceMoveBps: -1n },
-      { priceMoveBps: 10_000n },
-      { priceMoveBps: 20_000n },
-      { marginWindowSeconds: -1n },
+      {},
+      { horizonSeconds: 3600n },
+      { priceFallBps: 200n },
+      { horizonSeconds: 3600n, priceFallBps: -1n },
+      { horizonSeconds: 3600n, priceFallBps: 10_000n },
+      { horizonSeconds: 3600n, priceFallBps: 20_000n },
+      { horizonSeconds: -1n, priceFallBps: 200n },
+      { horizonSeconds: 3600, priceFallBps: 200n },
     ]) {
       const { deps, calls } = countingDeps(s)
-      const error = await getBorrowingPower(deps, { collateral: s.collateral, ...bad }).catch(
-        (e: unknown) => e,
-      )
+      const error = await drawForMargin(deps, {
+        collateral: s.collateral,
+        ...(bad as { horizonSeconds: bigint; priceFallBps: bigint }),
+      }).catch((e: unknown) => e)
       expect(
         error,
         JSON.stringify(bad, (_, v) => (typeof v === 'bigint' ? `${v}` : v)),
@@ -344,43 +361,42 @@ describe('getBorrowingPower and previewOpen answer the same question the same wa
     }
   })
 
-  it('MK-100: the margin constants cover the measured worst hour', () => {
-    expect(BORROWING_POWER_PRICE_MOVE_BPS).toBeGreaterThanOrEqual(191n)
-    expect(BORROWING_POWER_MARGIN_WINDOW_SECONDS).toBeGreaterThanOrEqual(3600n)
-  })
-
   /**
-   * With no price move and no window the stressed price IS the price, so the two figures must be
-   * the same number. A recommended figure that differed here would carry a margin nobody asked for.
+   * With no fall and no horizon the stressed price IS the price, so the draw must be the ceiling. A draw
+   * that differed here would carry a margin nobody asked for.
    */
-  it('MK-100: a zero margin makes recommended equal to the ceiling', async () => {
+  it('MK-240: a zero margin makes draw equal to the ceiling', async () => {
     for (const s of scenarios) {
-      const power = await getBorrowingPower(fakeDeps(s), {
+      const result = await drawForMargin(fakeDeps(s), {
         collateral: s.collateral,
         price: s.price,
-        priceMoveBps: 0n,
-        marginWindowSeconds: 0n,
+        priceFallBps: 0n,
+        horizonSeconds: 0n,
         ...(s.feeExempt ? { account: ACCOUNT } : {}),
       })
-      expect(power.margin.stressedPrice, s.label).toBe(s.price)
-      expect(power.recommended, s.label).toBe(power.ceiling)
+      expect(result.margin.stressedPrice, s.label).toBe(s.price)
+      expect(result.draw, s.label).toBe(result.ceiling)
     }
   })
 
   /**
-   * The margin in ICR terms, at the live constants: a Trove opened at the recommended figure in
-   * normal mode, with the individual ratio binding, starts at least `MCR * price / stressedPrice`,
-   * which is MCR plus roughly the price move. Stated as a band so a margin that grew or shrank
-   * without the constant changing goes red.
+   * The margin in ICR terms: a Trove opened at the draw in normal mode, with the individual ratio
+   * binding, starts at least `MCR * price / stressedPrice`, which is MCR plus roughly the fall. Stated
+   * as a band so a margin that grew or shrank without the inputs changing goes red.
    */
-  it('MK-100: in normal mode the recommended figure opens about BORROWING_POWER_PRICE_MOVE_BPS above MCR', async () => {
+  it('MK-240: in normal mode the draw opens about the chosen fall above MCR', async () => {
     const s = scenarios[0] as Scenario
-    const power = await getBorrowingPower(fakeDeps(s), { collateral: s.collateral, price: s.price })
-    const floor = (MCR * s.price) / stressedPrice(s.price)
-    expect(power.recommendedIcr).toBeGreaterThanOrEqual(floor)
+    const result = await drawForMargin(fakeDeps(s), {
+      collateral: s.collateral,
+      price: s.price,
+      priceFallBps: FALL_BPS,
+      horizonSeconds: HORIZON_SECONDS,
+    })
+    const floor = (MCR * s.price) / stressedPrice(s.price, FALL_BPS, HORIZON_SECONDS)
+    expect(result.drawIcr).toBeGreaterThanOrEqual(floor)
     // One percent of MCR above the floor is far more than the few wei the solver lands within.
-    expect(power.recommendedIcr - floor).toBeLessThan(MCR / 10_000n)
-    expect(power.ceilingIcr - MCR).toBeLessThan(10n ** 6n)
+    expect(result.drawIcr - floor).toBeLessThan(MCR / 10_000n)
+    expect(result.ceilingIcr - MCR).toBeLessThan(10n ** 6n)
   })
 
   /**
@@ -547,8 +563,18 @@ describe('MK-092, the round trips getBorrowingPower actually makes', () => {
       'multicall(borrowingRate,DECIMAL_PRECISION,getEntireSystemColl,getEntireSystemDebt,interestRate,fetchPrice)',
       'checkRecoveryMode',
       'minNetDebt',
-      // ONE fee read, not two: the confirmation figure is kept rather than re-fetched, and the
-      // recommended figure reuses the linearity that one read confirmed (MK-100).
+      // ONE fee read, not two: the confirmation figure is kept rather than re-fetched (MK-092).
+      'getBorrowingFee',
+    ])
+  })
+
+  it('MK-240: drawForMargin costs the same four, reusing the linearity the one fee read confirmed', async () => {
+    const { deps, calls } = countingDeps(NORMAL)
+    await drawForMargin(deps, { collateral: E18, horizonSeconds: 86_400n, priceFallBps: 500n })
+    expect(calls).toEqual([
+      'multicall(borrowingRate,DECIMAL_PRECISION,getEntireSystemColl,getEntireSystemDebt,interestRate,fetchPrice)',
+      'checkRecoveryMode',
+      'minNetDebt',
       'getBorrowingFee',
     ])
   })

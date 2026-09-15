@@ -41,6 +41,7 @@ import {
   MUSD_GAS_COMPENSATION as GAS_COMPENSATION,
   type MusdClient,
   MusdError,
+  RedemptionFailed,
   RedemptionPriceFragile,
   createMusdClient,
   formatBtc,
@@ -410,15 +411,19 @@ async function main(): Promise<void> {
     `  capacity ${formatMusd(capacity.capacity)}, remaining ${formatMusd(capacity.remaining)}`,
   )
   const power = await musd.getBorrowingPower({ collateral: COLLATERAL })
+  // MK-240. A margin draw needs a margin the caller chooses; this run picks a day and 5 percent to
+  // exercise the call, which is an input to the calculator and not a recommendation.
+  const sized = await musd.drawForMargin({
+    collateral: COLLATERAL,
+    horizonSeconds: 86_400n,
+    priceFallBps: 500n,
+  })
   console.log(
-    `  borrowingPower at open collateral: recommended ${formatMusd(power.recommended)} MUSD, ceiling ${formatMusd(power.ceiling)} MUSD`,
+    `  at open collateral: ceiling ${formatMusd(power.ceiling)} MUSD; draw for a day and a 5% fall ${formatMusd(sized.draw)} MUSD`,
   )
   record('getBorrowingCapacity', 'exercised', `capacity ${capacity.capacity}`)
-  record(
-    'getBorrowingPower',
-    'exercised',
-    `recommended ${power.recommended} ceiling ${power.ceiling}`,
-  )
+  record('getBorrowingPower', 'exercised', `ceiling ${power.ceiling}`)
+  record('drawForMargin', 'exercised', `draw ${sized.draw} for 86400s and 500 bps`)
 
   // ---- 3. previewAdjustTrove + addCollateral
   console.log('\n--- previewAdjustTrove + addCollateral ---')
@@ -633,16 +638,27 @@ async function main(): Promise<void> {
         } else {
           console.log('  no fragile first-Trove partial at this amount: the default path sends it')
         }
-        let result = await musd.redeem({ amount, acceptPriceFragilePartial: optedIn })
-        let outcome = await waitFor(result.hash, 'redeem', { fatal: false })
+        // MK-241. `redeem()` resolves once mined and throws `RedemptionFailed` for a reverted receipt,
+        // so a revert arrives as a rejection rather than as a hash to wait for.
+        const attempt = async (asked: bigint) => {
+          try {
+            return {
+              ok: true as const,
+              result: await musd.redeem({ amount: asked, acceptPriceFragilePartial: optedIn }),
+            }
+          } catch (error) {
+            if (!(error instanceof RedemptionFailed)) throw error
+            return { ok: false as const, why: error.message.split('\n')[0] as string }
+          }
+        }
+        let outcome = await attempt(amount)
         if (!outcome.ok) {
           const again = await musd.previewRedeem({ redeemer: owner, amount: 1n })
           const retryAmount = again.maxWithoutConsuming > 0n ? again.maxWithoutConsuming : amount
           console.log(
             `  retrying once at ${formatMusd(retryAmount)} MUSD, hints recomputed (MK-103)`,
           )
-          result = await musd.redeem({ amount: retryAmount, acceptPriceFragilePartial: optedIn })
-          outcome = await waitFor(result.hash, 'redeem (retry)', { fatal: false })
+          outcome = await attempt(retryAmount)
         }
         if (!outcome.ok) {
           record(
@@ -652,18 +668,29 @@ async function main(): Promise<void> {
           )
           throw new Error(RECORDED_ALREADY)
         }
+        const { result } = outcome
         const after = await musd.balanceOf(owner)
         const afterBtc = await publicClient.getBalance({ address: owner })
-        console.log(`  redemptionRate            ${result.redemptionRate}`)
-        console.log(`  estimatedCollateralDrawn  ${result.estimatedCollateralDrawn} BTC wei`)
-        console.log(`  estimatedFeeCollateral    ${result.estimatedFeeCollateral} BTC wei`)
-        console.log(`  truncatedAmount           ${formatMusd(result.truncatedAmount)} MUSD`)
-        console.log(`  MUSD burned, measured     ${formatMusd(before - after)}`)
-        console.log(`  BTC delta, measured       ${afterBtc - beforeBtc} wei (net of gas)`)
+        console.log(`  redemptionRate               ${result.redemptionRate}`)
+        console.log(
+          `  estimated redeemable, before ${formatMusd(result.estimatedBeforeSend.redeemable)} MUSD`,
+        )
+        console.log(
+          `  settled redeemedAmount       ${formatMusd(result.settled.redeemedAmount)} MUSD`,
+        )
+        console.log(`  settled collateralReceived   ${result.settled.collateralReceived} BTC wei`)
+        console.log(`  settled collateralFee        ${result.settled.collateralFee} BTC wei`)
+        console.log(`  MUSD burned, measured        ${formatMusd(before - after)}`)
+        console.log(`  BTC delta, measured          ${afterBtc - beforeBtc} wei (net of gas)`)
+        assertEq(
+          'MUSD burned against settled redeemedAmount',
+          before - after,
+          result.settled.redeemedAmount,
+        )
         record(
           'redeem',
           'exercised',
-          `${optedIn ? 'sent WITH acceptPriceFragilePartial after the default refused' : 'sent on the default path, no fragile first-Trove partial'}; burned ${formatMusd(before - after)} MUSD against another account's Trove. rate=${result.redemptionRate} estimatedFeeCollateral=${result.estimatedFeeCollateral} estimatedCollateralDrawn=${result.estimatedCollateralDrawn}`,
+          `${optedIn ? 'sent WITH acceptPriceFragilePartial after the default refused' : 'sent on the default path, no fragile first-Trove partial'}; burned ${formatMusd(before - after)} MUSD against another account's Trove, equal to settled.redeemedAmount. rate=${result.redemptionRate} collateralFee=${result.settled.collateralFee} collateralReceived=${result.settled.collateralReceived}`,
         )
       } catch (e) {
         const err = e as Error

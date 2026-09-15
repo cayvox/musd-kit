@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest'
 import {
   type EligibleTrove,
   InsufficientMusdBalance,
+  RedemptionFailed,
   getAddresses,
   partialRedemptionBand,
   previewRedeem,
+  settledRedemptionFrom,
 } from '../src'
 import type { WriteDeps } from '../src/internal/write'
 import { redeem } from '../src/redemption/redeem'
+import { redemptionReceipt } from './redemption-receipt'
 
 /**
  * The redemption decisions no test reached: the edges of the partial band, the list walk's inclusive
@@ -160,8 +163,13 @@ function chain(icrs: bigint[], opts: { balance?: bigint; truncated?: bigint } = 
           return Number(RATE)
         case 'getRedemptionHints':
           return [troves[0], 0n, opts.truncated ?? 30_030n * MUSD]
+        // MK-245. The last Trove rule's counts and flag: a populated system unless a test says otherwise.
+        case 'getTroveOwnersCount':
+          return 42n
+        case 'mintList':
+          return true
         case 'getSize':
-          return BigInt(troves.length)
+          return 42n
         case 'getApproxHint':
           return [ZERO, 0n, 0n]
         case 'findInsertPosition':
@@ -177,6 +185,15 @@ function chain(icrs: bigint[], opts: { balance?: bigint; truncated?: bigint } = 
       return { request: {} }
     },
     estimateContractGas: async () => 1n,
+    // MK-241. `redeem()` resolves on the mined receipt and reads what settled from its event.
+    waitForTransactionReceipt: async () =>
+      redemptionReceipt({
+        troveManager: getAddresses(31611).troveManager,
+        attempted: 1_000n * MUSD,
+        actual: 1_000n * MUSD,
+        collateralDrawn: BTC / 100n,
+        collateralFee: BTC / 10_000n,
+      }),
   } as unknown as PublicClient
   const writeDeps: WriteDeps = {
     publicClient,
@@ -252,11 +269,103 @@ describe('MK-118, redeem()', () => {
     expect(result.hash).toBe('0xhash')
   })
 
-  it('asks for no redemption rate when the call is estimated to draw no collateral', async () => {
-    const c = chain([2n * E18, 2n * E18], { truncated: 0n })
+  it('MK-241: the estimate comes from the walk, not the hint helper, and asks the chain for no fee', async () => {
+    // The helper reports 5,000 MUSD more than the walk expects, the MK-048 shape. The estimate must be
+    // the walk's figure, and its fee the contract's formula applied locally.
+    const c = chain([2n * E18, 2n * E18], { truncated: 65_060n * MUSD })
     const result = await redeem(c.writeDeps, { amount: 40_000n * MUSD })
-    expect(result.estimatedCollateralDrawn).toBe(0n)
-    expect(result.estimatedFeeCollateral).toBe(0n)
+    const walk = await previewRedeem(c.writeDeps, {
+      redeemer: '0x000000000000000000000000000000000000dEaD',
+      amount: 40_000n * MUSD,
+      marginSeconds: 60n,
+    })
+    expect(result.estimatedBeforeSend.redeemable).toBe(walk.redeemable)
+    const drawn = (walk.redeemable * E18) / (76_750n * MUSD)
+    expect(result.estimatedBeforeSend.collateralDrawn).toBe(drawn)
+    expect(result.estimatedBeforeSend.collateralFee).toBe((7_500_000_000_000_000n * drawn) / E18)
     expect(c.reads.map((r) => r.functionName)).not.toContain('getRedemptionRate')
+  })
+})
+
+describe('MK-241, what a redemption settled, read from its receipt', () => {
+  const TM = getAddresses(31611).troveManager
+  // A redemption that asked for 66,819.7 MUSD and redeemed 16,864.7, the shape the audit found: the
+  // first Trove consumed whole and a later partial cancelled. Collateral drawn includes the fee.
+  const receipt = redemptionReceipt({
+    troveManager: TM,
+    attempted: 66_819_700n * 10n ** 15n,
+    actual: 16_864_700n * 10n ** 15n,
+    collateralDrawn: 220_626_907_348_902_294n,
+    collateralFee: 1_654_701_805_116_767n,
+  })
+
+  it('reports the event figures by what each IS, and derives what the redeemer received', () => {
+    const settled = settledRedemptionFrom(receipt, TM)
+    expect(settled.attemptedAmount).toBe(66_819_700n * 10n ** 15n)
+    expect(settled.redeemedAmount, '_actualAmount, not the amount asked for').toBe(
+      16_864_700n * 10n ** 15n,
+    )
+    expect(settled.unredeemedAmount).toBe(49_955_000n * 10n ** 15n)
+    expect(settled.collateralDrawn, '_collateralSent is collateral drawn, fee included').toBe(
+      220_626_907_348_902_294n,
+    )
+    expect(settled.collateralFee).toBe(1_654_701_805_116_767n)
+    // `TroveManager.sol:416-418`: the redeemer is sent the drawn collateral less the fee.
+    expect(settled.collateralReceived).toBe(220_626_907_348_902_294n - 1_654_701_805_116_767n)
+    expect(settled.blockNumber).toBe(7n)
+  })
+
+  it('a reverted receipt redeemed nothing, and says so as RedemptionFailed', () => {
+    const reverted = redemptionReceipt({
+      troveManager: TM,
+      attempted: 1n,
+      actual: 1n,
+      collateralDrawn: 1n,
+      collateralFee: 0n,
+      status: 'reverted',
+    })
+    expect(() => settledRedemptionFrom(reverted, TM)).toThrow(RedemptionFailed)
+  })
+
+  it('a receipt with no Redemption event from the Trove manager is not read as one', () => {
+    const none = redemptionReceipt({
+      troveManager: TM,
+      attempted: 1n,
+      actual: 1n,
+      collateralDrawn: 1n,
+      collateralFee: 0n,
+      noEvent: true,
+    })
+    expect(() => settledRedemptionFrom(none, TM)).toThrow(RedemptionFailed)
+    const elsewhere = redemptionReceipt({
+      troveManager: TM,
+      attempted: 1n,
+      actual: 1n,
+      collateralDrawn: 1n,
+      collateralFee: 0n,
+      emitter: '0x00000000000000000000000000000000000000ee',
+    })
+    expect(() => settledRedemptionFrom(elsewhere, TM), 'another contract').toThrow(RedemptionFailed)
+    // The address comparison ignores case, as addresses do.
+    expect(settledRedemptionFrom(receipt, TM.toLowerCase() as `0x${string}`).redeemedAmount).toBe(
+      16_864_700n * 10n ** 15n,
+    )
+  })
+
+  it('redeem() resolves with what its receipt settled, not with the estimate', async () => {
+    const c = chain([2n * E18, 2n * E18])
+    let waitedFor: unknown
+    const publicClient = c.writeDeps.publicClient as unknown as {
+      waitForTransactionReceipt: (a: { hash: string }) => Promise<unknown>
+    }
+    publicClient.waitForTransactionReceipt = async (a) => {
+      waitedFor = a.hash
+      return receipt
+    }
+    const result = await redeem(c.writeDeps, { amount: 40_000n * MUSD })
+    expect(waitedFor, 'the receipt of the hash it sent').toBe('0xhash')
+    expect(result.settled).toEqual(settledRedemptionFrom(receipt, TM))
+    expect(result.settled.redeemedAmount).not.toBe(result.estimatedBeforeSend.redeemable)
+    expect(Object.keys(result)).not.toContain('truncatedAmount')
   })
 })
