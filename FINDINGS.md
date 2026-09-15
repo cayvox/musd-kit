@@ -147,10 +147,131 @@ claim about it was not).
 | MK-109 | Documentation and shipped surface disagree: a documented `getPeg` that does not exist, a write count and precheck claim in the packaged README that are false, stale React docs and types, and missing React re-exports | S3 | **fixed**, item by item, with `liquidationPrice`'s rounding documented |
 | MK-110 | Three pins in the P21 wave checked nothing while green: a mutation entry that drifted onto a different line, a test that could not see the defect it was named for, and a computation no fixture could tell apart from its defect. The mutation gate runs only the mutations it lists, and nothing runs it but a person | S2 | **fixed for the three**, and a mutation row added to the wave checklist. **The class can recur**: see the entry |
 | MK-111 | The 0.3.0 release record, including three registered findings, sat on a pull request that was never merged, so `main` showed a live run for 0.2.0 only and a register that skipped from MK-096 to MK-100 while 0.3.0 and 0.3.1 were published | S3, process | **fixed.** The record is carried onto `main`; the runbook keeps the ledger per release and checks the previous record on `main` as precondition 8 |
-| MK-112 | The mutation gate checks only the mutations it lists, each against every test, so a computation or a pin without an entry is never put to it; and no workflow runs it, so it runs only when a person does | S2, process | **open, the next wave.** Established in MK-110; registered on its own so the fix is tracked rather than folded into a closed entry |
+| MK-112 | The mutation gate checked only the mutations it listed, so a decision with no entry was never put to it, and no workflow ran it. Its own measure of the gap, entries against test call sites, was the wrong one: the honest measure is decision sites against the sites a mutation reaches, 58 of 474 at `870b76f` | S2, process | **fixed.** One generated mutant per decision site in both packages, each with a reviewed status in `scripts/mutation/sites.json`; the survivors registered as MK-118 to MK-236; CI runs it on every push and weekly, and the full gate is release precondition 9 |
 | MK-113 | The live run's close parity check demanded exact equality between `previewClose` and a `getTrove` read taken after it, so it failed whenever the two landed in different blocks, and the 0.4.0 run died with a Trove open while both figures were right | S3, instrument | **fixed.** It uses MK-046's accrual bound, as the other debt checks already did |
 | MK-114 | `previewRedeem` treats `maxIterations: 0n` as a walk of one eligible Trove, while the deployed contract treats zero as no limit, so the preview reports less than the chain redeems and `redeem()` prechecks only the first Trove of a call the chain walks without limit | S1 | **fixed, published in 0.4.1**, and 0.4.0 deprecated for it. Zero is no limit in the preview and the write, matching the contract; a value outside `uint256` throws. The same question was asked of every sentinel the SDK forwards, and this was the only one it restates |
 | MK-115 | `main` went red at the 0.4.1 version commit twice, both times before any test, because `foundryup` could not download the pinned Foundry's attestation (HTTP 504); nothing in the repository was implicated | S3, CI infrastructure | **fixed by re-running** the failed job; the third attempt passed all four jobs. Registered after the re-run, in the release record, and the entry says why |
+| MK-116 | The hand written entry for MK-071 was caught only by tests whose names do not cite MK-071, so a red run could not be traced to the finding it guards | S3 | **fixed.** A test named for it, and the gate fails any entry caught only by tests that do not cite it |
+| MK-117 | The hand written entry for MK-095 was caught only by tests whose names do not cite MK-095 | S3 | **fixed**, as MK-116 |
+| MK-118 | No test caught the value doubled at `core/src/client/createMusdClient.ts:121` `60_000` | S3, test gap | fixed, pinned by `client-plumbing.test.ts` |
+| MK-119 | No test caught the comparison flipped at its boundary at `core/src/client/verifyDeployment.ts:240` `empty.length > 0` | S3, test gap | fixed, pinned by `client-plumbing.test.ts` |
+| MK-120 | No test caught the condition negated at `core/src/clients/index.ts:76` `walletClient` | S3, test gap | fixed, pinned by `client-plumbing.test.ts` |
+| MK-121 | No test caught the value doubled at `core/src/constants.ts:7` `1_000_000_000_000_000_000n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-122 | No test caught the value doubled at `core/src/constants.ts:15` `200n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-123 | No test caught the value doubled at `core/src/constants.ts:17` `1_000_000_000_000_000_000n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-124 | No test caught the value doubled at `core/src/constants.ts:19` `50_000_000_000_000_000_000n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-125 | No test caught the other connective at `core/src/errors/index.ts:580` `error && typeof error === 'object'` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-126 | The mutant at `core/src/errors/mapRevert.ts:83` `reason ?? ''` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-127 | No test caught the default removed at `core/src/errors/mapRevert.ts:85` `context?.address ?? 'unknown'` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-128 | No test caught the equality negated at `core/src/errors/mapRevert.ts:126` `errorName === 'Panic'` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-129 | No test caught the default removed at `core/src/errors/mapRevert.ts:133` `context?.operation ?? 'contract call'` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-130 | No test caught the value doubled at `core/src/hints/computeHints.ts:8` `42n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-131 | No test caught the presence check negated at `core/src/hints/computeHints.ts:68` `params.numTrials !== undefined` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-132 | No test caught the presence check negated at `core/src/hints/computeHints.ts:69` `params.randomSeed !== undefined` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-133 | No test caught the comparison flipped at its boundary at `core/src/hints/computeNICR.ts:42` `principal <= 0n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-134 | The mutant at `core/src/internal/write.ts:58` `marginPercent <= 0` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-135 | The mutant at `core/src/math/compute.ts:174` `entireDebt > MUSD_GAS_COMPENSATION` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-136 | The mutant at `core/src/math/compute.ts:215` `seconds <= 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-137 | No test caught the value doubled at `core/src/math/getBorrowingPower.ts:30` `3600n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-138 | No test caught the value doubled at `core/src/math/getBorrowingPower.ts:46` `200n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-139 | No test caught the value doubled at `core/src/math/getBorrowingPower.ts:161` `256` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-140 | No test caught the comparison flipped at its boundary at `core/src/math/getBorrowingPower.ts:387` `(collateral * price) / targetRatio > MUSD_GAS_COMPENSATION` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-141 | No test caught the other connective at `core/src/math/getBorrowingPower.ts:402` `solved !== undefined && solvedFee === localFee(solved, effectiveRate, decimalPrecision)` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-142 | No test caught the other connective at `core/src/math/getBorrowingPower.ts:420` `ceiling > 0n && (collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-143 | No test caught the comparison flipped at its boundary at `core/src/math/getBorrowingPower.ts:420` `(collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-144 | No test caught the comparison flipped at its boundary at `core/src/math/getBorrowingPower.ts:420` `ceiling > 0n` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-145 | No test caught the other connective at `core/src/math/getBorrowingPower.ts:433` `solved !== undefined && linearConfirmed` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-146 | The mutant at `core/src/math/getBorrowingPower.ts:442` `recommended > ceiling` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-147 | The mutant at `core/src/math/getBorrowingPower.ts:531` `tcrCap < icrCap` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-148 | The mutant at `core/src/math/getBorrowingPower.ts:532` `cap <= MUSD_GAS_COMPENSATION` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-149 | The code mutated at `core/src/math/getBorrowingPower.ts:556` `steps < 64` is unreachable | S3, source | open, left in place and stated |
+| MK-150 | The code mutated at `core/src/math/getBorrowingPower.ts:560` `draw !== 0n` is unreachable | S3, source | open, left in place and stated |
+| MK-151 | No test caught the comparison flipped at its boundary at `core/src/math/getBorrowingPower.ts:578` `lo < hi` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-152 | No test caught the comparison flipped at its boundary at `core/src/math/getBorrowingPower.ts:579` `steps >= MAX_BORROWING_POWER_ITERATIONS` | S3, test gap | fixed, pinned by `borrowing-power-paths.test.ts` |
+| MK-153 | The mutant at `core/src/math/previewAdjust.ts:103` `capacity > entireDebt` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-154 | The mutant at `core/src/math/previewAdjust.ts:302` `resultingCollateral > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-155 | The mutant at `core/src/math/previewAdjust.ts:303` `resultingEntireDebt > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-156 | No test caught the reason not recorded at `core/src/math/previewAdjust.ts:316` `reasons.push('COLLATERAL_ADD_AND_WITHDRAW')` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-157 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:338` `resultingIcr < icrThreshold` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-158 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:343` `resultingTcr < CCR` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-159 | No test caught the other connective at `core/src/math/previewAdjust.ts:348` `!isDebtIncrease && repayDebt > 0n` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-160 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:348` `repayDebt > 0n` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-161 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:352` `netDebt - repayDebt < minNetDebt` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-162 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:354` `musdBalance < repayDebt` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-163 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:361` `resultingIcr < icrThreshold` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-164 | The mutant at `core/src/math/previewAdjust.ts:361` `safeDebt > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-165 | No test caught rounded down instead of up at `core/src/math/previewAdjust.ts:363` `(icrThreshold * safeDebt + price - 1n) / price` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-166 | No test caught the default removed at `core/src/math/previewAdjust.ts:407` `params.increaseDebt ?? 0n` | S3, test gap | fixed, pinned by `preview-reads.test.ts` |
+| MK-167 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:448` `increaseDebt > 0n` | S3, test gap | fixed, pinned by `preview-reads.test.ts` |
+| MK-168 | No test caught the condition negated at `core/src/math/previewAdjust.ts:594` `isRecoveryMode` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-169 | The mutant at `core/src/math/previewAdjust.ts:620` `entireDebt > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-170 | The mutant at `core/src/math/previewAdjust.ts:621` `systemDebt > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-171 | No test caught rounded down instead of up at `core/src/math/previewAdjust.ts:621` `(CCR * systemDebt + price - 1n) / price` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-172 | The mutant at `core/src/math/previewAdjust.ts:623` `collateral > keepForIcr` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-173 | The mutant at `core/src/math/previewAdjust.ts:624` `systemColl > keepForTcr` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-174 | The mutant at `core/src/math/previewAdjust.ts:625` `byIcr < bySystem` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-175 | No test caught the comparison flipped at its boundary at `core/src/math/previewAdjust.ts:633` `byIcr <= bySystem` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-176 | No test caught the other connective at `core/src/math/previewAdjust.ts:639` `entireDebt === 0n && systemDebt === 0n` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-177 | The mutant at `core/src/math/previewClose.ts:144` `musdRequired > musdBalance` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-178 | The mutant at `core/src/math/previewClose.ts:147` `systemColl > collateral` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-179 | The mutant at `core/src/math/previewClose.ts:148` `systemDebt > entireDebt` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-180 | No test caught the comparison flipped at its boundary at `core/src/math/previewClose.ts:159` `resultingTcr < CCR` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-181 | No test caught the comparison flipped at its boundary at `core/src/math/previewOpen.ts:254` `resultingTcr < CCR` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-182 | No test caught the value doubled at `core/src/math/previewRedeem.ts:174` `5n * 10n ** 14n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-183 | No test caught the value doubled at `core/src/math/previewRedeem.ts:339` `60n` | S3, test gap | fixed, pinned by `decision-pins.test.ts` |
+| MK-184 | The code mutated at `core/src/math/previewRedeem.ts:364` `600n` is unreachable | S3, source | open, left in place and stated |
+| MK-185 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:384` `principal > 0n` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-186 | The mutant at `core/src/math/previewRedeem.ts:407` `lot > trove.interestOwed` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-187 | No test caught rounded down instead of up at `core/src/math/previewRedeem.ts:422` `ceilDiv((hintNicr + 1n) * newPrincipal, NICR_PRECISION)` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-188 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:426` `lotAtLeast > 0n` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-189 | The mutant at `core/src/math/previewRedeem.ts:428` `priceHigh > price` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-190 | The mutant at `core/src/math/previewRedeem.ts:429` `price > priceLow` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-191 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:439` `priceToleranceUp < REDEMPTION_PRICE_MOVE_TOLERANCE` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-192 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:440` `priceToleranceDown < REDEMPTION_PRICE_MOVE_TOLERANCE` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-193 | No test caught the default removed at `core/src/math/previewRedeem.ts:456` `first?.netDebt ?? 0n` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-194 | The mutant at `core/src/math/previewRedeem.ts:457` `firstTroveNetDebt > minNetDebt` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-195 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:463` `firstTroveNetDebt > 0n` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-196 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:468` `tcr < MCR` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-197 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:470` `musdBalance < amount` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-198 | The mutant at `core/src/math/previewRedeem.ts:479` `i < eligible.length` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-199 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:479` `remaining > 0n` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-200 | The code mutated at `core/src/math/previewRedeem.ts:507` `amount > 0n` is unreachable | S3, source | open, left in place and stated |
+| MK-201 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:614` `icr >= MCR` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-202 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:616` `icr >= MCR` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-203 | No test caught the comparison flipped at its boundary at `core/src/math/previewRedeem.ts:632` `total >= amount` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-204 | No test caught the comparison flipped at its boundary at `core/src/math/previewRefinance.ts:191` `resultingIcr < MCR` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-205 | No test caught the comparison flipped at its boundary at `core/src/math/previewRefinance.ts:192` `resultingTcr < CCR` | S3, test gap | fixed, pinned by `decision-boundaries.test.ts` |
+| MK-206 | No test caught the other connective at `core/src/read/getTrove.ts:73` `status !== TroveStatus.active \|\| entireDebt === 0n` | S3, test gap | fixed, pinned by `client-plumbing.test.ts` |
+| MK-207 | No test caught the other connective at `core/src/redemption/redeem.ts:214` `!redemption.viable && redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR'` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-208 | No test caught the comparison flipped at its boundary at `core/src/redemption/redeem.ts:273` `estimatedCollateralDrawn > 0n` | S3, test gap | fixed, pinned by `redemption-edges.test.ts` |
+| MK-209 | No test caught the value doubled at `core/src/trove/index.ts:52` `10n ** 18n` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-210 | No test caught the comparison flipped at its boundary at `core/src/trove/index.ts:147` `capacity >= entireDebt + netDebtChange` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-211 | The code mutated at `core/src/trove/index.ts:220` `maxFeePercentage === undefined \|\| debtIncrease === 0n` is unreachable | S3, source | open, left in place and stated |
+| MK-212 | The mutant at `core/src/trove/index.ts:278` `payment >= interestOwed` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-213 | No test caught the condition negated at `core/src/trove/index.ts:290` `opts?.revert` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-214 | No test caught the comparison flipped at its boundary at `core/src/trove/index.ts:329` `netDebt < minNetDebt` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-215 | No test caught the comparison flipped at its boundary at `core/src/trove/index.ts:494` `amount > netDebt` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-216 | No test caught the comparison flipped at its boundary at `core/src/trove/index.ts:495` `balance < amount` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-217 | No test caught the presence check negated at `core/src/trove/index.ts:582` `rpy !== undefined` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-218 | No test caught the comparison flipped at its boundary at `core/src/trove/index.ts:584` `rpy > netDebt` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-219 | The mutant at `core/src/trove/index.ts:589` `collAdd > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-220 | The mutant at `core/src/trove/index.ts:590` `collWithdrawal > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-221 | No test caught the presence check negated at `core/src/trove/index.ts:591` `brw !== undefined` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-222 | No test caught the presence check negated at `core/src/trove/index.ts:601` `rpy !== undefined` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-223 | The mutant at `core/src/trove/index.ts:609` `collAdd > 0n` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-224 | No test caught the comparison flipped at its boundary at `core/src/trove/index.ts:623` `balance < required` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-225 | No test caught the condition negated at `core/src/trove/index.ts:720` `!isBorrowingFeeCharged(false, feeExempt)` | S3, test gap | fixed, pinned by `write-guards.test.ts` |
+| MK-226 | The mutant at `core/src/trove/index.ts:777` `decodeRevertReason(error) ?? ''` is equivalent: no input makes it observable | S3, equivalent mutant | documented, with the proof in the entry |
+| MK-227 | No test caught the default removed at `react/src/hooks/reads.ts:161` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-228 | No test caught the default removed at `react/src/hooks/reads.ts:177` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-229 | No test caught the default removed at `react/src/hooks/reads.ts:196` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-230 | No test caught the presence check negated at `react/src/hooks/reads.ts:258` `params.withdrawCollateral !== undefined` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-231 | No test caught the default removed at `react/src/hooks/reads.ts:265` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-232 | No test caught the default removed at `react/src/hooks/reads.ts:287` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-233 | No test caught the default removed at `react/src/hooks/reads.ts:307` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-234 | No test caught the default removed at `react/src/hooks/reads.ts:327` `owner ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-235 | No test caught the default removed at `react/src/hooks/reads.ts:357` `redeemer ?? '0x'` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
+| MK-236 | No test caught the presence check negated at `react/src/internal/useMusdQuery.ts:65` `clientError === null` | S3, test gap | fixed, pinned by `hooks-keys.test.ts` |
 
 ---
 
@@ -166,14 +287,14 @@ text read, the entry now says which part is evidence and which part is not.
 
 | Class | Count | What it means |
 |---|---|---|
-| **Reproducible** | 27 | The instrument is committed. The command is named below or in the entry |
+| **Reproducible** | 29 | The instrument is committed. The command is named below or in the entry |
 | **Observed once** | 5 | One execution, pinned by a run ID. Every one is enumerated below |
 | **Observed once, unlinked** | 3 | One execution whose artifact was not preserved. Grandfathered, and the label says it cannot be re-checked |
 | **Unestablished** | 8 | Inferred, or the instrument is gone, or the premise turned out to be wrong |
 
-**43 claims, counted as claims rather than as lines**, since several are quoted in more than one
+**45 claims, counted as claims rather than as lines**, since several are quoted in more than one
 place. MK-110 added one. The P21 wave added six, all reproducible, and turned two of MK-100's unestablished same-shape
-rows into reproducible ones inside that entry. MK-114 added one, reproducible. A count of numerals would be larger and would mean less.
+rows into reproducible ones inside that entry. MK-114 added one, reproducible. The P25 wave added two, both reproducible: the decision site statuses before and after it, and the gate's cost. A count of numerals would be larger and would mean less.
 
 ### The reproducible set, and the command for each
 
@@ -201,6 +322,8 @@ registered it, so those ten print as `EXPECTED MK-079` and only an unexplained m
 | With the oracle stale, thirteen surfaces (four reads, the borrowing power calculator, three previews, four writes and `liquidate`) each reject with `OracleStale` and keep the viem error in `cause` | MK-105 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-typed-errors.fork.test.ts` |
 | `capacity.remaining`, `maxWithdrawableCollateral().amount` and `minimumCollateralToClearIcr`, each sent one second after the read, are refused (`ExceedsBorrowingCapacity`, `InsufficientCollateral`, `InsufficientCollateral`) while a control inside each succeeds | MK-100 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-limit-figures.fork.test.ts` |
 | 0.3.1 against 0.3.0, both packages: runtime builds byte identical, declarations identical without comments, manifests differ only in version | MK-100, `docs/12-release-runbook.md` §0b | `node scripts/compare-published.mjs --base 0.3.0 --head 0.3.1` |
+| Decision sites by status: at `870b76f`, 474 sites, 319 caught by the unit project, 36 by the fork project only, 119 by nothing; after the P25 wave, 437, 3, and 34 registered survivors (29 equivalent, 5 unreachable); every hand written entry caught by a test citing it | MK-112, MK-116 to MK-236 | `MEZO_TESTNET_RPC_URL=https://rpc.test.mezo.org MEZO_FORK_BLOCK=15043414 node scripts/mutation-check.mjs --record --all --jobs 3 --report <file>`, run on the P25 tree for the after figures; the before figures are the same command with `scripts/mutation/sites.json` absent, run on this wave's gate before any of its pin tests were written, so on `870b76f`'s tests. **They were measured in three runs, not one**: a unit pass, and two fork passes, because the first stopped at 121 of 155 mutants when the machine slept |
+| The gate's cost: `--check` 0.66 s; the unit pass 2714 s for 524 mutants; the fork pass 4890 s for 37; 7759 s in all, three jobs, one laptop | MK-112, `docs/07-testing.md` §4d | the same command, timed by the lines it prints, on an Apple M5 with 10 cores under `caffeinate -ims` |
 
 **One caveat on the flake rates, stated once rather than eight times.** The instrument is committed
 and the command is nameable, so these are reproducible in the sense the rule means. They were
@@ -7515,30 +7638,49 @@ as the only version exempt, and the list is closed.
 
 ## MK-112 · The mutation gate checks only its listed entries, and nothing runs it
 
-**Class** S2, process, a control weaker than it reads · **Status** open, deliberately left for the wave
-after the 0.4.0 release · **Established in** MK-110
+**Class** S2, process, a control weaker than it reads · **Status** fixed in the P25 wave · **Established
+in** MK-110
 
-**What is established, with the evidence.**
+**What was established, with the evidence.**
 
-- **It checks only the mutations it lists.** `scripts/mutation-check.mjs` applies the entries of its
-  `MUTATIONS` array, 52 at `26ff61b`, one at a time (`grep -c "^    id: " scripts/mutation-check.mjs`).
-  Each one is judged against the whole unit project, or named fork files and the packaging gate under
-  `--all`, so any test that notices a listed mutation catches it. What is never asked is whether a
-  computation with no entry is pinned, or whether a test with no entry checks anything: the
-  repository has 440 `it(` call sites against those 52 entries at this tree
-  (`git grep -n "it(\|it.fails(" -- 'packages/*/test/*.ts' 'packages/*/test/**/*.ts' | wc -l`, a static
-  count that undercounts looped cases; MK-110 measured 437 before the margin override tests). MK-110's
-  third case, a band base no fixture could distinguish, was found only because an unrelated entry
-  drifted onto it.
-- **Nothing runs it.** `grep -n mutation .github/workflows/*.yml` matches nothing, so the gate runs
-  when a person runs it. MK-110's wave checklist row 13 makes a wave report it; it does not make CI run
-  it, and a commit outside a wave is not asked.
+- **It checked only the mutations it listed.** `scripts/mutation-check.mjs` applied the entries of its
+  `MUTATIONS` array, 52 at `26ff61b`, one at a time. Each was judged against the whole unit project, or
+  named fork files and the packaging gate under `--all`, so any test that noticed a listed mutation
+  caught it. What was never asked is whether a computation with no entry is pinned.
+- **Nothing ran it.** `grep -n mutation .github/workflows/*.yml` matched nothing, so the gate ran when a
+  person ran it.
 
-**What is not established.** How long the unit gate takes on CI hardware, which decides whether it
-can run per push, per pull request or on a schedule; and which method would reach unlisted code,
-whether generated mutations over changed lines, an off-the-shelf mutation tool, or a rule that every
-exported computation names an entry. Those are the next wave's questions, and nothing here chooses
-between them.
+**A correction to how this entry measured the gap.** It set 52 entries against 440 `it(` call sites.
+That is the wrong measure: a test is not a thing that needs a mutation, and an entry does not cover a
+test. **The honest measure is decision sites against the sites a mutation reaches**, where a decision
+site is a place whose change a caller can observe (the rule is written at the top of
+`scripts/mutation/sites.mjs`). Measured that way at `c345c07`, the 52 entries mutated **54 of 469**
+decision sites; at `870b76f`, 57 entries mutated **58 of 474**. The brief for the wave carried this
+entry's figures, 52 listed mutations against roughly 440 test call sites, and they were wrong the same
+way; and the 52 was every entry, the six fork and packaging gate entries among them. And an
+earlier report of this wave said 58 entries at `c345c07` where there were 52.
+
+**Fixed.**
+
+- **Every decision site now has a mutant and a reviewed status.** `scripts/mutation/sites.mjs` finds
+  the sites in both packages; `scripts/mutation/sites.json` records each one as `caught`, `caught-fork`,
+  or not caught and registered under a finding as `uncaught`, `equivalent` or `unreachable`.
+  `--check` fails on a site the register does not know, a register row the code no longer has, and a
+  survivor with no registered finding.
+- **The first full run, at `870b76f`**: 474 sites, 319 caught by the unit project, 36 by the fork project
+  only, **119 caught by nothing**, each registered as MK-118 to MK-236: 85 test gaps, 29 equivalent
+  mutants, 5 unreachable. All 57 hand written entries were caught; two were caught only by tests whose
+  names do not cite them (MK-116, MK-117).
+- **After this wave, at the tree it merges**: 474 sites, **437 caught by the unit project, 3 by the fork project only, 29 equivalent, 5 unreachable, 0 uncaught**, and all 57 hand written entries caught, each by at least one test that cites its finding. 33 of the 36 sites only the fork project caught before are now caught by a unit test. Measured by `node scripts/mutation-check.mjs --record --all --jobs 3`, exit 0, 7759 seconds (`docs/07-testing.md` §4d); the hand written entries still mutate 58 of the 474
+- **An entry cannot drift** (MK-110): it names its declaration, text that occurs exactly once inside
+  it, and a fingerprint of the statement, and `packages/core/test/mutation-anchor.test.ts` moves a
+  target each way and shows the refusal.
+- **CI runs it.** `.github/workflows/mutation.yml`: `--check` and the unit mutants a change selects run on every push; the full gate, the fork pass included, runs weekly and on dispatch, and is precondition 9 of a release. Placement, cost and what a
+  green gate proves are in `docs/07-testing.md` §4d.
+
+**What stays open.** The five unreachable sites are left in the source and stated (MK-118 to MK-236,
+the unreachable table). The rule generates one mutant per site, so a site whose mutant is caught can
+still hide a different defect beside it; `docs/07-testing.md` §4d says what a green gate does not prove.
 
 ---
 
@@ -7747,6 +7889,209 @@ release commit away from `ae93edd`, and with it every precondition already evide
 `github.com` is not a test result. Read the step log, re-run the failed job, and record the attempts;
 a re-run that passes on the same `headSha` meets precondition 1, because the condition is the commit
 and its checks, not the attempt number.
+
+---
+
+## MK-116 · The MK-071 pin was caught only by tests whose names do not cite MK-071
+
+**Class** S3, a pin its label does not reach · **Status** fixed · **Found by** the P23 mutation wave, reading
+which tests catch each hand written entry
+
+**What was established.** The entry `MK-071` puts the 365 day year back into `accruedInterest`
+(`scripts/mutation/entries.mjs`, scope `accruedInterest`). Run against the unit project at `870b76f` it
+was caught by 13 tests (`MK-071: caught by 13`), and none of their names contains `MK-071`: the two
+closest are `computeEntireDebt (InterestRateMath.calculateInterestOwed) accrues simple interest over
+exactly one contract year` and `... floors sub-second-scale interest exactly as the contract does`, and
+the rest are named for MK-103, MK-104, MK-048, MK-088 and MK-089. The ID appears in the tests only in a
+comment, `packages/core/test/preview-redeem.test.ts:57`, and a comment is not what fails.
+
+**Why it matters though the defect is caught.** The guard exists, and nothing a run prints ties it to
+the finding. A wave that renames or rewrites those tests for their own findings can remove MK-071's only
+guard without any failing test naming MK-071, and nobody reading a red run can find its pin.
+
+**Fixed.** `packages/core/test/decision-pins.test.ts` gains `MK-116, MK-071, interest accrues over the
+contract year`: a full year at 10,000 bps over 31,556,952 seconds owes exactly the principal
+(`InterestRateMath.sol:9`, `:12-22`). And the gate now fails any hand written entry caught only by tests
+whose names cite none of its IDs (`untracedCatch` in `scripts/mutation-check.mjs`), so the state cannot
+recur silently. In the after run, the only two of the 50 unit entries whose catching tests would cite none of their IDs, once the tests this wave adds are set aside by their names, are this one and MK-117's. That is derived from one run's test names, not from a run at `870b76f`
+
+---
+
+## MK-117 · The MK-095 pin was caught only by tests whose names do not cite MK-095
+
+**Class** S3, a pin its label does not reach · **Status** fixed · **Found by** the same reading as MK-116
+
+**What was established.** The entry `MK-095 window` sizes the redemption advice margin at 600 seconds
+instead of 900 (`scripts/mutation/entries.mjs`, scope `''`, `REDEMPTION_ADVICE_MARGIN_SECONDS`). At
+`870b76f` it was caught by 8 tests, named for MK-104, MK-048, MK-088 and MK-089, and none for MK-095.
+The ID appears only in a comment, `packages/core/test/preview-redeem.test.ts:74`.
+
+**Fixed** as MK-116 was: `MK-117, MK-095, the redemption advice margin covers more than the window it
+advertises` pins the constant at 900 and the margin `evaluateRedeem` reports at 900 seconds of the
+Trove's own principal at its own rate, and the traceability rule covers it from now on.
+
+---
+
+## MK-118 to MK-236 · The decision sites nothing caught at `870b76f`, one finding per mutant
+
+**Class** S3 each, a decision no test pinned, a mutant that cannot be caught, or code no input reaches ·
+**Found by** `node scripts/mutation-check.mjs --record --all` on `870b76f` (MK-112's wave), the first run
+of the decision site rule over the shipped packages · **Status** per class, below
+
+**What the run measured.** 474 decision sites in 42 files. The unit project caught 319 of their mutants;
+the fork project caught 36 of the rest, each confirmed by two fork runs failing on an assertion rather
+than on the RPC link; **119 were caught by nothing**. Each of the 119 is registered here under its own ID,
+in file and line order, with its class. The site's own record, with the same ID, is in
+`scripts/mutation/sites.json`.
+
+**The three classes, and the standard for each** (`scripts/mutation/sites.mjs`, the header):
+
+- **uncaught, a test gap (85).** The mutant changes something a caller observes and no test noticed.
+  **All 85 are fixed in this wave**: each row names the test that now catches it, and the gate records
+  the site as caught. None of them was a defect in shipped behaviour: every test was written from the
+  contract's rule, cited in the test, and passed against the code as shipped.
+- **equivalent (29).** No observable difference exists for any input in the stated domain, including
+  chain reads and what a public function returns or throws. The proof is in the row.
+- **unreachable (5).** No input reaches the mutated code: a finding about the source. **Left in place**:
+  removing dead or defensive code is a source change, and this wave registers it rather than making it.
+
+The mutant of each site is the rule's (`sites.mjs`): a comparison's inclusivity flipped, an equality or
+presence check negated, a condition negated, a connective swapped, a default removed, a reason not
+recorded, a ceiling division floored, a module constant doubled.
+
+### Test gaps, fixed
+
+| ID | Site | Mutant | Pinned by |
+|---|---|---|---|
+| MK-118 | `core/src/client/createMusdClient.ts:121` `60_000` | the value doubled | `client-plumbing.test.ts` |
+| MK-119 | `core/src/client/verifyDeployment.ts:240` `empty.length > 0` | the comparison flipped at its boundary | `client-plumbing.test.ts` |
+| MK-120 | `core/src/clients/index.ts:76` `walletClient` | the condition negated | `client-plumbing.test.ts` |
+| MK-121 | `core/src/constants.ts:7` `1_000_000_000_000_000_000n` | the value doubled | `decision-pins.test.ts` |
+| MK-122 | `core/src/constants.ts:15` `200n` | the value doubled | `decision-pins.test.ts` |
+| MK-123 | `core/src/constants.ts:17` `1_000_000_000_000_000_000n` | the value doubled | `decision-pins.test.ts` |
+| MK-124 | `core/src/constants.ts:19` `50_000_000_000_000_000_000n` | the value doubled | `decision-pins.test.ts` |
+| MK-125 | `core/src/errors/index.ts:580` `error && typeof error === 'object'` | the other connective | `decision-pins.test.ts` |
+| MK-127 | `core/src/errors/mapRevert.ts:85` `context?.address ?? 'unknown'` | the default removed | `decision-pins.test.ts` |
+| MK-128 | `core/src/errors/mapRevert.ts:126` `errorName === 'Panic'` | the equality negated | `decision-pins.test.ts` |
+| MK-129 | `core/src/errors/mapRevert.ts:133` `context?.operation ?? 'contract call'` | the default removed | `decision-pins.test.ts` |
+| MK-130 | `core/src/hints/computeHints.ts:8` `42n` | the value doubled | `decision-pins.test.ts` |
+| MK-131 | `core/src/hints/computeHints.ts:68` `params.numTrials !== undefined` | the presence check negated | `decision-pins.test.ts` |
+| MK-132 | `core/src/hints/computeHints.ts:69` `params.randomSeed !== undefined` | the presence check negated | `decision-pins.test.ts` |
+| MK-133 | `core/src/hints/computeNICR.ts:42` `principal <= 0n` | the comparison flipped at its boundary | `decision-pins.test.ts` |
+| MK-137 | `core/src/math/getBorrowingPower.ts:30` `3600n` | the value doubled | `decision-pins.test.ts` |
+| MK-138 | `core/src/math/getBorrowingPower.ts:46` `200n` | the value doubled | `decision-pins.test.ts` |
+| MK-139 | `core/src/math/getBorrowingPower.ts:161` `256` | the value doubled | `borrowing-power-paths.test.ts` |
+| MK-140 | `core/src/math/getBorrowingPower.ts:387` `(collateral * price) / targetRatio > MUSD_GAS_COMPENSATION` | the comparison flipped at its boundary | `borrowing-power-paths.test.ts` |
+| MK-141 | `core/src/math/getBorrowingPower.ts:402` `solved !== undefined && solvedFee === localFee(solved, effectiveRate, decimalPrecision)` | the other connective | `borrowing-power-paths.test.ts` |
+| MK-142 | `core/src/math/getBorrowingPower.ts:420` `ceiling > 0n && (collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION` | the other connective | `borrowing-power-paths.test.ts` |
+| MK-143 | `core/src/math/getBorrowingPower.ts:420` `(collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION` | the comparison flipped at its boundary | `borrowing-power-paths.test.ts` |
+| MK-144 | `core/src/math/getBorrowingPower.ts:420` `ceiling > 0n` | the comparison flipped at its boundary | `borrowing-power-paths.test.ts` |
+| MK-145 | `core/src/math/getBorrowingPower.ts:433` `solved !== undefined && linearConfirmed` | the other connective | `borrowing-power-paths.test.ts` |
+| MK-151 | `core/src/math/getBorrowingPower.ts:578` `lo < hi` | the comparison flipped at its boundary | `borrowing-power-paths.test.ts` |
+| MK-152 | `core/src/math/getBorrowingPower.ts:579` `steps >= MAX_BORROWING_POWER_ITERATIONS` | the comparison flipped at its boundary | `borrowing-power-paths.test.ts` |
+| MK-156 | `core/src/math/previewAdjust.ts:316` `reasons.push('COLLATERAL_ADD_AND_WITHDRAW')` | the reason not recorded | `decision-boundaries.test.ts` |
+| MK-157 | `core/src/math/previewAdjust.ts:338` `resultingIcr < icrThreshold` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-158 | `core/src/math/previewAdjust.ts:343` `resultingTcr < CCR` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-159 | `core/src/math/previewAdjust.ts:348` `!isDebtIncrease && repayDebt > 0n` | the other connective | `decision-boundaries.test.ts` |
+| MK-160 | `core/src/math/previewAdjust.ts:348` `repayDebt > 0n` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-161 | `core/src/math/previewAdjust.ts:352` `netDebt - repayDebt < minNetDebt` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-162 | `core/src/math/previewAdjust.ts:354` `musdBalance < repayDebt` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-163 | `core/src/math/previewAdjust.ts:361` `resultingIcr < icrThreshold` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-165 | `core/src/math/previewAdjust.ts:363` `(icrThreshold * safeDebt + price - 1n) / price` | rounded down instead of up | `decision-boundaries.test.ts` |
+| MK-166 | `core/src/math/previewAdjust.ts:407` `params.increaseDebt ?? 0n` | the default removed | `preview-reads.test.ts` |
+| MK-167 | `core/src/math/previewAdjust.ts:448` `increaseDebt > 0n` | the comparison flipped at its boundary | `preview-reads.test.ts` |
+| MK-168 | `core/src/math/previewAdjust.ts:594` `isRecoveryMode` | the condition negated | `decision-boundaries.test.ts` |
+| MK-171 | `core/src/math/previewAdjust.ts:621` `(CCR * systemDebt + price - 1n) / price` | rounded down instead of up | `decision-boundaries.test.ts` |
+| MK-175 | `core/src/math/previewAdjust.ts:633` `byIcr <= bySystem` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-176 | `core/src/math/previewAdjust.ts:639` `entireDebt === 0n && systemDebt === 0n` | the other connective | `decision-boundaries.test.ts` |
+| MK-180 | `core/src/math/previewClose.ts:159` `resultingTcr < CCR` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-181 | `core/src/math/previewOpen.ts:254` `resultingTcr < CCR` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-182 | `core/src/math/previewRedeem.ts:174` `5n * 10n ** 14n` | the value doubled | `decision-pins.test.ts` |
+| MK-183 | `core/src/math/previewRedeem.ts:339` `60n` | the value doubled | `decision-pins.test.ts` |
+| MK-185 | `core/src/math/previewRedeem.ts:384` `principal > 0n` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-187 | `core/src/math/previewRedeem.ts:422` `ceilDiv((hintNicr + 1n) * newPrincipal, NICR_PRECISION)` | rounded down instead of up | `redemption-edges.test.ts` |
+| MK-188 | `core/src/math/previewRedeem.ts:426` `lotAtLeast > 0n` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-191 | `core/src/math/previewRedeem.ts:439` `priceToleranceUp < REDEMPTION_PRICE_MOVE_TOLERANCE` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-192 | `core/src/math/previewRedeem.ts:440` `priceToleranceDown < REDEMPTION_PRICE_MOVE_TOLERANCE` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-193 | `core/src/math/previewRedeem.ts:456` `first?.netDebt ?? 0n` | the default removed | `decision-boundaries.test.ts` |
+| MK-195 | `core/src/math/previewRedeem.ts:463` `firstTroveNetDebt > 0n` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-196 | `core/src/math/previewRedeem.ts:468` `tcr < MCR` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-197 | `core/src/math/previewRedeem.ts:470` `musdBalance < amount` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-199 | `core/src/math/previewRedeem.ts:479` `remaining > 0n` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-201 | `core/src/math/previewRedeem.ts:614` `icr >= MCR` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-202 | `core/src/math/previewRedeem.ts:616` `icr >= MCR` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-203 | `core/src/math/previewRedeem.ts:632` `total >= amount` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-204 | `core/src/math/previewRefinance.ts:191` `resultingIcr < MCR` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-205 | `core/src/math/previewRefinance.ts:192` `resultingTcr < CCR` | the comparison flipped at its boundary | `decision-boundaries.test.ts` |
+| MK-206 | `core/src/read/getTrove.ts:73` `status !== TroveStatus.active \|\| entireDebt === 0n` | the other connective | `client-plumbing.test.ts` |
+| MK-207 | `core/src/redemption/redeem.ts:214` `!redemption.viable && redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR'` | the other connective | `redemption-edges.test.ts` |
+| MK-208 | `core/src/redemption/redeem.ts:273` `estimatedCollateralDrawn > 0n` | the comparison flipped at its boundary | `redemption-edges.test.ts` |
+| MK-209 | `core/src/trove/index.ts:52` `10n ** 18n` | the value doubled | `write-guards.test.ts` |
+| MK-210 | `core/src/trove/index.ts:147` `capacity >= entireDebt + netDebtChange` | the comparison flipped at its boundary | `write-guards.test.ts` |
+| MK-213 | `core/src/trove/index.ts:290` `opts?.revert` | the condition negated | `write-guards.test.ts` |
+| MK-214 | `core/src/trove/index.ts:329` `netDebt < minNetDebt` | the comparison flipped at its boundary | `write-guards.test.ts` |
+| MK-215 | `core/src/trove/index.ts:494` `amount > netDebt` | the comparison flipped at its boundary | `write-guards.test.ts` |
+| MK-216 | `core/src/trove/index.ts:495` `balance < amount` | the comparison flipped at its boundary | `write-guards.test.ts` |
+| MK-217 | `core/src/trove/index.ts:582` `rpy !== undefined` | the presence check negated | `write-guards.test.ts` |
+| MK-218 | `core/src/trove/index.ts:584` `rpy > netDebt` | the comparison flipped at its boundary | `write-guards.test.ts` |
+| MK-221 | `core/src/trove/index.ts:591` `brw !== undefined` | the presence check negated | `write-guards.test.ts` |
+| MK-222 | `core/src/trove/index.ts:601` `rpy !== undefined` | the presence check negated | `write-guards.test.ts` |
+| MK-224 | `core/src/trove/index.ts:623` `balance < required` | the comparison flipped at its boundary | `write-guards.test.ts` |
+| MK-225 | `core/src/trove/index.ts:720` `!isBorrowingFeeCharged(false, feeExempt)` | the condition negated | `write-guards.test.ts` |
+| MK-227 | `react/src/hooks/reads.ts:161` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-228 | `react/src/hooks/reads.ts:177` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-229 | `react/src/hooks/reads.ts:196` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-230 | `react/src/hooks/reads.ts:258` `params.withdrawCollateral !== undefined` | the presence check negated | `hooks-keys.test.ts` |
+| MK-231 | `react/src/hooks/reads.ts:265` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-232 | `react/src/hooks/reads.ts:287` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-233 | `react/src/hooks/reads.ts:307` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-234 | `react/src/hooks/reads.ts:327` `owner ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-235 | `react/src/hooks/reads.ts:357` `redeemer ?? '0x'` | the default removed | `hooks-keys.test.ts` |
+| MK-236 | `react/src/internal/useMusdQuery.ts:65` `clientError === null` | the presence check negated | `hooks-keys.test.ts` |
+
+### Equivalent mutants, documented
+
+| ID | Site | Why nothing can catch it |
+|---|---|---|
+| MK-126 | `core/src/errors/mapRevert.ts:83` `reason ?? ''` | With no reason the mutant tests the patterns against the string 'undefined', which none of the fifteen patterns in mapRevert matches, and the fallback message at :141 reads reason, not text. |
+| MK-134 | `core/src/internal/write.ts:58` `marginPercent <= 0` | At a margin of 0 or -0 the mutant computes estimate * BigInt(Math.round(100 + 0)) / 100n, which is the estimate the guard returns; every negative margin still returns early in both. |
+| MK-135 | `core/src/math/compute.ts:174` `entireDebt > MUSD_GAS_COMPENSATION` | At entireDebt equal to the reserve both branches give 0n: entireDebt - MUSD_GAS_COMPENSATION is 0n there. Every other input takes the same branch in both. |
+| MK-136 | `core/src/math/compute.ts:215` `seconds <= 0n` | At seconds equal to 0n the formula returns principal * rateBps * 0 / divisor, which is 0n, the value the guard returns. Every other input takes the same branch in both. |
+| MK-146 | `core/src/math/getBorrowingPower.ts:442` `recommended > ceiling` | When recommended equals ceiling the assignment writes the value it already holds. |
+| MK-147 | `core/src/math/getBorrowingPower.ts:531` `tcrCap < icrCap` | When the two caps are equal either choice is the same value. |
+| MK-148 | `core/src/math/getBorrowingPower.ts:532` `cap <= MUSD_GAS_COMPENSATION` | At cap equal to the reserve the mutant continues with available 0n, so the seed is 0n; a draw of 1 wei needs an entire debt of reserve plus 1 wei, above a cap that is the floor of the same ratio, so the walk takes no step and the function returns 0n, the value the guard returns. solveClosedForm reads nothing from the chain, so no read differs. |
+| MK-153 | `core/src/math/previewAdjust.ts:103` `capacity > entireDebt` | When capacity equals entireDebt both branches report 0n remaining. |
+| MK-154 | `core/src/math/previewAdjust.ts:302` `resultingCollateral > 0n` | At a resulting collateral of 0n both branches give 0n. |
+| MK-155 | `core/src/math/previewAdjust.ts:303` `resultingEntireDebt > 0n` | At a resulting entire debt of 0n both branches give 0n. |
+| MK-164 | `core/src/math/previewAdjust.ts:361` `safeDebt > 0n` | At safeDebt 0n computeICR returns the maximum uint256 (compute.ts:22), so resultingIcr < icrThreshold is false and the figure is null in both. |
+| MK-169 | `core/src/math/previewAdjust.ts:620` `entireDebt > 0n` | At entireDebt 0n the ceiling is (price - 1n) / price, which is 0n for every price of at least 1; a price of 0n returns before this line (previewAdjust.ts:607). |
+| MK-170 | `core/src/math/previewAdjust.ts:621` `systemDebt > 0n` | At systemDebt 0n the ceiling is (price - 1n) / price, 0n for every price of at least 1; a price of 0n returns earlier. |
+| MK-172 | `core/src/math/previewAdjust.ts:623` `collateral > keepForIcr` | When collateral equals keepForIcr both branches give 0n. |
+| MK-173 | `core/src/math/previewAdjust.ts:624` `systemColl > keepForTcr` | When systemColl equals keepForTcr both branches give 0n. |
+| MK-174 | `core/src/math/previewAdjust.ts:625` `byIcr < bySystem` | When the two allowances are equal either choice is the same value; limitedBy is decided separately at :633. |
+| MK-177 | `core/src/math/previewClose.ts:144` `musdRequired > musdBalance` | When musdRequired equals musdBalance both branches report a 0n shortfall. |
+| MK-178 | `core/src/math/previewClose.ts:147` `systemColl > collateral` | When systemColl equals collateral both branches give 0n. |
+| MK-179 | `core/src/math/previewClose.ts:148` `systemDebt > entireDebt` | When systemDebt equals entireDebt both branches give 0n. |
+| MK-186 | `core/src/math/previewRedeem.ts:407` `lot > trove.interestOwed` | When lot equals interestOwed the first branch is principal - 0n, the principal the second branch returns. |
+| MK-189 | `core/src/math/previewRedeem.ts:428` `priceHigh > price` | When priceHigh equals price the first branch computes 0n * E18 / price, the 0n the second returns. |
+| MK-190 | `core/src/math/previewRedeem.ts:429` `price > priceLow` | When price equals priceLow the first branch computes 0n, the value the second returns. |
+| MK-194 | `core/src/math/previewRedeem.ts:457` `firstTroveNetDebt > minNetDebt` | When the first net debt equals the floor both branches give 0n. |
+| MK-198 | `core/src/math/previewRedeem.ts:479` `i < eligible.length` | At i equal to eligible.length the next line reads eligible[i] as undefined and breaks (previewRedeem.ts:481), before anything is computed or recorded. |
+| MK-212 | `core/src/trove/index.ts:278` `payment >= interestOwed` | When payment equals interestOwed the first branch is payment - interestOwed, 0n, the value the second returns. |
+| MK-219 | `core/src/trove/index.ts:589` `collAdd > 0n` | With collAdd 0n the mutant passes addCollateral: 0n to the preview, which reads params.addCollateral ?? 0n (previewAdjust.ts:405-406) and evaluates the same input; nothing it reads changes. |
+| MK-220 | `core/src/trove/index.ts:590` `collWithdrawal > 0n` | With collWithdrawal 0n the mutant passes withdrawCollateral: 0n, which the preview reads as the same 0n it defaults to. |
+| MK-223 | `core/src/trove/index.ts:609` `collAdd > 0n` | With collAdd 0n the mutant sends value: 0n where the original omits value; both are a call carrying no BTC, and the contract reads msg.value as 0 either way. |
+| MK-226 | `core/src/trove/index.ts:777` `decodeRevertReason(error) ?? ''` | With no decoded reason the mutant tests the pattern against 'undefined', which does not match /No collateral available to claim/i, the same outcome as testing ''. |
+
+### Unreachable code, open
+
+| ID | Site | Why nothing can catch it |
+|---|---|---|
+| MK-149 | `core/src/math/getBorrowingPower.ts:556` `steps < 64` | The walk cannot reach 64 steps. The seed is floor(available * P / (P + rate)); the largest draw d with d + floor(rate * d / P) <= available satisfies d * (P + rate) / P < available + 1, so d < seed + 2, and feasibleWith accepts exactly the entire debts at or under the cap the seed is sized from. The walk takes at most one step. |
+| MK-150 | `core/src/math/getBorrowingPower.ts:560` `draw !== 0n` | draw !== 0n is evaluated only when !feasibleWith(draw, fee(draw)) is true, and it never is: the seed and at most one step above it keep draw + fee + reserve at or under the cap, which is exactly what feasibleWith accepts (both inclusive, BorrowerOperations.sol:1337-1349). |
+| MK-184 | `core/src/math/previewRedeem.ts:364` `600n` | REDEMPTION_MARGIN_WINDOW_SECONDS is referenced nowhere (git grep finds only its declaration), is not re-exported by either package entry, and does not appear in dist/index.js, dist/index.cjs or dist/index.d.ts. Dead code. |
+| MK-200 | `core/src/math/previewRedeem.ts:507` `amount > 0n` | amount > 0n is evaluated only when cancelledOnFirst is true, which the loop sets only after entering with remaining, initialised to amount (previewRedeem.ts:475), above 0n at :479; it is set at :488. The operand is never false when reached. |
+| MK-211 | `core/src/trove/index.ts:220` `maxFeePercentage === undefined \|\| debtIncrease === 0n` | Every caller of the unexported assertFeeWithinCap passes a debt increase already checked positive (openTrove :314, borrow :460, adjustTrove :567), so debtIncrease === 0n is never true; the alternatives differ only when maxFeePercentage is undefined, where the mutant goes on to compare against undefined, which is false, and throws nothing, as the original does. |
 
 ---
 

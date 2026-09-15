@@ -501,6 +501,104 @@ build, a pack, an install into a scratch project and a `tsc` run, which is its o
 than a unit test. Until it is one, it is a manual gate here, written down so someone other than its
 author can run it.
 
+## 4d. The mutation gate (MK-058 onward, MK-112)
+
+**What it asks.** Coverage says a line ran. The mutation gate says a test would notice if the line
+were wrong: it puts a defect back, runs the tests, and requires one to fail. `scripts/mutation-check.mjs`
+does that for two sets of mutants.
+
+- **The hand written entries**, `scripts/mutation/entries.mjs`: each one a specific defect a finding
+  named, so the pin for that finding is proven rather than asserted. At least one test that catches an
+  entry must cite the entry's finding by ID, or the gate fails: a pin caught only by tests named for
+  something else cannot be traced to what it guards (MK-116, MK-117).
+- **One generated mutant per decision site**, found by the rule in `scripts/mutation/sites.mjs` over
+  every source file in both packages. **The rule**: a site deserves a mutation when changing it would
+  change something a caller can observe, a verdict, a reason, which error is thrown, a figure's value or
+  rounding, what is asked of the chain, or which of two modes applies; a constant that encodes a protocol
+  rule or a measured value is one too; code that only moves a value, formats a message, or exists for
+  the type checker is not. The mechanical form of the rule, which kinds of expression count and what each
+  mutant is, is written at the top of that file.
+
+**The register, `scripts/mutation/sites.json`.** Every site has a reviewed status: `caught` by the unit
+project, `caught-fork` by the fork project only, or not caught and registered under a finding as
+`uncaught` (a test gap), `equivalent` (no observable difference exists, with the proof) or `unreachable`
+(no input reaches the mutated code, a finding about the source). The standard for the last two, and the
+input domain they are claimed over, is stated in `sites.mjs`; matching figures are not equivalence.
+
+**Why an entry cannot drift any more** (MK-110). An entry names the declaration it was written for
+(`scope`), text that must occur exactly once inside it (`from`), and a fingerprint of the statement
+around it as the TypeScript printer prints it without comments. The gate refuses an entry whose scope is
+absent or ambiguous, whose text is absent or repeated, or whose fingerprint no longer matches, and it
+splices at the resolved offset rather than replacing the first occurrence in the file.
+`packages/core/test/mutation-anchor.test.ts` moves a target deliberately in each of those ways and shows
+the refusal, including the MK-089 drift exactly as it happened.
+
+**Why a new decision cannot go unreviewed.** `--check` fails for a site in the code that `sites.json`
+does not know, a `sites.json` site the code no longer has, a survivor with no finding, and a finding the
+register does not have a row for. The unit and fork passes fail for a caught site nothing catches any
+more and for a registered survivor something now catches.
+
+### What it costs, measured
+
+Measured on an Apple M5 laptop with 10 cores, Node 24.19.0, anvil 1.5.1, fork block 15043414, under
+`caffeinate -ims` (the machine otherwise sleeps after one idle minute, and a sleeping machine stalls
+every anvil waiting on its upstream request), by one run of
+`node scripts/mutation-check.mjs --record --all --jobs 3 --report <file>` on this wave's tree:
+
+| Part | Mutants | Wall clock | Per mutant run |
+|---|---|---|---|
+| `--check` | none, nothing runs | 0.66 s | |
+| Unit pass: every hand written unit entry and every site the register does not place in the fork project | 524 (50 entries, 474 sites) | **2714 s**, 3 jobs | 15.5 s mean |
+| Fork pass: every site the unit project does not catch | 37 (3 `caught-fork`, 34 registered survivors), 40 runs, since each of the 3 catches is confirmed by a second run | **4890 s**, 3 jobs | 360 s mean over the 37 |
+| The six fork entries and the packaging gate entry | 7 | the remainder, about 140 s | |
+| **All of it** | 561 | **7759 s**, start to exit | |
+
+**The fork pass costs what it costs because of what a survivor is.** Before this wave's tests the register
+had 155 sites the unit project did not catch, and the fork pass over them did not finish in one sitting on
+this machine; after them it has 37. Each site a unit test catches leaves the fork pass, so the pass
+shrinks as pins are written in the unit project, and grows with every survivor registered.
+
+### Placement, decided from those numbers
+
+**The check** (`--check`) reads the source, the register and `FINDINGS.md` and runs nothing, so it costs
+seconds and runs first on every push: an unreviewed decision site, a drifted entry or an unregistered
+survivor fails there before any mutant runs.
+
+**The unit pass fits on a push only in shards, and only for what the change selects.** One unit mutant is
+one run of the whole unit project. The whole pass is 2714 seconds with three jobs on a 10 core laptop. That is too long to put in front of every push in full
+and short enough to run in parallel beside CI rather than behind it. So on a push, `--changed` runs the
+mutants of the source files the change touched, the mutants whose recorded catching test file the change
+touched, and, when the change touches the gate itself, everything. A branch compares against
+`origin/main`; `main` compares against the push's previous tip.
+
+**The fork pass does not fit on a push at all.** One fork mutant is one run of the fork suite against its
+own anvil, and a caught one is run twice to confirm it. Each is six minutes on the laptop, and the pass took 4890 seconds with three jobs. So it runs in the weekly `full`
+job, eight shards, after the Sunday sweep, and on dispatch against the tree being released, which is
+precondition 9 of `docs/12-release-runbook.md`. A push that changes a fork test, or code only the fork
+project catches, is therefore not proven by its push run; row 13 of the wave checklist
+(`docs/08-conventions.md` §10) makes such a wave run `--all` itself.
+
+### What a green gate proves, and what it does not
+
+**It proves** that every listed mutant is caught by the project the register names, that every registered
+survivor is still not caught, that no decision site in the shipped source is unreviewed, and that every
+hand written entry still mutates the code it was written for and is caught by a test that cites its
+finding.
+
+**It does not prove the tests are right about the contract.** A test that asserts the wrong rule catches
+the mutant of the right rule just as well. MK-070 is that shape: a fork check compared
+`getBorrowingPower` against a reference implementation carrying the same defect, so the two could only
+agree, and a mutation of either would still have been caught by the other. The contract is
+checked by the fork suite, the differential sweep and the live run, not here. **It does not prove every
+defect is caught**, only the one mutant per site the rule generates: a comparison whose flipped
+inclusivity is caught can still compare against a wrong constant, if that constant is not a site of its own. And **a `caught-fork` site is only as
+reliable as the fork run that caught it**: a catch counts only after two runs fail on an assertion rather
+than on the RPC link, but the push path does not run the fork pass at all.
+
+**So act on it this way.** A red gate is a missing or drifted pin, or an unreviewed decision: fix it
+before merging. A green gate is not a reason to skip the fork suite or the sweep, and a new rule a wave
+adds still needs a test written from the contract, whose mutation the gate then proves.
+
 ## 5. Determinism & CI matrix
 
 - **Determinism:** the fork is pinned to a block (`MEZO_FORK_BLOCK` in

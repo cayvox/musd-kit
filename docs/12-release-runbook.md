@@ -40,9 +40,13 @@ passed, 98.67 / 93.99 / 100 / 98.67; typecheck; the examples' build and typechec
 `check:paths`; `build:site`, 563 internal links across 228 pages, 0 broken; the packaging gate;
 `mutation-check --check`, 57 of 57 matching. **The first of the five fork runs was red** (4631 s): 16 of
 the differential cases threw `InternalRpcError` and two obligations tests timed out waiting for receipts.
-That is the degraded upstream link MK-078's correction describes, anvil fetching uncached state from
-`rpc.test.mezo.org`, and during the same window a `gh` call from the same machine failed with
-`dial tcp 140.82.121.5:443: i/o timeout`. No test assertion failed. Runs 2 to 5 passed 111 with 1
+That signature is the degraded upstream link MK-078's correction describes, anvil fetching uncached
+state from `rpc.test.mezo.org`, and during the same window a `gh` call from the same machine failed with
+`dial tcp 140.82.121.5:443: i/o timeout`. **The attribution is corrected here rather than left as
+written** (P25 wave): the release machine was later found to sleep after one idle minute
+(`pmset -g` reports `sleep 1`), and a sleep leaves exactly this signature, since the process pauses, the
+network drops on wake, and anvil is left waiting on an upstream request that never returns. Which of the
+two caused this run is not established. No test assertion failed either way. Runs 2 to 5 passed 111 with 1
 skipped, and a sixth was run so that five consecutive runs are green: 111 passed, 1 skipped. The oracle
 was seeded to `77051107320000000000000` in all six. The same checklist had passed on `dda8296` before
 pull request 40 was opened, and `node scripts/mutation-check.mjs --all` caught 57 of 57 there.
@@ -281,6 +285,7 @@ Each of these is a gate. If one fails, stop: the next step assumes it passed.
 | 6 | The packaged artifact is sound | `pnpm gate:packaging` (see `docs/07-testing.md` §4c) | `GATE PASSED`, and the configuration it prints is the one you intend to claim. All four rows exit 0 under `skipLibCheck: true`; `--strict` reports the `node16` rows without it, which fail for an upstream reason and are not gated (MK-040) |
 | 7 | **A full sweep has run against THIS tree** | Usually `gh workflow run sweep.yml --ref main` with `main` already at the commit you intend to release, then `gh run list --workflow sweep.yml --limit 3 --json headSha,conclusion,status`. A dispatch is the usual route only because a release almost never sits on the commit the last Sunday run saw | A sweep run whose `headSha` **equals the commit being released**, whose parameters are the defaults (`seed=20260826`, `cases=1000`, fork block `15043414`, read from the run's own `[differential]` lines rather than from the workflow file), whose four slices cover `0..1000` with no gap, and `conclusion: success`. **The trigger event is not part of the condition** (MK-099): a scheduled run that lands on the release commit satisfies it, and a dispatch that lands on an earlier commit does not |
 | 8 | **The previous release's record is on `main`, and no release since the ledger began lacks one** | `docs/13-live-testnet-ledger.md` and the `as it actually ran` sections at the top of this file, read on `origin/main`, not on a branch | Both files carry a section for the version `npm view @musd-kit/core dist-tags` shows as `latest` before this release, and for every version published since 2026-08-27, when both files were created. A version released without a live run has a section that says so and why. A record that exists only on an open pull request does not count. **Versions that predate the ledger are not required to have one, and are named below rather than back filled** (MK-111) |
+| 9 | **The full mutation gate has run against THIS tree** | `gh workflow run mutation.yml --ref main` with `main` at the commit you intend to release, then `gh run list --workflow mutation.yml --limit 3 --json headSha,conclusion,status,event`. The weekly run satisfies it only if it landed on the release commit, as for precondition 7 | A run whose `headSha` **equals the commit being released**, whose `Anchors and register` job and all eight `Full gate` shards are `success`, and whose shard logs show the unit pass, the fork pass, and the fork and packaging gate entries (shard 1) each ran. **The push path's `Unit pass for the change` jobs are not this precondition**: they run only the unit mutants a change selects and never the fork pass (`docs/07-testing.md` §4d) (MK-112) |
 
 **Versions that predate the ledger have no record, and this runbook does not invent one.** The ledger
 and this runbook were both created on 2026-08-27 (`docs/13` in `b4e7f15`, this file in `0533bd5`,
@@ -474,6 +479,7 @@ declaration files, `version only` for both manifests, and `NO BEHAVIOUR CHANGE`.
 | 5 | Live testnet run | **Falls away, and transfers nothing** | the run exercises the runtime code, which is the previous version's. It carries forward only evidence the previous version actually had: if the previous version has no live run on record, neither does this one, and nothing may imply otherwise. At the time of writing `docs/13-live-testnet-ledger.md` records a run for 0.2.0 only, so 0.3.0 and 0.3.1 have none on record |
 | 6 | Packaging gate | **Stays** | the README and the declarations inside the tarball are exactly what changed, and the gate compiles the packaged quickstart (MK-108) |
 | 7 | Sweep against this tree | **Falls away** | the sweep compares verdicts against transaction outcomes, and both are functions of the runtime code, which is identical. For the record: 0.3.1 was released from `5b731b2` by [run 34761476541](https://github.com/cayvox/musd-kit/actions/runs/34761476541); the most recent sweep then had run against `749730b`, the 0.3.0 commit |
+| 9 | Full mutation gate against this tree | **Stays** | the proof above compares the built packages, not the tests or the register, so it says nothing about whether the pins still catch their mutants; and the packaging gate entry mutates the packaged README, which is what such a release changes |
 
 **After publishing, check the surface the release was for.** `npm view @musd-kit/core readme` and the
 same for react must contain the warning, because the registry, not the repository, is what a
