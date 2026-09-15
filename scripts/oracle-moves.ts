@@ -11,6 +11,13 @@
  *     survive the price falling between the read and the block the open lands in, and for a while
  *     after. Reported, for windows of 60, 600 and 3600 seconds, as the largest fall from each
  *     sampled start to the lowest sampled price inside the window that follows it.
+ *   - **How often a fall is reached within a holding horizon** (`--horizons`, MK-240). A position is
+ *     not held for the delay between a read and a send, it is held for as long as its owner keeps it.
+ *     For each horizon and each fall in `--falls`, the share of sampled start times from which the
+ *     price fell at least that far at some sample inside the horizon, and the worst fall seen. This is
+ *     the table a caller choosing `drawForMargin`'s `horizonSeconds` and `priceFallBps` is pointed at.
+ *     Start times overlap, so neighbouring windows share most of their samples and the shares are not
+ *     independent trials: they describe one stretch of history, not a probability.
  *
  * READ ONLY. A public client, no key, no writes. The endpoint comes from the environment and is
  * never printed. The block range is pinned by `--end`, so a re-run against the same range reads the
@@ -18,6 +25,8 @@
  *
  *   export MEZO_MAINNET_RPC_URL=<a Mezo mainnet (31612) endpoint>
  *   pnpm tsx scripts/oracle-moves.ts --end 11823000 --consecutive 2000 --days 7 --step 16
+ *   pnpm tsx scripts/oracle-moves.ts --end <block> --consecutive 0 --days 90 --step 225 \
+ *     --horizons 3600,86400,259200,604800,2592000 --falls 200,500,1000,2000
  *
  * One `eth_call` per sample (the price and `Multicall3.getCurrentBlockTimestamp()` pinned at the
  * same block), four at a time by default (`--concurrency`), with backoff on a rate limit.
@@ -67,6 +76,14 @@ const consecutive = Number(arg('consecutive', '2000'))
 const days = Number(arg('days', '7'))
 const step = Number(arg('step', '16'))
 const concurrency = Number(arg('concurrency', '4'))
+const horizons = arg('horizons', '')
+  .split(',')
+  .filter((x) => x !== '')
+  .map((x) => BigInt(x))
+const falls = arg('falls', '200,500,1000,2000')
+  .split(',')
+  .filter((x) => x !== '')
+  .map((x) => Number(x))
 if (end === 0n) {
   console.error('--end <block> is required, so the measured range is pinned and reproducible.')
   process.exit(2)
@@ -120,13 +137,19 @@ const fmt = (x: number) => x.toFixed(3)
 
 async function main() {
   // ---- consecutive block moves ----
-  const cBlocks = Array.from({ length: consecutive + 1 }, (_, i) => end - BigInt(consecutive - i))
-  const series = await collect(cBlocks)
+  // `--consecutive 0` skips the block move report. The window span below still needs a block time,
+  // so it is then measured from the two ends of a 1000 block stretch before `--end`.
+  const cBlocks = Array.from(
+    { length: Math.max(consecutive, 1) + 1 },
+    (_, i) => end - BigInt(Math.max(consecutive, 1) - i),
+  )
+  const series = consecutive > 0 ? await collect(cBlocks) : await collect([end - 1000n, end])
+  const gaps = consecutive > 0 ? consecutive : 1000
   const seconds = Number((series.at(-1)?.ts ?? 0n) - (series[0]?.ts ?? 0n))
   console.log(
-    `consecutive: blocks ${cBlocks[0]}..${end} (${consecutive} gaps, ${seconds}s, ${(seconds / consecutive).toFixed(2)} s/block)`,
+    `consecutive: blocks ${end - BigInt(gaps)}..${end} (${gaps} gaps, ${seconds}s, ${(seconds / gaps).toFixed(2)} s/block)${consecutive > 0 ? '' : ', block time only'}`,
   )
-  for (const gap of [1, 2, 3]) {
+  for (const gap of consecutive > 0 ? [1, 2, 3] : []) {
     const moves: number[] = []
     for (let i = gap; i < series.length; i++) {
       moves.push(
@@ -148,7 +171,7 @@ async function main() {
   }
 
   // ---- worst adverse move inside a window ----
-  const approxBlocksPerDay = Math.round(86_400 / (seconds / consecutive))
+  const approxBlocksPerDay = Math.round(86_400 / (seconds / gaps))
   const span = approxBlocksPerDay * days
   const wBlocks: bigint[] = []
   for (let b = end - BigInt(span); b <= end; b += BigInt(step)) wBlocks.push(b)
@@ -177,6 +200,35 @@ async function main() {
     const sorted = drops.sort((a, b) => a - b)
     console.log(
       `  window ${window}s: starts=${sorted.length} worst fall bps p50=${fmt(quantile(sorted, 0.5))} p90=${fmt(quantile(sorted, 0.9))} p99=${fmt(quantile(sorted, 0.99))} p99.9=${fmt(quantile(sorted, 0.999))} max=${fmt(sorted.at(-1) ?? Number.NaN)}`,
+    )
+  }
+
+  // ---- how often a fall is reached within a holding horizon (MK-240) ----
+  for (const horizon of horizons) {
+    const worst: number[] = []
+    for (let i = 0; i < samples.length; i++) {
+      const start = samples[i] as { price: bigint; ts: bigint }
+      // Only starts whose whole horizon lies inside the sampled range, so every share has the same
+      // denominator meaning: the horizon was fully observed.
+      if (start.ts + horizon > last.ts) break
+      let low = start.price
+      for (
+        let k = i + 1;
+        k < samples.length && (samples[k] as { ts: bigint }).ts <= start.ts + horizon;
+        k++
+      ) {
+        const p = (samples[k] as { price: bigint }).price
+        if (p < low) low = p
+      }
+      worst.push(-bps(start.price, low))
+    }
+    const shares = falls.map((f) => {
+      const reached = worst.filter((w) => w >= f).length
+      return `fall>=${f}bps ${reached} (${((100 * reached) / Math.max(worst.length, 1)).toFixed(1)}%)`
+    })
+    const max = worst.reduce((a, b) => (b > a ? b : a), Number.NEGATIVE_INFINITY)
+    console.log(
+      `  horizon ${horizon}s: starts=${worst.length} | ${shares.join(' | ')} | worst fall bps ${fmt(max)}`,
     )
   }
 }

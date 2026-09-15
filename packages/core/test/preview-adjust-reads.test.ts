@@ -2,13 +2,16 @@ import type { PublicClient, WalletClient } from 'viem'
 import { describe, expect, it } from 'vitest'
 import {
   CollateralWithdrawalBlocked,
+  ICRBelowMCR,
   InsufficientCollateral,
+  InvalidAdjustment,
   InvalidAmount,
   LastTroveInSystem,
   MusdError,
   RecoveryModeRestriction,
   SystemRatioBelowCCR,
   computeMaxWithdrawable,
+  drawForMargin,
   getAddresses,
   getBorrowingPower,
   maxWithdrawableCollateral,
@@ -74,6 +77,15 @@ function fakeDeps(over: Partial<Record<string, unknown>> = {}): MathDeps {
     oracle: T.borrowerOperations,
     borrowerOperationsAddress: T.borrowerOperations,
     isAccountFeeExempt: false,
+    // MK-242. What a refinance projection reads when an adjustment removes capacity.
+    refinancingFeePercentage: 20,
+    getTroveInterestRate: 100,
+    // The hint ritual a write computes before simulate.
+    getApproxHint: ['0x0000000000000000000000000000000000000000', 0n, 0n],
+    findInsertPosition: [
+      '0x0000000000000000000000000000000000000000',
+      '0x0000000000000000000000000000000000000000',
+    ],
     ...over,
   }
   const calls: string[] = []
@@ -203,6 +215,7 @@ describe('MK-042, computeMaxWithdrawable at its edges', () => {
     price: PRICE,
     systemColl: 1_000n * BTC,
     systemDebt: 20_000_000n * MUSD,
+    capacity: 0n,
   }
 
   it('a zero price caps it at zero rather than dividing by zero', () => {
@@ -293,15 +306,15 @@ describe('MK-042, prechecks fire before simulate, with the right typed error', (
   // An under-MCR position: 1 BTC against 100k MUSD at 80k is an ICR of 80%.
   const sunk = { getEntireDebtAndColl: [BTC, 100_000n * MUSD, 0n, 0n, 0n, 0n] }
 
-  it('addCollateral on an under-MCR position, the MK-038 case', async () => {
+  it("addCollateral on an under-MCR position, the MK-038 case, as the gate's one code (MK-243)", async () => {
     await expect(addCollateral(writeDeps(sunk), { amount: BTC / 100n })).rejects.toBeInstanceOf(
-      InsufficientCollateral,
+      ICRBelowMCR,
     )
   })
 
-  it('repay on an under-MCR position is refused for the same absolute reason', async () => {
+  it('repay on an under-MCR position is refused for the same absolute reason, the same code (MK-243)', async () => {
     await expect(repay(writeDeps(sunk), { amount: 100n * MUSD })).rejects.toBeInstanceOf(
-      InsufficientCollateral,
+      ICRBelowMCR,
     )
   })
 
@@ -362,55 +375,71 @@ describe('MK-042, prechecks fire before simulate, with the right typed error', (
     ).rejects.toBeInstanceOf(MusdError)
   })
 
-  it('MK-060: adjustTrove refuses a zero borrow leg BEFORE it reads the chain', async () => {
-    // `trove/index.ts` reads `_isDebtIncrease` from PRESENCE, so `borrow: 0n` used to put
-    // `(_mUSDChange = 0, _isDebtIncrease = true)` on the wire, which `:785-787` refuses. The
-    // preview could not see it, because the evaluator read the flag from VALUE and therefore
-    // scored the call as a pure top-up. Both halves are fixed; this is the write half.
-    //
-    // **The assertion is "before any read", not just "throws".** With the evaluator half fixed
-    // the preview also refuses this call, so a test that only asserted the error type passed
-    // with the validation removed. Verified by removing it: the type assertion alone did not
-    // fail. `assertPositiveAmount` runs before the first `readContract`, and the guard below
-    // is what tells the two apart.
-    const noReads = (): WriteDeps => {
-      const d = writeDeps()
-      return {
-        ...d,
-        publicClient: {
-          readContract: async () => {
-            throw new Error('reached a chain read: the amount guard did not fire')
-          },
-          simulateContract: async () => {
-            throw new Error('reached simulate: the precheck did not fire')
-          },
-        } as unknown as PublicClient,
-      }
+  it('MK-244: adjustTrove sends a zero borrow leg as no debt leg, which the contract accepts', async () => {
+    // `{ borrow: 0n, addCollateral: x }` is a top up: the zero leg is encoded as `(0, false)`, which
+    // `_requireNonZeroAdjustment` (`BorrowerOperations.sol:1377-1386`) accepts beside a collateral change.
+    // Until 0.5.0 it was encoded as `(0, true)` and refused before the chain was read (MK-060).
+    const d = writeDeps()
+    let sent: readonly unknown[] | undefined
+    const withSim = {
+      ...d,
+      publicClient: {
+        ...(d.publicClient as object),
+        simulateContract: async (req: { args: readonly unknown[] }) => {
+          sent = req.args
+          throw new Error('stop at simulate')
+        },
+        estimateContractGas: async () => 1n,
+      } as unknown as PublicClient,
     }
+    const stopped = await adjustTrove(withSim, { borrow: 0n, addCollateral: BTC / 100n }).catch(
+      (e: unknown) => e,
+    )
+    expect((stopped as Error).message, 'it reached simulate').toContain('stop at simulate')
+    expect(sent?.slice(0, 3), 'withdrawal, debt change, debt increase flag').toEqual([
+      0n,
+      0n,
+      false,
+    ])
+    // With no other leg, nothing is requested, refused before any read, as the evaluator would.
+    const noReads = (): WriteDeps => ({
+      ...d,
+      publicClient: {
+        readContract: async () => {
+          throw new Error('reached a chain read: the shape refusal did not fire')
+        },
+      } as unknown as PublicClient,
+    })
+    await expect(adjustTrove(noReads(), { borrow: 0n })).rejects.toBeInstanceOf(InvalidAdjustment)
     await expect(
-      adjustTrove(noReads(), { borrow: 0n, addCollateral: BTC / 100n }),
-    ).rejects.toBeInstanceOf(InvalidAmount)
-    // And with no collateral leg either, so the failure cannot come from somewhere else.
-    await expect(adjustTrove(noReads(), { borrow: 0n })).rejects.toBeInstanceOf(InvalidAmount)
+      adjustTrove(noReads(), { addCollateral: 0n, withdrawCollateral: 0n, borrow: 0n, repay: 0n }),
+    ).rejects.toBeInstanceOf(InvalidAdjustment)
+    // A negative leg can reach no uint256, and is refused before any read too.
+    await expect(adjustTrove(noReads(), { repay: -1n })).rejects.toBeInstanceOf(InvalidAmount)
   })
 
-  it('MK-060: and the preview half sees the same call the same way', async () => {
-    // `increaseDebt: 0n` is a debt increase OF ZERO, which is a different input from no debt
-    // leg at all. The first is refused at `:786`; the second is an ordinary top-up.
+  it('MK-244: and the preview half reads the same zero legs by value', async () => {
     const zero = await previewAdjustTrove(fakeDeps(), {
       owner: OWNER,
       increaseDebt: 0n,
       addCollateral: BTC / 100n,
     })
-    expect(zero.viable).toBe(false)
-    expect(zero.bindingConstraint).toBe('ZERO_DEBT_INCREASE')
-
+    expect(zero.viable).toBe(true)
+    expect(zero.reasons).toEqual([])
+    const both = await previewAdjustTrove(fakeDeps(), {
+      owner: OWNER,
+      addCollateral: 0n,
+      withdrawCollateral: BTC / 100n,
+      increaseDebt: 0n,
+      repayDebt: 0n,
+    })
+    expect(both.viable, 'the audit input: a withdrawal with the other legs zero').toBe(true)
     const absent = await previewAdjustTrove(fakeDeps(), {
       owner: OWNER,
-      addCollateral: BTC / 100n,
+      withdrawCollateral: BTC / 100n,
     })
-    expect(absent.viable).toBe(true)
-    expect(absent.reasons).toEqual([])
+    expect(both.resultingCollateral).toBe(absent.resultingCollateral)
+    expect(both.capacityAfter).toEqual(absent.capacityAfter)
   })
 })
 
@@ -424,10 +453,14 @@ describe('MK-010, the closed form boundary walk', () => {
     // land on a draw that is feasible while draw+1 is not. That is the postcondition, and it
     // is asserted rather than the number, because the number is a function of the rate.
     const math = fakeDeps({ getBorrowingFee: 1n })
-    const power = await getBorrowingPower(math, { collateral: BTC })
+    const power = await drawForMargin(math, {
+      collateral: BTC,
+      horizonSeconds: 3600n,
+      priceFallBps: 200n,
+    })
     expect(power.ceiling).toBeGreaterThan(0n)
-    expect(power.recommended).toBeGreaterThan(0n)
-    expect(power.recommended).toBeLessThanOrEqual(power.ceiling)
+    expect(power.draw).toBeGreaterThan(0n)
+    expect(power.draw).toBeLessThanOrEqual(power.ceiling)
   })
 
   it('a zero collateral is rejected rather than searched over', async () => {

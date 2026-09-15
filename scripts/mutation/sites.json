@@ -1070,6 +1070,23 @@
     "finding": "MK-118",
     "reason": "At seconds equal to 0n the formula returns principal * rateBps * 0 / divisor, which is 0n, the value the guard returns. Every other input takes the same branch in both."
   },
+  "packages/core/src/math/compute.ts#capacityAfterAdjustment#condition#52cba9f517": {
+    "file": "packages/core/src/math/compute.ts",
+    "line": 292,
+    "kind": "condition",
+    "text": "!input.collateralDecreases",
+    "status": "caught",
+    "by": ["packages/core/test/p27-disclosures.test.ts", "packages/core/test/preview-reads.test.ts"]
+  },
+  "packages/core/src/math/compute.ts#capacityAfterAdjustment#relational#69a1ed66ba": {
+    "file": "packages/core/src/math/compute.ts",
+    "line": 294,
+    "kind": "relational",
+    "text": "recalculated < input.currentCapacity",
+    "status": "equivalent",
+    "finding": "MK-242",
+    "reason": "The mutant flips `<` to `<=`. The two differ only when recalculated equals input.currentCapacity, where the branch it takes returns recalculated and the original returns input.currentCapacity: the same bigint. Every other input takes the same branch in both."
+  },
   "packages/core/src/math/compute.ts#computeICR#equality#78f682bf69": {
     "file": "packages/core/src/math/compute.ts",
     "line": 22,
@@ -1191,6 +1208,81 @@
     "status": "caught",
     "by": ["packages/core/test/preview-verdicts.test.ts"]
   },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#connective#bb0dc5dba4": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 283,
+    "kind": "connective",
+    "text": "typeof priceFallBps !== 'bigint' || priceFallBps < 0n || priceFallBps >= 10_000n",
+    "status": "caught",
+    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#connective#e1f30b5090": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 283,
+    "kind": "connective",
+    "text": "typeof priceFallBps !== 'bigint' || priceFallBps < 0n",
+    "status": "caught",
+    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#connective#ec2a9c2484": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 275,
+    "kind": "connective",
+    "text": "typeof horizonSeconds !== 'bigint' || horizonSeconds < 0n",
+    "status": "caught",
+    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#presence#865cd6e549": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 275,
+    "kind": "presence",
+    "text": "typeof horizonSeconds !== 'bigint'",
+    "status": "caught",
+    "by": [
+      "packages/core/test/borrowing-power-agreement.test.ts",
+      "packages/core/test/borrowing-power-paths.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts"
+    ]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#presence#f449d16a65": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 283,
+    "kind": "presence",
+    "text": "typeof priceFallBps !== 'bigint'",
+    "status": "caught",
+    "by": [
+      "packages/core/test/borrowing-power-agreement.test.ts",
+      "packages/core/test/borrowing-power-paths.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts"
+    ]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#relational#59ca0eca97": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 283,
+    "kind": "relational",
+    "text": "priceFallBps < 0n",
+    "status": "caught",
+    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#relational#7c0d72bd5d": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 275,
+    "kind": "relational",
+    "text": "horizonSeconds < 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/borrowing-power-agreement.test.ts",
+      "packages/core/test/borrowing-power-paths.test.ts"
+    ]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#assertMargin#relational#896dcef8bc": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 283,
+    "kind": "relational",
+    "text": "priceFallBps >= 10_000n",
+    "status": "caught",
+    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+  },
   "packages/core/src/math/getBorrowingPower.ts#binarySearch#condition#249d43aa06": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
     "line": 582,
@@ -1220,31 +1312,27 @@
     "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
-  "packages/core/src/math/getBorrowingPower.ts#BORROWING_POWER_MARGIN_WINDOW_SECONDS#constant#b6871ae90f": {
+  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.accrualFraction#rounding#2fec8e483f": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 30,
-    "kind": "constant",
-    "text": "3600n",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/decision-pins.test.ts"]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#BORROWING_POWER_PRICE_MOVE_BPS#constant#bb683550f4": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 46,
-    "kind": "constant",
-    "text": "200n",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/decision-pins.test.ts"]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.accrualFraction#rounding#38eb0666fc": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 319,
+    "line": 460,
     "kind": "rounding",
-    "text": "(interestRateBps * windowSeconds * E18 + accrualDenominator - 1n) / accrualDenominator",
+    "text": "(interestRateBps * horizonSeconds * E18 + accrualDenominator - 1n) / accrualDenominator",
     "status": "caught",
     "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.chosen#presence#e25994f00d": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 305,
+    "kind": "presence",
+    "text": "requestedMargin === undefined",
+    "status": "caught",
+    "by": [
+      "packages/core/test/borrowing-power-agreement.test.ts",
+      "packages/core/test/borrowing-power-paths.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/s2-guards.test.ts",
+      "packages/core/test/typed-errors.test.ts"
+    ]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.effectiveRate#condition#6d44f73d1b": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
@@ -1314,19 +1402,6 @@
       "packages/core/test/s2-guards.test.ts"
     ]
   },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.priceMoveBps#default#0c5ac3870d": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 313,
-    "kind": "default",
-    "text": "params.priceMoveBps ?? BORROWING_POWER_PRICE_MOVE_BPS",
-    "status": "caught",
-    "by": [
-      "packages/core/test/borrowing-power-agreement.test.ts",
-      "packages/core/test/borrowing-power-paths.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/s2-guards.test.ts"
-    ]
-  },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.solvedFee#presence#bed8bdc381": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
     "line": 401,
@@ -1351,17 +1426,16 @@
       "packages/core/test/s2-guards.test.ts"
     ]
   },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.windowSeconds#default#e9c7a4d2f5": {
+  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#condition#3b0594f455": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 312,
-    "kind": "default",
-    "text": "params.marginWindowSeconds ?? BORROWING_POWER_MARGIN_WINDOW_SECONDS",
+    "line": 496,
+    "kind": "condition",
+    "text": "!meetsFloor(draw, drawFee)",
     "status": "caught",
     "by": [
       "packages/core/test/borrowing-power-agreement.test.ts",
       "packages/core/test/borrowing-power-paths.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/s2-guards.test.ts"
+      "packages/core/test/preview-adjust-reads.test.ts"
     ]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#condition#3da3d82a26": {
@@ -1386,19 +1460,6 @@
     "by": [
       "packages/core/test/borrowing-power-agreement.test.ts",
       "packages/core/test/borrowing-power-paths.test.ts",
-      "packages/core/test/s2-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#condition#6ed521927a": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 443,
-    "kind": "condition",
-    "text": "!meetsFloor(recommended, recommendedFee)",
-    "status": "caught",
-    "by": [
-      "packages/core/test/borrowing-power-agreement.test.ts",
-      "packages/core/test/borrowing-power-paths.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
       "packages/core/test/s2-guards.test.ts"
     ]
   },
@@ -1433,17 +1494,6 @@
     "finding": "MK-119",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#31e8ba59b9": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 245,
-    "kind": "connective",
-    "text": "params.priceMoveBps !== undefined && (params.priceMoveBps < 0n || params.priceMoveBps >= 10_000n)",
-    "status": "caught",
-    "by": [
-      "packages/core/test/borrowing-power-agreement.test.ts",
-      "packages/core/test/borrowing-power-paths.test.ts"
-    ]
-  },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#a49b61bbf4": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
     "line": 402,
@@ -1452,25 +1502,6 @@
     "status": "caught",
     "finding": "MK-119",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#d6e6f545d5": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 237,
-    "kind": "connective",
-    "text": "params.marginWindowSeconds !== undefined && params.marginWindowSeconds < 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/borrowing-power-agreement.test.ts",
-      "packages/core/test/borrowing-power-paths.test.ts"
-    ]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#ddee3369af": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 246,
-    "kind": "connective",
-    "text": "params.priceMoveBps < 0n || params.priceMoveBps >= 10_000n",
-    "status": "caught",
-    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#equality#842bc4ca91": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
@@ -1484,13 +1515,18 @@
       "packages/core/test/s2-guards.test.ts"
     ]
   },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#presence#4aedfe9fd6": {
+  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#presence#1029a9e778": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 245,
+    "line": 451,
     "kind": "presence",
-    "text": "params.priceMoveBps !== undefined",
+    "text": "chosen === undefined",
     "status": "caught",
-    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
+    "by": [
+      "packages/core/test/borrowing-power-agreement.test.ts",
+      "packages/core/test/borrowing-power-paths.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/s2-guards.test.ts"
+    ]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#presence#5c6fca4bd9": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
@@ -1502,14 +1538,6 @@
       "packages/core/test/borrowing-power-agreement.test.ts",
       "packages/core/test/s2-guards.test.ts"
     ]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#presence#710e31350d": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 237,
-    "kind": "presence",
-    "text": "params.marginWindowSeconds !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#presence#d95e3d6ef4": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
@@ -1531,23 +1559,6 @@
     "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#3427c7a770": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 442,
-    "kind": "relational",
-    "text": "recommended > ceiling",
-    "status": "equivalent",
-    "finding": "MK-118",
-    "reason": "When recommended equals ceiling the assignment writes the value it already holds."
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#425e0c154a": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 246,
-    "kind": "relational",
-    "text": "params.priceMoveBps >= 10_000n",
-    "status": "caught",
-    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
-  },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#428b14e0d2": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
     "line": 387,
@@ -1556,6 +1567,15 @@
     "status": "caught",
     "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
+  },
+  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#54964dfc29": {
+    "file": "packages/core/src/math/getBorrowingPower.ts",
+    "line": 495,
+    "kind": "relational",
+    "text": "draw > ceiling",
+    "status": "equivalent",
+    "finding": "MK-240",
+    "reason": "The mutant flips `draw > ceiling` to `draw >= ceiling`. They differ only when draw equals ceiling, where the mutant assigns ceiling to draw, the value it already holds; the drawFee then used for the floor check and drawIcr was computed for that same draw. The registered survivor this replaces, `recommended > ceiling`, was the same shape under MK-118."
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#689c7557d9": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
@@ -1577,25 +1597,6 @@
       "packages/core/test/s2-guards.test.ts",
       "packages/core/test/typed-errors.test.ts"
     ]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#d010521522": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 237,
-    "kind": "relational",
-    "text": "params.marginWindowSeconds < 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/borrowing-power-agreement.test.ts",
-      "packages/core/test/borrowing-power-paths.test.ts"
-    ]
-  },
-  "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#d507784b78": {
-    "file": "packages/core/src/math/getBorrowingPower.ts",
-    "line": 246,
-    "kind": "relational",
-    "text": "params.priceMoveBps < 0n",
-    "status": "caught",
-    "by": ["packages/core/test/borrowing-power-agreement.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#localFee#equality#2673ef129a": {
     "file": "packages/core/src/math/getBorrowingPower.ts",
@@ -1713,6 +1714,355 @@
     "finding": "MK-120",
     "reason": "The walk cannot reach 64 steps. The seed is floor(available * P / (P + rate)); the largest draw d with d + floor(rate * d / P) <= available satisfies d * (P + rate) / P < available + 1, so d < seed + 2, and feasibleWith accepts exactly the entire debts at or under the cap the seed is sized from. The walk takes at most one step."
   },
+  "packages/core/src/math/previewAdjust.ts#adjustLegsOf.addCollateral#default#b6a70f6ff9": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 326,
+    "kind": "default",
+    "text": "legs.addCollateral ?? 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustLegsOf.increaseDebt#default#84df684167": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 324,
+    "kind": "default",
+    "text": "legs.increaseDebt ?? 0n",
+    "status": "caught",
+    "by": ["packages/core/test/preview-reads.test.ts"]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustLegsOf.isDebtIncrease#relational#ab7a085770": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 330,
+    "kind": "relational",
+    "text": "increaseDebt > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustLegsOf.repayDebt#default#dc971f6a38": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 329,
+    "kind": "default",
+    "text": "legs.repayDebt ?? 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustLegsOf.withdrawCollateral#default#2b673a3920": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 327,
+    "kind": "default",
+    "text": "legs.withdrawCollateral ?? 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#condition#524170b3eb": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 357,
+    "kind": "condition",
+    "text": "isDebtIncrease",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#connective#342622d125": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 358,
+    "kind": "connective",
+    "text": "addCollateral > 0n && withdrawCollateral > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#connective#50780b0163": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 359,
+    "kind": "connective",
+    "text": "increaseDebt > 0n && repayDebt > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#connective#a03cf63424": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 361,
+    "kind": "connective",
+    "text": "addCollateral === 0n && withdrawCollateral === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#connective#b36199a64c": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 361,
+    "kind": "connective",
+    "text": "addCollateral === 0n && withdrawCollateral === 0n && increaseDebt === 0n && repayDebt === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#connective#cdadf33622": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 361,
+    "kind": "connective",
+    "text": "addCollateral === 0n && withdrawCollateral === 0n && increaseDebt === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#connective#d464b477cb": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 357,
+    "kind": "connective",
+    "text": "isDebtIncrease && increaseDebt === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#equality#5782feb691": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 361,
+    "kind": "equality",
+    "text": "addCollateral === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#equality#60345e1e19": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 363,
+    "kind": "equality",
+    "text": "increaseDebt === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#equality#8e842c80bc": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 362,
+    "kind": "equality",
+    "text": "withdrawCollateral === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#equality#9f6be1b1f9": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 357,
+    "kind": "equality",
+    "text": "increaseDebt === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#equality#a7c3cab155": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 364,
+    "kind": "equality",
+    "text": "repayDebt === 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#reason#15718be48a": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 359,
+    "kind": "reason",
+    "text": "reasons.push('DEBT_INCREASE_AND_REPAY')",
+    "status": "caught",
+    "by": ["packages/core/test/decision-boundaries.test.ts", "packages/core/test/p13-gates.test.ts"]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#reason#44ff530dff": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 366,
+    "kind": "reason",
+    "text": "reasons.push('NO_CHANGE_REQUESTED')",
+    "status": "caught",
+    "by": [
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/preview-verdicts.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#reason#76e93f1315": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 358,
+    "kind": "reason",
+    "text": "reasons.push('COLLATERAL_ADD_AND_WITHDRAW')",
+    "status": "caught",
+    "by": ["packages/core/test/decision-boundaries.test.ts"]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#reason#cca0ac070e": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 357,
+    "kind": "reason",
+    "text": "reasons.push('ZERO_DEBT_INCREASE')",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-verdicts.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#relational#6fd505cd67": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 358,
+    "kind": "relational",
+    "text": "addCollateral > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#relational#ab7a085770": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 359,
+    "kind": "relational",
+    "text": "increaseDebt > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#relational#ad275b4f66": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 359,
+    "kind": "relational",
+    "text": "repayDebt > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-agreement.test.ts",
+      "packages/core/test/preview-verdicts.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewAdjust.ts#adjustShapeReasons#relational#c634b8d083": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 358,
+    "kind": "relational",
+    "text": "withdrawCollateral > 0n",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-adjust.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
+  },
   "packages/core/src/math/previewAdjust.ts#borrowingCapacityOf.remaining#relational#625858ce0a": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 103,
@@ -1748,6 +2098,14 @@
     "status": "equivalent",
     "finding": "MK-118",
     "reason": "When systemColl equals keepForTcr both branches give 0n."
+  },
+  "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.capacityAt.resulting.collateralDecreases#relational#f68535d1dc": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 887,
+    "kind": "relational",
+    "text": "amount > 0n",
+    "status": "caught",
+    "by": ["packages/core/test/p27-disclosures.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.icrThreshold#condition#c703c66058": {
     "file": "packages/core/src/math/previewAdjust.ts",
@@ -1869,14 +2227,6 @@
       "packages/core/test/preview-verdicts.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust.isDebtIncrease#relational#ab7a085770": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 289,
-    "kind": "relational",
-    "text": "increaseDebt > 0n",
-    "status": "caught",
-    "by": ["packages/core/test/preview-adjust.test.ts"]
-  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust.minimumCollateralToClearIcr#condition#78fa1ce825": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 361,
@@ -1974,6 +2324,22 @@
       "packages/core/test/write-guards.test.ts"
     ]
   },
+  "packages/core/src/math/previewAdjust.ts#evaluateAdjust.resultingCapacity.collateralDecreases#equality#5782feb691": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 464,
+    "kind": "equality",
+    "text": "addCollateral === 0n",
+    "status": "caught",
+    "by": ["packages/core/test/p27-disclosures.test.ts"]
+  },
+  "packages/core/src/math/previewAdjust.ts#evaluateAdjust.resultingCapacity.collateralDecreases#relational#c634b8d083": {
+    "file": "packages/core/src/math/previewAdjust.ts",
+    "line": 464,
+    "kind": "relational",
+    "text": "withdrawCollateral > 0n",
+    "status": "caught",
+    "by": ["packages/core/test/preview-reads.test.ts"]
+  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust.resultingEntireDebt#condition#524170b3eb": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 294,
@@ -2033,18 +2399,6 @@
       "packages/react/test/use-musd-client.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#condition#0a1afd7f93": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 346,
-    "kind": "condition",
-    "text": "isDebtIncrease",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-verdicts.test.ts"
-    ]
-  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#condition#524170b3eb": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 315,
@@ -2102,19 +2456,6 @@
       "packages/core/test/write-guards.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#342622d125": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 316,
-    "kind": "connective",
-    "text": "addCollateral > 0n && withdrawCollateral > 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#364526539c": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 348,
@@ -2134,155 +2475,6 @@
       "packages/core/test/decision-boundaries.test.ts",
       "packages/core/test/p13-gates.test.ts",
       "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#50780b0163": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 320,
-    "kind": "connective",
-    "text": "increaseDebt > 0n && repayDebt > 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#a03cf63424": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 322,
-    "kind": "connective",
-    "text": "addCollateral === 0n && withdrawCollateral === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#b36199a64c": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 322,
-    "kind": "connective",
-    "text": "addCollateral === 0n && withdrawCollateral === 0n && increaseDebt === 0n && repayDebt === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#cdadf33622": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 322,
-    "kind": "connective",
-    "text": "addCollateral === 0n && withdrawCollateral === 0n && increaseDebt === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#d464b477cb": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 315,
-    "kind": "connective",
-    "text": "isDebtIncrease && increaseDebt === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#equality#5782feb691": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 322,
-    "kind": "equality",
-    "text": "addCollateral === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#equality#60345e1e19": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 324,
-    "kind": "equality",
-    "text": "increaseDebt === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#equality#8e842c80bc": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 323,
-    "kind": "equality",
-    "text": "withdrawCollateral === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#equality#9f6be1b1f9": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 315,
-    "kind": "equality",
-    "text": "increaseDebt === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-verdicts.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#equality#a7c3cab155": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 325,
-    "kind": "equality",
-    "text": "repayDebt === 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-reads.test.ts",
       "packages/core/test/preview-verdicts.test.ts",
       "packages/core/test/write-guards.test.ts"
     ]
@@ -2326,14 +2518,6 @@
       "packages/core/test/preview-verdicts.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#15718be48a": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 320,
-    "kind": "reason",
-    "text": "reasons.push('DEBT_INCREASE_AND_REPAY')",
-    "status": "caught",
-    "by": ["packages/core/test/decision-boundaries.test.ts", "packages/core/test/p13-gates.test.ts"]
-  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#1be666c336": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 336,
@@ -2358,18 +2542,6 @@
       "packages/core/test/write-guards.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#44ff530dff": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 327,
-    "kind": "reason",
-    "text": "reasons.push('NO_CHANGE_REQUESTED')",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/preview-verdicts.test.ts"
-    ]
-  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#45cfd1fe3a": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 338,
@@ -2388,15 +2560,6 @@
     "text": "reasons.push('WITHDRAWAL_EXCEEDS_COLLATERAL')",
     "status": "caught",
     "by": ["packages/core/test/preview-adjust.test.ts"]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#76e93f1315": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 316,
-    "kind": "reason",
-    "text": "reasons.push('COLLATERAL_ADD_AND_WITHDRAW')",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#811811ae36": {
     "file": "packages/core/src/math/previewAdjust.ts",
@@ -2420,20 +2583,6 @@
     "text": "reasons.push('REPAY_EXCEEDS_DEBT')",
     "status": "caught",
     "by": ["packages/core/test/preview-adjust.test.ts"]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#cca0ac070e": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 315,
-    "kind": "reason",
-    "text": "reasons.push('ZERO_DEBT_INCREASE')",
-    "status": "caught",
-    "by": [
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-verdicts.test.ts"
-    ]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#db46789fb3": {
     "file": "packages/core/src/math/previewAdjust.ts",
@@ -2478,15 +2627,6 @@
     "status": "caught",
     "by": ["packages/core/test/preview-agreement.test.ts"]
   },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#45e285cbab": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 348,
-    "kind": "relational",
-    "text": "repayDebt > 0n",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/decision-boundaries.test.ts"]
-  },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#56d64bcafd": {
     "file": "packages/core/src/math/previewAdjust.ts",
     "line": 346,
@@ -2494,18 +2634,6 @@
     "text": "capacity < resultingEntireDebt",
     "status": "caught",
     "by": ["packages/core/test/preview-verdicts.test.ts", "packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#6fd505cd67": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 316,
-    "kind": "relational",
-    "text": "addCollateral > 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#748f687cff": {
     "file": "packages/core/src/math/previewAdjust.ts",
@@ -2542,31 +2670,6 @@
     "text": "resultingIcr < currentIcr",
     "status": "caught",
     "by": ["packages/core/test/preview-verdicts.test.ts"]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#a0252c01e5": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 336,
-    "kind": "relational",
-    "text": "withdrawCollateral > 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/preview-adjust.test.ts",
-      "packages/core/test/preview-agreement.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#ab7a085770": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 320,
-    "kind": "relational",
-    "text": "increaseDebt > 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/decision-boundaries.test.ts",
-      "packages/core/test/p13-gates.test.ts",
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#ad275b4f66": {
     "file": "packages/core/src/math/previewAdjust.ts",
@@ -2625,28 +2728,29 @@
       "packages/core/test/write-guards.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.addCollateral#default#4f236ddc93": {
+  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.exempt#condition#524170b3eb": {
     "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 405,
-    "kind": "default",
-    "text": "params.addCollateral ?? 0n",
+    "line": 618,
+    "kind": "condition",
+    "text": "isDebtIncrease",
     "status": "caught",
     "by": [
       "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/write-guards.test.ts",
-      "packages/react/test/use-musd-client.test.ts"
+      "packages/core/test/preview-reads.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.exempt#relational#ab7a085770": {
+  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.fee#condition#524170b3eb": {
     "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 448,
-    "kind": "relational",
-    "text": "increaseDebt > 0n",
+    "line": 620,
+    "kind": "condition",
+    "text": "isDebtIncrease",
     "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/preview-reads.test.ts"]
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/preview-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
   },
   "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.fee#condition#e1e748ddf9": {
     "file": "packages/core/src/math/previewAdjust.ts",
@@ -2656,77 +2760,37 @@
     "status": "caught",
     "by": ["packages/core/test/preview-adjust-reads.test.ts"]
   },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.fee#connective#0c2dd569b7": {
+  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.fee#connective#8bc802c9b0": {
     "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 450,
+    "line": 620,
     "kind": "connective",
-    "text": "increaseDebt > 0n && isBorrowingFeeCharged(isRecoveryMode, exempt)",
+    "text": "isDebtIncrease && isBorrowingFeeCharged(isRecoveryMode, exempt)",
     "status": "caught",
     "by": [
+      "packages/core/test/p27-disclosures.test.ts",
       "packages/core/test/preview-adjust-reads.test.ts",
       "packages/core/test/preview-reads.test.ts",
       "packages/core/test/write-guards.test.ts"
     ]
   },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.fee#relational#ab7a085770": {
+  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked#condition#ae5cfdf66a": {
     "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 450,
-    "kind": "relational",
-    "text": "increaseDebt > 0n",
+    "line": 648,
+    "kind": "condition",
+    "text": "!projectRecovery",
     "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
+    "by": ["packages/core/test/p27-disclosures.test.ts", "packages/core/test/write-guards.test.ts"]
   },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.increaseDebt#default#d7b9118256": {
+  "packages/core/src/math/previewAdjust.ts#withCapacityRecovery#equality#02d857a4b9": {
     "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 407,
-    "kind": "default",
-    "text": "params.increaseDebt ?? 0n",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": [
-      "packages/core/test/preview-reads.test.ts",
-      "packages/react/test/use-musd-client.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.isDebtIncrease#presence#37597d2d05": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 475,
-    "kind": "presence",
-    "text": "params.increaseDebt !== undefined",
+    "line": 682,
+    "kind": "equality",
+    "text": "capacityAfter.lost === 0n",
     "status": "caught",
     "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
       "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.repayDebt#default#d38f4c4b08": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 408,
-    "kind": "default",
-    "text": "params.repayDebt ?? 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.withdrawCollateral#default#a25139c9a1": {
-    "file": "packages/core/src/math/previewAdjust.ts",
-    "line": 406,
-    "kind": "default",
-    "text": "params.withdrawCollateral ?? 0n",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/preview-agreement.test.ts",
-      "packages/core/test/preview-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
+      "packages/core/test/preview-reads.test.ts"
     ]
   },
   "packages/core/src/math/previewClose.ts#evaluateClose.musdShortfall#relational#07e164fb8c": {
@@ -3419,6 +3483,21 @@
       "packages/core/test/redemption-edges.test.ts"
     ]
   },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#condition#4b7a3da0d2": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 541,
+    "kind": "condition",
+    "text": "closesLastTrove",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/mk103-redemption.test.ts",
+      "packages/core/test/mk114-max-iterations.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-redeem.test.ts",
+      "packages/core/test/redemption-edges.test.ts"
+    ]
+  },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#condition#aa711e74df": {
     "file": "packages/core/src/math/previewRedeem.ts",
     "line": 491,
@@ -3432,6 +3511,28 @@
       "packages/core/test/redemption-edges.test.ts"
     ]
   },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#condition#c3f789b4d6": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 514,
+    "kind": "condition",
+    "text": "consumesWhole",
+    "status": "caught",
+    "by": [
+      "packages/core/test/mk114-max-iterations.test.ts",
+      "packages/core/test/p27-disclosures.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#condition#fcc5124a66": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 517,
+    "kind": "condition",
+    "text": "canMint",
+    "status": "caught",
+    "by": [
+      "packages/core/test/mk114-max-iterations.test.ts",
+      "packages/core/test/p27-disclosures.test.ts"
+    ]
+  },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#connective#4b13ff6f4b": {
     "file": "packages/core/src/math/previewRedeem.ts",
     "line": 507,
@@ -3442,6 +3543,29 @@
       "packages/core/test/decision-boundaries.test.ts",
       "packages/core/test/mk103-redemption.test.ts",
       "packages/core/test/mk114-max-iterations.test.ts",
+      "packages/core/test/preview-redeem.test.ts",
+      "packages/core/test/redemption-edges.test.ts"
+    ]
+  },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#connective#81d932aeff": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 517,
+    "kind": "connective",
+    "text": "owners <= 1n || size <= 1n",
+    "status": "caught",
+    "by": ["packages/core/test/p27-disclosures.test.ts"]
+  },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#connective#c6e465468a": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 517,
+    "kind": "connective",
+    "text": "canMint && (owners <= 1n || size <= 1n)",
+    "status": "caught",
+    "by": [
+      "packages/core/test/decision-boundaries.test.ts",
+      "packages/core/test/mk103-redemption.test.ts",
+      "packages/core/test/mk114-max-iterations.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
       "packages/core/test/preview-redeem.test.ts",
       "packages/core/test/redemption-edges.test.ts"
     ]
@@ -3548,6 +3672,17 @@
       "packages/core/test/preview-redeem.test.ts"
     ]
   },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#reason#de3df42052": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 541,
+    "kind": "reason",
+    "text": "reasons.push('LAST_TROVE_IN_SYSTEM')",
+    "status": "caught",
+    "by": [
+      "packages/core/test/mk114-max-iterations.test.ts",
+      "packages/core/test/p27-disclosures.test.ts"
+    ]
+  },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#328e1e1cef": {
     "file": "packages/core/src/math/previewRedeem.ts",
     "line": 479,
@@ -3573,6 +3708,22 @@
     "status": "equivalent",
     "finding": "MK-118",
     "reason": "At i equal to eligible.length the next line reads eligible[i] as undefined and breaks (previewRedeem.ts:481), before anything is computed or recorded."
+  },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#c32f66b3f2": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 517,
+    "kind": "relational",
+    "text": "size <= 1n",
+    "status": "caught",
+    "by": ["packages/core/test/p27-disclosures.test.ts"]
+  },
+  "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#c72679aad6": {
+    "file": "packages/core/src/math/previewRedeem.ts",
+    "line": 517,
+    "kind": "relational",
+    "text": "owners <= 1n",
+    "status": "caught",
+    "by": ["packages/core/test/p27-disclosures.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#cc8ac304da": {
     "file": "packages/core/src/math/previewRedeem.ts",
@@ -3957,15 +4108,6 @@
     "status": "caught",
     "by": ["packages/core/test/client-plumbing.test.ts"]
   },
-  "packages/core/src/redemption/redeem.ts#redeem.estimatedFeeCollateral#relational#c0da44eeb0": {
-    "file": "packages/core/src/redemption/redeem.ts",
-    "line": 273,
-    "kind": "relational",
-    "text": "estimatedCollateralDrawn > 0n",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/redemption-edges.test.ts"]
-  },
   "packages/core/src/redemption/redeem.ts#redeem.maxIterations#default#8665450b69": {
     "file": "packages/core/src/redemption/redeem.ts",
     "line": 163,
@@ -4003,6 +4145,14 @@
     "text": "partial.priceFragile",
     "status": "caught",
     "by": ["packages/core/test/mk103-redemption.test.ts"]
+  },
+  "packages/core/src/redemption/redeem.ts#redeem#condition#7ab42cf4fc": {
+    "file": "packages/core/src/redemption/redeem.ts",
+    "line": 276,
+    "kind": "condition",
+    "text": "!redemption.viable",
+    "status": "caught",
+    "by": ["packages/core/test/preview-redeem.test.ts"]
   },
   "packages/core/src/redemption/redeem.ts#redeem#condition#959b3e1fd5": {
     "file": "packages/core/src/redemption/redeem.ts",
@@ -4069,6 +4219,17 @@
       "packages/core/test/redemption-edges.test.ts"
     ]
   },
+  "packages/core/src/redemption/redeem.ts#redeem#connective#f077d0daa2": {
+    "file": "packages/core/src/redemption/redeem.ts",
+    "line": 273,
+    "kind": "connective",
+    "text": "!redemption.viable && redemption.bindingConstraint === 'LAST_TROVE_IN_SYSTEM'",
+    "status": "caught",
+    "by": [
+      "packages/core/test/preview-redeem.test.ts",
+      "packages/core/test/redemption-edges.test.ts"
+    ]
+  },
   "packages/core/src/redemption/redeem.ts#redeem#equality#95f203e3a6": {
     "file": "packages/core/src/redemption/redeem.ts",
     "line": 214,
@@ -4076,6 +4237,18 @@
     "text": "redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR'",
     "status": "caught",
     "by": [
+      "packages/core/test/preview-redeem.test.ts",
+      "packages/core/test/redemption-edges.test.ts"
+    ]
+  },
+  "packages/core/src/redemption/redeem.ts#redeem#equality#ac78e30f3d": {
+    "file": "packages/core/src/redemption/redeem.ts",
+    "line": 273,
+    "kind": "equality",
+    "text": "redemption.bindingConstraint === 'LAST_TROVE_IN_SYSTEM'",
+    "status": "caught",
+    "by": [
+      "packages/core/test/mk114-max-iterations.test.ts",
       "packages/core/test/preview-redeem.test.ts",
       "packages/core/test/redemption-edges.test.ts"
     ]
@@ -4088,207 +4261,105 @@
     "status": "caught",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
-  "packages/core/src/trove/index.ts#adjustTrove.collAdd#default#116dfdfcb5": {
+  "packages/core/src/redemption/redeem.ts#settledRedemptionFrom.logs#equality#46a842f819": {
+    "file": "packages/core/src/redemption/redeem.ts",
+    "line": 189,
+    "kind": "equality",
+    "text": "log.address.toLowerCase() === troveManager.toLowerCase()",
+    "status": "caught",
+    "by": ["packages/core/test/redemption-edges.test.ts"]
+  },
+  "packages/core/src/redemption/redeem.ts#settledRedemptionFrom#equality#7960081114": {
+    "file": "packages/core/src/redemption/redeem.ts",
+    "line": 180,
+    "kind": "equality",
+    "text": "receipt.status !== 'success'",
+    "status": "caught",
+    "by": ["packages/core/test/redemption-edges.test.ts"]
+  },
+  "packages/core/src/redemption/redeem.ts#settledRedemptionFrom#presence#a772cb8cbd": {
+    "file": "packages/core/src/redemption/redeem.ts",
+    "line": 191,
+    "kind": "presence",
+    "text": "event === undefined",
+    "status": "caught",
+    "by": ["packages/core/test/redemption-edges.test.ts"]
+  },
+  "packages/core/src/trove/index.ts#adjustTrove.debtChange#condition#524170b3eb": {
     "file": "packages/core/src/trove/index.ts",
-    "line": 557,
-    "kind": "default",
-    "text": "add ?? 0n",
+    "line": 582,
+    "kind": "condition",
+    "text": "isDebtIncrease",
     "status": "caught",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
-  "packages/core/src/trove/index.ts#adjustTrove.collWithdrawal#default#1dcd4780ba": {
+  "packages/core/src/trove/index.ts#adjustTrove.resultingPrincipal#condition#524170b3eb": {
     "file": "packages/core/src/trove/index.ts",
-    "line": 556,
-    "kind": "default",
-    "text": "wd ?? 0n",
+    "line": 609,
+    "kind": "condition",
+    "text": "isDebtIncrease",
     "status": "caught",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
-  "packages/core/src/trove/index.ts#adjustTrove.debtChange#default#a817c39f46": {
+  "packages/core/src/trove/index.ts#adjustTrove#condition#524170b3eb": {
     "file": "packages/core/src/trove/index.ts",
-    "line": 563,
-    "kind": "default",
-    "text": "brw ?? rpy ?? 0n",
+    "line": 586,
+    "kind": "condition",
+    "text": "isDebtIncrease",
     "status": "caught",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
-  "packages/core/src/trove/index.ts#adjustTrove.isDebtIncrease#presence#5bac7de18d": {
+  "packages/core/src/trove/index.ts#adjustTrove#presence#ebebfdecb7": {
     "file": "packages/core/src/trove/index.ts",
-    "line": 562,
+    "line": 580,
     "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove.resultingPrincipal#presence#4c19c95ca7": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 601,
-    "kind": "presence",
-    "text": "rpy !== undefined",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove.resultingPrincipal#presence#5bac7de18d": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 600,
-    "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#connective#0dab932bee": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 549,
-    "kind": "connective",
-    "text": "add !== undefined && wd !== undefined",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#connective#ed9c6745d0": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 552,
-    "kind": "connective",
-    "text": "brw !== undefined && rpy !== undefined",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#1ed732c591": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 571,
-    "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#23f58d0483": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 549,
-    "kind": "presence",
-    "text": "wd !== undefined",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#2e26e25c4b": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 579,
-    "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "by": [
-      "packages/core/test/preview-adjust-reads.test.ts",
-      "packages/core/test/write-guards.test.ts"
-    ]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#497f83fbc0": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 567,
-    "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/preview-adjust-reads.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#4c19c95ca7": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 552,
-    "kind": "presence",
-    "text": "rpy !== undefined",
+    "text": "shape !== undefined",
     "status": "caught",
     "by": [
       "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
       "packages/core/test/preview-adjust-reads.test.ts",
       "packages/core/test/write-guards.test.ts"
     ]
   },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#514d2c7ff1": {
+  "packages/core/src/trove/index.ts#adjustTrove#relational#1031aa7138": {
     "file": "packages/core/src/trove/index.ts",
-    "line": 549,
-    "kind": "presence",
-    "text": "add !== undefined",
+    "line": 595,
+    "kind": "relational",
+    "text": "legs.repayDebt > netDebt",
+    "status": "caught",
+    "by": ["packages/core/test/write-guards.test.ts"]
+  },
+  "packages/core/src/trove/index.ts#adjustTrove#relational#5beaed8f3f": {
+    "file": "packages/core/src/trove/index.ts",
+    "line": 593,
+    "kind": "relational",
+    "text": "legs.repayDebt > 0n",
+    "status": "equivalent",
+    "finding": "MK-244",
+    "reason": "The mutant flips `legs.repayDebt > 0n` to `>= 0n`, entering the block for a zero repayment too. Inside it, `legs.repayDebt > netDebt` is `0n > netDebtOf(...)`, and netDebtOf floors at 0n (math/compute.ts), so it is false and nothing is thrown or assigned. Negative repayments throw InvalidAmount earlier in both."
+  },
+  "packages/core/src/trove/index.ts#adjustTrove#relational#ac7d98937d": {
+    "file": "packages/core/src/trove/index.ts",
+    "line": 618,
+    "kind": "relational",
+    "text": "legs.addCollateral > 0n",
+    "status": "equivalent",
+    "finding": "MK-244",
+    "reason": "The mutant flips `legs.addCollateral > 0n` to `>= 0n`, so a call with no collateral added carries `value: 0n` where the original omits value. Both are a transaction with no BTC attached, and the contract reads msg.value as 0 either way; negative values throw InvalidAmount before this. The survivor it replaces, `collAdd > 0n` at the same send, was registered the same way under MK-118."
+  },
+  "packages/core/src/trove/index.ts#adjustTrove#relational#aef113fd01": {
+    "file": "packages/core/src/trove/index.ts",
+    "line": 575,
+    "kind": "relational",
+    "text": "value < 0n",
     "status": "caught",
     "by": [
+      "packages/core/test/p13-gates.test.ts",
+      "packages/core/test/p27-disclosures.test.ts",
       "packages/core/test/preview-adjust-reads.test.ts",
       "packages/core/test/write-guards.test.ts"
     ]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#5a986931e3": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 582,
-    "kind": "presence",
-    "text": "rpy !== undefined",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#5bac7de18d": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 552,
-    "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/p13-gates.test.ts", "packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#829aa79a25": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 592,
-    "kind": "presence",
-    "text": "rpy !== undefined",
-    "status": "caught",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#presence#a42ed19851": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 591,
-    "kind": "presence",
-    "text": "brw !== undefined",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/write-guards.test.ts"]
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#relational#204e505152": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 590,
-    "kind": "relational",
-    "text": "collWithdrawal > 0n",
-    "status": "equivalent",
-    "finding": "MK-118",
-    "reason": "With collWithdrawal 0n the mutant passes withdrawCollateral: 0n, which the preview reads as the same 0n it defaults to."
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#relational#50401f16fe": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 589,
-    "kind": "relational",
-    "text": "collAdd > 0n",
-    "status": "equivalent",
-    "finding": "MK-118",
-    "reason": "With collAdd 0n the mutant passes addCollateral: 0n to the preview, which reads params.addCollateral ?? 0n (previewAdjust.ts:405-406) and evaluates the same input; nothing it reads changes."
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#relational#e5f62a696e": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 609,
-    "kind": "relational",
-    "text": "collAdd > 0n",
-    "status": "equivalent",
-    "finding": "MK-118",
-    "reason": "With collAdd 0n the mutant sends value: 0n where the original omits value; both are a call carrying no BTC, and the contract reads msg.value as 0 either way."
-  },
-  "packages/core/src/trove/index.ts#adjustTrove#relational#ebd63fc400": {
-    "file": "packages/core/src/trove/index.ts",
-    "line": 584,
-    "kind": "relational",
-    "text": "rpy > netDebt",
-    "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#assertAdjustViable#condition#cb3c40441d": {
     "file": "packages/core/src/trove/index.ts",
@@ -4345,14 +4416,17 @@
       "packages/core/test/write-guards.test.ts"
     ]
   },
-  "packages/core/src/trove/index.ts#assertWithinBorrowingCapacity#relational#6258f6043b": {
+  "packages/core/src/trove/index.ts#chainReasonToError#condition#af38ba8ac2": {
     "file": "packages/core/src/trove/index.ts",
-    "line": 147,
-    "kind": "relational",
-    "text": "capacity >= entireDebt + netDebtChange",
+    "line": 407,
+    "kind": "condition",
+    "text": "p.isRecoveryMode",
     "status": "caught",
-    "finding": "MK-118",
-    "by": ["packages/core/test/write-guards.test.ts"]
+    "by": [
+      "packages/core/test/p27-disclosures.test.ts",
+      "packages/core/test/preview-adjust-reads.test.ts",
+      "packages/core/test/write-guards.test.ts"
+    ]
   },
   "packages/core/src/trove/index.ts#claim#condition#a8ac8a09c9": {
     "file": "packages/core/src/trove/index.ts",
@@ -4608,49 +4682,33 @@
     "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
-  "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.enabled#presence#0d6d8d9192": {
+  "packages/react/src/hooks/reads.ts#useBorrowingPower.enabled#presence#0d6d8d9192": {
     "file": "packages/react/src/hooks/reads.ts",
-    "line": 104,
+    "line": 127,
     "kind": "presence",
     "text": "collateral !== undefined",
     "status": "caught",
     "by": ["packages/react/test/hooks-rendered.test.ts"]
   },
-  "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.enabled#relational#6e79a31761": {
+  "packages/react/src/hooks/reads.ts#useBorrowingPower.enabled#relational#6e79a31761": {
     "file": "packages/react/src/hooks/reads.ts",
-    "line": 104,
+    "line": 127,
     "kind": "relational",
     "text": "collateral > 0n",
     "status": "caught",
     "by": ["packages/react/test/hooks-rendered.test.ts"]
   },
-  "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.fetch#presence#7b1e959a65": {
+  "packages/react/src/hooks/reads.ts#useBorrowingPower.fetch#presence#7b1e959a65": {
     "file": "packages/react/src/hooks/reads.ts",
-    "line": 98,
+    "line": 122,
     "kind": "presence",
     "text": "who !== undefined",
     "status": "caught",
     "by": ["packages/react/test/hooks-rendered.test.ts"]
   },
-  "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.margin#presence#4aedfe9fd6": {
+  "packages/react/src/hooks/reads.ts#useBorrowingPower.queryKey#default#127809b619": {
     "file": "packages/react/src/hooks/reads.ts",
-    "line": 91,
-    "kind": "presence",
-    "text": "params.priceMoveBps !== undefined",
-    "status": "caught",
-    "by": ["packages/react/test/hooks-rendered.test.ts"]
-  },
-  "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.margin#presence#710e31350d": {
-    "file": "packages/react/src/hooks/reads.ts",
-    "line": 88,
-    "kind": "presence",
-    "text": "params.marginWindowSeconds !== undefined",
-    "status": "caught",
-    "by": ["packages/react/test/hooks-rendered.test.ts"]
-  },
-  "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.queryKey#default#127809b619": {
-    "file": "packages/react/src/hooks/reads.ts",
-    "line": 94,
+    "line": 118,
     "kind": "default",
     "text": "collateral ?? 0n",
     "status": "caught",
@@ -4697,6 +4755,54 @@
     "status": "caught",
     "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
+  },
+  "packages/react/src/hooks/reads.ts#useDrawForMargin.enabled#presence#0d6d8d9192": {
+    "file": "packages/react/src/hooks/reads.ts",
+    "line": 170,
+    "kind": "presence",
+    "text": "collateral !== undefined",
+    "status": "caught",
+    "by": ["packages/react/test/hooks-rendered.test.ts"]
+  },
+  "packages/react/src/hooks/reads.ts#useDrawForMargin.enabled#presence#2d71ae0821": {
+    "file": "packages/react/src/hooks/reads.ts",
+    "line": 173,
+    "kind": "presence",
+    "text": "priceFallBps !== undefined",
+    "status": "caught",
+    "by": ["packages/react/test/hooks-rendered.test.ts"]
+  },
+  "packages/react/src/hooks/reads.ts#useDrawForMargin.enabled#presence#6fac20a8f0": {
+    "file": "packages/react/src/hooks/reads.ts",
+    "line": 172,
+    "kind": "presence",
+    "text": "horizonSeconds !== undefined",
+    "status": "caught",
+    "by": ["packages/react/test/hooks-rendered.test.ts"]
+  },
+  "packages/react/src/hooks/reads.ts#useDrawForMargin.enabled#relational#6e79a31761": {
+    "file": "packages/react/src/hooks/reads.ts",
+    "line": 171,
+    "kind": "relational",
+    "text": "collateral > 0n",
+    "status": "caught",
+    "by": ["packages/react/test/hooks-rendered.test.ts"]
+  },
+  "packages/react/src/hooks/reads.ts#useDrawForMargin.fetch#presence#7b1e959a65": {
+    "file": "packages/react/src/hooks/reads.ts",
+    "line": 164,
+    "kind": "presence",
+    "text": "who !== undefined",
+    "status": "caught",
+    "by": ["packages/react/test/hooks-rendered.test.ts"]
+  },
+  "packages/react/src/hooks/reads.ts#useDrawForMargin.queryKey#default#127809b619": {
+    "file": "packages/react/src/hooks/reads.ts",
+    "line": 154,
+    "kind": "default",
+    "text": "collateral ?? 0n",
+    "status": "caught",
+    "by": ["packages/react/test/hooks-rendered.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useMaxWithdrawableCollateral.enabled#presence#28dc2d88df": {
     "file": "packages/react/src/hooks/reads.ts",

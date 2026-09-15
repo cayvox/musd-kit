@@ -33,7 +33,7 @@ export interface MusdWriteResult<TParams, TData> {
   error: MusdError | null
   /** The submitted tx hash (once available), or `null`. */
   hash: Hex | null
-  /** The full core result (e.g. `RedeemResult` carries `truncatedAmount`, `redemptionRate` and `estimatedFeeCollateral`). */
+  /** The full core result (e.g. `RedeemResult` carries `settled`, what the redemption did, beside `estimatedBeforeSend` and `redemptionRate`). */
   data: TData | undefined
   /** Reset the mutation back to idle. */
   reset: () => void
@@ -211,7 +211,13 @@ export function useRefinance(): UseRefinanceResult {
   return { ...w, refinance: () => w.mutate(), refinanceAsync: () => w.mutateAsync() }
 }
 
-/** Result of {@link useRedeem}. `data` is the `RedeemResult` (`hash`, `truncatedAmount`, `redemptionRate`, `estimatedFeeCollateral`, `estimatedCollateralDrawn`, `gas`). */
+/**
+ * Result of {@link useRedeem}. `data` is the `RedeemResult`: `settled`, what the redemption did, read from
+ * its receipt (MK-241), beside `estimatedBeforeSend`, `redemptionRate`, `gas` and `partial`.
+ *
+ * **`isPending` stays true until the redemption has MINED**, because core `redeem()` resolves on the
+ * receipt: what a redemption redeems is decided at inclusion, so there is nothing to report before it.
+ */
 export interface UseRedeemResult extends MusdWriteResult<RedeemParams, RedeemResult> {
   /** Redeem MUSD for BTC (alias of `mutate`). */
   redeem: MusdWriteResult<RedeemParams, RedeemResult>['mutate']

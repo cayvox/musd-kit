@@ -10,27 +10,51 @@ typed, reusable, and checked against the contracts rather than against intuition
 > for testnet and evaluation.** Every write path documents what it does on-chain and what it
 > does not guarantee. License: MIT.
 
-## Borrowing power is two figures, and only one of them is safe to open at (MK-100)
+## How much to borrow is your decision, and the SDK will not make it for you (MK-240)
 
-`getBorrowingPower` returns a **`ceiling`** and a **`recommended`** draw. The `ceiling` is the largest
-draw the contract accepts, with no margin: in normal mode it opens the position at exactly the 110%
-minimum collateral ratio, and interest pushes it below 110% within seconds, where anyone can liquidate
-it and take all of the collateral. **Offer `recommended`.** It is solved against a price stressed by a
-measured adverse move and an interest window, both reported on the result (`margin`) and both stated
-on `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS`.
+`getBorrowingPower` returns the **`ceiling`**: the largest draw the contract accepts right now, with no
+margin. In normal mode it opens the position at exactly the 110% minimum collateral ratio, where
+interest pushes it under 110% within seconds and anyone can liquidate it and take all of the
+collateral. **It is a limit to display, never an amount to borrow.**
+
+A draw that survives being held depends on how long it will be held and how far the price may fall
+meanwhile, and the library knows neither. So `drawForMargin` takes both, and neither has a default:
 
 ```ts
-const power = await musd.getBorrowingPower({ collateral, account })
-power.recommended // the draw to offer
-power.ceiling // a limit to display, never an amount to borrow
-power.margin // { windowSeconds, priceMoveBps, interestRateBps, accrualFraction, stressedPrice }
-
-// A slower flow needs a wider margin; `margin` always reports the one used.
-const slow = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 86_400n })
+const { ceiling } = await musd.getBorrowingPower({ collateral, account })
+const sized = await musd.drawForMargin({
+  collateral,
+  account,
+  horizonSeconds: 7n * 86_400n, // how long the position must survive, your choice
+  priceFallBps: 1_000n, // the BTC fall it must survive, your choice
+})
+sized.draw // survives that fall over that horizon, and nothing more
+sized.margin // { horizonSeconds, priceFallBps, interestRateBps, accrualFraction, stressedPrice }
 ```
 
-Until 0.4.0 this function returned the ceiling alone, as a `bigint`. The full record, including the
-fork measurement, is MK-100 in [`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md).
+**How often a fall was reached, on Mezo mainnet.** The share of start times after which `fetchPrice()`
+fell at least that far within the horizon, over blocks 9841930 to 11868955 (86 days, one sample every
+225 blocks, about 14 minutes):
+
+| Hold for | Fell 2% or more | 5% or more | 10% or more | 20% or more | Worst fall seen |
+|---|---|---|---|---|---|
+| 1 hour | 0.1% | 0.0% | 0.0% | 0.0% | 4.18% |
+| 1 day | 17.4% | 1.0% | 0.0% | 0.0% | 5.70% |
+| 3 days | 43.9% | 3.8% | 0.01% | 0.0% | 10.24% |
+| 7 days | 57.6% | 6.7% | 0.2% | 0.0% | 10.80% |
+| 30 days | 68.2% | 10.4% | 1.1% | 0.0% | 11.64% |
+
+It is one stretch of history in one market regime, not a probability. Neighbouring start times share
+most of their samples, and a dip that recovered between two samples is not in it, so every share is a
+lower bound. Debt redistributed from other Troves' liquidations can also raise a position's debt
+without its owner acting. Reproduce with `pnpm tsx scripts/oracle-moves.ts --end 11869000 --consecutive 0
+--days 90 --step 225 --horizons 3600,86400,259200,604800,2592000 --falls 200,500,1000,2000` in the
+repository, with `MEZO_MAINNET_RPC_URL` set.
+
+Until 0.5.0 this function returned a `recommended` draw sized for one hour and a 2% fall, and this
+README told you to offer it. By the table above, a fall that large followed within a week of 57.6% of start
+times. The record is MK-240 in [`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md),
+and `docs/16-migration-0.4-to-0.5.md` says what to change.
 
 ## Install
 
@@ -112,9 +136,19 @@ the same evaluator `previewAdjustTrove` uses, `close` through `previewClose`, an
 `previewRedeem`, so a refusal those previews would report is thrown before any gas is spent.
 `openTrove` prechecks the fee cap, the debt floor and an existing Trove, and leaves the ratio gates
 to the simulation; ask `previewOpen` first. `refinance` has `previewRefinance` and no precheck of
-its own. `liquidate` and `batchLiquidate` have `isLiquidatable` rather than a preview, and `claim`
-has nothing to preview because `_claimCollateral` (`BorrowerOperations.sol:1119-1124`) has no
-condition. Every write simulates before it sends (MK-109).
+its own. `liquidate` and `batchLiquidate` have `isLiquidatable` rather than a preview. `claim` has
+one condition, a surplus to claim (`CollSurplusPool.sol:90-93`): `getClaimableCollateral` reads it, and
+`claim()` returns `{ claimed: false }` when there is none rather than sending a revert (MK-007, MK-246).
+Every write simulates before it sends (MK-109).
+
+**A redemption reports what it settled.** `redeem()` resolves once the transaction has mined, with
+`settled` read from its `Redemption` event: the MUSD actually redeemed, the collateral drawn, the fee and
+the collateral received. What the SDK expected is kept apart, as `estimatedBeforeSend` (MK-241).
+
+**A withdrawal can cost borrowing capacity you do not get back by re-depositing.** Withdrawing collateral
+stores the lower of the current capacity and one recomputed at today's price
+(`BorrowerOperations.sol:879-899`); adding the collateral back never raises it. Every withdrawal preview
+reports `capacityAfter`, with what a refinance would cost to win it back (MK-242).
 
 **The rule that surprises people, surfaced rather than documented:** the individual ratio
 requirement is ABSOLUTE (`BorrowerOperations.sol:1201`, defined at `:1330-1335`). It tests the

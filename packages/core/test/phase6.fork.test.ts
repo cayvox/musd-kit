@@ -167,12 +167,17 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
 
       // Redeem 5,000: enough to fully close the lowest one or two Troves (each ~2,200 debt)
       // rather than leave one below minNetDebt (an invalid partial → "Unable to redeem any
-      // amount"). truncatedAmount is whatever those whole Troves sum to.
+      // amount"). What settles is whatever those whole Troves sum to.
       const res = await redeemFresh(musdR, { amount: 5_000n * MUSD })
       expect(res.redemptionRate).toBe(rate) // MK-014: the RATE field, named as a rate
-      expect(res.truncatedAmount).toBeGreaterThan(0n)
+      expect(res.settled.redeemedAmount).toBeGreaterThan(0n)
       const evR = await redemptionEv(res.hash)
-      const feeFracR = Number(evR._collateralFee) / Number(evR._collateralSent + evR._collateralFee)
+      // MK-241. `_collateralSent` is collateral DRAWN, fee included (`TroveManager.sol:420-425`), so the
+      // fee fraction is fee over sent. This used to divide by sent plus fee, reading the argument as
+      // net of the fee; at 0.75 percent the two differ by about 5.6e-5, inside the tolerance below, so
+      // it passed while describing the event wrongly.
+      const feeFracR = Number(evR._collateralFee) / Number(evR._collateralSent)
+      expect(res.settled.redeemedAmount, 'MK-241: settled is the event').toBe(evR._actualAmount)
       console.log(
         `[phase6] LOAN-HOLDER feeFrac=${feeFracR} (rate=${Number(rate) / 1e16}%) actual=${evR._actualAmount}`,
       )
@@ -196,7 +201,7 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
       console.log(`[phase6] NO-LOAN pre-redeem margin: requested=5000e18 redeemable=${redeemableN}`)
       const resN = await redeemFresh(clientFor(N), { amount: 5_000n * MUSD })
       const evN = await redemptionEv(resN.hash)
-      const feeFracN = Number(evN._collateralFee) / Number(evN._collateralSent + evN._collateralFee)
+      const feeFracN = Number(evN._collateralFee) / Number(evN._collateralSent)
       console.log(`[phase6] NO-LOAN feeFrac=${feeFracN}`)
       expect(Math.abs(feeFracN - feeFracR)).toBeLessThan(0.0005)
 
@@ -209,9 +214,11 @@ describe('Phase 6, redemption + liquidation keeper surface', () => {
         args: [R.address],
       })
       const resT = await redeemFresh(musdR, { amount: rBal, maxIterations: 2n })
-      expect(resT.truncatedAmount).toBeLessThan(rBal)
-      console.log(`[phase6] TRUNCATION: requested=${rBal} truncated=${resT.truncatedAmount}`)
-      await wait(resT.hash)
+      expect(resT.settled.redeemedAmount).toBeLessThan(rBal)
+      expect(resT.settled.unredeemedAmount).toBe(rBal - resT.settled.redeemedAmount)
+      console.log(
+        `[phase6] TRUNCATION: requested=${rBal} redeemed=${resT.settled.redeemedAmount} (settled)`,
+      )
     } finally {
       await fork.setPrice(origPrice)
       await fork.mineBlocks(1)

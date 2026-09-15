@@ -20,7 +20,9 @@ import {
   type ComputeEntireDebtParams,
   type ComputeICRParams,
   type ComputeLiquidationPriceParams,
+  type DrawForMarginParams,
   type GetBorrowingPowerParams,
+  type MarginDraw,
   type MathDeps,
   type MaxWithdrawable,
   type OpenPreview,
@@ -33,6 +35,7 @@ import {
   computeEntireDebt,
   computeICR,
   computeLiquidationPrice,
+  drawForMargin,
   getBorrowingCapacity,
   getBorrowingPower,
   getHealthFactor,
@@ -124,7 +127,7 @@ export const DEFAULT_CONSTANTS_TTL_MS = 60_000
 export interface CreateMusdClientParams {
   chainId: number
   publicClient: PublicClient
-  /** Optional in Phase 1 (writes arrive in Phase 5); reads use `publicClient`. */
+  /** Required for the write methods, which throw `MissingWalletClient` without one; reads use `publicClient`. */
   walletClient?: WalletClient
   /** Per-contract address overrides (also enables an unsupported chainId). */
   addresses?: Partial<MusdAddresses>
@@ -196,9 +199,13 @@ export interface MusdClient {
   // --- live reads (contract-authoritative; see `read/`) ---
   /** A fully-typed live position, correct by construction. */
   getTrove(address: Address): Promise<Trove>
-  /** Protocol-wide live state ({ tcr, isRecoveryMode, price }). */
+  /** Protocol-wide live state, `{ tcr, isRecoveryMode, price, blockNumber }`, from one block (MK-013). */
   getSystemState(): Promise<SystemState>
-  /** Normal-mode liquidatability (`getCurrentICR < MCR`). */
+  /**
+   * Whether `liquidate(address)` would liquidate the Trove now: `getCurrentICR < MCR` in BOTH modes, and
+   * not the last Trove in the system (MK-001, MK-074). The protocol has no Recovery Mode widening
+   * (`TroveManager.sol:1146-1148`).
+   */
   isLiquidatable(address: Address): Promise<boolean>
   /** BTC/USD from `PriceFeed.fetchPrice()`. */
   getOraclePrice(): Promise<bigint>
@@ -206,7 +213,10 @@ export interface MusdClient {
   balanceOf(address: Address): Promise<bigint>
 
   // --- insertion hints (see `hints/`) ---
-  /** Nominal collateral ratio `(collateral × 1e20) / entireDebt` (pure, no network). */
+  /**
+   * Nominal collateral ratio `(collateral × 1e20) / principal` (pure, no network). The sorted list is
+   * keyed on PRINCIPAL, never on the entire debt (MK-006, MK-090).
+   */
   computeNICR(params: ComputeNICRParams): bigint
   /** The insertion-hint ritual → `{ upperHint, lowerHint, nicr }` for a position of the given shape. */
   computeHints(params: ComputeHintsParams): Promise<Hints>
@@ -250,14 +260,21 @@ export interface MusdClient {
   /** Live `maxBorrowingCapacity`, live entire debt, and the remaining headroom (MK-002). */
   getBorrowingCapacity(owner: Address): Promise<BorrowingCapacity>
   /**
-   * How much a Trove opened now can borrow, as two named figures (MK-100): `ceiling`, the largest
-   * draw the contract accepts with NO margin, which in normal mode opens at exactly the 110%
-   * liquidation threshold, and `recommended`, the largest draw that still clears every open gate
-   * after a measured price move and interest window, reported in `margin`. **Offer `recommended`;
-   * never open at `ceiling`.** An open time calculator only; for an existing Trove use
-   * `previewBorrow`.
+   * The contract's ceiling for an open at this collateral (MK-100, MK-240): the largest draw accepted
+   * right now with NO margin, which in normal mode opens at exactly the 110% liquidation threshold.
+   * **A limit to display, never an amount to borrow**, and there is no amount to borrow on this
+   * result. For a draw sized to a margin, call `drawForMargin`. An open time calculator only; for an
+   * existing Trove use `previewBorrow`.
    */
   getBorrowingPower(params: GetBorrowingPowerParams): Promise<BorrowingPower>
+  /**
+   * The largest open draw that survives a price fall and a holding horizon the CALLER chooses
+   * (MK-240). Both inputs are required and have no default; how long a position is held and how far
+   * the price may fall are the holder's choices, not the library's. Returns the ceiling beside it and
+   * the margin it was solved with. The price history for choosing the inputs is on `drawForMargin` in
+   * `math/getBorrowingPower.ts` and in `docs/03-core-api.md`.
+   */
+  drawForMargin(params: DrawForMarginParams): Promise<MarginDraw>
 
   // --- lifecycle writes (see `trove/`; require a walletClient; simulate-before-send) ---
   /** `openTrove(debt, hints)` payable, opens a Trove with hints absorbed. */
@@ -292,7 +309,7 @@ export interface MusdClient {
 
 /**
  * The entry point: resolve addresses, build typed clients, and lazily read+cache
- * the governable constants. `walletClient` is optional until writes (Phase 5).
+ * the governable constants. `walletClient` is needed only by the write methods.
  *
  * @throws {UnsupportedChain} for a chainId with no bundled deployment and no full override.
  */
@@ -460,6 +477,10 @@ export function createMusdClient(params: CreateMusdClientParams): MusdClient {
     getBorrowingPower: (params) =>
       withTypedErrors(() => getBorrowingPower(mathDeps, params), {
         operation: 'getBorrowingPower',
+      }),
+    drawForMargin: (params) =>
+      withTypedErrors(() => drawForMargin(mathDeps, params), {
+        operation: 'drawForMargin',
       }),
     openTrove: (params) =>
       withTypedErrors(() => openTrove(writeDeps, params), { operation: 'openTrove' }),

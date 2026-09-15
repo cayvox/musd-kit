@@ -4,6 +4,7 @@ import type {
   BorrowingCapacity,
   BorrowingPower,
   ClosePreview,
+  MarginDraw,
   MaxWithdrawable,
   RedemptionPreview,
   RefinancePreview,
@@ -62,64 +63,43 @@ export interface BorrowingPowerHookParams {
   collateral: bigint | undefined
   /** The account that would open. Defaults to the connected wallet (MK-106). */
   account?: Address | undefined
-  /**
-   * Core's `marginWindowSeconds`: a larger window for a slower flow, a smaller one for an immediate
-   * send. Omitted, the measured default applies. The value used is on the detail's `margin`.
-   */
-  marginWindowSeconds?: bigint | undefined
-  /** Core's `priceMoveBps`, from `0n` up to but excluding `10_000n`. Omitted, the measured default. */
-  priceMoveBps?: bigint | undefined
 }
 
-/** Shared query for {@link useBorrowingPower} and {@link useBorrowingPowerDetail}: one fetch. */
-function useBorrowingPowerQuery<TSelected>(
-  params: BorrowingPowerHookParams,
-  select: (power: BorrowingPower) => TSelected,
-): UseQueryResult<TSelected, Error> {
-  const chainId = useChainId()
-  const { collateral, account } = params
+/** {@link useDrawForMargin}'s parameters: the collateral and account, and the margin the caller chooses. */
+export interface DrawForMarginHookParams extends BorrowingPowerHookParams {
+  /**
+   * Core's `horizonSeconds`: how long the position must survive. **Required, with no default**
+   * (MK-240). `undefined` keeps the hook disabled rather than substituting a horizon: a form whose
+   * horizon field is empty has not asked the question yet.
+   */
+  horizonSeconds: bigint | undefined
+  /**
+   * Core's `priceFallBps`: the price fall the position must survive, from `0n` up to but excluding
+   * `10_000n`. **Required, with no default** (MK-240), and `undefined` keeps the hook disabled.
+   */
+  priceFallBps: bigint | undefined
+}
+
+/** The account a borrowing power hook asks for: the caller's, else the connected wallet (MK-106). */
+function useOpenerAccount(account: Address | undefined): Address | undefined {
   // MK-106. The hook runs inside a wagmi context that knows the connected wallet, so an omitted
   // `account` means that wallet rather than "not fee exempt". An explicit account still wins.
   const { address: connected } = useAccount()
-  const who = account ?? connected
-  // MK-100, MK-085. Built once from presence and handed to both the key and the call, so an omitted
-  // override stays omitted and means the measured default in both places.
-  const margin = {
-    ...(params.marginWindowSeconds !== undefined
-      ? { marginWindowSeconds: params.marginWindowSeconds }
-      : {}),
-    ...(params.priceMoveBps !== undefined ? { priceMoveBps: params.priceMoveBps } : {}),
-  }
-  return useMusdQuery<BorrowingPower, TSelected>({
-    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, who, margin),
-    fetch: (client) =>
-      client.getBorrowingPower({
-        collateral: collateral as bigint,
-        ...(who !== undefined ? { account: who } : {}),
-        ...margin,
-      }),
-    // Zero is disabled rather than queried: `getBorrowingPower` rejects a non-positive collateral
-    // with `InvalidAmount` (MK-010), and an empty input parsing to `0n` is the ordinary state of a
-    // calculator being typed into, not an error to render.
-    enabled: collateral !== undefined && collateral > 0n,
-    select,
-  })
+  return account ?? connected
 }
 
 /**
- * **The recommended draw** for an **open** at a given collateral: core `getBorrowingPower`'s
- * `recommended`, never its `ceiling` (MK-100).
+ * **The contract's ceiling** for an **open** at a given collateral: core `getBorrowingPower`'s whole
+ * result, `{ ceiling, ceilingIcr, isRecoveryMode, price }` (MK-100, MK-240).
  *
- * This is the figure to offer, and it is what `data` holds, so a consumer who uses the hook the way
- * the documentation shows cannot open a Trove at the liquidation threshold. It leaves the margin
- * `getBorrowingPower` reports: a Trove opened at it survives the measured adverse price move and
- * interest window stated on `BORROWING_POWER_PRICE_MOVE_BPS` and
- * `BORROWING_POWER_MARGIN_WINDOW_SECONDS`. Until 0.4.0 this hook returned the ceiling, which in
- * normal mode opens at exactly 110% and was liquidated a second later on a fork. For the ceiling,
- * the margin and both starting ratios, use {@link useBorrowingPowerDetail}.
+ * **There is no amount to borrow in `data`, and that is deliberate.** Until 0.5.0 `data` was a bare
+ * `recommended` draw sized for one hour and a 2 percent fall, and the README presented it as the draw
+ * to offer; a position held for days was likely to be liquidated at it (MK-240). The ceiling is a
+ * limit to DISPLAY: a Trove opened at it in normal mode is liquidatable within seconds. For a draw
+ * sized to a margin the user chooses, use {@link useDrawForMargin}.
  *
- * `account` defaults to the connected wallet (MK-106), because the borrowing fee is skipped for a
- * fee exempt account (`BorrowerOperations.sol:637-643`) and the answer differs for it.
+ * `account` defaults to the connected wallet (MK-106), because the borrowing fee is skipped for a fee
+ * exempt account (`BorrowerOperations.sol:637-643`) and the answer differs for it.
  *
  * It sizes an OPEN, not a top-up: an existing Trove is gated on its `maxBorrowingCapacity`
  * (`BorrowerOperations.sol:1358-1365`), which is set at open, lowered on a collateral decrease and
@@ -128,20 +108,70 @@ function useBorrowingPowerQuery<TSelected>(
  *
  * Refetches on new blocks (the binding ratio, the price and the system TCR can all move).
  */
-export function useBorrowingPower(params: BorrowingPowerHookParams): UseQueryResult<bigint, Error> {
-  return useBorrowingPowerQuery(params, (power) => power.recommended)
+export function useBorrowingPower(
+  params: BorrowingPowerHookParams,
+): UseQueryResult<BorrowingPower, Error> {
+  const chainId = useChainId()
+  const { collateral } = params
+  const who = useOpenerAccount(params.account)
+  return useMusdQuery<BorrowingPower>({
+    queryKey: musdQueryKeys.borrowingPower(chainId, collateral ?? 0n, who),
+    fetch: (client) =>
+      client.getBorrowingPower({
+        collateral: collateral as bigint,
+        ...(who !== undefined ? { account: who } : {}),
+      }),
+    // Zero is disabled rather than queried: `getBorrowingPower` rejects a non-positive collateral
+    // with `InvalidAmount` (MK-010), and an empty input parsing to `0n` is the ordinary state of a
+    // calculator being typed into, not an error to render.
+    enabled: collateral !== undefined && collateral > 0n,
+  })
 }
 
 /**
- * Both borrowing power figures, the margin between them and the ratios each opens at (MK-100):
- * core `getBorrowingPower`'s whole result. `ceiling` is a limit to DISPLAY, and a Trove opened at
- * it is liquidatable within seconds in normal mode; offer `recommended`. Shares one fetch with
- * {@link useBorrowingPower}.
+ * **A draw sized to a margin the caller chooses** (core `drawForMargin`, MK-240): the largest open that
+ * survives `priceFallBps` of price fall and `horizonSeconds` of interest, with the ceiling beside it and
+ * the margin it was solved with.
+ *
+ * **Both inputs are required and neither has a default.** How long a position will be held and how far
+ * the price may fall are the user's decisions; the library cannot make them. The hook stays disabled,
+ * `data: undefined`, until both are supplied. The price history that helps choose them is in
+ * `docs/03-core-api.md` and on core `drawForMargin`.
+ *
+ * `data.draw` answers the margin in `data.margin` and nothing else: a larger fall, a longer hold, or
+ * debt redistributed from another Trove's liquidation can still take the position to liquidation.
+ * Render the margin beside the figure, never the figure alone.
  */
-export function useBorrowingPowerDetail(
-  params: BorrowingPowerHookParams,
-): UseQueryResult<BorrowingPower, Error> {
-  return useBorrowingPowerQuery(params, (power) => power)
+export function useDrawForMargin(
+  params: DrawForMarginHookParams,
+): UseQueryResult<MarginDraw, Error> {
+  const chainId = useChainId()
+  const { collateral, horizonSeconds, priceFallBps } = params
+  const who = useOpenerAccount(params.account)
+  return useMusdQuery<MarginDraw>({
+    queryKey: musdQueryKeys.drawForMargin(
+      chainId,
+      collateral ?? 0n,
+      who,
+      horizonSeconds,
+      priceFallBps,
+    ),
+    fetch: (client) =>
+      client.drawForMargin({
+        collateral: collateral as bigint,
+        horizonSeconds: horizonSeconds as bigint,
+        priceFallBps: priceFallBps as bigint,
+        ...(who !== undefined ? { account: who } : {}),
+      }),
+    // PRESENCE for the margin, VALUE for the collateral, and each for a reason (MK-244's enumeration):
+    // `0n` is a meaningful horizon and a meaningful fall, a margin of nothing, so only an absent one
+    // disables; a zero collateral is refused by core and is the empty state of an input.
+    enabled:
+      collateral !== undefined &&
+      collateral > 0n &&
+      horizonSeconds !== undefined &&
+      priceFallBps !== undefined,
+  })
 }
 
 /**
@@ -274,6 +304,10 @@ export function useAdjustTrovePreview(params: {
  * **Refused outright in Recovery Mode**, not merely limited: `_requireNoCollWithdrawal`
  * (`BorrowerOperations.sol:1270`) permits no amount at all, so there is no smaller number
  * that works. The reason is `COLLATERAL_WITHDRAWAL_IN_RECOVERY_MODE` rather than a ratio.
+ *
+ * **Render `capacityAfter` beside the verdict** (MK-242): a withdrawal can permanently lower the Trove's
+ * borrowing capacity, adding the collateral back does not restore it, and `capacityAfter.recovery` is
+ * the refinance fee and rate change that would.
  */
 export function useWithdrawCollateralPreview({
   owner,
@@ -295,9 +329,15 @@ export function useWithdrawCollateralPreview({
  * The largest collateral withdrawal the contract would accept right now, and which gate caps
  * it (core `maxWithdrawableCollateral`, MK-042).
  *
- * This is the "max" button's number. `limitedBy` says whether the cap is the position's own
- * ratio, the system ratio, or Recovery Mode refusing withdrawal entirely, which are three
- * different things to tell a user.
+ * **A limit to display, not an amount to withdraw** (MK-247). When the individual ratio caps it, a
+ * withdrawal of exactly `amount` leaves the Trove at the 110% liquidation threshold
+ * (`TroveManager.sol:1146-1148`): refused a second later as interest accrues (MK-051), and if the price
+ * rises first, accepted and left at MCR, where the next fall liquidates it. Do not wire it to a "max"
+ * button that sends it. It also removes borrowing capacity that adding the collateral back does not
+ * restore, reported with the refinance that would win it back in `capacityAfter` (MK-242).
+ *
+ * `limitedBy` says whether the cap is the position's own ratio, the system ratio, or Recovery Mode
+ * refusing withdrawal entirely, which are three different things to tell a user.
  */
 export function useMaxWithdrawableCollateral({
   owner,
@@ -334,8 +374,8 @@ export function useClosePreview({
  * Preview a redemption (core `previewRedeem`, MK-048): what a single `redeemCollateral` call will
  * ACTUALLY redeem, by walking the sorted list the way the contract's loop does.
  *
- * **Do not size a redemption from `RedeemResult.truncatedAmount`.** That is what
- * `getRedemptionHints` returned, and the helper answers a different question: it sizes each
+ * **Do not size a redemption from `getRedemptionHints`.** Its truncated amount answers a different
+ * question, and `RedeemResult` no longer carries it (MK-241): the helper sizes each
  * partial to a Trove's headroom above the debt floor and then moves on, which needs one call per
  * Trove. A single call hands the whole amount to the first eligible Trove and reverts if that
  * breaches the floor.

@@ -159,7 +159,7 @@ describe('Phase 7, errors/ taxonomy + decoder (unit)', () => {
     const checks: [MusdError, MusdErrorCode][] = [
       [new BelowMinimumDebt(1800n, 100n), MusdErrorCode.BELOW_MINIMUM_DEBT],
       [
-        new InsufficientCollateral(1_050_000_000_000_000_000n, 1_100_000_000_000_000_000n),
+        new InsufficientCollateral(3_000_000_000_000_000_000n, 2_000_000_000_000_000_000n),
         MusdErrorCode.INSUFFICIENT_COLLATERAL,
       ],
       [new TroveNotFound(a), MusdErrorCode.TROVE_NOT_FOUND],

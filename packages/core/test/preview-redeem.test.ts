@@ -83,6 +83,9 @@ const G1 = marginOf(ENTIRE1)
 
 const base = {
   globalInterestRateBps: RATE_BPS,
+  troveOwnersCount: 42n,
+  sortedTrovesSize: 42n,
+  canMint: true, // MK-245: a populated system
   musdBalance: 1_000_000n * MUSD,
   minNetDebt: M,
   tcr: 2n * MUSD,
@@ -269,6 +272,10 @@ describe('MK-048, the precheck as a typed throw rather than a revert', () => {
       getCurrentICR: 2n * MUSD,
       getEntireDebtAndColl: [10n * MUSD, ENTIRE1, 0n, 0n, 0n, 0n],
       redemptionRate: 7_500_000_000_000_000n,
+      // MK-245. The last Trove rule's counts and flag: a populated system.
+      getTroveOwnersCount: 42n,
+      getSize: 42n,
+      mintList: true,
     }
     const publicClient = {
       readContract: async ({ functionName }: { functionName: string }) => {

@@ -85,6 +85,7 @@ export {
   troveAmounts,
   netDebtOf,
   maxBorrowingCapacityAt,
+  capacityAfterAdjustment,
   isTroveLiquidatable,
   previewOpen,
   getBorrowingPower,
@@ -146,9 +147,10 @@ export {
   exceedsRateCap,
   type GetBorrowingPowerParams,
   type BorrowingPower,
-  type BorrowingPowerMargin,
-  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
-  BORROWING_POWER_PRICE_MOVE_BPS,
+  drawForMargin,
+  type DrawForMarginParams,
+  type DrawMargin,
+  type MarginDraw,
 } from './math'
 
 // Lifecycle write types (the methods live on the client; require a walletClient).
@@ -166,6 +168,9 @@ export {
   DEFAULT_REDEMPTION_MAX_ITERATIONS,
   type RedeemParams,
   type RedeemResult,
+  type SettledRedemption,
+  type RedemptionEstimateBeforeSend,
+  settledRedemptionFrom,
 } from './redemption'
 
 // Errors, the full discriminated taxonomy (docs/06). `UnsupportedChain` and

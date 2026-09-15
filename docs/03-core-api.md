@@ -207,78 +207,104 @@ musd.previewBorrow({ owner, amount });            // → verdict + binding const
 musd.previewRefinance(owner);                     // → fee, resulting principal/ICR, verdict
 
 musd.getBorrowingPower({ collateral, account?, price? });
-                                                 // → { ceiling, recommended, ceilingIcr,
-                                                 //     recommendedIcr, margin, isRecoveryMode,
-                                                 //     price }, for an OPEN only (MK-100)
-                                                 //   offer `recommended`; never open at `ceiling`
+                                                 // → { ceiling, ceilingIcr, isRecoveryMode, price },
+                                                 //   for an OPEN only (MK-100, MK-240); a limit,
+                                                 //   never an amount to borrow
                                                  //   throws InvalidAmount for collateral <= 0
+musd.drawForMargin({ collateral, horizonSeconds, priceFallBps, account?, price? });
+                                                 // → { draw, drawIcr, margin, ceiling, ... }
+                                                 //   both margin inputs REQUIRED, no default (MK-240)
 musd.computeICR({ collateral, entireDebt, price });        // → bigint
 musd.computeLiquidationPrice({ collateral, entireDebt });  // → bigint
 musd.computeEntireDebt({ draw, rate, elapsedSeconds });    // → bigint (preview accrual; see 05 §2)
 musd.getHealthFactor({ icr });                             // → number
 ```
 
-### `getBorrowingPower` returns two figures: offer `recommended`, never open at `ceiling` (MK-100)
+### The ceiling is a fact about the contract; how much to borrow is the caller's decision (MK-100, MK-240)
 
 **`ceiling` is the largest draw the contract accepts, and that is all it is.** In normal mode it
 opens the position at exactly the 110% minimum collateral ratio (`_requireICRisAboveMCR`,
 `BorrowerOperations.sol:657`, defined at `:1330-1335`). Liquidation is `ICR < MCR`
 (`TroveManager.sol:1146-1148`), and the debt it is measured against accrues interest every second
 (`TroveManager.sol:1513-1527`). So a position opened at the ceiling can be liquidated by anyone
-within seconds, and a liquidation takes all of the collateral. Until 0.4.0 this function returned
-only that figure, as a `bigint`.
+within seconds, and a liquidation takes all of the collateral.
 
-**`recommended` is the same solver at a stressed price**, `price * (1 - priceMoveBps / 10000) / (1 +
-interest over windowSeconds)`, so it clears every open gate after that fall and that accrual. The
-two constants are `BORROWING_POWER_PRICE_MOVE_BPS = 200n` and
-`BORROWING_POWER_MARGIN_WINDOW_SECONDS = 3600n`, chosen from a week of Mezo mainnet `fetchPrice()`
-read by `scripts/oracle-moves.ts`: the worst fall inside any hour of that week was 190.78 bps, and
-200 is that rounded up. The measurement, and what it cannot show, is on the constants' docstrings.
-Both are reported on `margin` and can be overridden per call.
-
-**Override the margin when your flow is not the assumed one.** A flow slower than an hour between
-reading the figure and the position standing on its own needs a wider margin; a transaction sent
-at once may take a narrower one. The measured values stay the default, and the result always carries
-the margin it was solved with, so the figure in hand is never ambiguous:
+**There is no recommended draw, because the library cannot know the two things one depends on**: how
+long the position will be held, and how far the price may fall meanwhile. `drawForMargin` takes both as
+required inputs, with no default, and returns the largest draw that clears every open gate after that
+fall and that horizon of interest, beside the ceiling and the margin it was solved with:
 
 ```ts
-const slow = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 86_400n, priceMoveBps: 500n });
-slow.margin.windowSeconds;  // 86400n, the margin this `recommended` was solved with
-const fast = await musd.getBorrowingPower({ collateral, account, marginWindowSeconds: 60n });
-fast.margin.priceMoveBps;   // 200n, the default, because it was not overridden
+const sized = await musd.drawForMargin({
+  collateral,
+  account,
+  horizonSeconds: 7n * 86_400n, // your choice
+  priceFallBps: 1_000n,         // your choice
+});
+sized.draw;     // survives that fall over that horizon, and nothing more
+sized.drawIcr;  // the ratio it opens at
+sized.ceiling;  // the contract's limit, from the same read
+sized.margin;   // { horizonSeconds, priceFallBps, interestRateBps, accrualFraction, stressedPrice }
 ```
 
-`priceMoveBps` must be at least `0n` and below `10_000n`, and `marginWindowSeconds` at least `0n`;
-anything else throws `InvalidAmount` before a read. A negative override is refused rather than
-accepted because it would lift the stressed price above the real one, and the solver's clamp would
-then return the ceiling under the name `recommended`. `0n` for both is allowed and returns the
-ceiling under both names, on purpose, for a caller who asks for no margin.
+A missing input, a negative horizon, or a fall outside `0n <= priceFallBps < 10_000n` throws
+`InvalidAmount` before any read. `0n` for both is allowed and returns the ceiling as `draw`, for a caller
+who asks for no margin.
 
-```ts
-const power = await musd.getBorrowingPower({ collateral, account });
-power.recommended;     // the draw to offer
-power.recommendedIcr;  // the ratio it opens at, about 2% above MCR in normal mode
-power.ceiling;         // a limit to display, not an amount to borrow
-power.margin;          // { windowSeconds, priceMoveBps, interestRateBps, accrualFraction, stressedPrice }
-const preview = await musd.previewOpen({ collateral, debt: power.recommended, account });
-```
+**Choosing the inputs.** The share of start times after which Mezo mainnet `fetchPrice()` fell at least
+the given amount within the horizon, over blocks 9841930 to 11868955 (86 days, one sample every 225
+blocks, about 14 minutes), measured by `MEZO_MAINNET_RPC_URL=<endpoint> pnpm tsx scripts/oracle-moves.ts
+--end 11869000 --consecutive 0 --days 90 --step 225 --horizons 3600,86400,259200,604800,2592000 --falls
+200,500,1000,2000`:
 
-**Proven on a fork**, by `packages/core/test/zz-borrowing-power-boundary.fork.test.ts`: opened at
-`recommended`, the Trove is not liquidatable after 1, 60, 600 and 3600 seconds; opened at `ceiling`,
-it is liquidatable after each of those and is liquidated. An hour in, a price fall of 199 bps leaves
-the recommended Trove safe and one of 210 bps makes it liquidatable, so the margin is the stated one
-and no other. In Recovery Mode the ceiling lands on CCR, which is not a liquidation threshold. When
-the whole system's ratio binds, the ceiling sent a second later is refused with
-`SystemRatioBelowCCR` while `recommended` opens.
+| Hold for | Fell 2% or more | 5% or more | 10% or more | 20% or more | Worst fall seen |
+|---|---|---|---|---|---|
+| 1 hour | 0.1% | 0.0% | 0.0% | 0.0% | 4.18% |
+| 1 day | 17.4% | 1.0% | 0.0% | 0.0% | 5.70% |
+| 3 days | 43.9% | 3.8% | 0.01% | 0.0% | 10.24% |
+| 7 days | 57.6% | 6.7% | 0.2% | 0.0% | 10.80% |
+| 30 days | 68.2% | 10.4% | 1.1% | 0.0% | 11.64% |
 
-**What the margin does not promise.** A price that falls more than 2% within the hour takes a
-recommended Trove to liquidation. The margin makes an ordinary hour survivable, not every one.
+**What that table is not.** It is one stretch of history in one market regime, not a distribution of
+regimes. Neighbouring start times share most of their samples, so the shares are not independent
+trials. A dip that recovered between two samples is not in it, so every share is a lower bound and the
+true worst falls are larger. The 30 day row counts 5917 starts against 9005 for the hour, because a
+start counts only when its whole horizon was observed. And price is not the only risk: debt
+redistributed from other Troves' liquidations (`TroveManager.sol:980-1047`) raises a position's debt
+without its owner acting. Read it as how often a margin of that size would have been crossed recently.
 
-**The other limit figures do not get a second figure, because they fail loudly.** `_adjustTrove`
-brings interest current before any gate (`BorrowerOperations.sol:769`), so `capacity.remaining`,
-`maxWithdrawableCollateral().amount` and `minimumCollateralToClearIcr` are refused at their exact
-value a block later rather than accepted at the threshold. `zz-limit-figures.fork.test.ts` sends each
-one second after the read and pins the refusal beside a control that succeeds.
+**Why this replaced `recommended`.** Until 0.5.0 `getBorrowingPower` also returned `recommended`, solved
+for a 200 bps fall and 3600 seconds of interest, and both READMEs presented it as the draw to offer. That
+margin answered how long a figure survives between being read and being mined. The name answered how
+much to borrow and hold, which the library cannot answer. By the table above, a 2% fall followed within a
+day of 17.4% of start times and within a week of 57.6% (MK-240).
+
+**Proven on a fork**, by `packages/core/test/zz-borrowing-power-boundary.fork.test.ts`: opened at the
+ceiling, the Trove is liquidatable after 1, 60, 600 and 3600 seconds and is liquidated. Opened at a
+`drawForMargin` figure for a day and a 500 bps fall, it is not liquidatable at any of those delays; a day
+later a fall of 499 bps leaves it safe and one of 510 bps makes it liquidatable, so the margin is the one
+asked for and no other. In Recovery Mode the ceiling lands on CCR, which is not a liquidation threshold.
+When the whole system's ratio binds, the ceiling sent a second later is refused with
+`SystemRatioBelowCCR` while a margin draw opens.
+
+**Every other figure the SDK offers as a maximum or an advice, and the horizon each is true for** (MK-240,
+MK-247). Each was asked the question MK-240 asked of `recommended`: over what horizon is it true, and does
+its name or its documentation imply a longer one.
+
+| Figure | True for | Implies longer? |
+|---|---|---|
+| `getBorrowingPower().ceiling` | the block it was read at | No: documented as a limit, never an amount |
+| `getBorrowingCapacity().remaining`, `previewBorrow` `capacity.remaining` | the block; refused at its exact value a block later (MK-072) | No: documented as headroom, not a draw |
+| `maxWithdrawableCollateral().amount` | the block; refused a second later, and accepted only if the price rose, leaving the Trove at MCR | **It did**: the React hook called it the max button's number. Corrected (MK-247) |
+| `minimumCollateralToClearIcr` | the block; refused at its exact value a block later | No: documented as a floor, add a margin |
+| `previewClose().musdRequired` | the block; the chain requires more a block later (MK-050) | No: documented as a snapshot |
+| `previewRedeem().nextViableAmount` | about 600 seconds, sized for 900 (MK-095, MK-104) | No: the window is on the field, and a redeemer does not hold a redemption |
+| `computeLiquidationPrice`, `Trove.liquidationPrice` | the block; the threshold rises as debt accrues (MK-109) | No: documented as a threshold near which liquidation begins |
+
+`capacity.remaining`, `maxWithdrawableCollateral().amount` and `minimumCollateralToClearIcr` fail loudly
+at their exact value: `_adjustTrove` brings interest current before any gate (`BorrowerOperations.sol:769`),
+and `zz-limit-figures.fork.test.ts` sends each one second after the read and pins the refusal beside a
+control that succeeds.
 
 ### `getBorrowingPower` costs a handful of calls, not eighty
 
@@ -396,18 +422,27 @@ borrow is gated on.
 Skipping the preview is safe but wasteful: simulate before send still surfaces the Recovery
 Mode revert as a typed `RecoveryModeRestriction`. The preview lets you know without sending.
 
-### Redemption returns a rate AND an amount
+### Redemption returns what it settled, a rate, and an estimate named as one
 
-`RedeemResult.fee` is **gone** (MK-014). It held the rate while its name said amount.
+`RedeemResult.fee` is **gone** (MK-014). It held the rate while its name said amount. And since 0.5.0
+`redeem()` resolves once the transaction has mined, with what it did read from its receipt (MK-241):
 
 ```ts
-// before
-result.fee                       // actually the RATE, a 1e18 fraction
-// after
-result.redemptionRate            // the rate, named as a rate
-result.estimatedFeeCollateral    // the fee AMOUNT, in BTC wei
-result.estimatedCollateralDrawn  // what that estimate was computed against
+const result = await musd.redeem({ amount });
+result.settled.redeemedAmount;      // MUSD actually redeemed and burned, `Redemption._actualAmount`
+result.settled.unredeemedAmount;    // asked for and not redeemed, still in your balance
+result.settled.collateralDrawn;     // `_collateralSent`, which INCLUDES the fee (TroveManager.sol:420-425)
+result.settled.collateralFee;       // `_collateralFee`, in BTC wei
+result.settled.collateralReceived;  // drawn less the fee, what arrived (:416-418, :444-447)
+result.redemptionRate;              // the rate, named as a rate
+result.estimatedBeforeSend;         // { redeemable, collateralDrawn, collateralFee }, from previewRedeem's walk
 ```
+
+Until 0.5.0 the result carried `truncatedAmount` and a fee estimated from it, both the hint helper's
+figures. When a later partial cancelled, the chain redeemed far less: on a fork, 1,808.46 MUSD settled
+where the helper's figure for the same state was 3,515.14 (`zz-redemption-settled.fork.test.ts`). A
+reverted redemption throws `RedemptionFailed`; `settledRedemptionFrom(receipt, troveManager)` reads a
+receipt you hold yourself.
 
 The protocol's own naming is the trap: `redemptionRate()` is a rate
 (`BorrowerOperations.sol:129`), while `getRedemptionRate(collateralDrawn)` returns a fee
@@ -609,11 +644,17 @@ if (!p.viable && p.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR') {
 p.redeemable;            // what a single call will ACTUALLY redeem
 ```
 
+**One more whole consumption rule, from `_closeTrove`** (MK-245). A redemption that consumes a Trove whole
+closes it (`TroveManager.sol:1252-1261`), and `_closeTrove` requires more than one Trove in the system
+whenever BorrowerOperations can mint (`:1397-1399`, `:1488-1496`). Both counts fall with each Trove the
+call consumes, so a large enough redemption reaches the last one, and the whole call reverts. The preview
+reports it as `LAST_TROVE_IN_SYSTEM` and `redeem` throws `LastTroveInSystem` before gas.
+
 `redeem` prechecks this and throws `RedemptionBreachesDebtFloor` with both edges, so you do not pay
 gas to discover it.
 
-**Do not size a redemption from `RedeemResult.truncatedAmount`.** That is what
-`getRedemptionHints` returned, and the helper answers a different question: it sizes each partial to
+**Do not size a redemption from `getRedemptionHints`' truncated amount**, which `RedeemResult` no longer
+carries (MK-241). The helper answers a different question: it sizes each partial to
 a Trove's headroom and then moves to the next one, which needs one call per Trove
 (`HintHelpers.sol:138-162`). It reported `headroom + 1`, `netDebt / 2` and `netDebt - 1` as fully
 redeemable on a live chain where all three revert.
@@ -735,8 +776,8 @@ could not be reconstructed from the tree. The three without one are in the last 
 | `adjustTrove` | **`previewAdjustTrove`** | **all of them** | every row above, by combination; singular coll change `:788` |
 | `close` | **`previewClose`** | **all of them** | active `:951`; *if `canMint`* not recovery `:954`; balance >= debt-200 `:963`; *if `canMint`* TCR>=CCR `:972` |
 | `refinance` | **`previewRefinance`** | Trove active, Recovery Mode | not recovery `:1023`; active `:1024`; ICR>=MCR **after the fee** `:1058`; TCR>=CCR `:1059` |
-| `claim` | **none, and none is possible** | matches one revert, rethrows the rest | **none.** `_claimCollateral` (`:1119-1124`) reads the surplus pool and sends |
-| `redeem` | **`previewRedeem`** | positive, MUSD balance, rate cap, **and the debt floor gap** | `TroveManager.sol`: TCR>=MCR `:318`; amount>0 `:319`; balance `:320`; a partial that would leave a Trove under `minNetDebt` `:1299-1306` |
+| `claim` | **`getClaimableCollateral`** reads the one input | matches one revert, rethrows the rest | a surplus to claim: `CollSurplusPool.claimColl` requires one (`CollSurplusPool.sol:90-93`). This row said "none" until MK-246 |
+| `redeem` | **`previewRedeem`** | positive, MUSD balance, rate cap, **the debt floor gap and the last Trove** | `TroveManager.sol`: TCR>=MCR `:318`; amount>0 `:319`; balance `:320`; a partial that would leave a Trove under `minNetDebt` `:1299-1306`; a whole consumption of the last Trove `:1397-1399`, `:1488-1496` (MK-245) |
 | `liquidate`, `batchLiquidate` | none, permissionless by design | none | `TroveManager.sol`: non empty `:657`; something liquidatable `:690` |
 
 ### Four rules that are not what a Liquity reader expects
@@ -760,6 +801,29 @@ if (!p.viable && p.bindingConstraint === 'ICR_BELOW_THRESHOLD' && p.icrIsAbsolut
 (`:1265-1275`) never looks at TCR, and `_requireValidAdjustmentInNormalMode` (`:1197-1210`) checks it
 on every adjustment. So a pure top-up and a pure repayment are **ungated in Recovery Mode** and gated
 in normal mode, which is the opposite of the intuition.
+
+**Every withdrawal preview reports the capacity it leaves** (MK-242). `_adjustTrove` stores
+`min(current, collateral * price / 1.1)` when collateral decreases (`:879-899`) and never raises it when
+collateral is added (`:880`), so a withdrawal during a price fall can cut every later borrow, and depositing
+the same BTC again does not undo it. `previewAdjustTrove`, `previewWithdrawCollateral` and
+`maxWithdrawableCollateral` return `capacityAfter: { current, resulting, lost, restoredByAddingCollateral:
+false, recovery }`, where `recovery` is a refinance projected through `evaluateRefinance` on the resulting
+state: its fee, the rate the Trove would move to, the capacity it would write, and whether it is allowed
+now. Proven by sending in `zz-capacity-ratchet.fork.test.ts`: the chain stored the previewed capacity to
+the wei, a refinance wrote the projected capacity to the wei and charged the projected fee within accrual,
+and re-adding the collateral left the capacity where the withdrawal put it.
+
+**`adjustTrove`'s legs are read by value** (MK-244). A zero leg is no leg: `{ addCollateral: 0n,
+withdrawCollateral: x }` is a withdrawal and is sent as one, and `{ borrow: 0n, addCollateral: x }` is a
+top up. Both collateral legs non zero, or both debt legs non zero, are refused before any read, from the
+same helper the preview reports them from. Until 0.5.0 the write path refused zero valued legs by
+presence, while the preview judged the same input viable and the contract accepted it.
+
+**One gate, one error** (MK-243). The individual ratio gate throws `ICRBelowMCR` whether the precheck or
+the revert decoder reaches it, with the resulting ratio on its context when the precheck does; its
+Recovery Mode counterpart throws `RecoveryModeRestriction`. `InsufficientCollateral` now names only a
+withdrawal larger than the collateral. And the capacity gate is reported after the ratio gates, as
+`_adjustTrove` checks them (`:840-845` before `:850-852`).
 
 **3. A plain `borrow` can never succeed in Recovery Mode.** `withdrawMUSD` sends no collateral, so
 `newICR < oldICR` always and `_requireNewICRisAboveOldICR` (`:1273`) cannot be satisfied at any draw
@@ -819,7 +883,7 @@ an error means something went wrong.
 ```ts
 // Redeem MUSD for BTC, uses getRedemptionHints, applies the live redemptionRate()
 // (to ALL redeemers, the "0% for loan holders" rule was disproven in Phase 6, see
-//  01-ground-truth §8), handles truncatedAmount.
+//  01-ground-truth §8), and resolves on the receipt with what settled (MK-241).
 await musd.redeem({ amount: parseMusd('1000'), maxIterations: 10n }); // 0n is no limit, as on chain (MK-114)
 
 // Keeper surface, typed, with a precheck

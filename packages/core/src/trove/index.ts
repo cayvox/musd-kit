@@ -11,6 +11,7 @@ import {
   BelowMinimumDebt,
   CollateralWithdrawalBlocked,
   ExceedsBorrowingCapacity,
+  ICRBelowMCR,
   InsufficientCollateral,
   InsufficientMusdBalance,
   InvalidAdjustment,
@@ -34,10 +35,13 @@ import type { MathDeps } from '../math/deps'
 // path that decides whether the borrowing fee applies goes through it.
 import { isBorrowingFeeCharged } from '../math/fee'
 import {
+  type AdjustLegs,
   type AdjustPreview,
+  type AdjustShapeReason,
   type PreviewAdjustParams,
-  borrowingCapacityOf,
-  previewAdjustTrove,
+  adjustLegsOf,
+  adjustShapeReasons,
+  previewAdjustVerdict,
 } from '../math/previewAdjust'
 import { previewClose } from '../math/previewClose'
 
@@ -59,8 +63,10 @@ const BO_ABI: Abi = borrowerOperationsAbi
  * `getEntireDebtAndColl` returns `(coll, principal, interest, ...)` and adds live-accrued
  * interest to the stored values, which is what the contract itself sees: every write path
  * calls `updateSystemAndTroveInterest(_borrower)` before reading
- * (`BorrowerOperations.sol:769`). The stored `getTroveDebt` and `getTroveInterestOwed` are
- * stale until something triggers that update, so they are deliberately not used here.
+ * (`BorrowerOperations.sol:769`). `getTroveInterestOwed` is the stored interest and does not advance
+ * until that update (`TroveManager.sol:613-617`); `getTroveDebt` accrues to the block
+ * (`:591-595`, `:1513-1527`) but omits pending redistribution, which `getEntireDebtAndColl` folds in
+ * (`:796-801`) and the update applies before any gate. So neither is used here (MK-246).
  */
 async function currentPosition(
   deps: WriteDeps,
@@ -121,37 +127,6 @@ async function effectiveBorrowingFee(
       })
   if (!isBorrowingFeeCharged(isRecoveryMode, feeExempt)) return 0n
   return getBorrowingFee(deps, debt)
-}
-
-/**
- * Fail a debt increase the contract's capacity gate would reject, BEFORE simulate, with the
- * real numbers attached (MK-002).
- *
- * The gate is `maxBorrowingCapacity >= netDebtChange + debt`
- * (`BorrowerOperations.sol:1358-1365`). `debt` there is read after
- * `updateSystemAndTroveInterest` (`:769`), so accrued interest counts; the SDK compares
- * against the live entire debt for the same reason.
- */
-async function assertWithinBorrowingCapacity(
-  deps: WriteDeps,
-  owner: Address,
-  entireDebt: bigint,
-  netDebtChange: bigint,
-): Promise<void> {
-  const capacity = await deps.publicClient.readContract({
-    address: deps.addresses.troveManager,
-    abi: troveManagerAbi,
-    functionName: 'getTroveMaxBorrowingCapacity',
-    args: [owner],
-  })
-  if (capacity >= entireDebt + netDebtChange) return
-  throw new ExceedsBorrowingCapacity(
-    capacity,
-    entireDebt,
-    netDebtChange,
-    // MK-094. The headroom, through the one factory rather than a third copy of the ternary.
-    borrowingCapacityOf(capacity, entireDebt).remaining,
-  )
 }
 
 function getBorrowingFee(deps: WriteDeps, debt: bigint): Promise<bigint> {
@@ -357,9 +332,10 @@ async function assertAdjustViable(
   owner: Address,
   params: Omit<PreviewAdjustParams, 'owner'>,
 ): Promise<void> {
-  const preview = await previewAdjustTrove(mathDepsOf(deps), { owner, ...params })
+  // MK-242. The verdict without the refinance projection: a precheck reads what it decides on and no more.
+  const preview = await previewAdjustVerdict(mathDepsOf(deps), { owner, ...params })
   if (preview.viable) return
-  throw adjustReasonToError(preview, owner)
+  throw adjustReasonToError(preview, owner, adjustLegsOf(params))
 }
 
 /** `WriteDeps` already carries everything the preview calculators need. */
@@ -378,10 +354,23 @@ function mathDepsOf(deps: WriteDeps): MathDeps {
  * `bindingConstraint` is used rather than the whole list because it is the one the chain
  * would report first, so the thrown error matches what a revert would have said.
  */
-function adjustReasonToError(p: AdjustPreview, owner: Address): MusdError {
+function adjustReasonToError(p: AdjustPreview, owner: Address, legs: AdjustLegs): MusdError {
   switch (p.bindingConstraint) {
     case 'TROVE_NOT_ACTIVE':
       return new TroveNotFound(owner)
+    case 'ZERO_DEBT_INCREASE':
+    case 'COLLATERAL_ADD_AND_WITHDRAW':
+    case 'DEBT_INCREASE_AND_REPAY':
+    case 'NO_CHANGE_REQUESTED':
+      return shapeReasonToError(p.bindingConstraint)
+    default:
+      return chainReasonToError(p, legs)
+  }
+}
+
+/** The typed error for a shape reason, shared by the early refusal and the precheck (MK-244). */
+function shapeReasonToError(reason: AdjustShapeReason): MusdError {
+  switch (reason) {
     case 'NO_CHANGE_REQUESTED':
       return new InvalidAdjustment(
         'No change requested: the contract requires a collateral change or a debt change (BorrowerOperations.sol:1377-1386).',
@@ -393,25 +382,47 @@ function adjustReasonToError(p: AdjustPreview, owner: Address): MusdError {
     case 'DEBT_INCREASE_AND_REPAY':
       // MK-077. No contract citation, deliberately: `_adjustTrove` takes one debt leg
       // (`BorrowerOperations.sol:757-758`), so this is the SDK refusing an input the chain
-      // cannot express, not a gate the chain enforces. `adjustTrove` also refuses it earlier
-      // and on presence rather than value.
+      // cannot express, not a gate the chain enforces. On values since MK-244.
       return new InvalidAdjustment(
         'Cannot borrow and repay in one call: adjustTrove takes a single debt leg.',
       )
     case 'ZERO_DEBT_INCREASE':
       return new InvalidAmount('increaseDebt', 0n)
+  }
+}
+
+/** The typed error for a reason that needed the chain's state to decide. */
+function chainReasonToError(p: AdjustPreview, legs: AdjustLegs): MusdError {
+  switch (p.bindingConstraint) {
     case 'WITHDRAWAL_EXCEEDS_COLLATERAL':
-      return new InsufficientCollateral(p.resultingIcr, p.icrThreshold)
+      return new InsufficientCollateral(
+        legs.withdrawCollateral,
+        p.resultingCollateral + legs.withdrawCollateral - legs.addCollateral,
+      )
     case 'COLLATERAL_WITHDRAWAL_IN_RECOVERY_MODE':
       return new CollateralWithdrawalBlocked()
+    // MK-243. The gate's own code, the one the revert decoder throws for the same revert
+    // (`errors/mapRevert.ts`): MCR in normal mode, CCR in Recovery Mode.
     case 'ICR_BELOW_THRESHOLD':
-      return new InsufficientCollateral(p.resultingIcr, p.icrThreshold)
+      return p.isRecoveryMode
+        ? new RecoveryModeRestriction(undefined, {
+            resultingIcr: p.resultingIcr,
+            ccr: p.icrThreshold,
+          })
+        : new ICRBelowMCR(undefined, { resultingIcr: p.resultingIcr, mcr: p.icrThreshold })
     case 'ICR_NOT_IMPROVED_IN_RECOVERY_MODE':
       return new RecoveryModeRestriction(undefined)
     case 'TCR_BELOW_CCR':
       return new SystemRatioBelowCCR(undefined, { resultingTcr: p.resultingTcr, ccr: CCR })
+    // MK-243. The numbers ride on the preview, so the one precheck carries them; the separate capacity
+    // guard that used to run before the ratio gates, in the opposite order to `:840-852`, is gone.
     case 'EXCEEDS_BORROWING_CAPACITY':
-      return new ExceedsBorrowingCapacity(undefined, undefined, p.netDebtChange, undefined)
+      return new ExceedsBorrowingCapacity(
+        p.capacity.capacity,
+        p.capacity.entireDebt,
+        p.netDebtChange,
+        p.capacity.remaining,
+      )
     case 'BELOW_MINIMUM_DEBT':
       return new BelowMinimumDebt()
     case 'REPAY_EXCEEDS_DEBT':
@@ -462,11 +473,11 @@ export async function borrow(deps: WriteDeps, params: BorrowParams): Promise<Wri
   assertFeeWithinCap(amount, fee, params.maxFeePercentage)
   const pos = await currentPosition(deps, wallet.account.address)
   assertTroveActive(pos.entireDebt, wallet.account.address)
-  // MK-002: the capacity gate, checked before simulate rather than surfaced as a revert.
-  await assertWithinBorrowingCapacity(deps, wallet.account.address, pos.entireDebt, amount + fee)
-  // MK-042. And the ratio gates, which capacity alone never covered. In Recovery Mode this
-  // is what reports that a plain borrow can NEVER succeed: `withdrawMUSD` sends no
-  // collateral, so `_requireNewICRisAboveOldICR` (`:1273`) cannot be satisfied.
+  // MK-002, MK-042, MK-243. The ratio gates and then the capacity gate, in the contract's order
+  // (`BorrowerOperations.sol:840-845` before `:850-852`), from the one evaluator. In Recovery Mode this is
+  // what reports that a plain borrow can NEVER succeed: `withdrawMUSD` sends no collateral, so
+  // `_requireNewICRisAboveOldICR` (`:1273`) cannot be satisfied. The capacity guard that ran first here
+  // until 0.5.0 threw `ExceedsBorrowingCapacity` where the chain and `previewBorrow` named the ratio.
   await assertAdjustViable(deps, wallet.account.address, { increaseDebt: amount })
   // `increaseTroveDebt` adds the whole draw plus fee to PRINCIPAL
   // (`TroveManager.sol:529-530`), so the resulting sort key grows by exactly that.
@@ -545,68 +556,66 @@ export async function adjustTrove(
   params: AdjustTroveParams,
 ): Promise<WriteResult> {
   const wallet = requireWallet(deps)
-  const { addCollateral: add, withdrawCollateral: wd, borrow: brw, repay: rpy } = params
-  if (add !== undefined && wd !== undefined) {
-    throw new InvalidAdjustment('adjustTrove: cannot add and withdraw collateral in one call.')
+  // MK-244. By VALUE, through the resolver `previewAdjustTrove` reads with, so the call this sends is the
+  // call the preview judged. A zero leg is no leg: `{ addCollateral: 0n, withdrawCollateral: x }` is a
+  // withdrawal, which the contract accepts (`BorrowerOperations.sol:1367-1375`).
+  const legs = adjustLegsOf({
+    addCollateral: params.addCollateral,
+    withdrawCollateral: params.withdrawCollateral,
+    increaseDebt: params.borrow,
+    repayDebt: params.repay,
+  })
+  // A `uint256` cannot be negative, and `msg.value` cannot be either; neither can reach the chain.
+  for (const [field, value] of [
+    ['addCollateral', legs.addCollateral],
+    ['withdrawCollateral', legs.withdrawCollateral],
+    ['borrow', legs.increaseDebt],
+    ['repay', legs.repayDebt],
+  ] as const) {
+    if (value < 0n) throw new InvalidAmount(field, value, 'Must be zero or more.')
   }
-  if (brw !== undefined && rpy !== undefined) {
-    throw new InvalidAdjustment('adjustTrove: cannot borrow and repay in one call.')
-  }
-
-  const collWithdrawal = wd ?? 0n
-  const collAdd = add ?? 0n
-  // MK-060. PRESENCE, which is what `_adjustTrove`'s `_isDebtIncrease` parameter means: the
-  // contract takes it independently of `_mUSDChange` and reconciles the pair at
-  // `BorrowerOperations.sol:785-787`. The evaluator derived the same flag from VALUE, so the
-  // two disagreed about `borrow: 0n`; it now takes presence too, from `previewAdjustTrove`.
-  const isDebtIncrease = brw !== undefined
-  const debtChange = brw ?? rpy ?? 0n
-  // And validate the leg the way `borrow` does (`assertPositiveAmount` above), which this path
-  // never did. Without it a zero draw was sent as `(0, true)` and refused on chain at `:786`
-  // after a preview that had called it viable.
-  if (brw !== undefined) assertPositiveAmount('borrow', brw)
+  // The shape rules need no read, so a call that cannot be sent is refused before the first one, from the
+  // helper the evaluator reports the same reasons from (MK-077, MK-244).
+  const [shape] = adjustShapeReasons(legs)
+  if (shape !== undefined) throw shapeReasonToError(shape)
+  const { isDebtIncrease } = legs
+  const debtChange = isDebtIncrease ? legs.increaseDebt : legs.repayDebt
 
   const owner = wallet.account.address
   let fee = 0n
-  if (brw !== undefined) {
-    fee = await effectiveBorrowingFee(deps, owner, brw)
-    assertFeeWithinCap(brw, fee, params.maxFeePercentage)
+  if (isDebtIncrease) {
+    fee = await effectiveBorrowingFee(deps, owner, legs.increaseDebt)
+    assertFeeWithinCap(legs.increaseDebt, fee, params.maxFeePercentage)
   }
 
   const pos = await currentPosition(deps, owner)
   assertTroveActive(pos.entireDebt, owner)
-  // MK-002: the capacity gate applies to the debt increase path of adjust too.
-  if (brw !== undefined) {
-    await assertWithinBorrowingCapacity(deps, owner, pos.entireDebt, brw + fee)
-  }
-  if (rpy !== undefined) {
+  if (legs.repayDebt > 0n) {
     const netDebt = netDebtOf(pos.entireDebt)
-    if (rpy > netDebt) throw new RepayExceedsDebt(undefined, { repay: rpy, netDebt })
+    if (legs.repayDebt > netDebt) {
+      throw new RepayExceedsDebt(undefined, { repay: legs.repayDebt, netDebt })
+    }
   }
-  // MK-042. Every ratio and mode gate on the combined path, in one place. This is the write
-  // the earlier scope limit named as having no verdict at all.
-  await assertAdjustViable(deps, owner, {
-    ...(collAdd > 0n ? { addCollateral: collAdd } : {}),
-    ...(collWithdrawal > 0n ? { withdrawCollateral: collWithdrawal } : {}),
-    ...(brw !== undefined ? { increaseDebt: brw } : {}),
-    ...(rpy !== undefined ? { repayDebt: rpy } : {}),
-  })
-  const resultingColl = pos.collateral + collAdd - collWithdrawal
+  // MK-042. Every ratio, mode and capacity gate on the combined path, in one place and in the contract's
+  // order (MK-243): the capacity gate is the evaluator's `EXCEEDS_BORROWING_CAPACITY`, after the ratio
+  // gates as `:840-852` has them, and its error carries the numbers.
+  await assertAdjustViable(deps, owner, legs)
+  const resultingColl = pos.collateral + legs.addCollateral - legs.withdrawCollateral
   // The sort key moves by the PRINCIPAL change on both legs: a debt increase adds draw plus
   // fee to principal, and a repayment reduces principal only by whatever is left after
   // interest is paid off first (MK-006).
   const resultingPrincipal =
     pos.principal +
-    (brw !== undefined ? brw + fee : 0n) -
-    (rpy !== undefined ? principalReductionForRepay(pos.interestOwed, rpy) : 0n)
+    (isDebtIncrease ? legs.increaseDebt + fee : 0n) -
+    principalReductionForRepay(pos.interestOwed, legs.repayDebt)
   const { upperHint, lowerHint } = await hintsFor(deps, resultingColl, resultingPrincipal)
 
   return send(
     deps,
     'adjustTrove',
-    [collWithdrawal, debtChange, isDebtIncrease, upperHint, lowerHint],
+    [legs.withdrawCollateral, debtChange, isDebtIncrease, upperHint, lowerHint],
     {
-      ...(collAdd > 0n ? { value: collAdd } : {}),
+      ...(legs.addCollateral > 0n ? { value: legs.addCollateral } : {}),
       revert: { operation: 'adjustTrove', address: owner },
     },
   )

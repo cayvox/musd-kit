@@ -29,27 +29,31 @@ export const musdQueryKeys = {
   oraclePrice: (chainId: number) => ['musd', chainId, 'oraclePrice'] as const,
   /** Query key for an MUSD balance read. */
   balance: (chainId: number, address: Address) => ['musd', chainId, 'balance', address] as const,
-  /** Query key for a borrowing-power preview (collateral stringified, keys are JSON-hashed). */
+  /** Query key for the borrowing power ceiling (collateral stringified, keys are JSON-hashed). */
   // MK-067. The account is part of the key: the answer differs for a fee exempt account,
   // because the contract charges it no borrowing fee (`BorrowerOperations.sol:637-643`).
-  //
-  // MK-100. The margin overrides are part of it too, because a different margin is a different
-  // `recommended`. An ABSENT override is `null`, the measured default, and never the default's
-  // value written out, so a change to the default cannot leave an old answer under the new key.
-  borrowingPower: (
+  borrowingPower: (chainId: number, collateral: bigint, account?: string) =>
+    ['musd', chainId, 'borrowingPower', collateral.toString(), account ?? null] as const,
+  /**
+   * Query key for a margin draw (MK-240): the ceiling's key parts, and the caller's margin. A different
+   * margin is a different answer, so both inputs are in the key; an absent one is `null`, which the
+   * hook never fetches, and never a default written out.
+   */
+  drawForMargin: (
     chainId: number,
     collateral: bigint,
-    account?: string,
-    margin?: { marginWindowSeconds?: bigint; priceMoveBps?: bigint },
+    account: string | undefined,
+    horizonSeconds: bigint | undefined,
+    priceFallBps: bigint | undefined,
   ) =>
     [
       'musd',
       chainId,
-      'borrowingPower',
+      'drawForMargin',
       collateral.toString(),
       account ?? null,
-      margin?.marginWindowSeconds?.toString() ?? null,
-      margin?.priceMoveBps?.toString() ?? null,
+      horizonSeconds?.toString() ?? null,
+      priceFallBps?.toString() ?? null,
     ] as const,
   /**
    * Key for `useBorrowPreview`: one entry per owner and draw (MK-002).
