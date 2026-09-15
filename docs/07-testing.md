@@ -553,6 +553,12 @@ every anvil waiting on its upstream request), by one run of
 | The six fork entries and the packaging gate entry | 7 | the remainder, about 140 s | |
 | **All of it** | 561 | **7759 s**, start to exit | |
 
+**Those figures were taken on anvil 1.5.1, and CI declares Foundry 1.7.1** (MK-237). Re-run on the declared
+versions, Node 24.19.0, pnpm 9.15.9 and anvil 1.7.1 (`4072e48`): the fork pass over the same 37 mutants took
+**5341 s** with three jobs, 389 s mean per run, with the same verdict for every site; and the six fork entries
+and the packaging gate entry were caught. On 1.7.1 the fork cache is Zstandard compressed, which the gate
+rejected until MK-238, so a fork pass on CI before that fix would have run every mutant cold.
+
 And on CI, by the push that opened this wave's pull request, `Mutation gate`
 [run 34937019525](https://github.com/cayvox/musd-kit/actions/runs/34937019525) at `c652e55`. That push
 changed the gate itself, so `--changed` selected every unit mutant: the worst case of the push path.

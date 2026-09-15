@@ -32,7 +32,7 @@ const MCR = 11n * 10n ** 17n
 const CCR = 15n * 10n ** 17n
 const PRICE = 80_000n * MUSD
 
-describe('MK-158, evaluateAdjust, the normal mode TCR gate at exactly CCR', () => {
+describe('MK-118, evaluateAdjust, the normal mode TCR gate at exactly CCR', () => {
   // (3 BTC x 80,000) / 160,000 MUSD = 1.5 exactly.
   const at = {
     status: TroveStatus.active,
@@ -63,7 +63,7 @@ describe('MK-158, evaluateAdjust, the normal mode TCR gate at exactly CCR', () =
   })
 })
 
-describe('MK-157, evaluateAdjust, the Recovery Mode ICR gate at exactly CCR', () => {
+describe('MK-118, evaluateAdjust, the Recovery Mode ICR gate at exactly CCR', () => {
   // 1 BTC against 60,000 MUSD is 133%; adding 0.5 BTC and drawing 20,000 lands on 1.5 x 80,000 /
   // 80,000 = 1.5 exactly, which also does not lower the ICR, so only the absolute gate is in play.
   const at = {
@@ -95,7 +95,7 @@ describe('MK-157, evaluateAdjust, the Recovery Mode ICR gate at exactly CCR', ()
   })
 })
 
-describe('MK-161, MK-162, MK-159, MK-160, evaluateAdjust, the repayment gates', () => {
+describe('MK-118, evaluateAdjust, the repayment gates', () => {
   // Net debt 19,800 MUSD.
   const repay = {
     status: TroveStatus.active,
@@ -157,7 +157,7 @@ describe('MK-161, MK-162, MK-159, MK-160, evaluateAdjust, the repayment gates', 
   })
 })
 
-describe('MK-156, evaluateAdjust, adding and withdrawing collateral at once', () => {
+describe('MK-118, evaluateAdjust, adding and withdrawing collateral at once', () => {
   it('is refused by name, as `_requireSingularCollChange` refuses it (`:1366-1374`)', () => {
     const p = evaluateAdjust({
       status: TroveStatus.active,
@@ -181,7 +181,7 @@ describe('MK-156, evaluateAdjust, adding and withdrawing collateral at once', ()
   })
 })
 
-describe('MK-163, MK-165, evaluateAdjust, the collateral that clears the ICR gate', () => {
+describe('MK-118, evaluateAdjust, the collateral that clears the ICR gate', () => {
   const base = {
     status: TroveStatus.active,
     collateral: 1n * BTC,
@@ -220,7 +220,7 @@ describe('MK-163, MK-165, evaluateAdjust, the collateral that clears the ICR gat
   })
 })
 
-describe('MK-168, MK-171, MK-175, MK-176, computeMaxWithdrawable', () => {
+describe('MK-118, computeMaxWithdrawable', () => {
   // An odd wei in the debt and the price, so every ceiling below differs from its floor.
   const ODD_PRICE = PRICE + 1n
   const normal = {
@@ -289,7 +289,7 @@ describe('MK-168, MK-171, MK-175, MK-176, computeMaxWithdrawable', () => {
   })
 })
 
-describe('MK-180, evaluateClose, the TCR gate at exactly CCR', () => {
+describe('MK-118, evaluateClose, the TCR gate at exactly CCR', () => {
   // Removing 1 BTC and 20,000 MUSD leaves 1.5 BTC x 80,000 / 80,000 MUSD = 1.5 exactly.
   const at = {
     status: TroveStatus.active,
@@ -313,7 +313,7 @@ describe('MK-180, evaluateClose, the TCR gate at exactly CCR', () => {
   })
 })
 
-describe('MK-181, evaluateOpen, the TCR gate at exactly CCR', () => {
+describe('MK-118, evaluateOpen, the TCR gate at exactly CCR', () => {
   // 3 BTC x 80,000 / (140,000 + 20,000) MUSD = 1.5 exactly.
   const at = {
     collateral: 1n * BTC,
@@ -335,7 +335,7 @@ describe('MK-181, evaluateOpen, the TCR gate at exactly CCR', () => {
   })
 })
 
-describe('MK-204, MK-205, evaluateRefinance, both ratio gates at their boundary', () => {
+describe('MK-118, evaluateRefinance, both ratio gates at their boundary', () => {
   const base = {
     status: TroveStatus.active,
     collateral: (11n * BTC) / 10n,
@@ -401,25 +401,25 @@ describe('evaluateRedeem, its gates and edges at their boundary', () => {
     eligible: [trove('0xaaa')],
   }
 
-  it('MK-196, a system at exactly MCR can be redeemed against, and one wei under cannot', () => {
+  it('MK-118, a system at exactly MCR can be redeemed against, and one wei under cannot', () => {
     expect(evaluateRedeem(base).reasons).not.toContain('SYSTEM_TCR_BELOW_MCR')
     expect(evaluateRedeem({ ...base, tcr: MCR - 1n }).reasons).toContain('SYSTEM_TCR_BELOW_MCR')
   })
 
-  it('MK-197, a balance of exactly the amount passes, and one wei less does not', () => {
+  it('MK-118, a balance of exactly the amount passes, and one wei less does not', () => {
     expect(evaluateRedeem(base).reasons).not.toContain('INSUFFICIENT_MUSD_BALANCE')
     expect(evaluateRedeem({ ...base, musdBalance: base.amount - 1n }).reasons).toContain(
       'INSUFFICIENT_MUSD_BALANCE',
     )
   })
 
-  it('MK-193, with nothing redeemable the first Trove net debt is reported as 0n, not left undefined', () => {
+  it('MK-118, with nothing redeemable the first Trove net debt is reported as 0n, not left undefined', () => {
     const p = evaluateRedeem({ ...base, eligible: [] })
     expect(p.firstTroveNetDebt).toBe(0n)
     expect(p.nextViableAmount).toBe(0n)
   })
 
-  it('MK-195, a first Trove with no net debt has no next viable amount, whatever its margin', () => {
+  it('MK-118, a first Trove with no net debt has no next viable amount, whatever its margin', () => {
     const empty = {
       ...trove('0xaaa'),
       netDebt: 0n,
@@ -431,7 +431,7 @@ describe('evaluateRedeem, its gates and edges at their boundary', () => {
     expect(p.nextViableAmount).toBe(0n)
   })
 
-  it('MK-199, a request consumed exactly by whole Troves takes no partial from the next one', () => {
+  it('MK-118, a request consumed exactly by whole Troves takes no partial from the next one', () => {
     // At a zero rate the accrual margin is zero, so an amount of exactly the first net debt consumes
     // it whole with nothing left over, and the loop ends at `remaining > 0` (`TroveManager.sol:360-363`).
     const p = evaluateRedeem({

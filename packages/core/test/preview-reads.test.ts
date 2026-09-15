@@ -58,7 +58,7 @@ function deps(opts: { isRecoveryMode?: boolean } = {}) {
   return { deps: d, calls }
 }
 
-describe('MK-166, MK-167, previewAdjustTrove', () => {
+describe('MK-118, previewAdjustTrove', () => {
   it('with no leg at all reports that nothing was requested', async () => {
     const { deps: d } = deps()
     const p = await previewAdjustTrove(d, { owner: OWNER })

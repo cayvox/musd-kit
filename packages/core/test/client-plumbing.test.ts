@@ -17,7 +17,7 @@ import { getTrove } from '../src/read'
 
 const T = getAddresses(31611)
 
-describe('MK-119, a verification batch that cannot be read', () => {
+describe('MK-118, a verification batch that cannot be read', () => {
   const failing = (codeOf: (a: Address) => `0x${string}` | undefined) =>
     ({
       multicall: async () => {
@@ -60,7 +60,7 @@ describe('MK-118, the governable constants TTL', () => {
   })
 })
 
-describe('MK-120, contract instances', () => {
+describe('MK-118, contract instances', () => {
   it('can write when a wallet client is given, and cannot without one', () => {
     const publicClient = {} as PublicClient
     const walletClient = { account: undefined } as unknown as WalletClient
@@ -71,7 +71,7 @@ describe('MK-120, contract instances', () => {
   })
 })
 
-describe('MK-206, getTrove reports a Trove only when it is active AND carries debt', () => {
+describe('MK-118, getTrove reports a Trove only when it is active AND carries debt', () => {
   const clientFor = (status: number, principal: bigint) =>
     ({
       multicall: async ({ contracts }: { contracts: readonly { functionName: string }[] }) =>

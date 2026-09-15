@@ -164,7 +164,7 @@ function chain(
 
 const NICR = (coll: bigint, principal: bigint) => (coll * 10n ** 20n) / principal
 
-describe('MK-214, openTrove, the floor at exactly the minimum net debt', () => {
+describe('MK-118, openTrove, the floor at exactly the minimum net debt', () => {
   const fresh = { ...ACTIVE, principal: 0n, collateral: 0n, feeExempt: true }
   it('an open of exactly the floor is sent, and one wei less is refused before gas', async () => {
     const at = chain(fresh)
@@ -176,7 +176,7 @@ describe('MK-214, openTrove, the floor at exactly the minimum net debt', () => {
   })
 })
 
-describe('MK-210, MK-209, borrow, the capacity and fee cap at their boundary', () => {
+describe('MK-118, borrow, the capacity and fee cap at their boundary', () => {
   it('a borrow that fills the capacity exactly is sent, and one wei of capacity less is refused', async () => {
     const amount = 1_000n * MUSD
     const fee = (RATE * amount) / E18
@@ -196,7 +196,7 @@ describe('MK-210, MK-209, borrow, the capacity and fee cap at their boundary', (
   })
 })
 
-describe('MK-215, MK-216, repay, the excess and balance gates', () => {
+describe('MK-118, repay, the excess and balance gates', () => {
   it('repaying exactly the net debt is refused for the floor, not as an excess', async () => {
     // Net debt 19,800 MUSD. Repaying all of it is not more than owed (`:1251`), but it leaves 0 under the floor.
     await expect(repay(chain(ACTIVE).deps, { amount: 19_800n * MUSD })).rejects.toBeInstanceOf(
@@ -215,7 +215,7 @@ describe('MK-215, MK-216, repay, the excess and balance gates', () => {
   })
 })
 
-describe('MK-224, close, the balance at exactly the net debt', () => {
+describe('MK-118, close, the balance at exactly the net debt', () => {
   it('a balance of exactly the net debt closes, and one wei less is refused', async () => {
     const at = chain({ ...ACTIVE, balance: 19_800n * MUSD })
     await close(at.deps)
@@ -226,7 +226,7 @@ describe('MK-224, close, the balance at exactly the net debt', () => {
   })
 })
 
-describe('MK-217, MK-218, MK-221, MK-222, adjustTrove, what it sends and what it refuses', () => {
+describe('MK-118, adjustTrove, what it sends and what it refuses', () => {
   it('a collateral top up sends no withdrawal, no debt change, not an increase, and the value', async () => {
     const at = chain(ACTIVE)
     await adjustTrove(at.deps, { addCollateral: BTC })
@@ -289,7 +289,7 @@ describe('MK-217, MK-218, MK-221, MK-222, adjustTrove, what it sends and what it
   })
 })
 
-describe('MK-225, refinance for a fee exempt account', () => {
+describe('MK-118, refinance for a fee exempt account', () => {
   it('reads no refinancing fee and hints for the unchanged principal', async () => {
     const exempt = { ...ACTIVE, feeExempt: true }
     const at = chain(exempt)
@@ -299,7 +299,7 @@ describe('MK-225, refinance for a fee exempt account', () => {
   })
 })
 
-describe('MK-213, what every send carries', () => {
+describe('MK-118, what every send carries', () => {
   it('a collateral add sends its value', async () => {
     const at = chain(ACTIVE)
     await addCollateral(at.deps, { amount: BTC })

@@ -88,7 +88,7 @@ function largestOpen(collateral: bigint, price: bigint, fee: Fee, minNetDebt: bi
 
 const bitLength = (x: bigint) => x.toString(2).length
 
-describe('MK-141, MK-145, MK-151, a fee the chain does not charge linearly', () => {
+describe('MK-119, MK-118, a fee the chain does not charge linearly', () => {
   const price = 100_000n * E18
   const collateral = E18
 
@@ -119,7 +119,7 @@ describe('MK-141, MK-145, MK-151, a fee the chain does not charge linearly', () 
   })
 })
 
-describe('MK-139, MK-152, the search backstop', () => {
+describe('MK-118, the search backstop', () => {
   it('stops each search at exactly 256 steps when its range needs more', async () => {
     // A range wider than 2^256 cannot converge in 256 halvings. The collateral is a uint256 the caller
     // passes; the fee is the non linear one, so both figures are searched rather than solved.
@@ -133,7 +133,7 @@ describe('MK-139, MK-152, the search backstop', () => {
   })
 })
 
-describe('MK-140, MK-142, MK-143, MK-144, no fee is asked for a figure that cannot exceed the reserve', () => {
+describe('MK-118, no fee is asked for a figure that cannot exceed the reserve', () => {
   const price = 100_000n * E18
 
   it('a collateral whose ICR cap is exactly the gas reserve reads no fee', async () => {

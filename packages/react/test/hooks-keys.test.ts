@@ -82,7 +82,7 @@ const keysIn = (q: ReturnType<typeof newQueryClient>) =>
     .getAll()
     .map((x) => JSON.stringify(x.queryKey))
 
-describe('MK-227, MK-228, MK-229, MK-231, MK-232, MK-233, MK-234, MK-235, a hook with no owner', () => {
+describe('MK-118, a hook with no owner', () => {
   const cases: [string, () => unknown, readonly unknown[]][] = [
     [
       'useBorrowPreview',
@@ -136,7 +136,7 @@ describe('MK-227, MK-228, MK-229, MK-231, MK-232, MK-233, MK-234, MK-235, a hook
   }
 })
 
-describe('MK-236, a disabled query', () => {
+describe('MK-118, a disabled query', () => {
   it('is pending with no client error, and not pending once the client has failed', () => {
     const { wrapper } = setup()
     const idle = renderHook(() => reads.useClosePreview({ owner: undefined }), { wrapper })
@@ -152,7 +152,7 @@ describe('MK-236, a disabled query', () => {
   })
 })
 
-describe('MK-230, useAdjustTrovePreview', () => {
+describe('MK-118, useAdjustTrovePreview', () => {
   it('hands the core a withdrawal leg it was given, and none it was not', async () => {
     const { wrapper } = setup()
     renderHook(() => reads.useAdjustTrovePreview({ owner: OWNER, withdrawCollateral: 5n }), {

@@ -172,7 +172,7 @@ selected window.
 | # | Command | What must be reported |
 |---|---|---|
 | 1 | `pnpm test:unit`, with `MEZO_TESTNET_RPC_URL` unset and `anvil` off `PATH` | The pass count, and evidence the chain was genuinely absent |
-| 2 | `MEZO_FORK_BLOCK=15043414 pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0). **The block is not optional**: unset, anvil forks at `latest` and the byte identity this row demands cannot hold (MK-082) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
+| 2 | `MEZO_FORK_BLOCK=15043414 pnpm test:fork`, five consecutive runs, **on every tool version the fork gate declares, not only its runtime**: in the `Fork gate + coverage` job of `.github/workflows/ci.yml`, Node (`node-version`, currently 24.19.0), pnpm (`pnpm/action-setup`, 9.15.9) and Foundry (`foundry-toolchain`, 1.7.1, which is the anvil every fork test runs against). The same applies to any other gate a wave cites local fork evidence for: `.github/workflows/mutation.yml` declares the same three for the mutation gate's fork pass. `foundryup --install <version>` installs the declared Foundry. **The block is not optional**: unset, anvil forks at `latest` and the byte identity this row demands cannot hold (MK-082) | **All five results, in full**, and **the version of every declared tool they ran on** (`node -v`, `pnpm --version`, `anvil --version`), each equal to the workflow's. Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
 | 3 | `pnpm test:coverage` | All four metrics against the ratchet. A metric below its floor is fixed with tests, never by lowering the floor |
 | 4 | `pnpm typecheck` | Clean |
 | 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
@@ -217,11 +217,18 @@ Each of the three closes one specific absence that produced MK-029.
   fixes until someone bumps it, and nothing will remind you. That is the trade, taken deliberately:
   a stale pin fails visibly when you bump it, a floating label fails invisibly under a commit that
   changed nothing.
-- **Step 2's Node requirement** exists because local and CI evidence cannot be compared unless
-  they ran the same runtime. Five green local runs on Node 20.20.1 and four red fork gate runs
+- **Step 2's version requirement** exists because local and CI evidence cannot be compared unless
+  they ran the same tools. Five green local runs on Node 20.20.1 and four red fork gate runs
   on 24.19.0 were all reporting honestly and were never in contradiction. Running the fork
-  suite on the version the gate declares is what turns "it passed here" into evidence about
+  suite on the versions the gate declares is what turns "it passed here" into evidence about
   the build rather than about a laptop.
+
+  **It named only Node until the P26 wave** (MK-237). It was written from MK-029 on 2026-08-24
+  (`40ff7db`), when Node was the one input that had differed and CI still floated Foundry at
+  `stable`, so there was no declared anvil to name; MK-041 pinned Foundry three days later
+  (`e187c66`) and generalised the pinning rule above, and nobody went back to step 2. So the P25
+  wave's fork evidence was taken on anvil 1.5.1 against a gate that declares 1.7.1, and the rule
+  it was checked against allowed that.
 - **Step 8** exists because nothing pointed at CI at all. The PR 8 report even said in as many
   words that CI had not been checked. Saying so is not the same as looking.
 - **Step 9** exists because a branch being green does not make `main` green, and because five

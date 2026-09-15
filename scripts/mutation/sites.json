@@ -252,7 +252,7 @@
     "kind": "relational",
     "text": "empty.length > 0",
     "status": "caught",
-    "finding": "MK-119",
+    "finding": "MK-118",
     "by": ["packages/core/test/client-plumbing.test.ts"]
   },
   "packages/core/src/client/verifyDeployment.ts#verifyDeployment#condition#a54039a21e": {
@@ -332,7 +332,7 @@
     "kind": "condition",
     "text": "walletClient",
     "status": "caught",
-    "finding": "MK-120",
+    "finding": "MK-118",
     "by": ["packages/core/test/client-plumbing.test.ts"]
   },
   "packages/core/src/constants.ts#BPS_DIVISOR#constant#369881f08a": {
@@ -368,7 +368,7 @@
     "kind": "constant",
     "text": "1_000_000_000_000_000_000n",
     "status": "caught",
-    "finding": "MK-123",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/constants.ts#MCR#constant#42e55599d1": {
@@ -399,7 +399,7 @@
     "kind": "constant",
     "text": "50_000_000_000_000_000_000n",
     "status": "caught",
-    "finding": "MK-124",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/constants.ts#MUSD_GAS_COMPENSATION#constant#18c6d555e7": {
@@ -426,7 +426,7 @@
     "kind": "constant",
     "text": "1_000_000_000_000_000_000n",
     "status": "caught",
-    "finding": "MK-121",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/constants.ts#PERCENT_DIVISOR#constant#bb683550f4": {
@@ -435,7 +435,7 @@
     "kind": "constant",
     "text": "200n",
     "status": "caught",
-    "finding": "MK-122",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/constants.ts#SECONDS_PER_YEAR#constant#bd04966978": {
@@ -499,7 +499,7 @@
     "kind": "connective",
     "text": "error && typeof error === 'object'",
     "status": "caught",
-    "finding": "MK-125",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/errors/index.ts#revertReason#presence#018bef1440": {
@@ -516,7 +516,7 @@
     "kind": "default",
     "text": "context?.address ?? 'unknown'",
     "status": "caught",
-    "finding": "MK-127",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/errors/mapRevert.ts#mapRevert.fn#default#ecb6aeb56f": {
@@ -525,7 +525,7 @@
     "kind": "default",
     "text": "context?.operation ?? 'contract call'",
     "status": "caught",
-    "finding": "MK-129",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/errors/mapRevert.ts#mapRevert.reverted#presence#6cb2b6f341": {
@@ -542,7 +542,7 @@
     "kind": "default",
     "text": "reason ?? ''",
     "status": "equivalent",
-    "finding": "MK-126",
+    "finding": "MK-118",
     "reason": "With no reason the mutant tests the patterns against the string 'undefined', which none of the fifteen patterns in mapRevert matches, and the fallback message at :141 reads reason, not text."
   },
   "packages/core/src/errors/mapRevert.ts#mapRevert#condition#16e57cd554": {
@@ -855,7 +855,7 @@
     "kind": "equality",
     "text": "errorName === 'Panic'",
     "status": "caught",
-    "finding": "MK-128",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/hints/computeHints.ts#computeHintsUnchecked#presence#50d30bca16": {
@@ -864,7 +864,7 @@
     "kind": "presence",
     "text": "params.randomSeed !== undefined",
     "status": "caught",
-    "finding": "MK-132",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/hints/computeHints.ts#computeHintsUnchecked#presence#f1bd1027ec": {
@@ -873,7 +873,7 @@
     "kind": "presence",
     "text": "params.numTrials !== undefined",
     "status": "caught",
-    "finding": "MK-131",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/hints/computeHints.ts#DEFAULT_HINT_RANDOM_SEED#constant#0440aeb3b8": {
@@ -882,7 +882,7 @@
     "kind": "constant",
     "text": "42n",
     "status": "caught",
-    "finding": "MK-130",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/hints/computeHints.ts#findHintsForNICR.randomSeed#default#daf85b7667": {
@@ -938,7 +938,7 @@
     "kind": "relational",
     "text": "principal <= 0n",
     "status": "caught",
-    "finding": "MK-133",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/hints/computeNICR.ts#NICR_PRECISION#constant#0521d28571": {
@@ -1058,7 +1058,7 @@
     "kind": "relational",
     "text": "marginPercent <= 0",
     "status": "equivalent",
-    "finding": "MK-134",
+    "finding": "MK-118",
     "reason": "At a margin of 0 or -0 the mutant computes estimate * BigInt(Math.round(100 + 0)) / 100n, which is the estimate the guard returns; every negative margin still returns early in both."
   },
   "packages/core/src/math/compute.ts#accruedInterest#relational#0cbb956c64": {
@@ -1067,7 +1067,7 @@
     "kind": "relational",
     "text": "seconds <= 0n",
     "status": "equivalent",
-    "finding": "MK-136",
+    "finding": "MK-118",
     "reason": "At seconds equal to 0n the formula returns principal * rateBps * 0 / divisor, which is 0n, the value the guard returns. Every other input takes the same branch in both."
   },
   "packages/core/src/math/compute.ts#computeICR#equality#78f682bf69": {
@@ -1153,7 +1153,7 @@
     "kind": "relational",
     "text": "entireDebt > MUSD_GAS_COMPENSATION",
     "status": "equivalent",
-    "finding": "MK-135",
+    "finding": "MK-118",
     "reason": "At entireDebt equal to the reserve both branches give 0n: entireDebt - MUSD_GAS_COMPENSATION is 0n there. Every other input takes the same branch in both."
   },
   "packages/core/src/math/fee.ts#effectiveBorrowingFee#condition#6ccb8df71d": {
@@ -1208,7 +1208,7 @@
     "kind": "relational",
     "text": "steps >= MAX_BORROWING_POWER_ITERATIONS",
     "status": "caught",
-    "finding": "MK-152",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#binarySearch#relational#d4aaf90d66": {
@@ -1217,7 +1217,7 @@
     "kind": "relational",
     "text": "lo < hi",
     "status": "caught",
-    "finding": "MK-151",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#BORROWING_POWER_MARGIN_WINDOW_SECONDS#constant#b6871ae90f": {
@@ -1226,7 +1226,7 @@
     "kind": "constant",
     "text": "3600n",
     "status": "caught",
-    "finding": "MK-137",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#BORROWING_POWER_PRICE_MOVE_BPS#constant#bb683550f4": {
@@ -1235,7 +1235,7 @@
     "kind": "constant",
     "text": "200n",
     "status": "caught",
-    "finding": "MK-138",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked.accrualFraction#rounding#38eb0666fc": {
@@ -1421,7 +1421,7 @@
     "kind": "connective",
     "text": "ceiling > 0n && (collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION",
     "status": "caught",
-    "finding": "MK-142",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#19af88a2f0": {
@@ -1430,7 +1430,7 @@
     "kind": "connective",
     "text": "solved !== undefined && linearConfirmed",
     "status": "caught",
-    "finding": "MK-145",
+    "finding": "MK-119",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#31e8ba59b9": {
@@ -1450,7 +1450,7 @@
     "kind": "connective",
     "text": "solved !== undefined && solvedFee === localFee(solved, effectiveRate, decimalPrecision)",
     "status": "caught",
-    "finding": "MK-141",
+    "finding": "MK-119",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#connective#d6e6f545d5": {
@@ -1528,7 +1528,7 @@
     "kind": "relational",
     "text": "ceiling > 0n",
     "status": "caught",
-    "finding": "MK-144",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#3427c7a770": {
@@ -1537,7 +1537,7 @@
     "kind": "relational",
     "text": "recommended > ceiling",
     "status": "equivalent",
-    "finding": "MK-146",
+    "finding": "MK-118",
     "reason": "When recommended equals ceiling the assignment writes the value it already holds."
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#425e0c154a": {
@@ -1554,7 +1554,7 @@
     "kind": "relational",
     "text": "(collateral * price) / targetRatio > MUSD_GAS_COMPENSATION",
     "status": "caught",
-    "finding": "MK-140",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#689c7557d9": {
@@ -1563,7 +1563,7 @@
     "kind": "relational",
     "text": "(collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION",
     "status": "caught",
-    "finding": "MK-143",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#getBorrowingPowerUnchecked#relational#78b0b73f68": {
@@ -1615,7 +1615,7 @@
     "kind": "constant",
     "text": "256",
     "status": "caught",
-    "finding": "MK-139",
+    "finding": "MK-118",
     "by": ["packages/core/test/borrowing-power-paths.test.ts"]
   },
   "packages/core/src/math/getBorrowingPower.ts#solveClosedForm.cap#relational#ce8180b782": {
@@ -1624,7 +1624,7 @@
     "kind": "relational",
     "text": "tcrCap < icrCap",
     "status": "equivalent",
-    "finding": "MK-147",
+    "finding": "MK-118",
     "reason": "When the two caps are equal either choice is the same value."
   },
   "packages/core/src/math/getBorrowingPower.ts#solveClosedForm.tcrCap#condition#c703c66058": {
@@ -1692,7 +1692,7 @@
     "kind": "equality",
     "text": "draw !== 0n",
     "status": "unreachable",
-    "finding": "MK-150",
+    "finding": "MK-120",
     "reason": "draw !== 0n is evaluated only when !feasibleWith(draw, fee(draw)) is true, and it never is: the seed and at most one step above it keep draw + fee + reserve at or under the cap, which is exactly what feasibleWith accepts (both inclusive, BorrowerOperations.sol:1337-1349)."
   },
   "packages/core/src/math/getBorrowingPower.ts#solveClosedForm#relational#1cb3ebfca9": {
@@ -1701,7 +1701,7 @@
     "kind": "relational",
     "text": "cap <= MUSD_GAS_COMPENSATION",
     "status": "equivalent",
-    "finding": "MK-148",
+    "finding": "MK-118",
     "reason": "At cap equal to the reserve the mutant continues with available 0n, so the seed is 0n; a draw of 1 wei needs an entire debt of reserve plus 1 wei, above a cap that is the floor of the same ratio, so the walk takes no step and the function returns 0n, the value the guard returns. solveClosedForm reads nothing from the chain, so no read differs."
   },
   "packages/core/src/math/getBorrowingPower.ts#solveClosedForm#relational#4b3cbd31c4": {
@@ -1710,7 +1710,7 @@
     "kind": "relational",
     "text": "steps < 64",
     "status": "unreachable",
-    "finding": "MK-149",
+    "finding": "MK-120",
     "reason": "The walk cannot reach 64 steps. The seed is floor(available * P / (P + rate)); the largest draw d with d + floor(rate * d / P) <= available satisfies d * (P + rate) / P < available + 1, so d < seed + 2, and feasibleWith accepts exactly the entire debts at or under the cap the seed is sized from. The walk takes at most one step."
   },
   "packages/core/src/math/previewAdjust.ts#borrowingCapacityOf.remaining#relational#625858ce0a": {
@@ -1719,7 +1719,7 @@
     "kind": "relational",
     "text": "capacity > entireDebt",
     "status": "equivalent",
-    "finding": "MK-153",
+    "finding": "MK-118",
     "reason": "When capacity equals entireDebt both branches report 0n remaining."
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.amount#relational#d00cf53031": {
@@ -1728,7 +1728,7 @@
     "kind": "relational",
     "text": "byIcr < bySystem",
     "status": "equivalent",
-    "finding": "MK-174",
+    "finding": "MK-118",
     "reason": "When the two allowances are equal either choice is the same value; limitedBy is decided separately at :633."
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.byIcr#relational#96c055ce38": {
@@ -1737,7 +1737,7 @@
     "kind": "relational",
     "text": "collateral > keepForIcr",
     "status": "equivalent",
-    "finding": "MK-172",
+    "finding": "MK-118",
     "reason": "When collateral equals keepForIcr both branches give 0n."
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.bySystem#relational#760854dc04": {
@@ -1746,7 +1746,7 @@
     "kind": "relational",
     "text": "systemColl > keepForTcr",
     "status": "equivalent",
-    "finding": "MK-173",
+    "finding": "MK-118",
     "reason": "When systemColl equals keepForTcr both branches give 0n."
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.icrThreshold#condition#c703c66058": {
@@ -1755,7 +1755,7 @@
     "kind": "condition",
     "text": "isRecoveryMode",
     "status": "caught",
-    "finding": "MK-168",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.keepForIcr#relational#d9292f5176": {
@@ -1764,7 +1764,7 @@
     "kind": "relational",
     "text": "entireDebt > 0n",
     "status": "equivalent",
-    "finding": "MK-169",
+    "finding": "MK-118",
     "reason": "At entireDebt 0n the ceiling is (price - 1n) / price, which is 0n for every price of at least 1; a price of 0n returns before this line (previewAdjust.ts:607)."
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.keepForIcr#rounding#a8a5271789": {
@@ -1781,7 +1781,7 @@
     "kind": "relational",
     "text": "systemDebt > 0n",
     "status": "equivalent",
-    "finding": "MK-170",
+    "finding": "MK-118",
     "reason": "At systemDebt 0n the ceiling is (price - 1n) / price, 0n for every price of at least 1; a price of 0n returns earlier."
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.keepForTcr#rounding#04f37f3038": {
@@ -1790,7 +1790,7 @@
     "kind": "rounding",
     "text": "(CCR * systemDebt + price - 1n) / price",
     "status": "caught",
-    "finding": "MK-171",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.limitedBy#connective#12cd7df37a": {
@@ -1799,7 +1799,7 @@
     "kind": "connective",
     "text": "entireDebt === 0n && systemDebt === 0n",
     "status": "caught",
-    "finding": "MK-176",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable.limitedBy#equality#78f682bf69": {
@@ -1827,7 +1827,7 @@
     "kind": "relational",
     "text": "byIcr <= bySystem",
     "status": "caught",
-    "finding": "MK-175",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#computeMaxWithdrawable#condition#c703c66058": {
@@ -1927,7 +1927,7 @@
     "kind": "relational",
     "text": "resultingIcr < icrThreshold",
     "status": "caught",
-    "finding": "MK-163",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust.minimumCollateralToClearIcr#relational#d5f94c1a81": {
@@ -1944,7 +1944,7 @@
     "kind": "relational",
     "text": "safeDebt > 0n",
     "status": "equivalent",
-    "finding": "MK-164",
+    "finding": "MK-118",
     "reason": "At safeDebt 0n computeICR returns the maximum uint256 (compute.ts:22), so resultingIcr < icrThreshold is false and the figure is null in both."
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust.minimumCollateralToClearIcr#rounding#9d076fa4b6": {
@@ -1953,7 +1953,7 @@
     "kind": "rounding",
     "text": "(icrThreshold * safeDebt + price - 1n) / price",
     "status": "caught",
-    "finding": "MK-165",
+    "finding": "MK-118",
     "by": [
       "packages/core/test/decision-boundaries.test.ts",
       "packages/react/test/use-musd-client.test.ts"
@@ -2005,7 +2005,7 @@
     "kind": "relational",
     "text": "resultingCollateral > 0n",
     "status": "equivalent",
-    "finding": "MK-154",
+    "finding": "MK-118",
     "reason": "At a resulting collateral of 0n both branches give 0n."
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust.safeDebt#relational#1988347ab6": {
@@ -2014,7 +2014,7 @@
     "kind": "relational",
     "text": "resultingEntireDebt > 0n",
     "status": "equivalent",
-    "finding": "MK-155",
+    "finding": "MK-118",
     "reason": "At a resulting entire debt of 0n both branches give 0n."
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust.viable#equality#a0c5c3caaa": {
@@ -2121,7 +2121,7 @@
     "kind": "connective",
     "text": "!isDebtIncrease && repayDebt > 0n",
     "status": "caught",
-    "finding": "MK-159",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#connective#4226abd718": {
@@ -2395,7 +2395,7 @@
     "kind": "reason",
     "text": "reasons.push('COLLATERAL_ADD_AND_WITHDRAW')",
     "status": "caught",
-    "finding": "MK-156",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#reason#811811ae36": {
@@ -2484,7 +2484,7 @@
     "kind": "relational",
     "text": "repayDebt > 0n",
     "status": "caught",
-    "finding": "MK-160",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#56d64bcafd": {
@@ -2532,7 +2532,7 @@
     "kind": "relational",
     "text": "resultingTcr < CCR",
     "status": "caught",
-    "finding": "MK-158",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#9aa597f6dd": {
@@ -2601,7 +2601,7 @@
     "kind": "relational",
     "text": "resultingIcr < icrThreshold",
     "status": "caught",
-    "finding": "MK-157",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#eefe9585cb": {
@@ -2610,7 +2610,7 @@
     "kind": "relational",
     "text": "netDebt - repayDebt < minNetDebt",
     "status": "caught",
-    "finding": "MK-161",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#evaluateAdjust#relational#f3f0ff5f1c": {
@@ -2619,7 +2619,7 @@
     "kind": "relational",
     "text": "musdBalance < repayDebt",
     "status": "caught",
-    "finding": "MK-162",
+    "finding": "MK-118",
     "by": [
       "packages/core/test/decision-boundaries.test.ts",
       "packages/core/test/write-guards.test.ts"
@@ -2645,7 +2645,7 @@
     "kind": "relational",
     "text": "increaseDebt > 0n",
     "status": "caught",
-    "finding": "MK-167",
+    "finding": "MK-118",
     "by": ["packages/core/test/preview-reads.test.ts"]
   },
   "packages/core/src/math/previewAdjust.ts#previewAdjustTroveUnchecked.fee#condition#e1e748ddf9": {
@@ -2686,7 +2686,7 @@
     "kind": "default",
     "text": "params.increaseDebt ?? 0n",
     "status": "caught",
-    "finding": "MK-166",
+    "finding": "MK-118",
     "by": [
       "packages/core/test/preview-reads.test.ts",
       "packages/react/test/use-musd-client.test.ts"
@@ -2735,7 +2735,7 @@
     "kind": "relational",
     "text": "musdRequired > musdBalance",
     "status": "equivalent",
-    "finding": "MK-177",
+    "finding": "MK-118",
     "reason": "When musdRequired equals musdBalance both branches report a 0n shortfall."
   },
   "packages/core/src/math/previewClose.ts#evaluateClose.resultingTcr.collateral#relational#477e936e04": {
@@ -2744,7 +2744,7 @@
     "kind": "relational",
     "text": "systemColl > collateral",
     "status": "equivalent",
-    "finding": "MK-178",
+    "finding": "MK-118",
     "reason": "When systemColl equals collateral both branches give 0n."
   },
   "packages/core/src/math/previewClose.ts#evaluateClose.resultingTcr.entireDebt#relational#e1a8b47c7e": {
@@ -2753,7 +2753,7 @@
     "kind": "relational",
     "text": "systemDebt > entireDebt",
     "status": "equivalent",
-    "finding": "MK-179",
+    "finding": "MK-118",
     "reason": "When systemDebt equals entireDebt both branches give 0n."
   },
   "packages/core/src/math/previewClose.ts#evaluateClose.viable#equality#a0c5c3caaa": {
@@ -2986,7 +2986,7 @@
     "kind": "relational",
     "text": "resultingTcr < CCR",
     "status": "caught",
-    "finding": "MK-180",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewClose.ts#evaluateClose#relational#d92e1833ff": {
@@ -3173,7 +3173,7 @@
     "kind": "relational",
     "text": "resultingTcr < CCR",
     "status": "caught",
-    "finding": "MK-181",
+    "finding": "MK-118",
     "by": [
       "packages/core/test/borrowing-power-paths.test.ts",
       "packages/core/test/decision-boundaries.test.ts"
@@ -3291,7 +3291,7 @@
     "kind": "default",
     "text": "first?.netDebt ?? 0n",
     "status": "caught",
-    "finding": "MK-193",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem.lot#condition#c3f789b4d6": {
@@ -3328,7 +3328,7 @@
     "kind": "relational",
     "text": "firstTroveNetDebt > minNetDebt",
     "status": "equivalent",
-    "finding": "MK-194",
+    "finding": "MK-118",
     "reason": "When the first net debt equals the floor both branches give 0n."
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem.nextViableAmount#relational#521c4c2298": {
@@ -3337,7 +3337,7 @@
     "kind": "relational",
     "text": "firstTroveNetDebt > 0n",
     "status": "caught",
-    "finding": "MK-195",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem.partial#condition#a4aac5a24f": {
@@ -3554,7 +3554,7 @@
     "kind": "relational",
     "text": "remaining > 0n",
     "status": "caught",
-    "finding": "MK-199",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#39c24d031a": {
@@ -3571,7 +3571,7 @@
     "kind": "relational",
     "text": "i < eligible.length",
     "status": "equivalent",
-    "finding": "MK-198",
+    "finding": "MK-118",
     "reason": "At i equal to eligible.length the next line reads eligible[i] as undefined and breaks (previewRedeem.ts:481), before anything is computed or recorded."
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#cc8ac304da": {
@@ -3588,7 +3588,7 @@
     "kind": "relational",
     "text": "tcr < MCR",
     "status": "caught",
-    "finding": "MK-196",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#f391f46524": {
@@ -3597,7 +3597,7 @@
     "kind": "relational",
     "text": "musdBalance < amount",
     "status": "caught",
-    "finding": "MK-197",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#evaluateRedeem#relational#f68535d1dc": {
@@ -3606,7 +3606,7 @@
     "kind": "relational",
     "text": "amount > 0n",
     "status": "unreachable",
-    "finding": "MK-200",
+    "finding": "MK-118",
     "reason": "amount > 0n is evaluated only when cancelledOnFirst is true, which the loop sets only after entering with remaining, initialised to amount (previewRedeem.ts:475), above 0n at :479; it is set at :488. The operand is never false when reached."
   },
   "packages/core/src/math/previewRedeem.ts#MAX_UINT256#constant#b67bfe78d6": {
@@ -3634,7 +3634,7 @@
     "kind": "relational",
     "text": "principal > 0n",
     "status": "caught",
-    "finding": "MK-185",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.maxColl#rounding#6f730f8928": {
@@ -3643,7 +3643,7 @@
     "kind": "rounding",
     "text": "ceilDiv((hintNicr + 1n) * newPrincipal, NICR_PRECISION)",
     "status": "caught",
-    "finding": "MK-187",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.minColl#rounding#0a3cd27c58": {
@@ -3663,7 +3663,7 @@
     "kind": "relational",
     "text": "lot > trove.interestOwed",
     "status": "equivalent",
-    "finding": "MK-186",
+    "finding": "MK-118",
     "reason": "When lot equals interestOwed the first branch is principal - 0n, the principal the second branch returns."
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.priceFragile#relational#6c9e2dc9f2": {
@@ -3672,7 +3672,7 @@
     "kind": "relational",
     "text": "priceToleranceUp < REDEMPTION_PRICE_MOVE_TOLERANCE",
     "status": "caught",
-    "finding": "MK-191",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.priceFragile#relational#c375aab751": {
@@ -3681,7 +3681,7 @@
     "kind": "relational",
     "text": "priceToleranceDown < REDEMPTION_PRICE_MOVE_TOLERANCE",
     "status": "caught",
-    "finding": "MK-192",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.priceHigh#relational#ee7695632c": {
@@ -3690,7 +3690,7 @@
     "kind": "relational",
     "text": "lotAtLeast > 0n",
     "status": "caught",
-    "finding": "MK-188",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.priceToleranceDown#relational#1b67a7719f": {
@@ -3699,7 +3699,7 @@
     "kind": "relational",
     "text": "price > priceLow",
     "status": "equivalent",
-    "finding": "MK-190",
+    "finding": "MK-118",
     "reason": "When price equals priceLow the first branch computes 0n, the value the second returns."
   },
   "packages/core/src/math/previewRedeem.ts#partialRedemptionBand.priceToleranceUp#relational#71879b662c": {
@@ -3708,7 +3708,7 @@
     "kind": "relational",
     "text": "priceHigh > price",
     "status": "equivalent",
-    "finding": "MK-189",
+    "finding": "MK-118",
     "reason": "When priceHigh equals price the first branch computes 0n * E18 / price, the 0n the second returns."
   },
   "packages/core/src/math/previewRedeem.ts#previewRedeemUnchecked.maxIterations#default#8665450b69": {
@@ -3769,7 +3769,7 @@
     "kind": "relational",
     "text": "icr >= MCR",
     "status": "caught",
-    "finding": "MK-201",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#previewRedeemUnchecked#relational#5021b17d21": {
@@ -3789,7 +3789,7 @@
     "kind": "relational",
     "text": "icr >= MCR",
     "status": "caught",
-    "finding": "MK-202",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#previewRedeemUnchecked#relational#a4da1aaa6f": {
@@ -3798,7 +3798,7 @@
     "kind": "relational",
     "text": "total >= amount",
     "status": "caught",
-    "finding": "MK-203",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/math/previewRedeem.ts#REDEMPTION_ADVICE_MARGIN_SECONDS#constant#1ab26c12bf": {
@@ -3815,7 +3815,7 @@
     "kind": "constant",
     "text": "600n",
     "status": "unreachable",
-    "finding": "MK-184",
+    "finding": "MK-121",
     "reason": "REDEMPTION_MARGIN_WINDOW_SECONDS is referenced nowhere (git grep finds only its declaration), is not re-exported by either package entry, and does not appear in dist/index.js, dist/index.cjs or dist/index.d.ts. Dead code."
   },
   "packages/core/src/math/previewRedeem.ts#REDEMPTION_PRICE_MOVE_TOLERANCE#constant#0501562343": {
@@ -3824,7 +3824,7 @@
     "kind": "constant",
     "text": "5n * 10n ** 14n",
     "status": "caught",
-    "finding": "MK-182",
+    "finding": "MK-118",
     "by": [
       "packages/core/test/decision-pins.test.ts",
       "packages/core/test/redemption-edges.test.ts"
@@ -3836,7 +3836,7 @@
     "kind": "constant",
     "text": "60n",
     "status": "caught",
-    "finding": "MK-183",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-pins.test.ts"]
   },
   "packages/core/src/math/previewRefinance.ts#evaluateRefinance.viable#equality#a0c5c3caaa": {
@@ -3920,7 +3920,7 @@
     "kind": "relational",
     "text": "resultingIcr < MCR",
     "status": "caught",
-    "finding": "MK-204",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/math/previewRefinance.ts#evaluateRefinance#relational#9971daf17e": {
@@ -3929,7 +3929,7 @@
     "kind": "relational",
     "text": "resultingTcr < CCR",
     "status": "caught",
-    "finding": "MK-205",
+    "finding": "MK-118",
     "by": ["packages/core/test/decision-boundaries.test.ts"]
   },
   "packages/core/src/read/getTrove.ts#getTrove#connective#0016db4fb0": {
@@ -3938,7 +3938,7 @@
     "kind": "connective",
     "text": "status !== TroveStatus.active || entireDebt === 0n",
     "status": "caught",
-    "finding": "MK-206",
+    "finding": "MK-118",
     "by": ["packages/core/test/client-plumbing.test.ts"]
   },
   "packages/core/src/read/getTrove.ts#getTrove#equality#78f682bf69": {
@@ -3963,7 +3963,7 @@
     "kind": "relational",
     "text": "estimatedCollateralDrawn > 0n",
     "status": "caught",
-    "finding": "MK-208",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/redemption/redeem.ts#redeem.maxIterations#default#8665450b69": {
@@ -4042,7 +4042,7 @@
     "kind": "connective",
     "text": "!redemption.viable && redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR'",
     "status": "caught",
-    "finding": "MK-207",
+    "finding": "MK-118",
     "by": ["packages/core/test/redemption-edges.test.ts"]
   },
   "packages/core/src/redemption/redeem.ts#redeem#connective#c2baa2864d": {
@@ -4126,7 +4126,7 @@
     "kind": "presence",
     "text": "rpy !== undefined",
     "status": "caught",
-    "finding": "MK-222",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#adjustTrove.resultingPrincipal#presence#5bac7de18d": {
@@ -4226,7 +4226,7 @@
     "kind": "presence",
     "text": "rpy !== undefined",
     "status": "caught",
-    "finding": "MK-217",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#adjustTrove#presence#5bac7de18d": {
@@ -4251,7 +4251,7 @@
     "kind": "presence",
     "text": "brw !== undefined",
     "status": "caught",
-    "finding": "MK-221",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#adjustTrove#relational#204e505152": {
@@ -4260,7 +4260,7 @@
     "kind": "relational",
     "text": "collWithdrawal > 0n",
     "status": "equivalent",
-    "finding": "MK-220",
+    "finding": "MK-118",
     "reason": "With collWithdrawal 0n the mutant passes withdrawCollateral: 0n, which the preview reads as the same 0n it defaults to."
   },
   "packages/core/src/trove/index.ts#adjustTrove#relational#50401f16fe": {
@@ -4269,7 +4269,7 @@
     "kind": "relational",
     "text": "collAdd > 0n",
     "status": "equivalent",
-    "finding": "MK-219",
+    "finding": "MK-118",
     "reason": "With collAdd 0n the mutant passes addCollateral: 0n to the preview, which reads params.addCollateral ?? 0n (previewAdjust.ts:405-406) and evaluates the same input; nothing it reads changes."
   },
   "packages/core/src/trove/index.ts#adjustTrove#relational#e5f62a696e": {
@@ -4278,7 +4278,7 @@
     "kind": "relational",
     "text": "collAdd > 0n",
     "status": "equivalent",
-    "finding": "MK-223",
+    "finding": "MK-118",
     "reason": "With collAdd 0n the mutant sends value: 0n where the original omits value; both are a call carrying no BTC, and the contract reads msg.value as 0 either way."
   },
   "packages/core/src/trove/index.ts#adjustTrove#relational#ebd63fc400": {
@@ -4287,7 +4287,7 @@
     "kind": "relational",
     "text": "rpy > netDebt",
     "status": "caught",
-    "finding": "MK-218",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#assertAdjustViable#condition#cb3c40441d": {
@@ -4307,7 +4307,7 @@
     "kind": "connective",
     "text": "maxFeePercentage === undefined || debtIncrease === 0n",
     "status": "unreachable",
-    "finding": "MK-211",
+    "finding": "MK-118",
     "reason": "Every caller of the unexported assertFeeWithinCap passes a debt increase already checked positive (openTrove :314, borrow :460, adjustTrove :567), so debtIncrease === 0n is never true; the alternatives differ only when maxFeePercentage is undefined, where the mutant goes on to compare against undefined, which is false, and throws nothing, as the original does."
   },
   "packages/core/src/trove/index.ts#assertFeeWithinCap#equality#bbb1c91286": {
@@ -4351,7 +4351,7 @@
     "kind": "relational",
     "text": "capacity >= entireDebt + netDebtChange",
     "status": "caught",
-    "finding": "MK-210",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#claim#condition#a8ac8a09c9": {
@@ -4368,7 +4368,7 @@
     "kind": "default",
     "text": "decodeRevertReason(error) ?? ''",
     "status": "equivalent",
-    "finding": "MK-226",
+    "finding": "MK-118",
     "reason": "With no decoded reason the mutant tests the pattern against 'undefined', which does not match /No collateral available to claim/i, the same outcome as testing ''."
   },
   "packages/core/src/trove/index.ts#close#condition#10f7e836be": {
@@ -4433,7 +4433,7 @@
     "kind": "relational",
     "text": "balance < required",
     "status": "caught",
-    "finding": "MK-224",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#effectiveBorrowingFee.feeExempt#condition#c703c66058": {
@@ -4458,7 +4458,7 @@
     "kind": "constant",
     "text": "10n ** 18n",
     "status": "caught",
-    "finding": "MK-209",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#openTrove#relational#070d48b9a1": {
@@ -4475,7 +4475,7 @@
     "kind": "relational",
     "text": "netDebt < minNetDebt",
     "status": "caught",
-    "finding": "MK-214",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#principalReductionForRepay#relational#9f8f7f7ad1": {
@@ -4484,7 +4484,7 @@
     "kind": "relational",
     "text": "payment >= interestOwed",
     "status": "equivalent",
-    "finding": "MK-212",
+    "finding": "MK-118",
     "reason": "When payment equals interestOwed the first branch is payment - interestOwed, 0n, the value the second returns."
   },
   "packages/core/src/trove/index.ts#refinancingFee#condition#927e3d799b": {
@@ -4493,7 +4493,7 @@
     "kind": "condition",
     "text": "!isBorrowingFeeCharged(false, feeExempt)",
     "status": "caught",
-    "finding": "MK-225",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#repay#relational#1c226fde5b": {
@@ -4502,7 +4502,7 @@
     "kind": "relational",
     "text": "amount > netDebt",
     "status": "caught",
-    "finding": "MK-215",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#repay#relational#7db27d0a33": {
@@ -4511,7 +4511,7 @@
     "kind": "relational",
     "text": "balance < amount",
     "status": "caught",
-    "finding": "MK-216",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#send#condition#c1a68d9430": {
@@ -4520,7 +4520,7 @@
     "kind": "condition",
     "text": "opts?.revert",
     "status": "caught",
-    "finding": "MK-213",
+    "finding": "MK-118",
     "by": ["packages/core/test/write-guards.test.ts"]
   },
   "packages/core/src/trove/index.ts#send#presence#59b4d3bbda": {
@@ -4557,7 +4557,7 @@
     "kind": "presence",
     "text": "params.withdrawCollateral !== undefined",
     "status": "caught",
-    "finding": "MK-230",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useAdjustTrovePreview.legs#presence#b3c24ef33b": {
@@ -4588,7 +4588,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-231",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useBorrowingCapacity.enabled#presence#28dc2d88df": {
@@ -4605,7 +4605,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-228",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useBorrowingPowerQuery.enabled#presence#0d6d8d9192": {
@@ -4678,7 +4678,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-227",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useClosePreview.enabled#presence#28dc2d88df": {
@@ -4695,7 +4695,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-234",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useMaxWithdrawableCollateral.enabled#presence#28dc2d88df": {
@@ -4712,7 +4712,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-233",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useRedeemPreview.enabled#presence#49c1f81e2e": {
@@ -4737,7 +4737,7 @@
     "kind": "default",
     "text": "redeemer ?? '0x'",
     "status": "caught",
-    "finding": "MK-235",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useRefinancePreview.enabled#presence#28dc2d88df": {
@@ -4754,7 +4754,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-229",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/reads.ts#useWithdrawCollateralPreview.enabled#presence#28dc2d88df": {
@@ -4779,7 +4779,7 @@
     "kind": "default",
     "text": "owner ?? '0x'",
     "status": "caught",
-    "finding": "MK-232",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/hooks/writes.ts#useMusdWrite.mutation.mutationFn#condition#da9bfb5f39": {
@@ -4856,7 +4856,7 @@
     "kind": "presence",
     "text": "clientError === null",
     "status": "caught",
-    "finding": "MK-236",
+    "finding": "MK-118",
     "by": ["packages/react/test/hooks-keys.test.ts"]
   },
   "packages/react/src/internal/useMusdQuery.ts#useMusdQuery.query#condition#655e8927ad": {

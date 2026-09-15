@@ -32,7 +32,7 @@ import {
  * mutation gate's site pass. Each block cites the finding it closes.
  */
 
-describe('MK-121, MK-122, MK-123, MK-124, the bundled fixed constants are the protocol literals', () => {
+describe('MK-118, the bundled fixed constants are the protocol literals', () => {
   it('equal the constants the contracts declare, written out from the source', () => {
     // `LiquityBase.sol:19` `_100pct = 1e18`, `:30` `PERCENT_DIVISOR = 200`; `BaseMath.sol:5`
     // `DECIMAL_PRECISION = 1e18`; `BorrowerOperations.sol:97` `MIN_NET_DEBT_MIN = 50e18`. The
@@ -50,7 +50,7 @@ describe('MK-121, MK-122, MK-123, MK-124, the bundled fixed constants are the pr
   })
 })
 
-describe('MK-137, MK-138, MK-182, MK-183, the measured margins are the measured values', () => {
+describe('MK-118, the measured margins are the measured values', () => {
   it('carry the figures their measurements produced, so a change has to be a decision', () => {
     // MK-100: one hour and 200 bps, from `scripts/oracle-moves.ts` over Mezo mainnet blocks 11664905 to
     // 11822985 (worst hourly fall 190.78 bps). MK-103: 5 bps, the two block p99 rounded up. MK-104: 60
@@ -99,7 +99,7 @@ describe('MK-117, MK-095, the redemption advice margin covers more than the wind
   })
 })
 
-describe('MK-133, computeNICR refuses a zero principal with its own message', () => {
+describe('MK-118, computeNICR refuses a zero principal with its own message', () => {
   it('throws the stated RangeError, not a division by zero', () => {
     // A division by zero is also a RangeError, so the class alone does not tell the two apart.
     expect(() => computeNICR({ collateral: 1n, principal: 0n })).toThrow(
@@ -108,7 +108,7 @@ describe('MK-133, computeNICR refuses a zero principal with its own message', ()
   })
 })
 
-describe('MK-130, MK-131, MK-132, the approximate hint request', () => {
+describe('MK-118, the approximate hint request', () => {
   it('scales trials as ceil(15 x sqrt(size)), clamped to [15, 2500], as documented', () => {
     expect(trialsForSize(0n)).toBe(15)
     expect(trialsForSize(1n)).toBe(15)
@@ -173,7 +173,7 @@ function revert(reason: string | undefined, errorName?: string): BaseError {
   return outer
 }
 
-describe('MK-127, MK-128, MK-129, mapRevert, each alternative on its own', () => {
+describe('MK-118, mapRevert, each alternative on its own', () => {
   it('maps either Recovery Mode revert string by itself', () => {
     // `BorrowerOperations.sol:1339-1340` and `:1136`.
     expect(
@@ -221,7 +221,7 @@ describe('MK-127, MK-128, MK-129, mapRevert, each alternative on its own', () =>
   })
 })
 
-describe('MK-125, revertReason', () => {
+describe('MK-118, revertReason', () => {
   it('reads the message fields of an object, and stringifies anything else', () => {
     expect(revertReason({ shortMessage: 'short', message: 'long' })).toBe('short')
     expect(revertReason({ details: 'details' })).toBe('details')

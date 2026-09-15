@@ -59,7 +59,7 @@ const bandOf = (t: EligibleTrove, lot: bigint, price: bigint) =>
     revertsCallIfCancelled: true,
   })
 
-describe('MK-187, the partial band reports the contract edges exactly', () => {
+describe('MK-118, the partial band reports the contract edges exactly', () => {
   it('the rise and the fall it reports are the last prices at which the contract keeps the partial', () => {
     // Odd wei everywhere, so every rounding in the inversion is exercised.
     const price = 76_750n * MUSD + 3n
@@ -85,7 +85,7 @@ describe('MK-187, the partial band reports the contract edges exactly', () => {
   })
 })
 
-describe('MK-191, MK-192, a tolerance of exactly the threshold is not fragile', () => {
+describe('MK-118, a tolerance of exactly the threshold is not fragile', () => {
   // Found by search: at a price of 1e18 the tolerance is exact in wei, so each fixture lands one side on
   // exactly 5 bps while the other side is above it. The comparison is strict (`REDEMPTION_PRICE_MOVE_TOLERANCE`
   // is the move a partial must TOLERATE), so exactly the threshold is enough.
@@ -105,7 +105,7 @@ describe('MK-191, MK-192, a tolerance of exactly the threshold is not fragile', 
   })
 })
 
-describe('MK-185, MK-188, the band is defined for every lot', () => {
+describe('MK-118, the band is defined for every lot', () => {
   it('a lot that pays off the whole principal still returns a band', () => {
     const t = troveOf(10n * BTC, 1_000n * MUSD, 5n * MUSD)
     expect(() => bandOf(t, 1_005n * MUSD, 80_000n * MUSD)).not.toThrow()
@@ -194,7 +194,7 @@ function chain(icrs: bigint[], opts: { balance?: bigint; truncated?: bigint } = 
   return { troves, reads, simulated, writeDeps, visited }
 }
 
-describe('MK-201, MK-202, MK-203, the list walk', () => {
+describe('MK-118, the list walk', () => {
   const NET = 30_030n * MUSD
 
   it('a Trove at exactly MCR is redeemable and is charged an iteration, as `:341-349` and `:374-375` treat it', () => {
@@ -217,7 +217,7 @@ describe('MK-201, MK-202, MK-203, the list walk', () => {
   })
 })
 
-describe('MK-207, MK-208, redeem()', () => {
+describe('MK-118, redeem()', () => {
   it('sends the default bound when none is given, to the helper and to the call', async () => {
     const c = chain([2n * E18, 2n * E18])
     await redeem(c.writeDeps, { amount: 1_000n * MUSD, acceptPriceFragilePartial: true })
