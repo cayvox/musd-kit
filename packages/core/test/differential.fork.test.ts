@@ -230,6 +230,17 @@ describe('Differential harness, preview verdict against chain outcome', () => {
       'an UNREGISTERED mismatch is a finding: register it in differential/expected.ts with its ' +
         'finding ID, or fix it. The registered ones are listed above and do not fail this run.',
     ).toEqual([])
+    // MK-239. A thrown case is recorded rather than fatal so one bad sample cannot end a long sweep
+    // (`differential/harness.ts`), but it was never compared, so the run is not evidence about it. A
+    // P26 fork window passed with 12 of its 24 cases thrown on `InternalRpcError`, and read as green.
+    // Asserted after every case has run, so the sweep still finishes and prints everything first.
+    expect(
+      threw.map((r) => `case ${r.case.index}: ${r.threw}`),
+      // The message names no error class: the mutation gate reads RPC failure names in a failure
+      // message as the chain link failing, so only the thrown errors listed above may carry them.
+      'a case THREW, so it was never compared against the chain. An error from the upstream RPC ' +
+        'link is MK-078: re-run, and attribute it. Anything else is a finding.',
+    ).toEqual([])
     // The timeout is sized for the job rather than for a guess. Measured at roughly 4.3
     // seconds per case, a thousand cases is about 72 minutes, and the first attempt at this
     // sweep was killed at 3000s with 700 cases done. 90 minutes leaves room on a loaded

@@ -101,6 +101,16 @@ request object unchanged: it sets an explicit gas limit on it, and nothing else.
 The precise statement, replacing the earlier "validated twice" shorthand. A green suite is only
 evidence for what it actually exercises.
 
+**What the mutation gate adds to this table, and what it does not** (MK-112, `docs/07-testing.md` §4d).
+A green full gate proves that every decision site in both packages has a reviewed status, that each
+site's one generated mutant is caught by the project the register names, that every hand written
+entry still mutates the code it was written for and is caught by a test that cites its finding, and
+that every registered survivor is still not caught. **It proves nothing about the contract**: a test
+asserting the wrong rule catches the mutant of the right rule just as well, which is MK-070's shape.
+The rows below rest on the fork suite, the sweep and the live run, never on the gate. **It does not
+prove every defect is caught**, only the one mutant each site gets. And the push path runs only the
+unit mutants a change selects, so a green push is not a green full gate.
+
 | Surface | How it is validated | Coverage |
 |---|---|---|
 | `computeICR`, `computeNICR` | Cross checked to the wei against the contract's own pure helpers on a fork of live Mezo | Full |

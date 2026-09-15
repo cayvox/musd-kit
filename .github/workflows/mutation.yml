@@ -1,0 +1,171 @@
+# The mutation gate (MK-112), placed by its measured cost.
+#
+# **What it is.** `scripts/mutation-check.mjs` puts each registered defect back, and each decision site the
+# rule in `scripts/mutation/sites.mjs` finds, one at a time, and checks that the project the register names
+# catches it (`scripts/mutation/sites.json`). A green run proves the listed mutants are caught and the
+# registered survivors are still not. It does not prove the tests are right about the contract; see
+# `docs/07-testing.md` §4d.
+#
+# **Why it is split, and where each half runs.** The measurements, and the reasoning from them, are in
+# `docs/07-testing.md` §4d. In short: the anchor and register check costs seconds and runs on every push;
+# on every push the unit mutants the change selects run in four shards, and a change to the gate itself
+# selects all of them; the full gate, the fork pass included, costs hours, because each fork mutant runs
+# the fork suite against its own anvil, so it runs weekly and is dispatched against the tree being
+# released (`docs/12-release-runbook.md`, precondition 9).
+name: Mutation gate
+
+on:
+  push:
+  # Sunday 06:00 UTC: after the weekly sweep (03:00) has had its two hours, so the two long jobs do not
+  # queue behind each other.
+  schedule:
+    - cron: '0 6 * * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+env:
+  # The same pinned block every fork job uses (MK-016).
+  MEZO_FORK_BLOCK: '15043414'
+
+jobs:
+  # Anchors, fingerprints and the register, in seconds. An unreviewed decision site, a drifted entry, a
+  # survivor without a registered finding: each fails here before anything runs.
+  check:
+    name: Anchors and register
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      # Pinned and declared here, not read from `.nvmrc` (MK-029, MK-044).
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Mutation check
+        run: node scripts/mutation-check.mjs --check
+
+  # The push path: the unit mutants a change can have affected. A mutant runs when its source file
+  # changed, when a test file that caught it last time changed, or when the gate itself changed, in which
+  # case everything runs (`docs/07-testing.md` §4d). Four shards, two vitest processes each.
+  changed:
+    name: Unit pass for the change (shard ${{ matrix.shard }} of 4)
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout, with the history the comparison needs
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # @musd-kit/react's tests import @musd-kit/core's build.
+      - name: Build
+        run: pnpm build
+
+      # On `main` the change is the push itself; on any other branch it is everything since it left `main`.
+      - name: Unit mutants for the change
+        env:
+          BASE: ${{ github.ref == 'refs/heads/main' && github.event.before || 'origin/main' }}
+        run: node scripts/mutation-check.mjs --changed "$BASE" --shard ${{ matrix.shard }}/4 --jobs 2 --report mutation-changed-${{ matrix.shard }}.json
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-changed-${{ matrix.shard }}
+          path: mutation-changed-${{ matrix.shard }}.json
+          if-no-files-found: warn
+
+  # The whole gate: the unit pass, the fork pass over every site the unit project does not catch, and the
+  # fork and packaging gate entries (shard 1). Weekly, and on dispatch before a release.
+  full:
+    name: Full gate (shard ${{ matrix.shard }} of 8)
+    needs: check
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # PINNED, not `stable` (MK-041).
+      - name: Install Foundry (anvil)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: 1.7.1
+
+      - name: Restore anvil fork state (per pinned block)
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.foundry/cache/rpc/31611/${{ env.MEZO_FORK_BLOCK }}
+          key: anvil-fork-31611-${{ env.MEZO_FORK_BLOCK }}
+
+      - name: Every mutant in this shard
+        env:
+          MEZO_TESTNET_RPC_URL: ${{ secrets.MEZO_TESTNET_RPC_URL }}
+        run: node scripts/mutation-check.mjs --all --shard ${{ matrix.shard }}/8 --jobs 2 --report mutation-full-${{ matrix.shard }}.json
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-full-${{ matrix.shard }}
+          path: mutation-full-${{ matrix.shard }}.json
+          if-no-files-found: warn

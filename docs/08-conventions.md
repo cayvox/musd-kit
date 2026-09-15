@@ -172,7 +172,7 @@ selected window.
 | # | Command | What must be reported |
 |---|---|---|
 | 1 | `pnpm test:unit`, with `MEZO_TESTNET_RPC_URL` unset and `anvil` off `PATH` | The pass count, and evidence the chain was genuinely absent |
-| 2 | `MEZO_FORK_BLOCK=15043414 pnpm test:fork`, five consecutive runs, **on the Node version the fork gate declares** (`node-version` in `.github/workflows/ci.yml`, currently 24.19.0). **The block is not optional**: unset, anvil forks at `latest` and the byte identity this row demands cannot hold (MK-082) | **All five results, in full**, and **the Node version they ran on** (`node -v`). Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
+| 2 | `MEZO_FORK_BLOCK=15043414 pnpm test:fork`, five consecutive runs, **on every tool version the fork gate declares, not only its runtime**: in the `Fork gate + coverage` job of `.github/workflows/ci.yml`, Node (`node-version`, currently 24.19.0), pnpm (`pnpm/action-setup`, 9.15.9) and Foundry (`foundry-toolchain`, 1.7.1, which is the anvil every fork test runs against). The same applies to any other gate a wave cites local fork evidence for: `.github/workflows/mutation.yml` declares the same three for the mutation gate's fork pass. `foundryup --install <version>` installs the declared Foundry. **The block is not optional**: unset, anvil forks at `latest` and the byte identity this row demands cannot hold (MK-082) | **All five results, in full**, and **the version of every declared tool they ran on** (`node -v`, `pnpm --version`, `anvil --version`), each equal to the workflow's. Every red run attributed to an existing MK ID or registered as a new one. The seeded answer, which must be byte identical across all five |
 | 3 | `pnpm test:coverage` | All four metrics against the ratchet. A metric below its floor is fixed with tests, never by lowering the floor |
 | 4 | `pnpm typecheck` | Clean |
 | 5 | `pnpm -r --filter "./examples/*" typecheck` | Clean |
@@ -183,7 +183,7 @@ selected window.
 | 10 | **Commit the instrument for every measurement you intend to cite**, before citing it. A number quoted in a finding, a pull request body or the documentation is only citable if the code that produced it is in the repository and someone else can run it, and the command is recorded beside the number | The command, verbatim, next to every number. A measurement whose instrument is not committed is not reportable as a measurement; see the labels below |
 | 11 | **A boundary that moves with time is established by SENDING, across the delay a caller will actually have, and is reported with that delay.** A simulation evaluates at the current block; a transaction executes in a later one. So a value read at block N and simulated at block N is an exact equality that passes, and the same value sent is refused, because the contract accrues before it reads (`TroveManager.sol:366` then `:1218-1221`). Vary the elapsed time, hold the method constant, and state the window the answer holds for. **A number obtained by simulation is labelled `simulated` wherever it is cited** and cannot be cited as chain behaviour | The ladder: the amount, the delays tried, and the outcome at each. A margin sized for a window is asserted at BOTH ends, the delay it covers and the delay it does not |
 | 12 | **When a document tells a reader to run a command, confirm that nothing in the repository already performs it, and point at that instead.** Grep the repository for the command before writing it into a document: a workflow, a script or a CI step that already does the job makes the documented version the worse route and usually the less safe one, and it is the route nobody ever executes (MK-083) | The grep, and either "nothing performs this" or the file that does. A document that names a command a workflow already runs is corrected to name the workflow, keeping one sentence on why the raw command is not the route |
-| 13 | **Every pin the wave adds names its mutation, and the mutation gate is run.** `node scripts/mutation-check.mjs --check` first, then `node scripts/mutation-check.mjs`, and `--all` when a fork or packaging gate pin was added or its code changed. A test is a pin only once its defect has been put back and the test went red (MK-110) | The gate's output for every new or changed mutation: its id and the tests that caught it. A mutation caught by nothing fails the wave. A new pin with no mutation entry is reported as a test, not as a pin |
+| 13 | **The mutation gate, both halves.** `node scripts/mutation-check.mjs --check` (seconds), then `node scripts/mutation-check.mjs --changed origin/main`, which is what CI's `Mutation gate` workflow runs on every push; and `--all`, the fork pass included, when the wave adds or changes a fork or packaging gate pin, anything under `scripts/mutation/`, or any `*.fork.test.ts`. Every pin the wave adds names its mutation, as an entry in `scripts/mutation/entries.mjs` or as a decision site the register records as caught. A test is a pin only once its defect has been put back and the test went red (MK-110, MK-112) | The output of both: the counts line `--check` prints (entries, decision sites, how many sites the entries mutate, and each status), and every new or changed entry with the tests that caught it. A mutation caught by nothing fails the wave, an unreviewed decision site fails the wave, and an entry caught only by tests whose names do not cite its finding fails the wave (MK-116, MK-117). A survivor is registered under a finding with its class, `uncaught`, `equivalent` or `unreachable`, never left without one. A new pin with no mutation is reported as a test, not as a pin |
 
 **Why this list exists, and why it is written as a rule rather than a suggestion.** Steps 5
 and 7 were absent from two waves' acceptance criteria. A broken example consequently reached
@@ -217,11 +217,18 @@ Each of the three closes one specific absence that produced MK-029.
   fixes until someone bumps it, and nothing will remind you. That is the trade, taken deliberately:
   a stale pin fails visibly when you bump it, a floating label fails invisibly under a commit that
   changed nothing.
-- **Step 2's Node requirement** exists because local and CI evidence cannot be compared unless
-  they ran the same runtime. Five green local runs on Node 20.20.1 and four red fork gate runs
+- **Step 2's version requirement** exists because local and CI evidence cannot be compared unless
+  they ran the same tools. Five green local runs on Node 20.20.1 and four red fork gate runs
   on 24.19.0 were all reporting honestly and were never in contradiction. Running the fork
-  suite on the version the gate declares is what turns "it passed here" into evidence about
+  suite on the versions the gate declares is what turns "it passed here" into evidence about
   the build rather than about a laptop.
+
+  **It named only Node until the P26 wave** (MK-237). It was written from MK-029 on 2026-08-24
+  (`40ff7db`), when Node was the one input that had differed and CI still floated Foundry at
+  `stable`, so there was no declared anvil to name; MK-041 pinned Foundry three days later
+  (`e187c66`) and generalised the pinning rule above, and nobody went back to step 2. So the P25
+  wave's fork evidence was taken on anvil 1.5.1 against a gate that declares 1.7.1, and the rule
+  it was checked against allowed that.
 - **Step 8** exists because nothing pointed at CI at all. The PR 8 report even said in as many
   words that CI had not been checked. Saying so is not the same as looking.
 - **Step 9** exists because a branch being green does not make `main` green, and because five
