@@ -9,19 +9,24 @@ wagmi setup) already established. There is **no musd-kit provider**.
 > endorsed by Mezo**. An unofficial community **Mezo MUSD SDK**. **Status: pre-1.0 (`0.x`),
 > for testnet and evaluation.** License: MIT.
 
-## `useBorrowingPower` returns the recommended draw, not the ceiling (MK-100)
+## How much to borrow is your user's decision (MK-240)
 
-Since 0.4.0 `data` is the **recommended** draw: the largest open that still clears every gate after
-a measured adverse price move and an interest window, both stated on
-`BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS` in `@musd-kit/core`.
-The contract's **ceiling** is available from `useBorrowingPowerDetail`, over the same single fetch.
-Both hooks take `marginWindowSeconds` and `priceMoveBps` to widen the margin for a slower flow or
-narrow it for an immediate send; omitted, the measured default applies, and the detail's `margin`
-reports the one used.
-Show the ceiling as a limit and never open at it: in normal mode it lands the position at exactly
-the 110% minimum collateral ratio, and a fork reproduction found it liquidatable one second later.
+`useBorrowingPower` returns the contract's **ceiling**, `{ ceiling, ceilingIcr, isRecoveryMode, price }`.
+Show it as a limit and never open at it: in normal mode it lands the position at exactly the 110%
+minimum collateral ratio, and a fork reproduction found it liquidatable one second later.
 
-Until 0.3.1 this hook returned the ceiling. The record is MK-100 in
+A draw that survives being held needs a horizon and a price fall, and those are your user's choices.
+`useDrawForMargin` takes both, has no default for either, and stays disabled until both are supplied:
+
+```tsx
+const { data } = useDrawForMargin({ collateral, horizonSeconds, priceFallBps })
+// data.draw survives data.margin.priceFallBps over data.margin.horizonSeconds, and nothing more
+```
+
+How often a fall of a given size followed within a given horizon on Mezo mainnet is tabled in the
+`@musd-kit/core` README and in `docs/03-core-api.md`; over 86 days, a 2% fall followed within a week of
+57.6% of sampled start times. Until 0.5.0 `useBorrowingPower` returned a bare `recommended` draw sized for
+one hour and 2%, and this README called it the draw to offer. The record is MK-240 in
 [`FINDINGS.md`](https://github.com/cayvox/musd-kit/blob/main/FINDINGS.md).
 
 ## Install
@@ -42,7 +47,14 @@ not Passport**, usable with any wagmi connection layer.
 
 ## Upgrading
 
-**To 0.4.0.** `useBorrowingPower` returns the recommended draw instead of the ceiling, and an omitted
+**To 0.5.0.** Breaking. `useBorrowingPower` returns the ceiling result as an object, not a bare
+number; `useBorrowingPowerDetail` is removed; a draw sized to a margin is `useDrawForMargin`, with both
+inputs required (MK-240). `useRedeem` stays pending until the redemption mines and its `data` reports
+`settled` (MK-241). Withdrawal previews carry `capacityAfter` (MK-242). The ratio gate throws
+`ICRBelowMCR` from every path (MK-243). Adjustment legs are read by value (MK-244). Read
+`docs/16-migration-0.4-to-0.5.md` before you upgrade.
+
+**To 0.4.0.** `useBorrowingPower` returned a margin figure instead of the ceiling, and an omitted
 `account` now means the connected wallet (MK-106). A read hook whose inputs changed, or that is
 disabled, reports `data: undefined` and `pending` until the new question is answered, instead of the
 previous answer marked as a success (MK-102); a write hook resets when the account or chain changes.
@@ -67,8 +79,8 @@ The hooks work inside the wagmi context Passport sets up, no extra provider:
 ```
 
 ```tsx
-import { parseBtc, parseMusd } from '@musd-kit/core'
-import { useBorrowingPower, useOpenTrove, useTrove } from '@musd-kit/react'
+import { parseBtc } from '@musd-kit/core'
+import { useBorrowingPower, useDrawForMargin, useOpenTrove, useTrove } from '@musd-kit/react'
 
 function Position({ address }: { address: `0x${string}` }) {
   const { data: trove, isPending } = useTrove({ address }) // refetched on new blocks
@@ -76,14 +88,21 @@ function Position({ address }: { address: `0x${string}` }) {
   return <HealthBadge factor={trove.healthFactor} debt={trove.entireDebt} />
 }
 
-function OpenForm() {
+function OpenForm({ days, fallPercent }: { days: bigint; fallPercent: bigint }) {
   const collateral = parseBtc('0.05')
-  const { data: recommended } = useBorrowingPower({ collateral }) // the draw to offer (MK-100)
+  const { data: power } = useBorrowingPower({ collateral }) // a limit to show, never to open at
+  // The user chose the horizon and the fall; the SDK has no default for either (MK-240).
+  const { data: sized } = useDrawForMargin({
+    collateral,
+    horizonSeconds: days * 86_400n,
+    priceFallBps: fallPercent * 100n,
+  })
   const { openTrove, isPending, error } = useOpenTrove() // error is a typed MusdError
   return (
     <button
-      disabled={isPending || recommended === undefined}
-      onClick={() => openTrove({ collateral, debt: parseMusd('2500') })}
+      disabled={isPending || sized === undefined || sized.draw === 0n}
+      onClick={() => sized && openTrove({ collateral, debt: sized.draw })}
+      title={power ? `Contract ceiling ${power.ceiling}` : undefined}
     >
       {isPending ? 'Opening…' : 'Open Trove'}
     </button>
@@ -92,7 +111,7 @@ function OpenForm() {
 ```
 
 **Reads** (`useQuery`, refetched on every new block), fifteen: `useTrove`, `useHealthFactor`,
-`useLiquidationPrice`, `useBorrowingPower`, `useBorrowingPowerDetail`, `useBorrowPreview`,
+`useLiquidationPrice`, `useBorrowingPower`, `useDrawForMargin`, `useBorrowPreview`,
 `useBorrowingCapacity`, `useRefinancePreview`, `useOraclePrice`, `useMusdBalance`,
 `useAdjustTrovePreview`, `useWithdrawCollateralPreview`, `useMaxWithdrawableCollateral`,
 `useClosePreview`, `useRedeemPreview`.

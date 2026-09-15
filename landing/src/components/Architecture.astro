@@ -20,10 +20,10 @@ const { data: trove } = useTrove({ address })`,
     key: 'react',
     name: 'React hooks',
     sub: 'useTrove · useOpenTrove · useBorrowingPower',
-    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. Selectors over one shared query, so health factor and liquidation price share a single fetch. useBorrowingPower returns the recommended draw, which leaves a measured margin; the contract ceiling comes from useBorrowingPowerDetail and is a limit, not an amount (MK-100).',
+    desc: 'Wagmi-idiomatic hooks with block-watching refetch and typed errors. Selectors over one shared query, so health factor and liquidation price share a single fetch. useBorrowingPower returns the contract ceiling, a limit and not an amount (MK-100); useDrawForMargin sizes a draw for a horizon and a price fall the user chooses (MK-240).',
     code: `const { openTrove, isPending, error } = useOpenTrove()
-// The recommended draw, with a measured margin (MK-100)
-const { data: recommended } = useBorrowingPower({ collateral })`,
+// A draw for the margin the user chose (MK-240)
+const { data } = useDrawForMargin({ collateral, horizonSeconds, priceFallBps })`,
     lang: 'tsx',
     box: { l: 50, t: 132, w: 244 },
   },

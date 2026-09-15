@@ -354,8 +354,12 @@ with no `_maxFeePercentage`** (C5 extends to redemption; any fee guard is SDK-si
     partialNICR, maxIterations)` to `redeemCollateral`.
   - **FEE, CORRECTION (verified on the fork, Phase 6):** the **`0%-for-loan-holders` rule
     does NOT hold in this deployment.** A redeemer who holds an open loan paid the **full
-    `borrowerOperations.redemptionRate()` = 0.75%** (measured from the `Redemption` event:
-    `_collateralFee / (_collateralSent + _collateralFee) ≈ 0.744%`). The SDK reads
+    `borrowerOperations.redemptionRate()` = 0.75%** (measured from the `Redemption` event).
+    **The formula this line carried until MK-241 read the event wrong**: it divided the fee by
+    `_collateralSent + _collateralFee`, taking `_collateralSent` as net of the fee, and got 0.744%.
+    `_collateralSent` is passed `totalCollateralDrawn`, fee INCLUDED (`TroveManager.sol:420-425`), so the
+    fee fraction is `_collateralFee / _collateralSent`, 0.75%; 0.744% is 0.75% divided by 1.0075, the
+    signature of exactly that misreading. The SDK reads
     `redemptionRate()` and applies it to all redeemers (governable, never hardcode 0.75%).
   - **`truncatedAmount`** is the redeemable amount given the `minNetDebt` floor on the last
     touched Trove (and `maxIterations`). The `Redemption` event reports
@@ -366,8 +370,9 @@ with no `_maxFeePercentage`** (C5 extends to redemption; any fee guard is SDK-si
     `minNetDebt` floor) redeems exactly `truncatedAmount`. Compute hints immediately before
     sending and **do not mine a block between** the hint and the redeem (interest drift
     invalidates the partial hint).
-  - **Surplus/claim:** a fully-redeemed Trove (status → 4, closedByRedemption) and an
-    RM-liquidated above-MCR Trove leave surplus collateral in the **CollSurplusPool**
+  - **Surplus/claim:** a fully-redeemed Trove (status → 4, closedByRedemption) leaves surplus
+    collateral in the **CollSurplusPool** (`TroveManager.sol:1195`, the only writer; this protocol has no
+    Recovery Mode liquidation, MK-001, which this line also named until MK-246)
     (`0xB4C35747…`, `getCollateral(address)`); the borrower withdraws it via
     `claimCollateral()`. A liquidation at `ICR ≈ 1.0` leaves no surplus.
 
@@ -447,8 +452,10 @@ viem's decoded `reason` (via `ContractFunctionRevertedError`):
 - **`Unauthorized`**, the SDK surface calls no governance/permission-gated function, so the
   `OwnableUnauthorizedAccount` path is unreachable. Defined/exported for completeness only.
 - **`InsufficientCollateral`**, the on-chain `ICR < MCR` revert maps to `ICRBelowMCR`
-  (contract-authoritative). `InsufficientCollateral` is retained as the *preview-time*
-  sibling (for the math/React layer); the write path surfaces `ICRBelowMCR`.
+  (contract-authoritative), and since MK-243 the adjust precheck throws `ICRBelowMCR` for the same
+  gate too. `InsufficientCollateral` names only a withdrawal larger than the collateral, which on chain
+  is a Panic (`BorrowerOperations.sol:1319`, via `:828`). Until 0.5.0 this bullet said the write path
+  surfaced `ICRBelowMCR`, while the precheck, which runs first, threw `InsufficientCollateral`.
 
 **The claim row is the one reason that is matched but deliberately not mapped.** MUSD's
 `claimCollateral()` does not return zero when there is nothing to claim, it reverts, verified

@@ -70,6 +70,7 @@ export default defineConfig({
           { text: 'Migration, 0.1 to 0.2', link: '/11-migration-0.1-to-0.2' },
           { text: 'Migration, 0.2 to 0.3', link: '/14-migration-0.2-to-0.3' },
           { text: 'Migration, 0.3 to 0.4', link: '/15-migration-0.3-to-0.4' },
+          { text: 'Migration, 0.4 to 0.5', link: '/16-migration-0.4-to-0.5' },
           { text: 'Release runbook', link: '/12-release-runbook' },
           { text: 'Live testnet ledger', link: '/13-live-testnet-ledger' },
           { text: 'Glossary', link: '/10-glossary' },

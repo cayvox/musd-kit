@@ -35,6 +35,11 @@ deleted from a result.
 
 ## 1. `getBorrowingPower` returns two figures (MK-100)
 
+> **Superseded in 0.5.0 (MK-240).** `recommended` was sized for one hour and a 2% fall, and this section
+> told you to replace `max` with it. A position held for days did not survive that margin in most of the
+> mainnet history measured since. 0.5.0 removes it: offer `drawForMargin` with a horizon and a fall you or
+> your user choose. See [`16-migration-0.4-to-0.5.md`](./16-migration-0.4-to-0.5.md).
+
 ```ts
 // 0.3
 const max: bigint = await musd.getBorrowingPower({ collateral, account })

@@ -63,11 +63,13 @@ and docs. Where a term has a verified on-chain value, it links to
 - **Redemption**, any MUSD holder burning MUSD for $1-of-BTC each, taken from the
   lowest-ICR Troves above 110%. Fee = the current `redemptionRate()`, applied to ALL
   redeemers (the "0% for loan holders" rule was disproven on the fork in Phase 6, see
-  `01-ground-truth.md` §8). Uses `getRedemptionHints`; respects the `minNetDebt`
-  floor via `truncatedAmount`.
+  `01-ground-truth.md` §8). Uses `getRedemptionHints` for its hints and `previewRedeem`'s walk for
+  the `minNetDebt` floor gap and the last Trove rule; reports what settled from the receipt (MK-241).
 
 - **Borrowing power**, the maximum MUSD drawable against given collateral at a price
-  while staying above MCR, subject to the `minNetDebt` floor. (`05` §3)
+  while staying at or above MCR, subject to the `minNetDebt` floor: the contract's ceiling, a limit
+  and not an amount to borrow. A draw that survives a chosen fall over a chosen horizon is
+  `drawForMargin` (MK-240). (`05` §3)
 
 - **Borrowing fee**, a governable fee on the draw, added to debt, minted to the PCV.
   Read via `getBorrowingFee(draw)`. (`01-ground-truth` §3)
