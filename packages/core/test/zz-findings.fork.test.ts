@@ -75,7 +75,7 @@ import {
 import { describe, expect, it } from 'vitest'
 import {
   CCR,
-  InsufficientCollateral,
+  ICRBelowMCR,
   MCR,
   MUSD_GAS_COMPENSATION,
   borrowerOperationsAbi,
@@ -1011,17 +1011,18 @@ describe('Open findings, pinned by failing tests (P2)', () => {
       // MK-042 changed WHERE it is refused, and this assertion changed with it rather than
       // being weakened. Before the preview surface existed the call reached the chain and
       // came back as `ICRBelowMCR`, decoded from the revert. Now the precheck evaluates the
-      // same gate first and throws `InsufficientCollateral`, the pre-send guard's error,
-      // carrying the resulting ratio and the threshold. **The user is refused either way;
-      // the difference is that they are no longer charged gas to find out.**
+      // same gate first, and since MK-243 it throws the SAME code the decoder throws for that
+      // gate, `ICRBelowMCR`, carrying the resulting ratio and the threshold; it threw
+      // `InsufficientCollateral` from 0.2.x to 0.4.x. **The user is refused either way; the
+      // difference is that they are no longer charged gas to find out.**
       //
       // This test failing on the wave that closed the gap is the pin working: it asserted a
       // behaviour, the behaviour changed on purpose, and the assertion had to be revisited
       // rather than the change landing silently.
       await expect(
         client.addCollateral({ amount: BTC / 1000n }),
-        'MK-038: `_requireICRisAboveMCR` is an absolute floor, not a direction check',
-      ).rejects.toBeInstanceOf(InsufficientCollateral)
+        'MK-038, MK-243: `_requireICRisAboveMCR` is an absolute floor, not a direction check',
+      ).rejects.toBeInstanceOf(ICRBelowMCR)
 
       // And the preview says the same thing WITHOUT sending anything, which is what MK-042
       // added: the verdict, the reason, and the number that would actually work.
