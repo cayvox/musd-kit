@@ -270,15 +270,19 @@ describe('MK-118, redeem()', () => {
   })
 
   it('MK-241: the estimate comes from the walk, not the hint helper, and asks the chain for no fee', async () => {
-    // The helper reports 5,000 MUSD more than the walk expects, the MK-048 shape. The estimate must be
-    // the walk's figure, and its fee the contract's formula applied locally.
-    const c = chain([2n * E18, 2n * E18], { truncated: 65_060n * MUSD })
-    const result = await redeem(c.writeDeps, { amount: 40_000n * MUSD })
+    // The first Trove is consumed whole and the second, left 29,000 of its 30,030, would fall under the
+    // 1,800 floor, so its partial cancels and the walk expects 30,030 of the 59,500 asked for. The helper
+    // reports the whole 59,500, the MK-048 shape. The estimate must be the walk's figure, not the amount
+    // asked and not the helper's, and its fee the contract's formula applied locally.
+    const amount = 59_500n * MUSD
+    const c = chain([2n * E18, 2n * E18], { truncated: amount })
+    const result = await redeem(c.writeDeps, { amount })
     const walk = await previewRedeem(c.writeDeps, {
       redeemer: '0x000000000000000000000000000000000000dEaD',
-      amount: 40_000n * MUSD,
+      amount,
       marginSeconds: 60n,
     })
+    expect(walk.redeemable, 'fixture: the walk expects less than was asked').toBeLessThan(amount)
     expect(result.estimatedBeforeSend.redeemable).toBe(walk.redeemable)
     const drawn = (walk.redeemable * E18) / (76_750n * MUSD)
     expect(result.estimatedBeforeSend.collateralDrawn).toBe(drawn)

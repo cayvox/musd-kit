@@ -68,7 +68,7 @@ export const RETIRED_CLAIMS = [
   {
     finding: 'MK-241',
     claim:
-      /RedeemResult\.truncatedAmount|RedeemResult` carries `truncatedAmount`|estimatedFeeCollateral/,
+      /RedeemResult\.truncatedAmount|RedeemResult` carries `truncatedAmount`|estimatedFeeCollateral|^\/\/ `truncatedAmount` as DATA/,
     correct:
       'RedeemResult reports what settled, from the receipt, and names its estimate as taken before sending.',
   },

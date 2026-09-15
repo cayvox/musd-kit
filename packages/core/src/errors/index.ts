@@ -617,6 +617,7 @@ export function assertPositiveAmount(field: string, value: bigint): void {
   if (value <= 0n) throw new InvalidAmount(field, value)
 }
 
-// NOTE: `RedemptionTruncated` is intentionally NOT a thrown error, `redeem` surfaces
-// `truncatedAmount` as DATA on its result (Phase 6 decision). `ApprovalRequired` is not
+// NOTE: `RedemptionTruncated` is intentionally NOT a thrown error: a redemption that redeems less than it
+// asked reports it as DATA, `RedeemResult.settled.unredeemedAmount` since MK-241, where it was the hint
+// helper's `truncatedAmount` from Phase 6 to 0.4.x. `ApprovalRequired` is not
 // shipped, Phase 5 verified repay/close need no approval, so it would be unreachable.

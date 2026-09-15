@@ -47,6 +47,11 @@ const CASES: { finding: string; was: string; now: string }[] = [
     now: ' * **Do not size a redemption from `getRedemptionHints`.** Its truncated amount answers a different',
   },
   {
+    finding: 'MK-241',
+    was: '// `truncatedAmount` as DATA on its result (Phase 6 decision). `ApprovalRequired` is not',
+    now: '// asked reports it as DATA, `RedeemResult.settled.unredeemedAmount` since MK-241, where it was the hint',
+  },
+  {
     finding: 'MK-243',
     was: ' * The resulting ICR would fall below MCR. Preview-time sibling of {@link ICRBelowMCR}:',
     now: ' * The individual ratio gate, `_requireICRisAboveMCR` (`BorrowerOperations.sol:1330-1335`): an operation',

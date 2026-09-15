@@ -236,15 +236,12 @@ export const ENTRIES = [
 
   // --- P17. The React package, which no gate had ever reached. ---------------------------
 
-  {
-    id: 'MK-085 hook (an absent leg must stay absent)',
-    what: 'default the debt leg to zero and forward it, so every adjustment is a debt increase',
-    file: 'packages/react/src/hooks/reads.ts',
-    scope: 'useAdjustTrovePreview.legs',
-    fingerprint: 'bb3247416bc54d27',
-    from: '    ...(params.increaseDebt !== undefined ? { increaseDebt: params.increaseDebt } : {}),',
-    to: '    increaseDebt: params.increaseDebt ?? 0n,',
-  },
+  // 'MK-085 hook (an absent leg must stay absent)' is withdrawn by MK-244. It forwarded an absent debt leg as
+  // `0n`, which made every adjustment a debt increase while the core read the flag from presence. Since
+  // MK-244 the core reads legs by value, so `0n` and absent are the same call and the mutant puts back no
+  // defect; the gate found it caught only by a key test that does not cite MK-085. What the hook must still
+  // do, forward a non zero draw, is the decision site at `useAdjustTrovePreview.legs`, pinned by
+  // 'MK-085, MK-244: a non zero draw reaches the core as a draw'.
   {
     id: 'MK-085 key (absent and zero must not share a cache entry)',
     what: 'encode an absent leg as zero in the query key, so the two questions collide',
@@ -645,7 +642,7 @@ export const ENTRIES = [
     what: 'stop recognising the normal mode liquidatability claim MK-001 retired',
     file: 'scripts/retired-claims.mjs',
     scope: 'RETIRED_CLAIMS',
-    fingerprint: '3ae49267b6754ca7',
+    fingerprint: '0c957f3c67da8ab6',
     from: '    claim: /Normal-mode liquidatab/i,',
     to: '    claim: /a sentence nobody wrote/i,',
   },

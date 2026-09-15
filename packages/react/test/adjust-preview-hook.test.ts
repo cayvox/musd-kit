@@ -134,6 +134,18 @@ describe('MK-085, useAdjustTrovePreview keeps an omitted leg omitted', () => {
     expect(p?.resultingIcr).toBe((BTC * PRICE) / (5_200n * MUSD))
   })
 
+  it('MK-085, MK-244: a non zero draw reaches the core as a draw, with its numbers', async () => {
+    const { result } = renderPreview({ owner: OWNER, increaseDebt: 1_000n * MUSD })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    const p = result.current.data
+    expect(p?.viable).toBe(true)
+    expect(p?.netDebtChange, 'the draw, plus a zero fee from the stub').toBe(1_000n * MUSD)
+    expect(p?.resultingEntireDebt).toBe(11_200n * MUSD)
+    // The fee is read only on a debt increase (`BorrowerOperations.sol:813-818`), so its read is the
+    // evidence the leg arrived as one.
+    expect(calls).toContain('getBorrowingFee')
+  })
+
   it('MK-244: a zero debt leg beside a top up is no debt leg, as the write path sends it', async () => {
     const { result } = renderPreview({ owner: OWNER, addCollateral: BTC, increaseDebt: 0n })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))

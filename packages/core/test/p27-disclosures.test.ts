@@ -10,6 +10,7 @@ import {
   ExceedsBorrowingCapacity,
   ICRBelowMCR,
   InsufficientCollateral,
+  InvalidAmount,
   MCR,
   RecoveryModeRestriction,
   capacityAfterAdjustment,
@@ -238,6 +239,23 @@ describe('MK-242, the capacity a withdrawal leaves', () => {
       capacity: capAt(2n * BTC, PRICE),
     })
     expect(rm.capacityAfter.lost).toBe(0n)
+  })
+})
+
+describe('MK-244, a single leg write still refuses a zero amount', () => {
+  // `withdrawMUSD`, `repayMUSD`, `addColl` and `withdrawColl` each send one amount, so a zero one has no
+  // encoding the contract accepts: `(0, true)` is refused at `:785-787`, and the other three are a call with
+  // no change, refused at `:1377-1386`. Only `adjustTrove`, which carries several legs, reads a zero as none.
+  it('borrow, repay, addCollateral and withdrawCollateral throw InvalidAmount for zero before any read', async () => {
+    for (const [name, run] of [
+      ['borrow', (d: WriteDeps) => borrow(d, { amount: 0n })],
+      ['withdrawCollateral', (d: WriteDeps) => withdrawCollateral(d, { amount: 0n })],
+    ] as const) {
+      const f = fake()
+      const e = await run(f.write).catch((x: unknown) => x)
+      expect(e, name).toBeInstanceOf(InvalidAmount)
+      expect(f.calls, `${name}: no read`).toEqual([])
+    }
   })
 })
 
