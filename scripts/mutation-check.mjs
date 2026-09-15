@@ -64,6 +64,7 @@ import {
 } from 'node:fs'
 import { availableParallelism, homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { zstdDecompressSync } from 'node:zlib'
 import { AnchorError, applyEntry, locate, parse } from './mutation/anchor.mjs'
 import { ENTRIES } from './mutation/entries.mjs'
 import { allSites } from './mutation/sites.mjs'
@@ -215,12 +216,20 @@ const VITEST = resolve('node_modules/vitest/vitest.mjs')
 const UNIT_RUN_LIMIT_MS = 15 * 60_000
 const FORK_RUN_LIMIT_MS = 45 * 60_000
 const FORK_BLOCK = process.env.MEZO_FORK_BLOCK ?? 'latest'
-/** The fork cache as it was when the gate started, if it exists and parses; copied into each fork run. */
+/**
+ * The fork cache as it was when the gate started, if it exists and parses; copied into each fork run.
+ * anvil 1.5.1 writes `storage.json` as JSON and anvil 1.7.1, the version CI declares, writes it
+ * Zstandard compressed under the same name (MK-238), so a compressed file is decompressed before it is
+ * parsed, and copied as it is.
+ */
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
 const FORK_CACHE_SNAPSHOT = (() => {
   const shared = join(homedir(), '.foundry/cache/rpc/31611', FORK_BLOCK, 'storage.json')
   if (!existsSync(shared)) return undefined
   try {
-    JSON.parse(readFileSync(shared, 'utf8'))
+    const bytes = readFileSync(shared)
+    const text = bytes.subarray(0, 4).equals(ZSTD_MAGIC) ? zstdDecompressSync(bytes) : bytes
+    JSON.parse(text.toString('utf8'))
   } catch {
     console.log(`the fork cache at ${shared} does not parse, so fork runs start cold`)
     return undefined
