@@ -177,6 +177,7 @@ claim about it was not).
 | MK-254 | The sweep's expected set still registers the ten MK-079 mismatches, which MK-244 made impossible: the 0.5.0 sweep reported all ten as EXPECTED-BUT-ABSENT | S3, tests | open. A matcher that cannot fire would absorb a future real mismatch of that shape |
 | MK-255 | Three of the five deprecation messages send a reader to a version that is itself deprecated, 0.1.0 to 0.2.0 and 0.2.0 to 0.3.0 among them | S3, registry | open. 0.4.0's was rewritten because its target carried the identical MK-240 defect; the older chain was left, and the test that asserts the property is scoped to the entries written now |
 | MK-256 | The deprecation workflow verifies its write by reading `npm view`, retries only an EMPTY answer, and so fails a successful re-deprecation; the re-dispatch that would fix the colour then fails with E422 because nothing is left to change | S2, process | open. 0.4.0 has no green run and is correct on the registry, checked against the registry document directly |
+| MK-257 | Three post publish checks ran only because a person remembered them: the retired claims check over the published tarball, the provenance statement beyond its repository line, and the README npm serves against the one shipped | S2, process | **fixed.** All three are steps in `verify-published.yml`, each failing the job, and the job was proven against the published 0.5.0 |
 
 ---
 
@@ -8722,6 +8723,49 @@ shape that teaches a reader to ignore this workflow's colour.
 it is empty, sourcing the read from the registry document rather than the `npm view` path, and treat an
 E422 whose current text already equals the intended text as success with a line saying so. Until then, the
 evidence a deprecation worked is the registry document, and this runbook records it that way.
+
+---
+
+## MK-257 · The post publish checks that only ran because someone remembered them
+
+**Class** S2, process · **Status** fixed · **Found by** reporting the 0.5.0 release: the checks were run,
+by hand, and the report said so
+
+`verify-published.yml` proved that the published packages install and import, that the installed version is
+the published one, that the file list matches the allowlist, and that the provenance names this repository.
+Three further checks were run against 0.5.0 and none of them was in the job:
+
+- the retired claims check over the PUBLISHED tarballs (MK-246), which reports 119 hits over published
+  0.4.1 and 0 over 0.5.0;
+- the provenance statement past its repository line: the workflow that built it, the ref, the subject and
+  the commit;
+- the README the registry SERVES against the README the tarball ships, which is what a person reads on
+  npmjs.com before installing.
+
+**Why that is a finding rather than a chore.** This repository has the same failure written down twice
+already: MK-053, a verification job that existed for two releases without ever producing a verdict, and
+MK-083, a runbook that documented commands nobody ran. A check that depends on someone remembering is a
+habit, and a habit is not a gate. The 0.5.0 record itself says these three were run by hand, which makes
+the next release's evidence depend on the next person reading that sentence.
+
+**What changed.** Three steps in `.github/workflows/verify-published.yml`, each exiting non zero with a
+`FAIL:` line rather than warning:
+
+- `Check the provenance statement in full, against the registry` asserts the repository, the workflow path
+  `.github/workflows/release.yml`, the ref `refs/heads/main` and the subject `pkg:npm/%40musd-kit/<pkg>@<version>`,
+  and asserts the build commit when one is passed. `release.yml` now passes `${{ github.sha }}`, so a real
+  release asserts it; a manual dispatch may omit it and the step reports the attested commit instead.
+- `Compare the README the registry serves with the one in the tarball` fails on a sha256 difference and on
+  a `latest` that is not the version being verified.
+- `Check the published tarballs for claims a finding retired` runs `scripts/retired-claims.mjs` over both
+  extracted tarballs.
+
+**One consequence, stated rather than discovered later.** The retired claims entries come from the
+checkout, so dispatching this job against a version published before a claim was retired fails, correctly:
+over 0.4.1 the check reports 119 hits. The question the step asks is whether the artifact carries a
+sentence this tree has since retired, and for an old release the answer is yes.
+
+**Proven, not described**: dispatched against the published 0.5.0, run recorded in `docs/12-release-runbook.md`.
 
 ---
 

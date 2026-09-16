@@ -135,3 +135,6 @@ jobs:
     uses: ./.github/workflows/verify-published.yml
     with:
       version: ${{ needs.publish.outputs.version }}
+      # The commit this run publishes from, so the called job asserts the provenance statement
+      # against it rather than only naming the repository (MK-257).
+      commit: ${{ github.sha }}

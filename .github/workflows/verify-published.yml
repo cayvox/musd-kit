@@ -25,10 +25,19 @@ on:
         description: 'Published version to verify'
         required: true
         type: string
+      commit:
+        description: 'The commit the publish ran from, asserted against the provenance statement'
+        required: false
+        type: string
+        default: ''
   workflow_dispatch:
     inputs:
       version:
         description: 'Published version to verify, blank to use packages/core/package.json'
+        required: false
+        default: ''
+      commit:
+        description: 'Commit the publish ran from, blank to report the attested commit without asserting it'
         required: false
         default: ''
 
@@ -162,3 +171,91 @@ jobs:
               echo "FAIL: @musd-kit/$p@$V provenance names $REPO, expected this repository" >&2; exit 1; }
             echo "  @musd-kit/$p@$V provenance attests to $REPO"
           done
+
+      # The rest of the provenance statement, and the two artifact checks a person was running by
+      # hand after every release (MK-257). The repository line above was the only part of the
+      # statement anything read: the workflow that built it, the ref it ran on, the commit and the
+      # subject were all verified by someone remembering to, which is the shape MK-053 is about.
+      - name: Check the provenance statement in full, against the registry
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          WANT_COMMIT='${{ inputs.commit }}'
+          cd "$RUNNER_TEMP/postpublish"
+          for p in core react; do
+            curl -sL "https://registry.npmjs.org/-/npm/v1/attestations/@musd-kit%2f$p@$V" > "att-$p.json"
+            node -e "
+            const fs = require('node:fs')
+            const [pkg, version, repository, wantCommit] = process.argv.slice(1)
+            const j = JSON.parse(fs.readFileSync('att-' + pkg + '.json', 'utf8'))
+            const a = (j.attestations || []).find(x => x.predicateType === 'https://slsa.dev/provenance/v1')
+            if (!a) { console.error('FAIL: @musd-kit/' + pkg + '@' + version + ' has no SLSA provenance statement'); process.exit(1) }
+            const st = JSON.parse(Buffer.from(a.bundle.dsseEnvelope.payload, 'base64').toString())
+            const wf = st.predicate.buildDefinition.externalParameters.workflow
+            const commit = st.predicate.buildDefinition.resolvedDependencies?.[0]?.digest?.gitCommit
+            const subject = st.subject?.[0]?.name
+            const fail = (m) => { console.error('FAIL: @musd-kit/' + pkg + '@' + version + ' ' + m); process.exit(1) }
+            if (wf.repository !== 'https://github.com/' + repository) fail('provenance repository is ' + wf.repository)
+            if (wf.path !== '.github/workflows/release.yml') fail('provenance names workflow ' + wf.path + ', expected .github/workflows/release.yml')
+            if (wf.ref !== 'refs/heads/main') fail('provenance names ref ' + wf.ref + ', expected refs/heads/main')
+            const want = 'pkg:npm/%40musd-kit/' + pkg + '@' + version
+            if (subject !== want) fail('provenance subject is ' + subject + ', expected ' + want)
+            if (!commit) fail('provenance carries no build commit')
+            if (wantCommit && commit !== wantCommit) fail('provenance attests to commit ' + commit + ', expected ' + wantCommit)
+            console.log('  @musd-kit/' + pkg + '@' + version + ' provenance: ' + wf.path + ' on ' + wf.ref + ' at ' + commit + (wantCommit ? ' (asserted)' : ' (reported, no commit given to assert)'))
+            " "$p" "$V" "${{ github.repository }}" "$WANT_COMMIT"
+          done
+
+      # **The README npm SERVES, not the one in the tarball.** The registry document carries its own
+      # copy, and it is what a person reads on npmjs.com before installing anything, so a publish
+      # that ships one README and displays another is a defect no import check can see.
+      - name: Compare the README the registry serves with the one in the tarball
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          cd "$RUNNER_TEMP/postpublish"
+          for p in core react; do
+            rm -rf "tar-$p" && mkdir -p "tar-$p"
+            tar xzf "$p.tgz" -C "tar-$p"
+            curl -sL "https://registry.npmjs.org/@musd-kit%2f$p" > "doc-$p.json"
+            node -e "
+            const fs = require('node:fs')
+            const { createHash } = require('node:crypto')
+            const [pkg, version] = process.argv.slice(1)
+            const sha = (x) => createHash('sha256').update(x).digest('hex')
+            const doc = JSON.parse(fs.readFileSync('doc-' + pkg + '.json', 'utf8'))
+            const served = doc.readme ?? ''
+            const shipped = fs.readFileSync('tar-' + pkg + '/package/README.md', 'utf8')
+            if (doc['dist-tags']?.latest !== version) {
+              console.error('FAIL: @musd-kit/' + pkg + ' latest is ' + doc['dist-tags']?.latest + ', expected ' + version)
+              process.exit(1)
+            }
+            if (sha(served) !== sha(shipped)) {
+              console.error('FAIL: @musd-kit/' + pkg + '@' + version + ' README the registry serves differs from the tarball: served sha256 ' + sha(served) + ' (' + served.length + ' bytes), shipped ' + sha(shipped) + ' (' + shipped.length + ' bytes)')
+              process.exit(1)
+            }
+            console.log('  @musd-kit/' + pkg + '@' + version + ' README matches what npm serves, sha256 ' + sha(shipped).slice(0, 16) + ', ' + shipped.length + ' bytes, and latest is ' + version)
+            " "$p" "$V"
+          done
+
+      # **Claims a closed finding retired, in the artifact npm actually delivered** (MK-246). The
+      # packaging gate runs this before a publish, over locally packed tarballs; nothing ran it
+      # after one, and the published 0.4.1 carried 119 such claims while the repository carried
+      # none.
+      #
+      # **Dispatching this against a version published BEFORE a claim was retired fails, and that
+      # is the correct answer**: the entries come from the checkout, so the question this step asks
+      # is whether the artifact contains a sentence this tree has since retired. Over 0.4.1 it
+      # reports 119 hits and exits 1.
+      - name: Check the published tarballs for claims a finding retired
+        run: |
+          set -euo pipefail
+          V='${{ steps.ver.outputs.version }}'
+          cd "$RUNNER_TEMP/postpublish"
+          for p in core react; do
+            rm -rf "tar-$p" && mkdir -p "tar-$p"
+            tar xzf "$p.tgz" -C "tar-$p"
+          done
+          node "$GITHUB_WORKSPACE/scripts/retired-claims.mjs" \
+            "$RUNNER_TEMP/postpublish/tar-core/package" \
+            "$RUNNER_TEMP/postpublish/tar-react/package"
