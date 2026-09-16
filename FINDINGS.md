@@ -39,8 +39,9 @@ claim about it was not).
 INDEX of that state, not a revision of it: every line points at the entry, which is where the evidence,
 the class and the wording live, and none of them is restated or reclassified here.
 
-**No S1 is open.** All 19 silently wrong number findings are fixed, the last four in 0.5.0 (MK-240,
-MK-241, MK-242 and, from the same audit, MK-247).
+**No S1 is open.** All 19 silently wrong number findings are fixed. **Three of them closed in 0.5.0**:
+MK-240, MK-241 and MK-242. The S1 before those was MK-114, fixed in 0.4.1. **MK-247 came from the same
+audit and is S2, not S1**, which an earlier wording of this line obscured by counting four.
 
 **S2, two.**
 
@@ -67,12 +68,52 @@ MK-241, MK-242 and, from the same audit, MK-247).
 | MK-251 | Two React claims are stronger than the rendered behaviour | open |
 | MK-255 | Three of the five deprecation messages send a reader to a version that is itself deprecated | **open, carried deliberately.** The entry states what it costs a consumer on each version, and closing it is eight registry writes |
 
-**What closed most recently.** 0.5.0 fixed MK-240 to MK-247 and MK-252; the release itself produced
-MK-253, MK-254, MK-256 and MK-257, all four fixed in the closing wave, and MK-255, carried.
+**What closed most recently, counted from the table.** **0.5.0 closed nine entries**: MK-240 to MK-247,
+which is eight, and MK-252, found while verifying the release and fixed before it published. **The release
+itself produced five more**: MK-253, MK-254, MK-256 and MK-257, all four fixed in the closing wave, and
+MK-255, carried and still open.
 
-**How to read an ID.** IDs are permanent and never reused, and the numbering is not dense: 1 to 121 are
-the waves up to 0.4.1, and 240 to 257 are the 0.4.1 consumer audit and everything it produced. There are
-no entries between 122 and 239, and nothing is missing.
+**How to read an ID.** IDs are permanent and never reused, and the numbering is not dense. **Three
+stretches are used: 1 to 121, 237 to 239, and 240 to 257.** 1 to 121 are the waves up to 0.4.1; 237, 238
+and 239 came from the review of pull request 42 and the re-runs it forced, about the tools the checklist
+declares, the fork cache anvil 1.7.1 writes, and a fork window that passed with half its differential
+cases thrown; 240 to 257 are the 0.4.1 consumer audit and everything it produced. **The single gap is 122
+to 236, 115 numbers, and nothing is missing from it.** An earlier wording of this line put the gap at 122
+to 239, which denied three entries that exist.
+
+## What the next release must contain
+
+**This list is the register's own closing conditions, gathered, not a new plan.** Each item names the
+finding it closes and quotes what that finding says closing it requires. It exists because the previous
+version of this list lived in a pull request body and a chat, and this programme has three entries about
+exactly that shape: MK-053, a post publish gate that had never executed once across two releases while
+being presented as part of the posture; MK-080, a sweep documented as scheduled while no `schedule:`
+trigger existed anywhere; and MK-083, a runbook that told a reader to run two commands a workflow already
+performed. **A thing that is true only in a conversation stops being true when the conversation ends**, and
+a list of what the next release owes is exactly that kind of thing.
+
+**Five of the twenty open findings state what would close them. Fifteen do not, and that is said here
+rather than filled in.**
+
+| Finding | Class | What closing it requires, from the register |
+|---|---|---|
+| MK-079 | S2 | A full sweep at a tip carrying MK-254's change that reports no mismatch of the zero debt leg shape and no `EXPECTED-BUT-ABSENT` line. Stated in MK-254's entry, which also says why the 0.5.0 sweep is not that evidence: its ten disappearances were measured BEFORE the harness filter was removed, so they are evidence about MK-244 |
+| MK-249 | S3, source | Either a path that throws `StaleHint` and `Unauthorized`, which for `StaleHint` needs a distinct revert reason the protocol does not give (`TroveManager.sol:406-409` is one reason for both an empty redemption and a stale hint), or their removal together with `STALE_HINT` and `UNAUTHORIZED` from `MusdErrorCode`, registered in the next breaking release's migration guide BEFORE that release's checklist is run, with `phase7.fork.test.ts:174-177` updated in the same change |
+| MK-255 | S3, registry | Rewrite the 0.1.0, 0.2.0, 0.3.0 and 0.3.1 deprecation entries to point at a version that is not itself deprecated, preserving each previous text in `scripts/deprecation-message.mjs` as 0.4.0's is, dispatch `deprecate.yml` once per version, verify each with `scripts/deprecation-verify.mjs`, then widen `deprecation-message.test.ts` from the two entries it covers to every entry |
+| MK-050 | S3 | The treatment MK-048 got: a margin field alongside `previewClose.musdRequired` rather than a change to it, plus a `closeBand` in the generator that funds an account to exactly the reported figure and expects a refusal |
+| MK-051 | S3 | The same treatment with the sign reversed: report `maxWithdrawableCollateral`'s figure alongside the window it is good for, or subtract a margin so the reported number survives a stated delay. A number good for one block is defensible only if the docstring says so |
+
+**The fifteen with no written closing condition**, listed so nobody reads their absence as nothing to do:
+MK-011 and MK-045 are recorded protocol properties rather than defects to fix; MK-016, MK-022, MK-023,
+MK-024, MK-025, MK-026, MK-030 and MK-034 are the phase 5 and 6 harness entries, none of which has
+reproduced since the fork block was pinned; MK-120, MK-121, MK-248, MK-250 and MK-251 are small source
+and documentation gaps left in place and stated. **Writing a closing condition for any of them is itself
+work a wave has to do, and inventing one here would be the same error this section exists to prevent.**
+
+**Two things this list deliberately does not contain.** A release date, because nothing here is
+scheduled. And the fork half of the mutation gate, which has never run in CI on a release commit: it runs
+on the Sunday schedule or a dispatch (`.github/workflows/mutation.yml:120`), so it is a precondition to
+execute, `docs/12-release-runbook.md` precondition 9, not a finding to close.
 
 ## Summary
 
@@ -137,7 +178,7 @@ no entries between 122 and 239, and nothing is missing.
 | MK-055 | The runbook tells you to push a `v*` tag after publishing, and the release workflow triggers on `v*` tags, so the documented path re-runs the publish | S3 | fixed in the workflow, and the interaction is named in the runbook |
 | MK-058 | `evaluateBorrow` omits the Recovery Mode rule that a debt increase must not lower the Trove's ICR, so a Recovery Mode borrow previews as viable when the contract accepts none | S1 | **fixed at the cause.** `previewBorrow` is now a projection of the adjust preview, and the two are pinned to agree in both modes across every boundary |
 | MK-059 | `evaluateBorrow` applies a TCR gate unconditionally, and the contract has no TCR gate on the Recovery Mode adjust path | S1 | fixed by the same delegation as MK-058 |
-| MK-060 | The debt increase flag is read from presence in the write path and from value in the evaluator, so `ZERO_DEBT_INCREASE` is unreachable and a zero borrow reaches the contract as a debt increase | S2 | fixed. Both halves read presence, and `adjustTrove` validates its borrow leg |
+| MK-060 | The debt increase flag is read from presence in the write path and from value in the evaluator, so `ZERO_DEBT_INCREASE` is unreachable and a zero borrow reaches the contract as a debt increase | S2 | fixed by making both halves agree, and `adjustTrove` validates its borrow leg. **Amended by MK-244**: they agreed on PRESENCE until 0.5.0 and agree on VALUE now, derived once by `adjustLegsOf`, so a zero leg is no leg on both sides; `previewBorrow` is the one caller that still states the flag itself |
 | MK-061 | The claims table says the post publish gate has never run, and MK-053 and the same document's own verdict say it has | S3 | fixed, **and two more rows in the same table were stale the same way** |
 | MK-062 | The provenance index's differential sweep row misreports the skip count and the slice count | S3 | fixed, and the third copy of the stale slice count is corrected too |
 | MK-063 | Six S2 entries read `open` in their own header and `fixed` in the summary table | S3 | fixed for the ten entries whose body settles it. Two more contradict in the other direction and are named rather than rewritten |
@@ -161,7 +202,7 @@ no entries between 122 and 239, and nothing is missing.
 | MK-081 | The push subset's warm cost was published as CI's, from a measurement taken on a developer machine. CI is 2.4 times faster | S3 | fixed. Both figures published, each naming the machine it was measured on |
 | MK-082 | The wave checklist's five run command does not pin the fork, and the same checklist requires the five answers to be byte identical | S3 | fixed. The checklist row and the recipe both carry `MEZO_FORK_BLOCK` now |
 | MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
-| MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open** in the harness. The sweep no longer fails on it: it is registered in `packages/core/test/differential/expected.ts` and prints as `EXPECTED MK-079`, so a red sweep is a mismatch no finding explains. **The claim that no `packages/*/src` file is implicated was FALSE and is withdrawn**: the same mis-mapping was in the React adjust preview hook, which is MK-085, and why nobody looked is MK-086 |
+| MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open** in the harness. **Amended by MK-254**: this row said the mismatch is registered in `packages/core/test/differential/expected.ts` and prints as `EXPECTED MK-079`, and that stopped being true when MK-254 emptied that list and removed the filter in `adjustCase` that made the two calls differ, so the sweep now fails on ANY mismatch including this shape. The entry stays open until a full sweep at a tip carrying that change reports no mismatch of the shape and no `EXPECTED-BUT-ABSENT` line. **The claim that no `packages/*/src` file is implicated was FALSE and is withdrawn**: the same mis-mapping was in the React adjust preview hook, which is MK-085, and why nobody looked is MK-086 |
 | MK-085 | `useAdjustTrovePreview` defaults all four legs to `0n` and forwards them, so through the hook every adjustment is a debt increase: a pure top-up is refused and a pure repayment is refused with its debt and ICR reported as though nothing were repaid | S1 | **fixed at the cause.** The legs are built once, keeping an absent leg absent, and drive both the query key and the call, pinned by the repository's first rendered hook test. **Amended by MK-244**: the verdict now reads the legs by value, so what absence decides here is the cache key rather than the answer, and the two mutations this row cited were withdrawn with the presence behaviour (MK-252) |
 | MK-086 | The decision-site enumeration MK-069 established was applied to `packages/core` only, so MK-079 and the README assert that this mapping defect implicates no source file, and it does | S2, process | fixed. The claim is withdrawn in both places, and an enumeration is now scoped to the rule rather than to the directory the defect was found in |
 | MK-087 | The coverage gate, the mutation check and the differential sweep all stop at the core boundary, which is why eighty four findings contain nothing about the React package | S2, process | fixed. React is inside coverage and the mutation check, the floor is re-measured at the honest lower number, and the sweep's exclusion is stated rather than implied |

@@ -60,6 +60,16 @@ that commit before the push rather than after it.
 **After publishing.** `verify-published` passed inside the release run. The `v0.5.0` tag push re-entered the
 workflow, whose publish step skipped the already published version and whose verification passed again.
 
+**The three checks a person was running by hand became steps in that job, and the job was then run against
+this release** (MK-257). Dispatched at the published commit with `version: 0.5.0` and
+`commit: 92d80675e95b3ddd86cff71fbcb0213441aa2b7f`:
+[run 35075253685](https://github.com/cayvox/musd-kit/actions/runs/35075253685), **success**, every step
+green, including the three new ones: the provenance statement checked in full rather than by repository
+alone, the README the registry serves compared with the tarball's by sha256, and
+`scripts/retired-claims.mjs` run over both published tarballs. **This run is recorded here because MK-257's
+entry says it is**, and because it does not repeat: the job runs again only at the next publish or the next
+dispatch, so unlike the unit, fork and mutation gates it cannot be re-established by reading a later CI run.
+
 **Verified independently, from a clean directory outside the repository.** A fresh `npm install` of both
 packages at 0.5.0: `npm audit signatures` verified registry signatures for 29 packages and attestations for
 16, none invalid or missing; `@musd-kit/react@0.5.0` depends on `@musd-kit/core` `0.5.0` exactly; ESM and
