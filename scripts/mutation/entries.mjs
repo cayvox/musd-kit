@@ -647,6 +647,18 @@ export const ENTRIES = [
     to: '    claim: /a sentence nobody wrote/i,',
   },
   {
+    // MK-256. The old rule read `npm view` and retried only an EMPTY answer, so the PREVIOUS
+    // message, served while a re-deprecation propagated, was taken as final and failed a run whose
+    // write had succeeded. This is that rule put back.
+    id: 'MK-256 retry',
+    what: 'stop retrying when the registry still serves the PREVIOUS deprecation message',
+    file: 'scripts/deprecation-verify.mjs',
+    scope: 'worthRetrying',
+    fingerprint: '218a0d374838328c',
+    from: "verdict.state !== 'matches'",
+    to: "verdict.state === 'absent'",
+  },
+  {
     // MK-252. The entry MK-244's own wave should have added: the check only knows the claims someone
     // wrote into it, so the claim added after the fact is pinned like every other one.
     id: 'MK-252 claims',

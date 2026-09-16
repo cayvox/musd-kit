@@ -305,19 +305,24 @@ async function adjustCase(
     repayDebt?: bigint
   },
 ): Promise<CaseResult> {
+  // **The preview and the write are asked the SAME question, which they were not until MK-244**
+  // (MK-079, and MK-254 for the expectation this removed). The legs went to `previewAdjustTrove`
+  // verbatim and to `adjustTrove` filtered on `> 0n`, because the write path then read a leg's
+  // PRESENCE: `{ addCollateral: x, borrow: 0n }` was refused before any read, so the filter was the
+  // only way to send a top up. The preview read values, so for a generated debt under 4 wei the
+  // preview answered `ZERO_DEBT_INCREASE` for a debt increase while the chain was asked for a pure
+  // top up, and the harness called its own mis-mapping a FALSE_BLOCKED, ten times in a 1000 case
+  // sweep. Both sides read values now, so the filter has nothing left to do and the legs are passed
+  // through unchanged.
   const preview = await client.previewAdjustTrove({ owner: account.address, ...legs })
   const attempt = await attemptWrite(fork, () =>
     client.adjustTrove({
-      ...(legs.addCollateral !== undefined && legs.addCollateral > 0n
-        ? { addCollateral: legs.addCollateral }
-        : {}),
-      ...(legs.withdrawCollateral !== undefined && legs.withdrawCollateral > 0n
+      ...(legs.addCollateral !== undefined ? { addCollateral: legs.addCollateral } : {}),
+      ...(legs.withdrawCollateral !== undefined
         ? { withdrawCollateral: legs.withdrawCollateral }
         : {}),
-      ...(legs.increaseDebt !== undefined && legs.increaseDebt > 0n
-        ? { borrow: legs.increaseDebt }
-        : {}),
-      ...(legs.repayDebt !== undefined && legs.repayDebt > 0n ? { repay: legs.repayDebt } : {}),
+      ...(legs.increaseDebt !== undefined ? { borrow: legs.increaseDebt } : {}),
+      ...(legs.repayDebt !== undefined ? { repay: legs.repayDebt } : {}),
     }),
   )
   const mismatch = compare(preview.viable, attempt, `reasons=[${preview.reasons.join(',')}]`)
