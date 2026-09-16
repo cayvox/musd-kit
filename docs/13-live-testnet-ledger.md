@@ -15,6 +15,62 @@ and has no section**: no output from a live run against it is committed, so none
 
 ---
 
+## The 0.5.0 release
+
+**Run 2026-09-16, three times, against commit `92d80675e95b3ddd86cff71fbcb0213441aa2b7f`, the commit that
+was then published.** Account `0x18B0Da56B272b4FAAbdd8D60E3797e8cC17d248D`. The third run is the evidence
+for precondition 5; the first two are recorded because they happened, and each says what it did and did
+not show.
+
+**Result of the third run: `GO, live lifecycle verified on Mezo testnet.`, exit 0. 22 exercised, 3
+skipped, every skip with a reason, position closed.** Run with `E2E_ALLOW_REDEEM=1` and NO
+`E2E_REDEEM_MUSD`, so the redemption was sized from the preview's own edges (MK-048).
+
+Funding, from the chain immediately before the run: price `75884.87 USD/BTC`, **total to fund
+`0.044394170669331052 BTC`** across four deposits and twelve sends, the fourth deposit being the MK-244
+zero leg step this release added. The account held `0.050346075364424528 BTC` and ended with
+`0.050347834131696896 BTC`, higher than it started because the redemption drew collateral.
+
+| Surface | Outcome |
+|---|---|
+| `previewOpen`, `openTrove`, `getTrove` | verdict held, `entireDebt` within accrual, position created |
+| `getBorrowingCapacity` | capacity `2547740615731448076470` |
+| `getBorrowingPower` | **ceiling only**, `2345395220510937139331`; there is no recommended draw in 0.5.0 (MK-240) |
+| `drawForMargin` | **new in 0.5.0**: draw `2218069250478281281077` for `86400s` and `500 bps`, both inputs the caller's (MK-240) |
+| `previewAdjustTrove` and `addCollateral` | add leg, `resultingCollateral` matched to the wei |
+| `previewBorrow` and `borrow` | drew 100 MUSD |
+| `previewAdjustTrove` and `repay` | repaid 50 MUSD |
+| `previewWithdrawCollateral` and `withdrawCollateral` | withdrew `0.00271926698241898 BTC` |
+| `maxWithdrawableCollateral` | max viable and max+1 refused by the SDK preview (MK-051). **This assertion lost a race in run 2, which is MK-253** |
+| `adjustTrove` | combined add and borrow, `entireDebt` matched to the wei |
+| **`adjustTrove`, explicit zero debt leg** | **`{ addCollateral: 0.000923373708823023 BTC, borrow: 0n }` SENT and mined** (MK-244), which 0.4 refused before any read with `InvalidAmount`; collateral rose by exactly the amount added |
+| `previewRefinance` and `refinance` | moved to the current global rate |
+| **`redeem`** | **sent on the default path and MINED** (MK-241). `estimatedBeforeSend.redeemable` `0.134565604251868004` MUSD, `settled.redeemedAmount` the same to the wei, `settled.collateralReceived` `1759600353478` wei, `settled.collateralFee` `13296728111` wei, rate `7500000000000000`. The MUSD that left the balance equalled `settled.redeemedAmount` exactly |
+| `liquidate`, `batchLiquidate` | **skipped**, need a Trove below MCR, which cannot be created on live testnet |
+| `claim` | **skipped**, no surplus |
+| `previewClose` and `close` | `musdRequired` drift 0 wei; closed, no Trove left |
+
+The log holds ten 64 hex strings, all transaction hashes, all mined. Each log of the three runs was
+searched for the key read from the environment, and none contains it.
+
+**Run 1 got `GO` and proves nothing about the redemption.** It was run with `E2E_REDEEM_MUSD=10`, carried
+over from the 0.4.1 release, and the precheck refused it before sending with `RedemptionBreachesDebtFloor`:
+the first eligible Trove's headroom above the debt floor was `0.134381809567654008` MUSD, not the 10 asked
+for. The error named both viable amounts, the headroom and the whole Trove. That is the precheck working,
+and it is also the one path this release changed going untested, which is why the run was repeated without
+the override. **A run that skips the redemption is not evidence about the redemption.**
+
+**Run 2 was RED and left a position open: MK-253.** `maxWithdrawableCollateral reported an amount its own
+preview refuses`, exit 1, before the close. The maximum leaves the Trove at MCR by definition and carried
+`0.349 bps` of ICR margin at that moment; sampled on the same chain in the same hour, consecutive blocks
+moved the oracle by up to `1.08 bps` and 3 of 11 samples were negative, so a fall between the two reads
+refuses an amount that was correct when it was read. The same pair of calls returned viable a minute
+later. The SDK is not implicated: the assertion is a boundary that moves with time, asserted as an exact
+equality across a delay, which is checklist row 11 broken inside the tool that gates a release. Run 3
+closed the position it left, because the script closes a pre-existing Trove first.
+
+---
+
 ## The 0.4.1 release
 
 **Run 2026-09-14, three times, against commit `ae93edd2644ea2a52963c5063d6596f7532f207f`, the commit
