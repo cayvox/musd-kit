@@ -58,8 +58,38 @@ describe('MK-084, a deprecation message describes the version it is attached to'
     expect(messageFor('0.3.1', 'core')).toContain('warns about but does not fix MK-100')
     expect(messageFor('0.3.1', 'react')).toContain('warns about but does not fix MK-100')
     expect(messageFor('0.3.0', 'react')).not.toContain('warns')
+    // 0.4.0 carries BOTH its findings after the 0.5.0 release rewrote it: the redemption walk it
+    // was first deprecated for, and the default draw it shares with 0.4.1.
     expect(messageFor('0.4.0', 'core')).toContain('(MK-114)')
-    expect(messageFor('0.4.0', 'react')).toContain('reachable through useRedeem')
+    expect(messageFor('0.4.0', 'core')).toContain('(MK-240)')
+    expect(messageFor('0.4.0', 'react')).toContain('(MK-114)')
+    // 0.4.1 fixed MK-114, so naming it here would be false; it carries MK-240 and MK-241.
+    expect(messageFor('0.4.1', 'core')).toContain('(MK-240)')
+    expect(messageFor('0.4.1', 'core')).toContain('(MK-241)')
+    expect(messageFor('0.4.1', 'core')).not.toContain('MK-114')
+    expect(messageFor('0.4.1', 'react')).not.toContain('MK-114')
+    // **A message written NOW must not send a reader to a version that is itself deprecated.**
+    // 0.4.0's first text said "Upgrade to 0.4.1.", which stopped being true the moment 0.4.1 was
+    // deprecated for MK-240, and a message the registry serves at install time cannot be left
+    // saying it. That is why 0.4.0's entry was rewritten rather than left alone.
+    //
+    // **Scoped to the entries this release writes, and the reason is a finding, not a convenience**
+    // (MK-255). The older chain does point at deprecated versions: 0.1.0 says upgrade to 0.2.0,
+    // which is deprecated, and 0.2.0 says 0.3.0, which is deprecated. Each was true when it was
+    // sent and none was rewritten, so asserting the property over every entry would fail on
+    // history rather than on a defect. Fixing that chain means re-dispatching four more
+    // deprecations, which is its own decision with its own review.
+    const deprecated = new Set(Object.keys(DEPRECATIONS))
+    for (const v of ['0.4.0', '0.4.1']) {
+      for (const pkg of ['core', 'react'] as const) {
+        const target = /Upgrade to (\d+\.\d+\.\d+)\.\s*$/.exec(messageFor(v, pkg))?.[1]
+        expect(target, `${v} ${pkg} names an upgrade target`).toBeDefined()
+        expect(
+          deprecated.has(target as string),
+          `${v} ${pkg} sends the reader to ${target}, which is itself deprecated`,
+        ).toBe(false)
+      }
+    }
   })
 
   it('and the two packages get DIFFERENT messages, because react is a dependant', () => {

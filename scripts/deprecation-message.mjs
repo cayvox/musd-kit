@@ -98,20 +98,52 @@ export const DEPRECATIONS = Object.freeze({
   }),
 
   /**
-   * Not yet applied: it can be once 0.4.1 is `latest`.
+   * **Applied twice, and the first text is preserved below because this file has to be able to
+   * reproduce what was already sent.** The first was dispatched on 2026-09-14, after 0.4.1 became
+   * `latest`, and read:
    *
-   * Checked in the PUBLISHED 0.4.0 tarballs, installed from the registry: core's `previewRedeem` walks
+   *   core:  '0.4.0 previewRedeem reads maxIterations 0n as one eligible Trove where the contract
+   *           reads zero as no limit, so it reports less than the redemption redeems, and redeem()
+   *           prechecks only that Trove (MK-114). See FINDINGS.md and
+   *           docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.1.'
+   *   react: 'Depends on @musd-kit/core@0.4.0, whose redeem() prechecks only the first eligible
+   *           Trove when maxIterations is 0n, which the contract reads as no limit (MK-114),
+   *           reachable through useRedeem. See docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.1.'
+   *
+   * **It had to be rewritten, and not for tidiness: its upgrade target is now deprecated too.** A
+   * message that sends a reader from 0.4.0 to 0.4.1 sends them to the same MK-240 defect they are
+   * leaving, which is the registry telling them something false at install time. The rewrite keeps
+   * MK-114, adds MK-240, and points at 0.5.0.
+   *
+   * MK-114, checked in the PUBLISHED 0.4.0 tarballs: core's `previewRedeem` walks
    * `(!started || i < maxIterations)` with `maxIterations = params.maxIterations ?? 100n`, so `0n`
-   * stops after the first eligible Trove, where `redeemCollateral` reads zero as no limit (MK-114).
-   * React's `usePreviewRedeem` passes only `{ redeemer, amount }`, so it always walks 100 and is not
-   * affected; `useRedeem` passes the caller's parameters to `redeem()`, whose precheck is. The guide
-   * named is the 0.4 one, whose section 7 covers 0.4.1: a patch with no API change gets a section in
-   * its line's guide rather than a guide of its own.
+   * stops after the first eligible Trove, where `redeemCollateral` reads zero as no limit. MK-240,
+   * in the same tarballs: `getBorrowingPower` returns `recommended`, solved for one hour and a 2%
+   * fall, and the READMEs present it as the draw to offer.
    */
   '0.4.0': Object.freeze({
-    core: '0.4.0 previewRedeem reads maxIterations 0n as one eligible Trove where the contract reads zero as no limit, so it reports less than the redemption redeems, and redeem() prechecks only that Trove (MK-114). See FINDINGS.md and docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.1.',
+    core: '0.4.0 getBorrowingPower returns a recommended draw sized for one hour and a 2% fall, presented as the amount to borrow and hold: over 86 days of Mezo mainnet prices that margin was crossed within a week of 57.6% of sampled start times (MK-240). previewRedeem also reads maxIterations 0n as one eligible Trove where the contract reads zero as no limit (MK-114). See FINDINGS.md and docs/16-migration-0.4-to-0.5.md. Upgrade to 0.5.0.',
     react:
-      'Depends on @musd-kit/core@0.4.0, whose redeem() prechecks only the first eligible Trove when maxIterations is 0n, which the contract reads as no limit (MK-114), reachable through useRedeem. See docs/15-migration-0.3-to-0.4.md. Upgrade to 0.4.1.',
+      'Depends on @musd-kit/core@0.4.0, whose useBorrowingPower serves a draw sized for one hour as the amount to hold (MK-240) and whose redeem() prechecks only the first eligible Trove when maxIterations is 0n (MK-114). See docs/16-migration-0.4-to-0.5.md. Upgrade to 0.5.0.',
+  }),
+
+  /**
+   * Not yet applied when written: it can be once 0.5.0 is `latest`, which the workflow enforces.
+   *
+   * **Both claims were checked in the PUBLISHED 0.4.1 tarballs, not in the repository.** MK-240:
+   * `dist/index.js` solves `recommended` against a price stressed by `BORROWING_POWER_PRICE_MOVE_BPS`
+   * over `BORROWING_POWER_MARGIN_WINDOW_SECONDS`, 200 bps and 3600 seconds, and both READMEs say
+   * "Offer `recommended`". The horizon table this release measured is in `docs/03-core-api.md`: over
+   * blocks 9841930 to 11868955 of Mezo mainnet, 57.6% of start times saw a 2% fall within seven days,
+   * and the worst hour fell 418.47 bps, more than twice the 200 the default was sized on. MK-241:
+   * `RedeemResult` carries `truncatedAmount`, `estimatedFeeCollateral` and `estimatedCollateralDrawn`,
+   * all read from `getRedemptionHints` before the send, and the fork proof for the gap is
+   * `zz-redemption-settled.fork.test.ts`, where the helper said 3,515.14 MUSD and 1,808.46 settled.
+   */
+  '0.4.1': Object.freeze({
+    core: '0.4.1 getBorrowingPower returns a recommended draw sized for one hour and a 2% fall, presented as the amount to borrow and hold: over 86 days of Mezo mainnet prices that margin was crossed within a week of 57.6% of sampled start times (MK-240). RedeemResult also reports the hint helper figures rather than what the redemption settled (MK-241). See FINDINGS.md and docs/16-migration-0.4-to-0.5.md. Upgrade to 0.5.0.',
+    react:
+      'Depends on @musd-kit/core@0.4.1, whose useBorrowingPower serves a draw sized for one hour as the amount to hold (MK-240) and whose useRedeem reports figures estimated before sending as what settled (MK-241). See docs/16-migration-0.4-to-0.5.md. Upgrade to 0.5.0.',
   }),
 })
 
