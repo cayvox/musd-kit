@@ -175,16 +175,19 @@ async function plan(musd: MusdClient, publicClient: ReturnType<typeof createPubl
   const sized = (TARGET_ICR_PCT * 10n ** 16n * entireDebt + price - 1n) / price
   const collateral = COLLATERAL_OVERRIDE ?? sized
 
-  // Collateral locked at the PEAK, which is a single Trove holding all three deposits at once
-  // (`openTrove`, then `addCollateral`, then the `adjustTrove` leg). It is not a sum across
-  // separate positions: this script opens exactly one Trove and closes it.
+  // Collateral locked at the PEAK, which is a single Trove holding all four deposits at once
+  // (`openTrove`, then `addCollateral`, then the `adjustTrove` leg, then the MK-244 zero leg
+  // adjustment). It is not a sum across separate positions: this script opens exactly one Trove
+  // and closes it. The fourth term arrived with the zero leg step and the plan moved with it,
+  // rather than staying a figure about an older script (MK-045).
   const topUp = collateral / 10n
   const adjustAdd = collateral / 20n
-  const peakCollateral = collateral + topUp + adjustAdd
+  const zeroLegAdd = collateral / 40n
+  const peakCollateral = collateral + topUp + adjustAdd + zeroLegAdd
 
   // Gas. Eleven sends, and the account must hold `gasLimit * gasPrice` UP FRONT for each, not
   // just what is burned (MK-035).
-  const SENDS = 11n
+  const SENDS = 12n
   const PER_SEND_GAS = 800_000n
   const gasBudget = (SENDS * PER_SEND_GAS * 125n * gasPrice) / 100n
 
@@ -218,8 +221,9 @@ async function plan(musd: MusdClient, publicClient: ReturnType<typeof createPubl
   )
   console.log(`  collateral, top-up    ${formatBtc(topUp)} BTC`)
   console.log(`  collateral, adjust    ${formatBtc(adjustAdd)} BTC`)
+  console.log(`  collateral, zero leg  ${formatBtc(zeroLegAdd)} BTC   (MK-244)`)
   console.log(
-    `  peak collateral       ${formatBtc(peakCollateral)} BTC   ONE Trove, all three at once`,
+    `  peak collateral       ${formatBtc(peakCollateral)} BTC   ONE Trove, all four at once`,
   )
   console.log(
     `  gas reserve           ${formatBtc(gasReserve)} BTC   (${SENDS} sends * ${PER_SEND_GAS} * 1.25 * ${gasPrice} wei, x20, floored)`,
@@ -528,6 +532,46 @@ async function main(): Promise<void> {
     record('adjustTrove', 'exercised', 'combined add + borrow, entireDebt matched to the wei')
   } else {
     record('adjustTrove', 'skipped', `preview refused: ${combined.reasons.join(',')}`)
+  }
+
+  // ---- 7a. adjustTrove with a leg explicitly at zero (MK-244), on the real chain
+  //
+  // 0.4 read the legs by PRESENCE, so `{ addCollateral: x, borrow: 0n }` was refused before any
+  // read: a form that holds every field and leaves the unused ones at `0n` could not top up. 0.5
+  // reads them by VALUE, so the same call sends the top up the contract accepts
+  // (`BorrowerOperations.sol:1367-1386`). Nothing but a live send shows that the change reaches a
+  // real deployment rather than only the evaluator, which is why this step exists and why it is not
+  // folded into step 7: the leg that must be present at zero is the one under test.
+  console.log('\n--- adjustTrove with an explicit zero leg (MK-244) ---')
+  const zeroLegAdd = COLLATERAL / 40n
+  const zeroLegPreview = await musd.previewAdjustTrove({
+    owner,
+    addCollateral: zeroLegAdd,
+    increaseDebt: 0n,
+  })
+  if (zeroLegPreview.viable) {
+    const beforeZeroLeg = await musd.getTrove(owner)
+    await waitOk(
+      (await musd.adjustTrove({ addCollateral: zeroLegAdd, borrow: 0n })).hash,
+      'adjustTrove, explicit zero debt leg',
+    )
+    const afterZeroLeg = await musd.getTrove(owner)
+    assertEq(
+      'collateral after the zero leg adjustment',
+      afterZeroLeg.collateral,
+      beforeZeroLeg.collateral + zeroLegAdd,
+    )
+    record(
+      'adjustTrove, explicit zero debt leg (MK-244)',
+      'exercised',
+      `{ addCollateral: ${formatBtc(zeroLegAdd)} BTC, borrow: 0n } SENT and mined, which 0.4 refused before any read with InvalidAmount; collateral rose by exactly the amount added`,
+    )
+  } else {
+    record(
+      'adjustTrove, explicit zero debt leg (MK-244)',
+      'skipped',
+      `preview refused: ${zeroLegPreview.reasons.join(',')}`,
+    )
   }
 
   // ---- 8. previewRefinance + refinance
