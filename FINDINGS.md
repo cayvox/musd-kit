@@ -135,7 +135,7 @@ claim about it was not).
 | MK-097 | The version step's verification list checks what the command produced and not what the commit must pass, so `changeset version`'s reformatting of the manifests turned `main` red at the commit the release was about to ship | S2, process | fixed. The list gains the standing checklist, and the repair is recorded with its cost: a red `main`, a repair commit, and a second sweep requirement |
 | MK-098 | The version step's changeset table names three entries against the four actually consumed | S3 | fixed by naming the command that produces the list instead of copying the list |
 | MK-099 | Precondition 7's How column says dispatch while its What passed column says head plus success, and a scheduled run on the release commit satisfies the second | S3 | fixed. The condition is stated in full as head, parameters, coverage and green; the trigger event is not part of it |
-| MK-100 | `getBorrowingPower` returns the liquidation threshold as the amount to borrow: in normal mode a Trove opened at it is liquidatable within seconds, and every earlier check asked only whether the open is accepted | S1 | **fixed** in 0.4.0, published 2026-09-14 from `252af4b`; 0.3.0 and 0.3.1 deprecated. Two named figures, `ceiling` and a `recommended` draw with a measured margin; `useBorrowingPower` returns `recommended`. Proven on a fork after the open, not only at it. 0.3.1 carried the warning |
+| MK-100 | `getBorrowingPower` returns the liquidation threshold as the amount to borrow: in normal mode a Trove opened at it is liquidatable within seconds, and every earlier check asked only whether the open is accepted | S1 | **fixed** in 0.4.0, published 2026-09-14 from `252af4b`; 0.3.0 and 0.3.1 deprecated. Two named figures, `ceiling` and a `recommended` draw with a measured margin; `useBorrowingPower` returns `recommended`. Proven on a fork after the open, not only at it. 0.3.1 carried the warning **Superseded by MK-240**: the margin answered the delay before a send, and was published as the amount to hold |
 | MK-101 | `previewRefinance` omits the interest rate a refinance moves the Trove to and the borrowing capacity it resets, and five surfaces say capacity only ever ratchets downward | S1 | **fixed.** The preview reports both rates and both capacities; every ratchet claim corrected |
 | MK-102 | The React read hooks present the previous query's data as a success after the key changes or the query is disabled, so a cleared input or a disconnected wallet keeps showing the old verdict | S1 | **fixed.** No placeholder, `gcTime: 0`, a disabled query reports nothing, writes reset on an account change; rendered tests for every hook |
 | MK-103 | A partial redemption sent through `redeem()` cancels on almost any price move before inclusion, and `previewRedeem` reports it viable with no price condition. Supersedes MK-049's class and its retry mitigation | S2 | **fixed as far as the contract allows.** Centred hint, tolerances reported, a fragile first-Trove partial refused by default. Sizing a partial to survive is not practical, measured |
@@ -160,6 +160,18 @@ claim about it was not).
 | MK-237 | The standing checklist required the fork gate's Node version and none of its other tools, so the P25 fork evidence was taken on anvil 1.5.1 against a gate that declares 1.7.1, and the rule allowed it | S3, process | **fixed.** Row 2 names every declared tool version; the evidence was re-run on 1.7.1 |
 | MK-238 | anvil 1.7.1 writes the fork cache Zstandard compressed under the same name, and the mutation gate rejected it as unparseable, so on the version CI declares every fork mutant would have started cold | S3, instrument | **fixed.** The gate decompresses a compressed snapshot before parsing it |
 | MK-239 | The differential fork test passed with 12 of its 24 cases thrown on an RPC failure, because a thrown case is recorded and nothing asserted afterwards that none threw | S2 | **fixed.** The test asserts no case threw, after every case has run |
+| MK-240 | `recommended` is sized for the delay before a send, and `useBorrowingPower` and both READMEs publish it as the amount to borrow and hold; a Trove opened at it is liquidated by a 2 percent fall | S1 | **fixed.** No default: `getBorrowingPower` is the ceiling alone, and `drawForMargin` requires a horizon and a fall; the horizon table is reproduced from a committed instrument and published where a caller chooses |
+| MK-241 | `RedeemResult` reports the hint helper's figures rather than what settled, so a redemption that cancels a later partial reports an amount and a fee it did not have | S1 | **fixed.** `redeem()` resolves on the receipt with `settled` from the `Redemption` event; the estimate is named as taken before sending, from the walk |
+| MK-242 | A collateral withdrawal permanently lowers borrowing capacity, adding the collateral back does not restore it, and no preview discloses the change | S1 | **fixed.** `capacityAfter` on every withdrawal preview, with the refinance that would restore it, proven to the wei by sending |
+| MK-243 | One contract ratio gate reaches the caller as `InsufficientCollateral` from the precheck and `ICRBelowMCR` from the decoder, and the register names the one the precheck does not throw | S2 | **fixed.** `ICRBelowMCR` and `RecoveryModeRestriction` from both paths; `InsufficientCollateral` names only an over-withdrawal; the register line is annotated |
+| MK-244 | `adjustTrove` refuses zero valued legs by presence while the contract checks values and the preview calls the same input viable | S2 | **fixed.** Legs by value through one resolver and one shape helper; MK-060's presence ruling for this path reversed with its reason; every absent against zero site enumerated |
+| MK-245 | `previewRedeem` omits the last Trove rule a whole consumption reaches, so a redemption the chain reverts previews as viable | S2 | **fixed.** The walk carries both counts and the mint list flag; `redeem()` refuses before gas |
+| MK-246 | Claims retired by closed findings survive in the published declarations and in this register, and no gate reads the artifact for them | S3 | **fixed.** Corrected in what ships, a whole declaration review found seven more, and `scripts/retired-claims.mjs` reads the packed artifact in the packaging gate |
+| MK-247 | `useMaxWithdrawableCollateral` is documented as the max button's number, a figure that leaves the Trove at the liquidation threshold | S2 | **fixed.** Documented as a limit, not a withdrawal to send |
+| MK-248 | `GasDecision` documents an `explicit` branch no public write can reach | S3, source | open |
+| MK-249 | `StaleHint` and `Unauthorized` are exported and never thrown | S3, source | **open in the source, and 0.5.0 ships it**: both classes and their `MusdErrorCode` members remain, nothing throws either, and the declarations and both docs now say never thrown. The entry states why that pair ships and what would close it |
+| MK-250 | A write whose simulation reverts still logs that it is sending without a margin | S3 | open |
+| MK-251 | Two React claims are stronger than the rendered behaviour: a same tick restore serves the old answer, and a wallet switch reports a missing wallet client | S3 | open |
 
 ---
 
@@ -175,14 +187,14 @@ text read, the entry now says which part is evidence and which part is not.
 
 | Class | Count | What it means |
 |---|---|---|
-| **Reproducible** | 29 | The instrument is committed. The command is named below or in the entry |
+| **Reproducible** | 34 | The instrument is committed. The command is named below or in the entry |
 | **Observed once** | 5 | One execution, pinned by a run ID. Every one is enumerated below |
 | **Observed once, unlinked** | 3 | One execution whose artifact was not preserved. Grandfathered, and the label says it cannot be re-checked |
-| **Unestablished** | 8 | Inferred, or the instrument is gone, or the premise turned out to be wrong |
+| **Unestablished** | 11 | Inferred, or the instrument is gone, or the premise turned out to be wrong |
 
-**45 claims, counted as claims rather than as lines**, since several are quoted in more than one
+**53 claims, counted as claims rather than as lines**, since several are quoted in more than one
 place. MK-110 added one. The P21 wave added six, all reproducible, and turned two of MK-100's unestablished same-shape
-rows into reproducible ones inside that entry. MK-114 added one, reproducible. The P25 wave added two, both reproducible: the decision site statuses before and after it, and the gate's cost. A count of numerals would be larger and would mean less.
+rows into reproducible ones inside that entry. MK-114 added one, reproducible. The P25 wave added two, both reproducible: the decision site statuses before and after it, and the gate's cost. The P27 wave added five reproducible (the horizon table, and the MK-240, MK-241 and MK-242 fork proofs, and the retired claims count over the published 0.4.1) and three unestablished (the consumer audit's own price shares and its two mainnet fork figures, measured outside this repository and superseded by the reproducible ones). A count of numerals would be larger and would mean less.
 
 ### The reproducible set, and the command for each
 
@@ -211,6 +223,11 @@ registered it, so those ten print as `EXPECTED MK-079` and only an unexplained m
 | `capacity.remaining`, `maxWithdrawableCollateral().amount` and `minimumCollateralToClearIcr`, each sent one second after the read, are refused (`ExceedsBorrowingCapacity`, `InsufficientCollateral`, `InsufficientCollateral`) while a control inside each succeeds | MK-100 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-limit-figures.fork.test.ts` |
 | 0.3.1 against 0.3.0, both packages: runtime builds byte identical, declarations identical without comments, manifests differ only in version | MK-100, `docs/12-release-runbook.md` §0b | `node scripts/compare-published.mjs --base 0.3.0 --head 0.3.1` |
 | Decision sites by status: at `870b76f`, 474 sites, 319 caught by the unit project, 36 by the fork project only, 119 by nothing; after the P25 wave, 437, 3, and 34 registered survivors (29 equivalent, 5 unreachable); every hand written entry caught by a test citing it | MK-112, MK-116 to MK-121 | `MEZO_TESTNET_RPC_URL=https://rpc.test.mezo.org MEZO_FORK_BLOCK=15043414 node scripts/mutation-check.mjs --record --all --jobs 3 --report <file>`, run on the P25 tree for the after figures; the before figures are the same command with `scripts/mutation/sites.json` absent, run on this wave's gate before any of its pin tests were written, so on `870b76f`'s tests. **They were measured in three runs, not one**: a unit pass, and two fork passes, because the first stopped at 121 of 155 mutants when the machine slept |
+| How often Mezo mainnet `fetchPrice()` fell 2, 5, 10 and 20 percent within an hour, a day, three days, a week and thirty days, over blocks 9841930 to 11868955 | MK-240, `docs/03-core-api.md`, both READMEs | `MEZO_MAINNET_RPC_URL=https://jsonrpc-mezo.boar.network pnpm tsx scripts/oracle-moves.ts --end 11869000 --consecutive 0 --days 90 --step 225 --horizons 3600,86400,259200,604800,2592000 --falls 200,500,1000,2000`. A lower bound at one sample in 225 blocks |
+| A draw for a day and 500 bps survives 1 to 3600 seconds, a 499 bps fall a day later, and not a 510 bps one, beside a ceiling liquidated after one second | MK-240 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-borrowing-power-boundary.fork.test.ts` |
+| A redemption through a cancelled later partial settles 1,808.46 MUSD where the helper reports 3,515.14, and `settled` equals the event, the balance change and the BTC received | MK-241 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-redemption-settled.fork.test.ts` |
+| A withdrawal after a 30 percent fall leaves the previewed capacity to the wei, a refinance writes the projected capacity and charges the projected fee within accrual, and re-adding the collateral restores nothing | MK-242 | `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork packages/core/test/zz-capacity-ratchet.fork.test.ts` |
+| 119 retired claims in the published 0.4.1 packages, none in this tree | MK-246 | `npm pack @musd-kit/core@0.4.1 @musd-kit/react@0.4.1`, extract each tarball, then `node scripts/retired-claims.mjs <core package dir> <react package dir>`; `node scripts/retired-claims.mjs packages/core packages/react` after `pnpm build` |
 | The gate's cost: `--check` 0.66 s; the unit pass 2714 s for 524 mutants; the fork pass 4890 s for 37; 7759 s in all, three jobs, one laptop. On CI the push path's worst case, every unit mutant, about 32 minutes in four shards | MK-112, `docs/07-testing.md` §4d | the same command, timed by the lines it prints, on an Apple M5 with 10 cores under `caffeinate -ims`; on CI, `Mutation gate` run 34937019525, its job times and `mutants in` lines |
 
 **One caveat on the flake rates, stated once rather than eight times.** The instrument is committed
@@ -243,7 +260,7 @@ MK-035's nine path spread table and everything derived from its 10.16%; MK-035's
 isolation rates; MK-035's 610270 to 710023 spread read as a spread across 40 attempts rather than as
 one traced growth; MK-016's 670 opens at 576469 to 605443 gas; MK-010's seven point fee shape probe;
 MK-010's roughly 77 sequential calls, which is inferred from the search's bit width rather than
-counted; MK-020's twelve `latestRoundData()` reads.
+counted; MK-020's twelve `latestRoundData()` reads; the consumer audit's 29 day price shares and its two mainnet fork figures for MK-241 and MK-242, whose scripts were outside this repository.
 
 **Seven of the eight are the same defect**, which is why MK-039 is filed as a process finding rather
 than a numerical one: the instrument was ad hoc, it answered its question, and it was thrown away.
@@ -2867,7 +2884,7 @@ part of the earlier table's reasoning was wrong (MK-038). `mezo-org/musd`, main 
 | `adjustTrove` | `:296` -> `_adjustTrove(...)` | every row above, by combination; plus singular coll change `:788` |
 | `close` | `:278` -> `_closeTrove` | active `:951`; **if `canMint`** not recovery `:954`; balance >= debt-200 `:963`; **if `canMint`** TCR>=CCR `:972` |
 | `refinance` | `:282` -> `_refinance` | not recovery `:1023`; active `:1024`; ICR>=MCR **after the fee** `:1058`; TCR>=CCR `:1059` |
-| `claim` | `:316` -> `_claimCollateral` `:1119-1124` | **none.** It reads the surplus pool and sends. No preview is possible because there is no condition |
+| `claim` | `:316` -> `_claimCollateral` `:1119-1124` | a surplus to claim: `CollSurplusPool.claimColl` requires one (`CollSurplusPool.sol:90-93`). **This cell said "none", and that no preview was possible because there was no condition, until MK-246**: the condition lives one contract away, and `claim()` has handled its revert since MK-007 |
 | `redeem` | `TroveManager.sol:294` | TCR>=MCR `:318`; amount>0 `:319`; balance `:320` |
 | `liquidate` | `TroveManager.sol:265` | trove active `:266`, then the batch path |
 | `batchLiquidate` | `TroveManager.sol:654` | non empty array `:657`; something actually liquidatable `:690` |
@@ -3796,6 +3813,12 @@ on verdict, reasons, binding constraint and every shared number across both mode
 the MCR, CCR, TCR and capacity boundaries, and then again end to end through the reads. That is the
 test MK-001 implied and nobody wrote. Also `preview-adjust.test.ts`, "`_isDebtIncrease` is a
 parameter, not a function of the amount", and `preview-adjust-reads.test.ts` for the write half.
+
+
+**Revisited by MK-244, for `adjustTrove`.** This entry chose presence for the SDK's debt legs because the
+contract takes a separate flag. The legs are not that flag, and presence made the SDK encode a zero leg as the
+`(0, true)` the contract refuses where `(0, false)` is accepted. MK-244 reads the legs by value; the flag this
+entry protects survives where the contract receives it, `withdrawMUSD` through `previewBorrow`.
 
 ---
 
@@ -4869,6 +4892,10 @@ The test is value based, matching `_requireSingularCollChange`'s shape on the co
 shape earlier and on PRESENCE, which is stricter and safe: a write it rejects never reaches the
 chain. Both halves are pinned, the evaluator in `p13-gates.test.ts` and the write path beside it.
 
+
+**Since MK-244** the write path refuses both debt legs on VALUE, from the same `adjustShapeReasons` the
+evaluator reports `DEBT_INCREASE_AND_REPAY` from, before any read.
+
 ---
 
 ## MK-078 · The tenth sweep operation makes the documented sweep unable to finish, so the thousand case figures cannot be re-measured at all
@@ -5029,7 +5056,10 @@ and exited in one and two seconds. The network recovered a few minutes later
 **So the four transactions that "never confirm" are not four transactions and not a defect.** Cases
 169, 220, 222 and 230 run in 2.7s, 2.9s, 7.2s and 6.9s, and in the single case probe the `max + 1`
 attempt is refused by the SDK's own precheck (`ICRBelowMCR`, `RecoveryModeRestriction`) so no
-transaction is sent at all.
+transaction is sent at all. **Corrected by MK-243**: those attempts were opens, and `openTrove` has no ratio
+precheck, so what refused them was the simulation, whose revert decoder throws those two codes. For the same
+gate on the adjust path, the precheck that runs first threw `InsufficientCollateral` until 0.5.0, so "the
+precheck gives `ICRBelowMCR`" was true of no path. Since 0.5.0 both paths throw `ICRBelowMCR`.
 
 **The process failure, which is the part worth keeping.** The P14 entry was written from a single
 run, taken immediately after four slices had hit test level timeouts, without checking what else was
@@ -7010,6 +7040,13 @@ Redemption's `maxWithoutConsuming` and `previewClose.musdRequired` stay as recor
 failure is a refusal. `nextViableAmount` carries its own margin and is proven through `redeem()`
 under MK-104.
 
+
+**Superseded by MK-240.** This entry fixed "liquidatable in one second" with a margin sized for an hour, and
+published the result under a name, `recommended`, that answered how much to borrow and hold. Nobody asked for
+how long. 0.5.0 removes the default: the ceiling stays, and a draw is sized to a horizon and a fall the caller
+supplies. The 200 bps default did not cover this entry's own quantity once measured over a longer range: the
+worst hour over 86 days was 418.47 bps.
+
 ---
 
 ## MK-101 · `previewRefinance` omits the new rate and the capacity reset, and capacity is documented as ratchet only
@@ -8074,6 +8111,471 @@ fork pass, the mutant at `createMusdClient.ts:379`, which the fork project catch
 throw, was judged inconclusive four times, and the gate exited 1 with `the register says caught-fork, and now
 NOTHING catches it`. The message now names no error class, with a comment saying why, and only the thrown
 errors themselves can mark a run as the link failing. Re-run on 1.7.1 after the change, the three caught-fork sites were each caught and confirmed by two runs, and the gate exited 0 in 647 seconds.
+
+---
+
+## MK-240 · `recommended` is sized for the delay before a send, and is published as the amount to hold
+
+**Class** S1 · **Status** fixed · **Found by** an external consumer audit of the published 0.4.1, working
+from the npm tarball rather than this repository
+
+**What was established, from the contract.** Liquidation is `ICR < MCR` in both modes: the only ratio test
+in `batchLiquidateTroves` is `if (vars.ICR < MCR)` (`TroveManager.sol:1146-1148`), MCR is `1.1e18`
+(`LiquityBase.sol:22`), and a liquidated Trove's collateral is taken whole (`TroveManager.sol:1084-1101`,
+`:1409`). Nothing in the protocol refers to how long a position has been held.
+
+**What the SDK does.** `getBorrowingPower` returns `recommended`, solved against
+`price * (1 - BORROWING_POWER_PRICE_MOVE_BPS / 10000) / (1 + accrual over BORROWING_POWER_MARGIN_WINDOW_SECONDS)`
+with those constants at 200 bps and 3600 seconds (`packages/core/src/math/getBorrowingPower.ts:30`, `:46`,
+`:417-447`). `useBorrowingPower` returns it as `data` (`packages/react/src/hooks/reads.ts:131-133`). Both
+READMEs call it the draw to offer. A Trove opened at it starts at an ICR of 112.245 percent and is
+liquidatable after a fall of 2 percent.
+
+**Why MK-100 did not close this.** MK-100 asked whether a figure survives the interval between being read
+and being mined, found that the ceiling did not survive one second, and sized a margin for an hour. The
+name `recommended`, the hook's default and the README all answer a different question: how much to borrow
+and then hold. The horizon a position is held for is its owner's choice and is not an input anywhere in
+the calculation, so any single default stands in for a choice the library cannot make.
+
+**Measured by the audit, and what that measurement is.** Over 2820 samples of mainnet `fetchPrice()`
+about 14 minutes apart, from 2026-08-17 to 2026-09-15, the audit reported the share of start times after
+which the price fell at least 2 percent: 0.2 percent within an hour, 14.8 within a day, 41.8 within three
+days, 55.2 within seven, worst hour 2.96 percent. **Unestablished here**: its instrument was a script
+outside this repository. The committed instrument is `scripts/oracle-moves.ts --horizons`, and the figures
+this register cites are the ones it produces, recorded when this entry is closed. The audit also opened a
+Trove at `recommended` on a mainnet fork, moved the price down 2.01 percent and liquidated it; the committed
+equivalent is `zz-borrowing-power-boundary.fork.test.ts`, whose existing pin already shows a 210 bps fall an
+hour later liquidates it.
+
+**Who it affects.** Every consumer that renders `useBorrowingPower().data` or `recommended` as an amount to
+borrow, which is the use both READMEs show.
+
+
+**Fixed, by removing the answer rather than re-sizing it.** The ruling was that the SDK should stop answering
+a question it cannot answer, and this entry could not show it wrong: every margin a library could pick is a
+holding period and a fall tolerance chosen for a caller it has never met. `getBorrowingPower` returns
+`{ ceiling, ceilingIcr, isRecoveryMode, price }` and nothing that reads as an amount to borrow.
+`drawForMargin({ collateral, horizonSeconds, priceFallBps })` takes both margin inputs as REQUIRED, refuses a
+missing one with `InvalidAmount` before any read rather than defaulting it, and reports the margin it was
+given. `recommended`, `recommendedIcr`, `margin`, the two override parameters and the
+`BORROWING_POWER_MARGIN_WINDOW_SECONDS` and `BORROWING_POWER_PRICE_MOVE_BPS` constants are removed. In React
+`useBorrowingPower` returns the ceiling result object, `useBorrowingPowerDetail` is removed, and
+`useDrawForMargin` stays disabled until both inputs are supplied. The solver is unchanged, one implementation
+of the open rules (`docs/08-conventions.md` §11), projected twice.
+
+**The horizon table, reproducible, from this wave's own run.**
+`MEZO_MAINNET_RPC_URL=https://jsonrpc-mezo.boar.network pnpm tsx scripts/oracle-moves.ts --end 11869000
+--consecutive 0 --days 90 --step 225 --horizons 3600,86400,259200,604800,2592000 --falls 200,500,1000,2000`,
+the instrument extended with `--horizons` in this wave, over blocks 9841930 to 11868955, 9010 samples,
+7454138 seconds:
+
+| Horizon | starts | fell 2% or more | 5% or more | 10% or more | 20% or more | worst fall |
+|---|---|---|---|---|---|---|
+| 1 hour | 9005 | 11 (0.1%) | 0 | 0 | 0 | 418.47 bps |
+| 1 day | 8910 | 1552 (17.4%) | 91 (1.0%) | 0 | 0 | 569.74 bps |
+| 3 days | 8709 | 3820 (43.9%) | 334 (3.8%) | 1 (0.01%) | 0 | 1023.77 bps |
+| 7 days | 8313 | 4791 (57.6%) | 560 (6.7%) | 15 (0.2%) | 0 | 1079.82 bps |
+| 30 days | 5917 | 4036 (68.2%) | 613 (10.4%) | 64 (1.1%) | 0 | 1164.16 bps |
+
+It agrees in shape with the audit's unestablished 29 day figures (14.8% in a day, 55.2% in a week) and
+replaces them. Its limits are stated where a caller meets it, on `drawForMargin`, both READMEs,
+`docs/03-core-api.md` and `docs/16-migration-0.4-to-0.5.md`: one stretch of history, overlapping start
+times that are not independent trials, a lower bound at one sample in 225 blocks, and no model of debt
+redistributed from other liquidations. **The worst hour in this range, 418.47 bps, is more than twice the
+190.78 bps worst hour MK-100 sized its 200 bps default on**, so the default did not cover the measurement it
+cited once the range was longer than a week.
+
+**Proven by sending**, `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork
+packages/core/test/zz-borrowing-power-boundary.fork.test.ts`: at a margin of one day and 500 bps, the draw
+(66,276.04 MUSD for 1 BTC at 77,051.11) is not liquidatable after 1, 60, 600 or 3600 seconds, a 499 bps fall a
+day later leaves it safe and a 510 bps fall makes it liquidatable, while the ceiling beside it is
+liquidatable after each delay and is liquidated.
+
+**The same question, asked of every other figure the SDK offers as a maximum or an advice.** The table is in
+`docs/03-core-api.md`. `ceiling`, `capacity.remaining`, `minimumCollateralToClearIcr` and
+`previewClose().musdRequired` are true for the block and documented as limits or snapshots.
+`previewRedeem().nextViableAmount` is true for about 600 seconds and says so, and a redemption is not a
+position anyone holds. `liquidationPrice` is documented as a threshold near which liquidation begins.
+**One implied a longer horizon than it has, and is MK-247.**
+
+---
+
+## MK-241 · `RedeemResult` reports the hint helper's figures, not what the redemption settled
+
+**Class** S1 · **Status** fixed · **Found by** the same external audit
+
+**What was established, from the contract.** `redeemCollateral` hands the whole remaining amount to each
+Trove it visits and stops at the first cancelled partial (`TroveManager.sol:1218-1221`, `:392`,
+`:1299-1306`); `getRedemptionHints` sizes a partial per Trove and continues (`HintHelpers.sol:138-162`),
+which MK-048 already records as a different question. What settled is emitted once:
+`Redemption(_attemptedAmount, _actualAmount, _collateralSent, _collateralFee)`
+(`ITroveManager.sol:48-53`), emitted at `TroveManager.sol:420-425` with `totalCollateralDrawn` in the
+`_collateralSent` position. **That argument includes the fee**: the redeemer is sent
+`totalCollateralDrawn - collateralFee` (`:416-418`, `:444-447`), and the MUSD burned is `_actualAmount`
+(`:428-431`).
+
+**What the SDK does.** `redeem()` returns `truncatedAmount` straight from `getRedemptionHints`
+(`packages/core/src/redemption/redeem.ts:244-249`, `:284`) and computes `estimatedCollateralDrawn` and
+`estimatedFeeCollateral` from that helper figure (`:271-280`). It returns before the transaction mines, so
+no field can say what was redeemed.
+
+**Measured by the audit.** On a mainnet fork, a redemption of 66,819.7 MUSD that consumed the first Trove
+whole and cancelled a partial on the second returned `truncatedAmount` 66,819.7 and
+`estimatedFeeCollateral` 0.006556 BTC, while the `Redemption` event recorded `_actualAmount` 16,864.7 and
+`_collateralFee` 0.001655 BTC. **Unestablished here** until the fork test this wave adds reproduces the
+shape at the pinned block. The audit's report labelled the event's `_collateralSent` as collateral sent;
+it is collateral drawn, fee included.
+
+**Who it affects.** Any redeemer, bot or accounting view that reads the result object, whenever a
+redemption ends in a cancelled partial after the first Trove.
+
+
+**Fixed.** `redeem()` waits for the receipt and reports `settled`, read by `settledRedemptionFrom` from the
+`Redemption` event emitted by the Trove manager: `attemptedAmount`, `redeemedAmount` (`_actualAmount`),
+`unredeemedAmount`, `collateralDrawn` (`_collateralSent`, fee included), `collateralFee` and
+`collateralReceived` (drawn less fee). A reverted receipt, or a successful one with no such event from that
+address, throws `RedemptionFailed`. The pre-send figures survive only as `estimatedBeforeSend`, from
+`previewRedeem`'s walk rather than the helper, with the fee from the contract's own formula applied locally,
+so the estimate cannot revert on `fee < collateralDrawn` after the send. `truncatedAmount`,
+`estimatedFeeCollateral` and `estimatedCollateralDrawn` are removed. `useRedeem` stays pending until the
+redemption mines.
+
+**Proven by sending**, `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork
+packages/core/test/zz-redemption-settled.fork.test.ts`: an amount that consumes the first eligible Trove whole
+and cancels a partial on the second. The hint helper's `truncatedAmount` for that state is 3,515.14 MUSD;
+`settled.redeemedAmount` is 1,808.46, equal to `_actualAmount`, to the MUSD that left the redeemer's balance,
+and to `estimatedBeforeSend.redeemable`; `settled.collateralReceived` equals the BTC that arrived net of the
+gas paid, to the wei; the first Trove is `closedByRedemption` and the second untouched.
+
+**The misreading, enumerated.** The audit report called `_collateralSent` collateral sent. Two places in this
+repository read it as net of the fee too: `docs/01-ground-truth.md` computed the fee fraction as
+`_collateralFee / (_collateralSent + _collateralFee)` and reported 0.744%, which is exactly 0.75% divided by
+1.0075; and `phase6.fork.test.ts` used the same formula for both redeemers, passing because the error, about
+5.6e-5, sits inside its 0.001 tolerance. Both now divide by `_collateralSent`. `docs/13-live-testnet-ledger.md`
+compares an estimate of collateral drawn against `_collateralSent`, which was already the right pairing.
+
+---
+
+## MK-242 · A collateral withdrawal permanently lowers borrowing capacity, and no preview discloses it
+
+**Class** S1 · **Status** fixed · **Found by** the same external audit
+
+**What was established, from the contract.** On the adjust path the stored capacity changes only when
+collateral decreases, to `min(current, _calculateMaxBorrowingCapacity(newColl, price))`
+(`BorrowerOperations.sol:879-899`). A collateral increase does not touch it: the branch is guarded by
+`!vars.isCollIncrease && vars.collChange > 0` (`:880`). Every debt increase is gated on it
+(`:850-852`, `:1358-1365`). The only other writer is `_refinance`, which resets it unconditionally from the
+current price (`:1077-1084`), and a refinance is refused in Recovery Mode (`:1023`), requires ICR at or
+above MCR after its fee (`:1058`), charges `getBorrowingFee(refinancingFeePercentage * netDebt / 100)`
+into principal (`:1029-1040`) and moves the Trove to the global rate (`:1069`, `:1075`).
+
+**What the SDK does.** `AdjustPreview.capacity` is built from the stored capacity before the change
+(`packages/core/src/math/previewAdjust.ts:176`, `:298`). `MaxWithdrawable` has no capacity field
+(`:501-527`). `RefinancePreview` alone reports a resulting capacity (MK-101).
+
+**Measured by the audit.** On a mainnet fork, a withdrawal of half the reported maximum during a 30 percent
+price fall, then the same collateral added back at the original price, left the capacity at 58,754 MUSD from
+138,982, and a 60,000 MUSD borrow on a Trove at ICR 756 percent was refused with
+`ExceedsBorrowingCapacity`. **Unestablished here** until the fork test this wave adds reproduces it.
+
+**Who it affects.** Anyone who withdraws collateral, most of all during a price fall. Silent at the moment
+of the withdrawal, loud at the next borrow, and undone only by a refinance that costs a fee and a rate.
+
+**Class note.** This is an irreversible state change the library helps a caller make without saying so.
+No earlier entry is of that kind.
+
+
+**Fixed.** `capacityAfterAdjustment` in `math/compute.ts` is the one copy of `:879-899`. `evaluateAdjust`
+returns `capacityAfter: { current, resulting, lost, restoredByAddingCollateral: false, recovery }` for every
+input, and `computeMaxWithdrawable` returns it at its own amount. `previewAdjustTrove`,
+`previewWithdrawCollateral` and `maxWithdrawableCollateral` fill `recovery` whenever capacity is lost, by
+projecting a refinance on the resulting state through `evaluateRefinance`, the one implementation of
+`_refinance`'s rules: its fee, the current and resulting interest rates, the capacity it would write, and its
+verdict and reasons. The write path's precheck uses `previewAdjustVerdict`, which reads no projection. The
+hooks return the previews whole, and the withdrawal hooks' documentation says to render `capacityAfter`.
+
+**Proven by sending**, `MEZO_FORK_BLOCK=15043414 pnpm exec vitest run --project fork
+packages/core/test/zz-capacity-ratchet.fork.test.ts`: a 2 BTC Trove with capacity 140,092.92 MUSD; after a 30
+percent fall, a withdrawal of half the maximum was previewed to leave 59,142.52, and the chain stored exactly
+that; a refinance at that state wrote 59,142.52 as projected and charged 4.004000005 MUSD against a projected
+4.004, the difference being interest accrued between the preview and the send; the price restored and the
+collateral added back, the capacity stayed at 59,142.52, and a 60,000 MUSD borrow that fitted before the
+withdrawal was refused before gas with `ExceedsBorrowingCapacity`.
+
+**Where a caller decides to withdraw, enumerated**: `previewAdjustTrove`, `previewWithdrawCollateral`,
+`maxWithdrawableCollateral`, their three hooks, and `adjustTrove` and `withdrawCollateral`, which send without
+reporting and whose previews now do. Both READMEs and `docs/03-core-api.md` state the mechanism.
+
+---
+
+## MK-243 · One contract gate reaches the caller as two error codes, and the register names the one the precheck does not throw
+
+**Class** S2 · **Status** fixed · **Found by** the same external audit
+
+**What was established, from the contract.** `_requireICRisAboveMCR` (`BorrowerOperations.sol:1330-1335`)
+is one gate, reached by open (`:657`), every normal mode adjustment (`:1201`) and refinance (`:1058`).
+`_requireICRisAboveCCR` (`:1337-1342`) is its Recovery Mode counterpart (`:655`, `:1272`).
+
+**What the SDK does.** The adjust precheck turns `ICR_BELOW_THRESHOLD` into `InsufficientCollateral`
+(`packages/core/src/trove/index.ts:407-408`) in either mode, with a message that says MCR even when the
+threshold is CCR. The revert decoder turns the MCR gate into `ICRBelowMCR`
+(`packages/core/src/errors/mapRevert.ts:95`) and the CCR gate into `RecoveryModeRestriction` (`:94`). So
+`borrow()` refused by the ratio reports `INSUFFICIENT_COLLATERAL` and `openTrove()` refused by the same gate
+reports `ICR_BELOW_MCR`. The README lists `ICRBelowMCR` as the protocol revert. The register's MK-079 era
+text (line 5031 of this file at `8a156dc`) says the precheck refuses with `ICRBelowMCR`; at 0.4.1 it does not.
+
+**A second instance of the ordering shape.** `borrow()` runs its capacity precheck before the adjust
+evaluator (`packages/core/src/trove/index.ts:466-470`), so when both fail it throws
+`ExceedsBorrowingCapacity` while the contract checks the ratio first (`:840-845` before `:850-852`) and
+`previewBorrow` names the ratio as binding. `adjustTrove` does the same (`:579-593`).
+
+**Who it affects.** Any consumer branching on `code`.
+
+
+**Fixed, by choosing the gate's contract authoritative code.** `ICRBelowMCR` for `_requireICRisAboveMCR`, and
+`RecoveryModeRestriction` for `_requireICRisAboveCCR`, from the precheck and from the decoder alike; the
+precheck adds `{ resultingIcr, mcr }` or `{ resultingIcr, ccr }` as optional context, so the constructors stay
+compatible. `InsufficientCollateral` now names only a withdrawal larger than the collateral, with
+`{ withdrawal, collateral }`, and its message no longer says MCR where the threshold was CCR. The separate
+capacity guard in `borrow` and `adjustTrove`, which ran before the ratio gates, is removed: the evaluator's
+`EXCEEDS_BORROWING_CAPACITY` comes after them as `:840-852` has it, and its error carries the four numbers.
+The register line that named the wrong code is annotated in place.
+
+**Every place the ratio gate becomes an error, enumerated**: `chainReasonToError` in `trove/index.ts` (the
+precheck of `addCollateral`, `borrow`, `repay`, `withdrawCollateral` and `adjustTrove`), `mapRevert` in
+`errors/mapRevert.ts` (`openTrove`, `refinance`, and any precheck the chain moves past), the React write hooks,
+which pass core's errors through, and the documentation in `docs/01-ground-truth.md`, `docs/03-core-api.md`
+and `docs/06-errors.md`, which also listed a `RedemptionTruncated` error that does not exist.
+
+---
+
+## MK-244 · `adjustTrove` refuses zero valued legs by presence, which the contract accepts and the preview calls viable
+
+**Class** S2 · **Status** fixed · **Found by** the same external audit
+
+**What was established, from the contract.** The collateral rule is on values:
+`require(_assetAmount == 0 || _collWithdrawal == 0)` (`BorrowerOperations.sol:1367-1375`). The debt side
+is one amount and one flag (`:757-758`); `(0, true)` is refused (`:785-787`, `:1351-1356`), and `(0, false)`
+with a collateral change is accepted (`:1377-1386`).
+
+**What the SDK does.** `adjustTrove` throws `InvalidAdjustment` when both collateral keys are present or both
+debt keys are present, whatever their values (`packages/core/src/trove/index.ts:549-554`), while
+`previewAdjustTrove` evaluates collateral by value (`packages/core/src/math/previewAdjust.ts:316`) and so
+returns `viable: true` for `{ addCollateral: 0n, withdrawCollateral: x }`. The audit sent that input through
+the published client, got `InvalidAdjustment`, and simulated the same call directly against the contract,
+which accepted it.
+
+**The third time.** MK-060 and MK-085 were presence against value on the debt increase flag. This entry is
+closed only with an enumeration of every place the SDK distinguishes an absent argument from a zero one.
+
+
+**Fixed, and MK-060's ruling for this path is reversed with its reason.** MK-060 read the SDK's debt legs as
+the contract's flag and chose presence. They are not the flag; they are an input the SDK must encode, and a
+zero leg has two encodings, `(0, false)`, which the contract accepts beside a collateral change, and
+`(0, true)`, which it refuses. Choosing the refused one for an input the contract can accept is the defect.
+`adjustLegsOf` resolves the four legs by value, and `adjustShapeReasons` holds the shape rules, by value, in
+contract order: `evaluateAdjust` reports from it, and `adjustTrove` refuses from it before any read. A negative
+leg throws `InvalidAmount`. `(0, true)` stays reachable where the contract receives it unconditionally,
+`withdrawMUSD`, which `previewBorrow` states through `EvaluateAdjustInput.isDebtIncrease`. The mutation entry
+'MK-060 write path' is withdrawn with a comment saying why, and 'MK-060 evaluator' now puts back ignoring that
+stated flag.
+
+**Every place an absent argument is distinguished from a zero one, both packages, enumerated.**
+
+| Site | Absent | Zero | Correct? |
+|---|---|---|---|
+| `adjustTrove` legs, `previewAdjustTrove` legs, `useAdjustTrovePreview` legs | no leg | no leg | **fixed here**; the hook's query key still tells `0n` from absent, which costs a duplicate cache entry for an identical call and no wrong answer |
+| `EvaluateAdjustInput.isDebtIncrease` | decided by value | the stated flag | yes: `previewBorrow` states `true`, as `withdrawMUSD` sends it |
+| `borrow`, `repay`, `addCollateral`, `withdrawCollateral` `amount` | a type error | `InvalidAmount` | yes |
+| `maxFeePercentage` on `openTrove`, `borrow`, `adjustTrove`, `redeem` | no cap | a cap of zero, refusing any fee | yes: both are meaningful and documented |
+| `maxIterations` on `previewRedeem`, `redeem` | 100 | no limit | yes: zero is the contract's own meaning (MK-114) |
+| `marginSeconds` on `previewRedeem` | the advice margin | no margin | yes |
+| `drawForMargin` and `useDrawForMargin` `horizonSeconds`, `priceFallBps` | refused, or the hook disabled | a margin of nothing, asked for | yes, by MK-240 |
+| `account` on `previewOpen`, `getBorrowingPower`, `drawForMargin` | assumed not exempt, reported | not a value | documented (MK-106); the hooks default it to the wallet |
+| `price` on `previewOpen`, `getBorrowingPower`, `drawForMargin` | `fetchPrice()` | a price of zero, used as given | the caller's input; not a defect |
+| `constantsTtlMs`, `gasMarginPercent` | the measured defaults | re-read every time, the bare estimate | yes, documented |
+| `useBorrowPreview`, `useWithdrawCollateralPreview`, `useRedeemPreview` `amount` | disabled | asked | yes: zero reaches the reason the contract gives it |
+| `useBorrowingPower`, `useDrawForMargin` `collateral` | disabled | disabled | yes: core refuses a zero collateral |
+
+---
+
+## MK-245 · `previewRedeem` omits the last Trove rule that a whole consumption reaches
+
+**Class** S2 · **Status** fixed · **Found by** the same external audit
+
+**What was established, from the contract.** Consuming a Trove whole (`TroveManager.sol:1252`) calls
+`_closeTrove(_borrower, Status.closedByRedemption)` (`:1261`), which, when BorrowerOperations is on the
+MUSD mint list, requires `TroveOwners.length > 1 && sortedTroves.getSize() > 1` (`:1397-1399`,
+`:1488-1496`). A failing `require` reverts the whole redemption; unlike a cancelled partial it does not
+stop the loop quietly.
+
+**What the SDK does.** `EvaluateRedeemInput` carries no count (`packages/core/src/math/previewRedeem.ts:276-291`)
+and `evaluateRedeem` has no such reason (`:451-526`). Run through the published package, a one Trove system
+consumed whole returns `viable: true`, while `evaluateClose` on the same state returns
+`LAST_TROVE_IN_SYSTEM` (MK-074 covered close and liquidation, not redemption).
+
+**Likelihood.** Low on the live deployments, which hold 19 Troves on mainnet and 232 on testnet at the
+audit's reads. Loud when it happens: the simulation reverts.
+
+
+**Fixed.** `EvaluateRedeemInput` requires `troveOwnersCount`, `sortedTrovesSize` and `canMint`, and
+`previewRedeem` reads them in its existing batch. The walk compares both counts before each whole consumption,
+as `_closeTrove` does before removing the Trove (`:1395-1399`), decrements both after it, and reports
+`LAST_TROVE_IN_SYSTEM` and stops. `redeem()` throws `LastTroveInSystem` before gas. **An existing test asserted
+the omission**: `mk114-max-iterations.test.ts` redeemed every Trove of a four Trove system and expected all four
+redeemed; it now expects the refusal, beside a control with BorrowerOperations off the mint list. No fork proof
+was added: it needs a deployment reduced to one Trove, which the pinned testnet state cannot give without
+closing every other Trove on it, and it is listed as not verified by sending.
+
+---
+
+## MK-246 · Corrected claims survive in the published declarations and in this register, and nothing checks for the class
+
+**Class** S3 · **Status** fixed · **Found by** the same external audit, from `dist/index.d.ts`
+
+**What was established.**
+
+- `MusdClient.computeNICR` is documented as `(collateral × 1e20) / entireDebt`
+  (`packages/core/src/client/createMusdClient.ts:209`, shipped at `dist/index.d.ts:7247` in 0.4.1). MK-090
+  made the parameter `principal`.
+- `MusdClient.isLiquidatable` is documented as normal mode liquidatability (`:201`, shipped at `:7241`).
+  MK-001 removed the mode distinction.
+- `getClaimableCollateral` says surplus is left by a Recovery Mode liquidation of an above MCR Trove
+  (`packages/core/src/read/system.ts:112-113`, shipped in the source map). The only writer of surplus is a
+  redemption that closes a Trove (`TroveManager.sol:1195`), and MK-001 records that this protocol has no
+  Recovery Mode liquidation.
+- The core README says `claim` has nothing to preview because `_claimCollateral` has no condition
+  (`packages/core/README.md:116`), and this register's gate table says the same. `CollSurplusPool.claimColl`
+  reverts with `No collateral available to claim` when there is no surplus (`CollSurplusPool.sol:90-93`), and
+  `claim()` handles exactly that revert (`packages/core/src/trove/index.ts:741-781`, MK-007).
+
+**Why a class.** Each closed finding corrected the claim where it was found. None of those corrections
+searched the shipped artifact for the same claim elsewhere, and no gate reads the artifact for claims a
+finding retired.
+
+
+**Fixed where it ships, and checked where it ships.** Every claim above is corrected in the source the
+declarations and source maps are built from. **Reviewing the whole built declaration file and the embedded
+sources against the closed findings, not only the two the audit caught, found more**:
+`BorrowingCapacity.remaining` explained why it had "no recommended twin"; `useRedeemPreview` pointed at
+`RedeemResult.truncatedAmount`; `CreateMusdClientParams.walletClient` and `createMusdClient` said writes arrive
+in Phase 5, and the contract bundle said its writes were typed from Phase 5 while it is typed read side only;
+`previewBorrow` said capacity is set ONCE at open, against MK-101; `estimateCollateralDrawn` named its parameter
+`truncatedAmount`. **And one claim that no finding had retired, and was simply false**: three comments, in
+`read/getTrove.ts`, `trove/index.ts` and `math/previewBorrow.ts`, said `getTroveDebt` returns a stale stored
+value. It accrues to the block (`TroveManager.sol:591-595` into `_getTotalDebt`, `:1513-1527`); what it omits is
+pending redistribution, which is the real reason `getEntireDebtAndColl` is read. The same review of the docs
+corrected `docs/01-ground-truth.md`'s surplus from a Recovery Mode liquidation and its fee formula (MK-241),
+and `docs/06-errors.md`'s `RedemptionTruncated` and its reachable `StaleHint` and `Unauthorized` rows (MK-249).
+
+**The check.** `scripts/retired-claims.mjs` holds each retired claim as the claim was worded, tied to its
+finding, and reads what a package ships: the README, the manifest description, every declaration file and
+every source map's embedded sources. The packaging gate runs it over the packages it installed from the packed
+tarballs, and fails on any hit; `pnpm gate:packaging` is a CI step (MK-096). Run over the published 0.4.1
+from outside the repository it reports 119 hits, including `index.d.ts:7241` (MK-001) and `:7247` (MK-090);
+over this tree it reports none. `retired-claims.test.ts` pins each entry against its original line and its
+correction, so an entry that matched a correction, or missed its claim, goes red.
+
+---
+
+## MK-247 · `useMaxWithdrawableCollateral` is documented as the max button's number
+
+**Class** S2 · **Status** fixed · **Found by** this wave's enumeration for MK-240, asking each figure the SDK
+offers as a maximum over what horizon it is true
+
+**What was established.** `maxWithdrawableCollateral().amount` is bounded by `ICR >= MCR` at the read block
+(`packages/core/src/math/previewAdjust.ts:619-625`). Accepted, it leaves the Trove at the liquidation
+threshold (`TroveManager.sol:1146-1148`), the shape MK-100 found in the ceiling. MK-051 records that it is
+refused a second later when the debt has accrued; if the price rises first it is accepted and the Trove sits
+at MCR. The hook's TSDoc calls it "the max button's number" (`packages/react/src/hooks/reads.ts:298`), which
+implies a position a user will hold.
+
+
+**Fixed.** `useMaxWithdrawableCollateral` and `MaxWithdrawable.amount` say it is a limit to display, that at it
+the Trove sits at the liquidation threshold, and that it removes capacity (MK-242). The retired claims check
+carries the old sentence.
+
+---
+
+## MK-248 · `GasDecision` has an `explicit` branch no public write can reach
+
+**Class** S3, source · **Status** open · **Found by** the external audit
+
+`simulateAndSend` returns `source: 'explicit'` when `opts.gas` is set (`packages/core/src/internal/write.ts:286-288`),
+and no caller passes `gas`: `send` in `packages/core/src/trove/index.ts:281-292`, `redeem` and both liquidation
+writes forward `value` and `revert` only. The type documents a caller supplied limit the API does not accept.
+
+---
+
+## MK-249 · `StaleHint` and `Unauthorized` are exported error classes nothing throws
+
+**Class** S3, source · **Status** open · **Found by** the external audit
+
+**What the code does, at the 0.5.0 tree.** `packages/core/src/errors/index.ts:401-411` defines `StaleHint`
+and `:496-504` defines `Unauthorized` (the entry first cited `:373` and `:468`, which the MK-243 and MK-245
+error changes moved; corrected here). Both are exported by both packages
+(`packages/core/src/index.ts:202`, `:207`; `packages/react/src/index.ts:85`, `:90`), and their codes
+`STALE_HINT` and `UNAUTHORIZED` are members of `MusdErrorCode` (`packages/core/src/errors/codes.ts:26`,
+`:30`). **No SDK path constructs either**: `new StaleHint(` and `new Unauthorized(` appear nowhere in
+`packages/*/src`, `scripts/` or `examples/`, only in `packages/core/test/phase7.fork.test.ts:174` and `:177`,
+which construct them directly to assert the code mapping. A stale redemption partial hint reaches the caller
+as `RedemptionFailed` from the decoder (`packages/core/src/errors/mapRevert.ts:118-123`), and the SDK calls
+no permission gated function, so `Unauthorized` has no revert to map. A consumer branching on `STALE_HINT`
+or `UNAUTHORIZED` never takes that branch, and no error tells them so at runtime.
+
+**What the documentation now says.** `docs/06-errors.md:48` and `:50` say **never thrown** with this finding
+ID and where the condition does surface; `docs/01-ground-truth.md:446-453` records both as unreachable and
+retained for compatibility. The TSDoc on each class, which is what ships in `dist/index.d.ts` and what a
+consumer reads at the call site, says the same (`errors/index.ts:395-400`, `:491-495`). One line contradicted
+this and is corrected in the same commit as this entry: `docs/06-errors.md:88-90` still gave "redeem against
+a stale hint → assert `StaleHint`" as the fork gate's example, which is the behaviour this finding says does
+not exist.
+
+**Why the pair is acceptable in 0.5.0, stated without hedging.** 0.5.0 IS a breaking release, so the removal
+could have ridden in it, and it does not. The earlier wording here ("stays open for a release that is
+breaking anyway") was therefore self refuting and is withdrawn. The reasons it is acceptable to ship as it
+stands: nothing a consumer can call behaves wrongly, because no path throws either class, so this changes no
+result, no revert mapping and no gas; the claim a consumer reads, in the declarations and in both docs, now
+matches the code exactly, which is the property this programme keeps failing on and the one that is met here;
+and removing two classes plus two `MusdErrorCode` members is a public API removal that belongs in a migration
+guide as its own row, registered before the release's acceptance evidence is measured rather than added after
+it. It was not registered before this wave's evidence was measured at `32e8c59`. What is NOT a reason: that
+0.5.0 is not breaking, or that the defect is documented away. It is an open source defect shipping with an
+accurate description of itself.
+
+**What would close it.** Either a path that throws them, which for `StaleHint` means the decoder
+distinguishing a stale hint from an empty redemption and `TroveManager` giving it a distinct revert reason to
+distinguish (it has one, `require(totals.totalCollateralDrawn > 0, "TroveManager: Unable to redeem any
+amount")`, `TroveManager.sol:406-409`, which a stale hint and a genuinely empty redemption both reach), or
+their removal
+with `STALE_HINT` and `UNAUTHORIZED` from `MusdErrorCode`, registered in the next breaking release's
+migration guide before that release's checklist is run, with the fork mapping test at
+`phase7.fork.test.ts:174-177` updated in the same change. Until one of those, the entry stays open and the
+status line in the register says open in the source, not fixed.
+
+---
+
+## MK-250 · A write whose simulation reverts logs that it is sending without a margin
+
+**Class** S3 · **Status** open · **Found by** the external audit
+
+The estimate runs in parallel with the simulation and warns `sending without a margin` when it fails
+(`packages/core/src/internal/write.ts:269-282`). When the simulation also reverts, nothing is sent, but the
+warning has already been printed. Observed by the audit on a refused `openTrove`.
+
+---
+
+## MK-251 · Two React claims are stronger than the rendered behaviour
+
+**Class** S3 · **Status** open · **Found by** the external audit, rendering the published hooks
+
+- `useMusdQuery` says `gcTime: 0` means returning to an earlier key cannot serve its old answer
+  (`packages/react/src/internal/useMusdQuery.ts:21-22`). Clearing an input and restoring the same value in
+  the same tick served the earlier answer as `success` with `isFetching: true`, because the collection runs
+  on a timer. A separate event loop tick does not show it.
+- A write fired in the render after a wallet switch, before `useWalletClient` resolves, throws
+  `MissingWalletClient`, whose message says `createMusdClient` was called without a wallet
+  (`packages/core/src/errors/index.ts:482-486`). No transaction is sent from the previous account.
 
 ---
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_REDEMPTION_MAX_ITERATIONS,
   InvalidAmount,
+  LastTroveInSystem,
   REDEMPTION_SEND_MARGIN_SECONDS,
   getAddresses,
   previewRedeem,
@@ -35,7 +36,7 @@ const HELPER_NICR = 123n
 /** Every Trove in the list is eligible and carries 30,030 MUSD of net debt. */
 const NET_DEBT = 30_030n * MUSD
 
-function listOf(size: number) {
+function listOf(size: number, opts: { mintList?: boolean } = {}) {
   const troves = Array.from(
     { length: size },
     (_, i) => `0x${(0xb1 + i).toString(16).padStart(40, '0')}` as `0x${string}`,
@@ -71,6 +72,11 @@ function listOf(size: number) {
         return Number(RATE)
       case 'getRedemptionHints':
         return [troves[0], HELPER_NICR, 0n]
+      // MK-245. The list IS the system here, so both counts are its length and the last Trove rule is on.
+      case 'getTroveOwnersCount':
+        return BigInt(size)
+      case 'mintList':
+        return opts.mintList ?? true
       case 'getSize':
         return BigInt(size)
       case 'getApproxHint':
@@ -156,8 +162,33 @@ describe('MK-114, maxIterations 0n is no limit, as the contract reads it', () =>
       amount: 1_000_000n * MUSD,
       maxIterations: 0n,
     })
-    expect(p.redeemable, 'every Trove, consumed whole').toBe(4n * NET_DEBT)
     expect(visited(), 'one read per Trove in the list, and the walk terminates').toBe(4)
+    // MK-245. This list IS the system, so consuming its fourth Trove closes the last one, which
+    // `_closeTrove` refuses (`TroveManager.sol:1397-1399`, `:1488-1496`) and so reverts the whole call.
+    // Until 0.5.0 this test asserted all four were redeemed, which is the omission MK-245 names.
+    expect(p.viable).toBe(false)
+    expect(p.bindingConstraint).toBe('LAST_TROVE_IN_SYSTEM')
+    expect(p.redeemable).toBe(0n)
+  })
+
+  it('MK-245: redeem() refuses the whole consumption of the last Trove before simulate, with LastTroveInSystem', async () => {
+    const { writeDeps, sent } = listOf(4)
+    const error = await redeem(writeDeps, { amount: 1_000_000n * MUSD, maxIterations: 0n }).catch(
+      (e: unknown) => e,
+    )
+    expect(error).toBeInstanceOf(LastTroveInSystem)
+    expect(sent, 'nothing reached simulate').toEqual([])
+  })
+
+  it('MK-245: with BorrowerOperations off the mint list the last Trove rule does not run, and all four are redeemed', async () => {
+    const { troves, deps } = listOf(4, { mintList: false })
+    const p = await previewRedeem(deps, {
+      redeemer: troves[3] as `0x${string}`,
+      amount: 1_000_000n * MUSD,
+      maxIterations: 0n,
+    })
+    expect(p.viable).toBe(true)
+    expect(p.redeemable, 'every Trove, consumed whole').toBe(4n * NET_DEBT)
   })
 
   it('the preview and redeem() default to one shared bound', async () => {

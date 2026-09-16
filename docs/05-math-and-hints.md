@@ -126,22 +126,23 @@ SDK compares against the live entire debt rather than the stored `getTroveDebt`.
 `getBorrowingPower` also enforces the resulting system TCR in normal mode, which the
 contract requires on every normal mode open and which it previously ignored.
 
-**The maximum is the liquidation threshold, so the function returns a second figure with a margin
-(MK-100).** Solving for the largest draw the open gate accepts means solving for `ICR == MCR`
+**The maximum is the liquidation threshold, and a draw that survives holding needs a margin the caller
+chooses (MK-100, MK-240).** Solving for the largest draw the open gate accepts means solving for `ICR == MCR`
 whenever the individual ratio binds, and `MCR` is also where liquidation begins (`ICR < MCR`,
 `TroveManager.sol:1146-1148`). An open accrues no interest before its ratio check
 (`BorrowerOperations.sol:648-657`), so that `ceiling` is still accepted a block later; the debt then
 accrues every second (`TroveManager.sol:1513-1527`), and the position is liquidatable almost at once.
 
-`recommended` runs the same solver against a stressed price, `price * (10000 - priceMoveBps) /
-10000 / (1 + accrual)`, where `accrual` is `windowSeconds` of interest at the live global rate,
+`drawForMargin` runs the same solver against a stressed price, `price * (10000 - priceFallBps) /
+10000 / (1 + accrual)`, where `accrual` is `horizonSeconds` of interest at the live global rate,
 rounded up. Every open gate is a comparison of `collateral * price` against a multiple of debt, so
 clearing the gates at the stressed price is clearing them after that fall together with that
-accrual. The constants are 200 bps and 3600 seconds, measured by `scripts/oracle-moves.ts`, and the
-docstrings on `BORROWING_POWER_PRICE_MOVE_BPS` and `BORROWING_POWER_MARGIN_WINDOW_SECONDS` state
-the measurement. In Recovery Mode the ceiling lands on CCR, which is not liquidatable. When the
-system TCR binds instead, the ceiling is refused a block later, because the system debt accrues too
-(`ActivePool.sol:134-144`), and the recommended figure opens.
+accrual. **Both inputs are the caller's, with no default**: until 0.5.0 a `recommended` figure used
+200 bps and 3600 seconds, a margin for the delay before a send presented as the amount to hold (MK-240).
+How often a fall of a given size followed within a given horizon on mainnet is tabled in `03-core-api`,
+from `scripts/oracle-moves.ts --horizons`. In Recovery Mode the ceiling lands on CCR, which is not
+liquidatable. When the system TCR binds instead, the ceiling is refused a block later, because the system
+debt accrues too (`ActivePool.sol:134-144`), and a margin draw opens.
 
 **It no longer decides any of these rules itself (MK-067, MK-069).** Its feasibility predicate
 is `evaluateOpen`, the evaluator behind `previewOpen`, so a maximum and a candidate verdict

@@ -19,8 +19,8 @@ import { recordMitigation } from '../../core/test/harness/mitigationLog'
 import { openTroveRaw, testAccount } from '../../core/test/harness/openTroveRaw'
 import {
   useBorrowingPower,
-  useBorrowingPowerDetail,
   useCloseTrove,
+  useDrawForMargin,
   useHealthFactor,
   useLiquidationPrice,
   useOpenTrove,
@@ -180,24 +180,27 @@ describe('@musd-kit/react, read hooks (fork)', () => {
     expect(troveQueries.length).toBe(1)
   }, 60_000)
 
-  it('useBorrowingPower returns core.getBorrowingPower RECOMMENDED, not the ceiling (MK-100)', async () => {
+  it('useBorrowingPower returns the core ceiling result and useDrawForMargin the core margin draw (MK-100, MK-240)', async () => {
     const qc = newQueryClient()
     const wrapper = makeWrapper(makeConfig(rpcUrl, [holder.address]), qc)
     const collateral = (5n * BTC) / 100n
+    const margin = { horizonSeconds: 86_400n, priceFallBps: 500n }
     const { result } = renderHook(
       () => ({
-        value: useBorrowingPower({ collateral }),
-        detail: useBorrowingPowerDetail({ collateral }),
+        power: useBorrowingPower({ collateral }),
+        draw: useDrawForMargin({ collateral, ...margin }),
       }),
       { wrapper },
     )
-    await waitFor(() => expect(result.current.detail.isLoading).toBe(false), { timeout: 30_000 })
-    const core = await coreClient.getBorrowingPower({ collateral })
-    expect(core.recommended, 'fixture: a margin must exist to tell the two apart').toBeLessThan(
+    await waitFor(() => expect(result.current.draw.isLoading).toBe(false), { timeout: 30_000 })
+    await waitFor(() => expect(result.current.power.isLoading).toBe(false), { timeout: 30_000 })
+    const core = await coreClient.drawForMargin({ collateral, ...margin })
+    expect(core.draw, 'fixture: a margin must exist to tell the two apart').toBeLessThan(
       core.ceiling,
     )
-    expect(result.current.value.data).toBe(core.recommended)
-    expect(result.current.detail.data?.ceiling).toBe(core.ceiling)
+    expect(result.current.power.data?.ceiling).toBe(core.ceiling)
+    expect(result.current.draw.data?.draw).toBe(core.draw)
+    expect(result.current.draw.data?.margin.horizonSeconds).toBe(margin.horizonSeconds)
   }, 60_000)
 
   it('useTrove refetches on a new block (block-watching)', async () => {
@@ -285,7 +288,7 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
     )
   }, 120_000)
 
-  it('useRedeem sends and returns { hash, truncatedAmount, redemptionRate, fee amount }', async () => {
+  it('useRedeem sends and returns what settled, beside the estimate and the rate (MK-014, MK-241)', async () => {
     // Same handling as the Phase-6 redemption gate: redeem at a +50% price so the lowest
     // redeemable Trove has comfortable margin, warm the slow getRedemptionHints traversal at
     // that price, and redeem 3,000, enough to close whole Troves. Price restored after.
@@ -324,11 +327,14 @@ describe('@musd-kit/react, write hooks (fork, mock connector)', () => {
         () => result.current.redeem,
       )
       expect(result.current.redeem.hash).toMatch(/^0x/)
-      expect(result.current.redeem.data?.truncatedAmount).toBeGreaterThan(0n)
-      // MK-014: `fee` is gone. The rate and the fee AMOUNT are separate, named fields.
-      expect(result.current.redeem.data?.redemptionRate).toBeGreaterThan(0n)
-      expect(result.current.redeem.data?.estimatedFeeCollateral).toBeGreaterThan(0n)
-      expect(result.current.redeem.data?.estimatedCollateralDrawn).toBeGreaterThan(0n)
+      // MK-241: what settled, read from the receipt, and MK-014: the rate named as a rate.
+      const data = result.current.redeem.data
+      expect(data?.settled.redeemedAmount).toBeGreaterThan(0n)
+      expect(data?.settled.collateralReceived).toBe(
+        (data?.settled.collateralDrawn ?? 0n) - (data?.settled.collateralFee ?? 0n),
+      )
+      expect(data?.redemptionRate).toBeGreaterThan(0n)
+      expect(data?.estimatedBeforeSend.collateralFee).toBeGreaterThan(0n)
     } finally {
       await fork.setPrice(orig)
       await fork.mineBlocks(1)

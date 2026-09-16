@@ -46,22 +46,25 @@ happened to arrive together.
 // A borrowing-power calculator, no live position needed (preview math)
 // Pass `account` whenever you have one (MK-067): the borrowing fee is skipped for a fee exempt
 // account, so the maximum is LARGER for such a caller than the figure returned without it.
-const { data: recommended } = useBorrowingPower({ collateral: parseBtc('0.05') });
-// `data` is core getBorrowingPower's RECOMMENDED draw (a bigint), never its ceiling (MK-100).
-// `account` defaults to the connected wallet (MK-106); pass one to ask about another account.
-const { data: power } = useBorrowingPowerDetail({ collateral: parseBtc('0.05') });
-// power.ceiling, power.recommendedIcr, power.margin: the same single fetch.
-const { data: slowFlow } = useBorrowingPower({ collateral: parseBtc('0.05'), marginWindowSeconds: 86_400n });
-// A margin override is forwarded to the core and is part of the query key, so each margin is its
-// own cached answer. Omitted, the measured default applies; the detail hook's `margin` says which.
+const { data: power } = useBorrowingPower({ collateral: parseBtc('0.05') });
+// `data` is core getBorrowingPower's result, { ceiling, ceilingIcr, isRecoveryMode, price }: the
+// contract's limit, to display, never to open at (MK-100, MK-240). `account` defaults to the
+// connected wallet (MK-106); pass one to ask about another account.
+const { data: sized } = useDrawForMargin({
+  collateral: parseBtc('0.05'),
+  horizonSeconds, // the user's choice, e.g. from a form; undefined keeps the hook disabled
+  priceFallBps,   // the user's choice; there is no default
+});
+// sized.draw survives sized.margin.priceFallBps over sized.margin.horizonSeconds, and nothing more.
+// Each margin is part of the query key, so each is its own cached answer.
 ```
 
-> **`useBorrowingPower` returns the recommended draw (MK-100).** Since 0.4.0 `data` leaves the
-> measured margin stated on `BORROWING_POWER_PRICE_MOVE_BPS` and
-> `BORROWING_POWER_MARGIN_WINDOW_SECONDS`; opened at it, a Trove was not liquidatable after an hour
-> on a fork. The contract's ceiling, from `useBorrowingPowerDetail`, is a limit to display: in normal
-> mode a Trove opened at it is liquidatable within seconds. Until 0.3.1 this hook returned the
-> ceiling.
+> **There is no recommended draw (MK-240).** Until 0.5.0 `useBorrowingPower`'s `data` was a bare
+> `recommended` figure sized for one hour and a 2% fall, presented as the draw to offer; over 86 days of
+> Mezo mainnet prices a fall that large followed within a week of 57.6% of sampled start times. The
+> ceiling is a limit to display: in normal mode a Trove opened at it is liquidatable within seconds. A
+> draw that survives being held needs a horizon and a fall the user chooses, which is `useDrawForMargin`.
+> The table for choosing them is in `03-core-api` and on core `drawForMargin`.
 
 > ⚠️ **`useBorrowingPower` sizes an OPEN, not a top-up.** Its name invites use against a
 > Trove that already exists; it does not do that. Every Trove carries a
@@ -112,7 +115,7 @@ core; the React layer adds only the reactive wrapper.
 
 ## 3. The v1 hook set (as shipped, Phase 8)
 
-**Read (15):** `useTrove`, `useBorrowingPower`, `useBorrowingPowerDetail`, `useBorrowPreview`, `useBorrowingCapacity`,
+**Read (15):** `useTrove`, `useBorrowingPower`, `useDrawForMargin`, `useBorrowPreview`, `useBorrowingCapacity`,
 `useRefinancePreview`, `useLiquidationPrice`, `useHealthFactor`, `useMusdBalance`,
 `useOraclePrice`, `useAdjustTrovePreview`, `useWithdrawCollateralPreview`,
 `useMaxWithdrawableCollateral`, `useClosePreview`, `useRedeemPreview`.
@@ -148,10 +151,10 @@ We ship the **dedicated single-axis hooks** (`useAddCollateral` → `addColl`, `
 better in a form-per-action UI and each maps to exactly one core method. Each write hook is
 a `useMutation` returning the wagmi-style shape `{ <action>, isPending, isSuccess, error,
 hash, data }` where `error` is the core's typed `MusdError`; `useRedeem`'s `data` carries
-`{ hash, truncatedAmount, redemptionRate, estimatedFeeCollateral, estimatedCollateralDrawn }`. After a successful write the caller's `useTrove` /
+`{ hash, settled, estimatedBeforeSend, redemptionRate, gas, partial }`. After a successful write the caller's `useTrove` /
 `useMusdBalance` queries are invalidated so the UI refreshes. Receipt-waiting is left to the
-consumer (`useWaitForTransactionReceipt({ hash })`); v1 does not block the mutation on
-confirmation.
+consumer (`useWaitForTransactionReceipt({ hash })`) for every write **except `useRedeem`**, which stays
+pending until the redemption mines, because what it redeemed is only known from its receipt (MK-241).
 
 ---
 

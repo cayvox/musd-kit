@@ -169,6 +169,7 @@ describe('MK-076, computeMaxWithdrawable.limitedBy', () => {
       price: PRICE,
       systemColl,
       systemDebt,
+      capacity: 0n,
     })
     expect(m.amount).toBe(0n)
     expect(m.limitedBy).toBe('TCR')
@@ -182,6 +183,7 @@ describe('MK-076, computeMaxWithdrawable.limitedBy', () => {
       price: PRICE,
       systemColl: 100_000n * BTC,
       systemDebt: 1_000n * MUSD,
+      capacity: 0n,
     })
     expect(m.limitedBy).toBe('ICR')
     expect(m.amount).toBeGreaterThan(0n)
@@ -195,6 +197,7 @@ describe('MK-076, computeMaxWithdrawable.limitedBy', () => {
       price: PRICE,
       systemColl: 1_000n * BTC,
       systemDebt: 80_000_000n * MUSD,
+      capacity: 0n,
     })
     expect(m.amount).toBe(0n)
     expect(m.limitedBy).toBe('RECOVERY_MODE')

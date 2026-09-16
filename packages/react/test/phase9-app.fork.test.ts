@@ -33,7 +33,9 @@ describe('Phase 9, examples/open-and-manage (smoke render)', () => {
     })
     await waitFor(() => expect(screen.queryByText('Loading…')).toBeNull(), { timeout: 30_000 })
 
-    // And the preview hook (useBorrowingPower) rendered its row.
-    expect(screen.getByText('Borrowing power')).toBeTruthy()
+    // And the ceiling hook (useBorrowingPower) rendered its row, beside the margin inputs the user fills
+    // in for useDrawForMargin, which asks nothing until both are filled (MK-240).
+    expect(screen.getByText('Contract ceiling (MK-100)')).toBeTruthy()
+    expect(screen.getByText('choose a horizon and a fall')).toBeTruthy()
   }, 60_000)
 })

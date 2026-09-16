@@ -1,8 +1,6 @@
 import { BaseError, ContractFunctionRevertedError, type PublicClient } from 'viem'
 import { describe, expect, it } from 'vitest'
 import {
-  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
-  BORROWING_POWER_PRICE_MOVE_BPS,
   ContractCallFailed,
   DECIMAL_PRECISION,
   DEFAULT_HINT_RANDOM_SEED,
@@ -52,11 +50,9 @@ describe('MK-118, the bundled fixed constants are the protocol literals', () => 
 
 describe('MK-118, the measured margins are the measured values', () => {
   it('carry the figures their measurements produced, so a change has to be a decision', () => {
-    // MK-100: one hour and 200 bps, from `scripts/oracle-moves.ts` over Mezo mainnet blocks 11664905 to
-    // 11822985 (worst hourly fall 190.78 bps). MK-103: 5 bps, the two block p99 rounded up. MK-104: 60
-    // seconds of sending margin, fifteen blocks at 3.83 seconds. Each is documented where it is declared.
-    expect(BORROWING_POWER_MARGIN_WINDOW_SECONDS).toBe(3600n)
-    expect(BORROWING_POWER_PRICE_MOVE_BPS).toBe(200n)
+    // MK-103: 5 bps, the two block p99 rounded up. MK-104: 60 seconds of sending margin, fifteen blocks
+    // at 3.83 seconds. Each is documented where it is declared. MK-100's one hour and 200 bps were
+    // removed by MK-240: a holding margin is the caller's input, and the library no longer picks one.
     expect(REDEMPTION_PRICE_MOVE_TOLERANCE).toBe(5n * 10n ** 14n)
     expect(REDEMPTION_SEND_MARGIN_SECONDS).toBe(60n)
   })
@@ -79,6 +75,9 @@ describe('MK-117, MK-095, the redemption advice margin covers more than the wind
     const p = evaluateRedeem({
       amount: 1n,
       globalInterestRateBps: 100n,
+      troveOwnersCount: 42n,
+      sortedTrovesSize: 42n,
+      canMint: true, // MK-245: a populated system
       musdBalance: 10n ** 30n,
       minNetDebt: 1_800n * 10n ** 18n,
       tcr: 2n * 10n ** 18n,

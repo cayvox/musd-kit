@@ -93,6 +93,15 @@ export type RedeemBlockReason =
    * {@link RedemptionPreview.nextViableAmount}, which are the two edges of the gap.
    */
   | 'PARTIAL_BREACHES_DEBT_FLOOR'
+  /**
+   * A Trove the call would consume whole is the last one in the system (MK-245). Consuming it closes it,
+   * `_closeTrove(_borrower, Status.closedByRedemption)` (`TroveManager.sol:1252-1261`), and `_closeTrove`
+   * requires `TroveOwners.length > 1 && sortedTroves.getSize() > 1` whenever BorrowerOperations is on the
+   * MUSD mint list (`:1397-1399`, `:1488-1496`). A failed `require` reverts the WHOLE call, unlike a
+   * cancelled partial, which only stops the loop. Both counts fall by one with every Trove the walk
+   * consumes, so a large enough redemption reaches it on a later Trove too.
+   */
+  | 'LAST_TROVE_IN_SYSTEM'
 
 /** Result of {@link previewRedeem}. Raw numbers included so callers render their own copy. */
 export interface RedemptionPreview {
@@ -288,6 +297,16 @@ export interface EvaluateRedeemInput {
   globalInterestRateBps: bigint
   /** Whole consumption margin in seconds. Default {@link REDEMPTION_ADVICE_MARGIN_SECONDS} (MK-104). */
   marginSeconds?: bigint
+  /**
+   * `TroveManager.getTroveOwnersCount()` and `SortedTroves.getSize()`, the two counts
+   * `_requireMoreThanOneTroveInSystem` compares (`TroveManager.sol:1488-1496`), and
+   * `musd.mintList(borrowerOperations)`, the flag that decides whether it runs at all (`:1397`) (MK-245).
+   * Required: an absent count is not "more than one", and a preview that assumed it would call viable a
+   * redemption the chain reverts.
+   */
+  troveOwnersCount: bigint
+  sortedTrovesSize: bigint
+  canMint: boolean
 }
 
 // MK-071, then MK-089. The formula is not restated here AT ALL any more. It used to shadow
@@ -449,7 +468,7 @@ export function partialRedemptionBand(input: {
  * only the amounts a fork happens to produce.
  */
 export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
-  const { amount, musdBalance, minNetDebt, tcr, price, eligible } = input
+  const { amount, musdBalance, minNetDebt, tcr, price, eligible, canMint } = input
   const marginSeconds = input.marginSeconds ?? REDEMPTION_ADVICE_MARGIN_SECONDS
 
   const first = eligible[0]
@@ -476,6 +495,10 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   let redeemed = 0n
   let cancelledOnFirst = false
   let partial: PartialRedemption | null = null
+  // MK-245. The two counts `_closeTrove` checks, as each whole consumption leaves them.
+  let owners = input.troveOwnersCount
+  let size = input.sortedTrovesSize
+  let closesLastTrove = false
   for (let i = 0; i < eligible.length && remaining > 0n; i++) {
     const trove = eligible[i]
     if (trove === undefined) break
@@ -487,6 +510,16 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
     if (!consumesWhole && trove.netDebt - lot < minNetDebt) {
       if (i === 0) cancelledOnFirst = true
       break
+    }
+    if (consumesWhole) {
+      // `_closeTrove` runs its check BEFORE removing the Trove (`TroveManager.sol:1395-1399`), so the
+      // counts it compares still include the one being closed.
+      if (canMint && (owners <= 1n || size <= 1n)) {
+        closesLastTrove = true
+        break
+      }
+      owners -= 1n
+      size -= 1n
     }
     if (!consumesWhole) {
       partial = partialRedemptionBand({
@@ -505,6 +538,7 @@ export function evaluateRedeem(input: EvaluateRedeemInput): RedemptionPreview {
   // was drawn. A cancel after at least one Trove was redeemed leaves a successful call that
   // simply redeems less, which is why this is checked on the first Trove specifically.
   if (cancelledOnFirst && amount > 0n) reasons.push('PARTIAL_BREACHES_DEBT_FLOOR')
+  if (closesLastTrove) reasons.push('LAST_TROVE_IN_SYSTEM')
 
   const viable = reasons.length === 0
   return {
@@ -559,22 +593,32 @@ async function previewRedeemUnchecked(
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
   const st = { address: addresses.sortedTroves, abi: sortedTrovesAbi } as const
 
-  const [tcr, musdBalance, minNetDebt, globalRate] = await Promise.all([
-    publicClient.readContract({ ...tm, functionName: 'getTCR', args: [price] }),
-    publicClient.readContract({
-      address: addresses.musd,
-      abi: musdAbi,
-      functionName: 'balanceOf',
-      args: [redeemer],
-    }),
-    deps.getMinNetDebt(),
-    // MK-103. The hint band is 600 seconds of interest at the GLOBAL rate (`TroveManager.sol:358`).
-    publicClient.readContract({
-      address: addresses.interestRateManager,
-      abi: interestRateManagerAbi,
-      functionName: 'interestRate',
-    }),
-  ])
+  const [tcr, musdBalance, minNetDebt, globalRate, troveOwnersCount, sortedTrovesSize, canMint] =
+    await Promise.all([
+      publicClient.readContract({ ...tm, functionName: 'getTCR', args: [price] }),
+      publicClient.readContract({
+        address: addresses.musd,
+        abi: musdAbi,
+        functionName: 'balanceOf',
+        args: [redeemer],
+      }),
+      deps.getMinNetDebt(),
+      // MK-103. The hint band is 600 seconds of interest at the GLOBAL rate (`TroveManager.sol:358`).
+      publicClient.readContract({
+        address: addresses.interestRateManager,
+        abi: interestRateManagerAbi,
+        functionName: 'interestRate',
+      }),
+      // MK-245. The last Trove rule a whole consumption reaches, and the flag that switches it on.
+      publicClient.readContract({ ...tm, functionName: 'getTroveOwnersCount' }),
+      publicClient.readContract({ ...st, functionName: 'getSize' }),
+      publicClient.readContract({
+        address: addresses.musd,
+        abi: musdAbi,
+        functionName: 'mintList',
+        args: [addresses.borrowerOperations],
+      }),
+    ])
 
   // Start at the tail, the lowest ICR, and skip everything under MCR exactly as `:341-349` does.
   let cursor = await publicClient.readContract({ ...st, functionName: 'getLast' })
@@ -642,6 +686,9 @@ async function previewRedeemUnchecked(
     price,
     eligible,
     globalInterestRateBps: BigInt(globalRate),
+    troveOwnersCount,
+    sortedTrovesSize,
+    canMint,
     ...(params.marginSeconds !== undefined ? { marginSeconds: params.marginSeconds } : {}),
   })
 }

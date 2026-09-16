@@ -13,38 +13,6 @@ import type { MathDeps } from './deps'
 import { isBorrowingFeeCharged } from './fee'
 import { evaluateOpen } from './previewOpen'
 
-/**
- * The window, in seconds, {@link BorrowingPower.recommended} is sized to survive (MK-100).
- *
- * It covers the delay between reading the figure and the open landing, which includes a person
- * reading a screen and signing, and the first stretch the position then has to live through.
- *
- * **One hour, chosen from measurement.** `scripts/oracle-moves.ts` read `fetchPrice()` on Mezo
- * mainnet over blocks 11664905 to 11822985 (610589 seconds, one sample every 16 blocks). The worst
- * fall inside a window grows with the window: p99 6.26 bps over 60 seconds, 42.56 bps over 600
- * seconds, 132.56 bps over 3600 seconds. A 60 second window would size the margin to the delay of a
- * script, not of a person, and the fork proof asks the recommended Trove to be healthy an hour after
- * it opens. The interest this window adds is small next to the price part: at a 1% rate, one hour of
- * interest is about 0.0114 bps of the debt.
- */
-export const BORROWING_POWER_MARGIN_WINDOW_SECONDS = 3600n
-
-/**
- * The adverse price move, in basis points, {@link BorrowingPower.recommended} absorbs (MK-100).
- *
- * **200 bps (2%), chosen from measurement.** Over the same 610589 seconds of Mezo mainnet
- * `fetchPrice()`, the largest fall from any sampled start to the lowest sampled price in the hour
- * after it was 190.78 bps (9822 windows: p50 13.08, p90 50.22, p99 132.56, p99.9 181.87). 200 is that
- * maximum rounded up, so the recommended figure would have survived the worst hour of that week.
- *
- * **What the measurement cannot show.** It is one week, which is one market regime rather than a
- * distribution of them, and it samples one block in sixteen, so a dip that recovered between two
- * samples is not in it: the figures are a lower bound on the true worst move. A move larger than 2%
- * within the hour happens, and a position opened at the recommended figure does not survive it.
- * Reproduce with `pnpm tsx scripts/oracle-moves.ts --end 11823000 --days 7 --step 16`.
- */
-export const BORROWING_POWER_PRICE_MOVE_BPS = 200n
-
 /** Inputs to {@link MusdClient.getBorrowingPower}: the collateral to size a draw against. */
 export interface GetBorrowingPowerParams {
   collateral: bigint
@@ -64,52 +32,18 @@ export interface GetBorrowingPowerParams {
    * read from the chain rather than from this parameter.
    */
   account?: Address
-  /**
-   * Override {@link BORROWING_POWER_MARGIN_WINDOW_SECONDS} for `recommended`, in seconds: larger for a
-   * flow slower than an hour between reading the figure and the position being safe on its own,
-   * smaller for one that sends at once. `0n` removes the interest part. The value used is always
-   * returned on `margin.windowSeconds`, so the result says which margin it holds.
-   *
-   * @throws {InvalidAmount} for a negative value, which would put the stressed price above the real
-   *   one and hand back the ceiling under the name `recommended`.
-   */
-  marginWindowSeconds?: bigint
-  /**
-   * Override {@link BORROWING_POWER_PRICE_MOVE_BPS} for `recommended`, in basis points, from `0n`,
-   * which removes the price part, up to but excluding `10_000n`, a fall of the whole price. The value
-   * used is always returned on `margin.priceMoveBps`.
-   *
-   * @throws {InvalidAmount} outside `0n <= priceMoveBps < 10_000n`.
-   */
-  priceMoveBps?: bigint
-}
-
-/** The margin {@link BorrowingPower.recommended} was solved with, reported rather than hidden. */
-export interface BorrowingPowerMargin {
-  /** The window it is sized for, in seconds. */
-  windowSeconds: bigint
-  /** The adverse price move it absorbs, in basis points. */
-  priceMoveBps: bigint
-  /**
-   * `interestRateManager.interestRate()`, in basis points: the rate a Trove opened now carries
-   * (`BorrowerOperations.sol:668-672`), which is what accrues on it.
-   */
-  interestRateBps: bigint
-  /** Interest over `windowSeconds` at that rate, as a 1e18 fraction of the debt, rounded up. */
-  accrualFraction: bigint
-  /**
-   * The price `recommended` is solved against: `price * (1 - priceMove) / (1 + accrual)`. Every open
-   * gate, the individual ratio and the resulting system ratio alike, scales with the price, so
-   * clearing them at this price clears them after that fall and that accrual.
-   */
-  stressedPrice: bigint
 }
 
 /**
- * Two figures for one question, named so neither can be taken for the other (MK-100).
+ * The contract's limit for an open at this collateral, and nothing else (MK-100, MK-240).
  *
- * `ceiling` is what the contract accepts. `recommended` is what to offer. They differ by exactly the
- * margin in {@link margin}, and neither is ever returned under the other's name.
+ * **There is no amount to borrow on this result, on purpose.** How much to borrow depends on how long
+ * the position will be held and how far the price may fall meanwhile, and the library knows neither.
+ * Until 0.5.0 this result carried a `recommended` figure sized for one hour and a 2 percent fall, and
+ * both READMEs presented it as the draw to offer; over 90 days of Mezo mainnet prices a fall that large
+ * followed within a week of 57.6 percent of sampled start times (MK-240, the table on
+ * {@link drawForMargin}). For a draw sized to a margin YOU choose, call {@link drawForMargin}, which
+ * has no default for either input.
  */
 export interface BorrowingPower {
   /**
@@ -120,29 +54,77 @@ export interface BorrowingPower {
    * accrues every second (`TroveManager.sol:1513-1527`), so a Trove opened here is liquidatable
    * within a second (MK-100, measured in `zz-borrowing-power-boundary.fork.test.ts`). In Recovery
    * Mode it opens at exactly 150%. With the system ratio binding, the open is refused a block later.
-   * **Do not open at it.** It is a limit to display, not an amount to borrow.
+   * **Do not open at it.** It is a limit to display, not an amount to borrow, and it holds for the
+   * block it was read at.
    */
   ceiling: bigint
-  /**
-   * **The recommended draw: the largest draw that still clears every open gate after the margin.**
-   * Opened at this figure, a Trove starts at an ICR of at least the threshold times
-   * `price / margin.stressedPrice`, and it stays liquidation free while the price divided by one
-   * plus the interest accrued since the open stays at or above `margin.stressedPrice`. That holds
-   * for a fall of up to `margin.priceMoveBps` together with up to `margin.windowSeconds` of
-   * interest, and for a larger share of either when the other is smaller. `0n` when no open with
-   * that margin clears the debt floor.
-   */
-  recommended: bigint
   /** The ICR a Trove opened at `ceiling` starts at, at `price`. `0n` when `ceiling` is `0n`. */
   ceilingIcr: bigint
-  /** The ICR a Trove opened at `recommended` starts at, at `price`. `0n` when `recommended` is `0n`. */
-  recommendedIcr: bigint
-  /** How `recommended` was sized. */
-  margin: BorrowingPowerMargin
-  /** `checkRecoveryMode(price)`, which picks the individual ratio threshold for both figures. */
+  /** `checkRecoveryMode(price)`, which picks the individual ratio threshold. */
   isRecoveryMode: boolean
-  /** BTC/USD both figures were solved at. */
+  /** BTC/USD the ceiling was solved at. */
   price: bigint
+}
+
+/** Inputs to {@link MusdClient.drawForMargin}: the collateral, and the margin the caller chooses. */
+export interface DrawForMarginParams extends GetBorrowingPowerParams {
+  /**
+   * **How long the position must survive, in seconds.** Required, with no default (MK-240): the
+   * library cannot know how long a position will be held. Covers the interest the Trove accrues over
+   * that time at the rate it would open with. `0n` asks for no interest allowance, which is a choice
+   * and is reported as one. The price history for choosing it is on {@link drawForMargin}.
+   *
+   * @throws {InvalidAmount} when absent or negative.
+   */
+  horizonSeconds: bigint
+  /**
+   * **The fall in the BTC price, in basis points of the price at the read, the position must
+   * survive.** Required, with no default (MK-240), from `0n` up to but excluding `10_000n`.
+   *
+   * @throws {InvalidAmount} when absent or outside `0n <= priceFallBps < 10_000n`.
+   */
+  priceFallBps: bigint
+}
+
+/** The margin {@link MarginDraw.draw} was solved with, as the caller supplied it. */
+export interface DrawMargin {
+  /** The horizon the caller asked for, in seconds. */
+  horizonSeconds: bigint
+  /** The price fall the caller asked for, in basis points. */
+  priceFallBps: bigint
+  /**
+   * `interestRateManager.interestRate()`, in basis points: the rate a Trove opened now carries
+   * (`BorrowerOperations.sol:668-672`), which is what accrues on it.
+   */
+  interestRateBps: bigint
+  /** Interest over `horizonSeconds` at that rate, as a 1e18 fraction of the debt, rounded up. */
+  accrualFraction: bigint
+  /**
+   * The price `draw` is solved against: `price * (1 - priceFall) / (1 + accrual)`. Every open gate,
+   * the individual ratio and the resulting system ratio alike, scales with the price, so clearing
+   * them at this price clears them after that fall and that accrual.
+   */
+  stressedPrice: bigint
+}
+
+/** Result of {@link MusdClient.drawForMargin}: a draw that answers the caller's margin, beside the ceiling. */
+export interface MarginDraw extends BorrowingPower {
+  /**
+   * **The largest draw that still clears every open gate after `margin.priceFallBps` of price fall and
+   * `margin.horizonSeconds` of interest.** A Trove opened at it starts at an ICR of at least the
+   * threshold times `price / margin.stressedPrice`, and it is not liquidatable while the price divided
+   * by one plus the interest accrued since the open stays at or above `margin.stressedPrice`. `0n` when
+   * no open with that margin clears the debt floor.
+   *
+   * It is an answer to the margin in `margin` and to nothing else. A fall larger than it, a hold longer
+   * than it, or debt redistributed to the Trove from another Trove's liquidation
+   * (`TroveManager.sol:980-1047`) can still take the position to liquidation.
+   */
+  draw: bigint
+  /** The ICR a Trove opened at `draw` starts at, at `price`. `0n` when `draw` is `0n`. */
+  drawIcr: bigint
+  /** The margin `draw` was solved with. */
+  margin: DrawMargin
 }
 
 /**
@@ -161,24 +143,12 @@ export interface BorrowingPower {
 export const MAX_BORROWING_POWER_ITERATIONS = 256
 
 /**
- * How much a position opened now can borrow, as two figures: the contract's {@link BorrowingPower.ceiling}
- * and a {@link BorrowingPower.recommended} draw that leaves a measured margin (MK-100). This is an
- * **open time calculator and nothing else**: it sizes a draw for a position that does not exist yet.
+ * The contract's ceiling for a position opened now (MK-100, MK-240). This is an **open time
+ * calculator and nothing else**: it sizes a limit for a position that does not exist yet.
  *
- * **Offer `recommended`. Never open at `ceiling`.** Until 0.4.0 this function returned only the
- * ceiling, as a bare `bigint`, which in normal mode opens a Trove at exactly the liquidation threshold.
- * The external audit that reported MK-100 opened at it on a fork, found it liquidatable a second later,
- * and a keeper liquidated it. `recommended` is solved against a stressed price,
- * `price * (1 - priceMoveBps / 10000) / (1 + accrual over windowSeconds)`, with the accrual at the
- * live global rate a new Trove would carry. It therefore clears every open gate after that fall and
- * that accrual, and a Trove opened at it is not liquidatable within that window at a steady price.
- * The window and the move are {@link BORROWING_POWER_MARGIN_WINDOW_SECONDS} and
- * {@link BORROWING_POWER_PRICE_MOVE_BPS}, and how each was measured is stated on them. Both are
- * reported on the result, and both can be overridden per call.
- *
- * **What it does not promise.** A price that falls further than the margin, faster than the window,
- * can still take the position to liquidation. That is the market, not this function; the margin
- * makes a Trove opened at the recommended figure survive an ordinary interval, not every one.
+ * **It answers what the contract accepts, not what to borrow.** The ceiling opens a normal mode Trove
+ * at exactly MCR, where it is liquidatable within a second (MK-100). A draw sized to survive holding the
+ * position is {@link drawForMargin}, which takes the horizon and the price fall as required inputs.
  *
  * It is NOT the right function for a Trove that already exists. Every Trove carries a
  * `maxBorrowingCapacity`, `coll * price / (110 * 1e16)` (`BorrowerOperations.sol:1323-1328`), set at
@@ -188,18 +158,15 @@ export const MAX_BORROWING_POWER_ITERATIONS = 256
  * constraint (MK-002).
  *
  * **It does not decide anything about the open rules (MK-067, MK-069).** Its feasibility
- * predicate IS {@link evaluateOpen}, called per candidate, for both figures, so the individual ratio,
- * the mode correct threshold, the resulting system TCR and the debt floor all have exactly one
- * implementation in this package and it is not here. Every `return` from `solveClosedForm` and
- * `binarySearch` below is gated on `feasibleWith`, and `feasibleWith` is nothing but a call to
- * `evaluateOpen`. `borrowing-power-agreement.test.ts` asserts that each figure is viable to the
- * evaluator at its own price and that one wei more is not.
+ * predicate IS {@link evaluateOpen}, called per candidate, so the individual ratio, the mode correct
+ * threshold, the resulting system TCR and the debt floor all have exactly one implementation in this
+ * package and it is not here. `borrowing-power-agreement.test.ts` asserts that the ceiling is viable to
+ * the evaluator and that one wei more is not.
  *
  * **Cost (MK-010), COUNTED rather than asserted (MK-092).** The price, the fee rate, the interest rate
- * and the system totals ride in one `multicall`; each figure is solved in closed form from the linear
- * fee, and the chain is asked for the real `getBorrowingFee` once, to CONFIRM the ceiling's solution,
- * which also confirms the linearity the recommended figure reuses. Measured with a counting client,
- * the sequential round trips are:
+ * and the system totals ride in one `multicall`; the figure is solved in closed form from the linear
+ * fee, and the chain is asked for the real `getBorrowingFee` once, to CONFIRM the solution. Measured
+ * with a counting client, the sequential round trips are:
  *
  *   normal mode, no account      4
  *   normal mode, with account    5
@@ -215,48 +182,133 @@ export async function getBorrowingPower(
   deps: MathDeps,
   params: GetBorrowingPowerParams,
 ): Promise<BorrowingPower> {
-  return withTypedErrors(() => getBorrowingPowerUnchecked(deps, params), {
-    operation: 'getBorrowingPower',
-  })
+  return withTypedErrors(
+    async () => {
+      const { ceiling, ceilingIcr, isRecoveryMode, price } = await getBorrowingPowerUnchecked(
+        deps,
+        params,
+        undefined,
+      )
+      return { ceiling, ceilingIcr, isRecoveryMode, price }
+    },
+    { operation: 'getBorrowingPower' },
+  )
+}
+
+/**
+ * The largest open draw that survives a margin the CALLER chooses: a price fall and a holding
+ * horizon (MK-240). Both are required, and neither has a default, because how much to borrow depends
+ * on how long a position will be held and how much of a fall its owner is prepared to absorb, and the
+ * library knows neither. The ceiling is returned beside it.
+ *
+ * `draw` is solved against a stressed price, `price * (1 - priceFallBps / 10000) / (1 + accrual over
+ * horizonSeconds)`, with the accrual at the live global rate a new Trove would carry, through the same
+ * solver and the same open evaluator as {@link getBorrowingPower}. A Trove opened at it is not
+ * liquidatable while the price stays above that fall and the elapsed time stays inside that horizon.
+ *
+ * **Choosing the inputs: how often a fall was reached, on Mezo mainnet.** The share of start times after
+ * which `fetchPrice()` fell at least the given amount at some sample within the horizon, from the
+ * committed instrument, over Mezo mainnet blocks 9841930 to 11868955 (86 days, one sample every 225
+ * blocks, about 14 minutes):
+ *
+ * | Horizon | fell 2% or more | 5% or more | 10% or more | 20% or more | worst fall seen |
+ * |---|---|---|---|---|---|
+ * | 1 hour | 0.1% | 0.0% | 0.0% | 0.0% | 4.18% |
+ * | 1 day | 17.4% | 1.0% | 0.0% | 0.0% | 5.70% |
+ * | 3 days | 43.9% | 3.8% | 0.01% | 0.0% | 10.24% |
+ * | 7 days | 57.6% | 6.7% | 0.2% | 0.0% | 10.80% |
+ * | 30 days | 68.2% | 10.4% | 1.1% | 0.0% | 11.64% |
+ *
+ * Reproduce with `MEZO_MAINNET_RPC_URL=<endpoint> pnpm tsx scripts/oracle-moves.ts --end 11869000
+ * --consecutive 0 --days 90 --step 225 --horizons 3600,86400,259200,604800,2592000 --falls
+ * 200,500,1000,2000`. The start counts are 9005, 8910, 8709, 8313 and 5917: a start counts only when
+ * its whole horizon lies inside the sampled range, so the 30 day row sees fewer, later starts.
+ *
+ * **What that table is not.** It is one stretch of history in one market regime, not a distribution of
+ * regimes. Start times overlap, so neighbouring windows share most of their samples and the shares are
+ * not independent trials. It samples one block in 225, so a dip that recovered between two samples is
+ * not in it: every share is a lower bound, and the true worst falls are larger. A position is also
+ * exposed to more than price: debt redistributed from other Troves' liquidations
+ * (`TroveManager.sol:980-1047`) raises its debt without its owner acting. Read it as how often a margin
+ * of that size would have been crossed recently, never as a guarantee about the next horizon.
+ *
+ * @throws {InvalidAmount} for a non-positive collateral, a missing or negative `horizonSeconds`, or a
+ *   missing `priceFallBps` or one outside `0n <= priceFallBps < 10_000n`.
+ */
+export async function drawForMargin(
+  deps: MathDeps,
+  params: DrawForMarginParams,
+): Promise<MarginDraw> {
+  return withTypedErrors(
+    async () => {
+      const solved = await getBorrowingPowerUnchecked(deps, params, {
+        horizonSeconds: params.horizonSeconds,
+        priceFallBps: params.priceFallBps,
+      })
+      // The solver fills `marginDraw` on every path that is given a margin and returns; it throws
+      // before returning otherwise. The cast states that, rather than a branch no input can reach
+      // (which the mutation gate would have to register as unreachable, MK-120's class).
+      return solved.marginDraw as MarginDraw
+    },
+    { operation: 'drawForMargin' },
+  )
+}
+
+/** The internal result: the ceiling, and the margin draw when a margin was asked for. */
+interface SolvedBorrowingPower extends BorrowingPower {
+  marginDraw: MarginDraw | undefined
+}
+
+/**
+ * Refuse a margin the caller did not give or could not mean (MK-240, and MK-100 before it).
+ *
+ * `undefined` is refused rather than defaulted, which is the whole of MK-240: a JavaScript caller that
+ * omits either input must not be handed an answer to a margin somebody else chose. A negative horizon
+ * would lift the stressed price above the real one and hand back the ceiling as `draw`, the defect
+ * MK-100 exists to prevent, and a fall of the whole price leaves nothing to solve against.
+ */
+function assertMargin(margin: { horizonSeconds: unknown; priceFallBps: unknown }): {
+  horizonSeconds: bigint
+  priceFallBps: bigint
+} {
+  const { horizonSeconds, priceFallBps } = margin
+  if (typeof horizonSeconds !== 'bigint' || horizonSeconds < 0n) {
+    throw new InvalidAmount(
+      'horizonSeconds',
+      // Reported as given, `undefined` included: the message then says exactly what was missing.
+      horizonSeconds as bigint,
+      'Required: how long the position must survive, in seconds, zero or more. There is no default.',
+    )
+  }
+  if (typeof priceFallBps !== 'bigint' || priceFallBps < 0n || priceFallBps >= 10_000n) {
+    throw new InvalidAmount(
+      'priceFallBps',
+      priceFallBps as bigint,
+      'Required: the price fall to survive, at least 0 and below 10000 basis points. There is no default.',
+    )
+  }
+  return { horizonSeconds, priceFallBps }
 }
 
 async function getBorrowingPowerUnchecked(
   deps: MathDeps,
   params: GetBorrowingPowerParams,
-): Promise<BorrowingPower> {
+  requestedMargin: { horizonSeconds: unknown; priceFallBps: unknown } | undefined,
+): Promise<SolvedBorrowingPower> {
   const { publicClient, addresses } = deps
   const { collateral } = params
 
   // Validate the input rather than searching over it. A UI bound to a text input is the
   // caller this protects: a negative or zero collateral is a bug, not a small answer.
   if (collateral <= 0n) throw new InvalidAmount('collateral', collateral)
-  // A margin override outside its range does not fail on its own: a negative one lifts the stressed
-  // price above the real one, the solver's clamp then returns the ceiling as `recommended`, and the
-  // caller holds the liquidation threshold under the name that promises a margin (MK-100). Refuse it
-  // before any read, as the collateral is.
-  if (params.marginWindowSeconds !== undefined && params.marginWindowSeconds < 0n) {
-    throw new InvalidAmount(
-      'marginWindowSeconds',
-      params.marginWindowSeconds,
-      'Must be zero or more seconds.',
-    )
-  }
-  if (
-    params.priceMoveBps !== undefined &&
-    (params.priceMoveBps < 0n || params.priceMoveBps >= 10_000n)
-  ) {
-    throw new InvalidAmount(
-      'priceMoveBps',
-      params.priceMoveBps,
-      'Must be at least 0 and below 10000 basis points.',
-    )
-  }
+  // The margin is refused before any read, as the collateral is.
+  const chosen = requestedMargin === undefined ? undefined : assertMargin(requestedMargin)
 
   const tm = { address: addresses.troveManager, abi: troveManagerAbi as Abi } as const
   const bo = { address: addresses.borrowerOperations, abi: borrowerOperationsAbi as Abi } as const
 
   // One batch for the price INDEPENDENT reads plus the fee RATE, which is what makes the closed
-  // form possible at all, and the INTEREST rate the recommended figure's accrual is sized at.
+  // form possible at all, and the INTEREST rate a margin draw's accrual is sized at.
   // `fetchPrice` joins it when the caller supplied no price. `checkRecoveryMode` CANNOT: it takes the
   // price as an argument, and inside this batch the price does not exist yet.
   const needsPrice = params.price === undefined
@@ -307,25 +359,6 @@ async function getBorrowingPowerUnchecked(
   // MK-067, MK-069. THE one rule, from `math/fee.ts`, mirroring `BorrowerOperations.sol:637-643`.
   const chargesFee = isBorrowingFeeCharged(isRecoveryMode, feeExempt)
   const effectiveRate = chargesFee ? borrowingRate : 0n
-
-  // ---- the margin (MK-100) ----
-  const windowSeconds = params.marginWindowSeconds ?? BORROWING_POWER_MARGIN_WINDOW_SECONDS
-  const priceMoveBps = params.priceMoveBps ?? BORROWING_POWER_PRICE_MOVE_BPS
-  const interestRateBps = BigInt(interestRate)
-  const E18 = 10n ** 18n
-  const accrualDenominator = 10_000n * SECONDS_PER_YEAR
-  // Rounded UP, so the margin is never smaller than the interest it is meant to cover.
-  const accrualFraction =
-    (interestRateBps * windowSeconds * E18 + accrualDenominator - 1n) / accrualDenominator
-  const stressedPrice =
-    (price * (10_000n - priceMoveBps) * E18) / (10_000n * (E18 + accrualFraction))
-  const margin: BorrowingPowerMargin = {
-    windowSeconds,
-    priceMoveBps,
-    interestRateBps,
-    accrualFraction,
-    stressedPrice,
-  }
 
   const feeOf = (draw: bigint): Promise<bigint> =>
     chargesFee
@@ -380,7 +413,7 @@ async function getBorrowingPowerUnchecked(
       ? 0n
       : computeICR({ collateral, entireDebt: draw + fee + MUSD_GAS_COMPENSATION, price })
 
-  // ---- the ceiling, exactly as before: the largest draw the gates accept at the real price ----
+  // ---- the ceiling: the largest draw the gates accept at the real price ----
   let ceiling = 0n
   let ceilingFee = 0n
   let linearConfirmed = !chargesFee
@@ -414,9 +447,29 @@ async function getBorrowingPowerUnchecked(
     }
   }
 
-  // ---- the recommended figure: the same solver, at the stressed price ----
-  let recommended = 0n
-  let recommendedFee = 0n
+  const base = { ceiling, ceilingIcr: icrAt(ceiling, ceilingFee), isRecoveryMode, price }
+  if (chosen === undefined) return { ...base, marginDraw: undefined }
+
+  // ---- the margin draw (MK-240): the same solver, at the price the CALLER's margin stresses ----
+  const { horizonSeconds, priceFallBps } = chosen
+  const interestRateBps = BigInt(interestRate)
+  const E18 = 10n ** 18n
+  const accrualDenominator = 10_000n * SECONDS_PER_YEAR
+  // Rounded UP, so the margin is never smaller than the interest it is meant to cover.
+  const accrualFraction =
+    (interestRateBps * horizonSeconds * E18 + accrualDenominator - 1n) / accrualDenominator
+  const stressedPrice =
+    (price * (10_000n - priceFallBps) * E18) / (10_000n * (E18 + accrualFraction))
+  const margin: DrawMargin = {
+    horizonSeconds,
+    priceFallBps,
+    interestRateBps,
+    accrualFraction,
+    stressedPrice,
+  }
+
+  let draw = 0n
+  let drawFee = 0n
   if (ceiling > 0n && (collateral * stressedPrice) / targetRatio > MUSD_GAS_COMPENSATION) {
     const feasible = feasibleAt(stressedPrice)
     const solved = solveClosedForm({
@@ -431,29 +484,24 @@ async function getBorrowingPowerUnchecked(
       feasibleWith: feasible,
     })
     if (solved !== undefined && linearConfirmed) {
-      // The fee was confirmed linear against the chain for the ceiling a moment ago, and the
-      // recommended draw is smaller, so the local fee IS the chain's fee here: no second read.
-      recommended = solved
-      recommendedFee = localFee(solved, effectiveRate, decimalPrecision)
+      // The fee was confirmed linear against the chain for the ceiling a moment ago, and this draw
+      // is smaller, so the local fee IS the chain's fee here: no second read.
+      draw = solved
+      drawFee = localFee(solved, effectiveRate, decimalPrecision)
     } else {
-      recommended = await binarySearch((collateral * stressedPrice) / targetRatio, feeOf, feasible)
-      recommendedFee = await feeOf(recommended)
+      draw = await binarySearch((collateral * stressedPrice) / targetRatio, feeOf, feasible)
+      drawFee = await feeOf(draw)
     }
-    if (recommended > ceiling) recommended = ceiling
-    if (!meetsFloor(recommended, recommendedFee)) {
-      recommended = 0n
-      recommendedFee = 0n
+    if (draw > ceiling) draw = ceiling
+    if (!meetsFloor(draw, drawFee)) {
+      draw = 0n
+      drawFee = 0n
     }
   }
 
   return {
-    ceiling,
-    recommended,
-    ceilingIcr: icrAt(ceiling, ceilingFee),
-    recommendedIcr: icrAt(recommended, recommendedFee),
-    margin,
-    isRecoveryMode,
-    price,
+    ...base,
+    marginDraw: { ...base, draw, drawIcr: icrAt(draw, drawFee), margin },
   }
 }
 

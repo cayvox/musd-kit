@@ -1,20 +1,17 @@
 import { http, createWalletClient } from 'viem'
 import { describe, expect, it } from 'vitest'
-import {
-  BORROWING_POWER_MARGIN_WINDOW_SECONDS,
-  BORROWING_POWER_PRICE_MOVE_BPS,
-  CCR,
-  MCR,
-  TroveStatus,
-  createMusdClient,
-  troveManagerAbi,
-} from '../src'
+import { CCR, MCR, TroveStatus, createMusdClient, troveManagerAbi } from '../src'
 import { connectFork } from './harness'
 import { mezoTestnet } from './harness/constants'
 import { testAccount } from './harness/openTroveRaw'
 
 const MUSD = 10n ** 18n
 const BTC = 10n ** 18n
+/**
+ * The margin the survival ladder opens `drawForMargin` at (MK-240): a day and a 5 percent fall. A
+ * caller's choice, written here because the library no longer makes one; not advice.
+ */
+const HOLD = { horizonSeconds: 86_400n, priceFallBps: 500n } as const
 
 /**
  * `getBorrowingPower`, opened at and then left alone (MK-100).
@@ -33,22 +30,22 @@ const BTC = 10n ** 18n
  * reports the liquidation predicate for the position at the maximum and for a control position at
  * 80% of it. Then a keeper actually liquidates.
  *
- * **Since 0.4.0 the function returns two figures, and this file proves both** (MK-100). The
- * `ceiling` is the figure 0.3.1 returned, and every assertion about it is kept exactly: it still
- * lands on MCR and is still liquidated. The `recommended` figure is opened beside it and must NOT be
- * liquidatable after 1 second, 1 minute and 1 hour, which is the window
- * `BORROWING_POWER_MARGIN_WINDOW_SECONDS` states. Then the price part of the margin is proven the
- * same way from both sides: an hour later, a fall a hair inside `BORROWING_POWER_PRICE_MOVE_BPS`
- * leaves the recommended Trove safe, and a fall a little past it makes it liquidatable, so a margin
- * that silently grew or shrank goes red here.
+ * **The ceiling, and a draw sized to a margin the caller chose** (MK-100, MK-240). The `ceiling` is
+ * the figure 0.3.1 returned, and every assertion about it is kept exactly: it still lands on MCR and
+ * is still liquidated. A `drawForMargin` figure for a day and a 5 percent fall is opened beside it and
+ * must NOT be liquidatable after 1 second, 1 minute and 1 hour. Then the margin is proven from both
+ * sides at the END of the horizon the caller asked for: a day later, a fall a hair inside the chosen
+ * one leaves the Trove safe, and a fall a little past it makes it liquidatable, so a margin that
+ * silently grew, shrank or ignored the horizon goes red here. Until 0.5.0 this ladder ran at a margin
+ * the library chose, one hour and 200 bps, which a position held for a day did not survive (MK-240).
  *
  * The `zz-` prefix is for ORDER, not for the `it.fails` convention of `zz-findings.fork.test.ts`:
  * the fork project runs files alphabetically on one shared anvil (MK-016), and this file warps the
  * clock, so it runs after every file that assumes a fresh one. Every warp is inside a snapshot and
  * reverted.
  */
-describe('MK-100, the borrowing power ceiling is the liquidation threshold, and the recommended figure is not', () => {
-  it('the ceiling is liquidatable a second later and is liquidated; the recommended figure survives the window', async () => {
+describe('MK-100, MK-240, the borrowing power ceiling is the liquidation threshold, and a margin draw survives its margin', () => {
+  it('the ceiling is liquidatable a second later and is liquidated; a margin draw survives the horizon and the fall it was sized for', async () => {
     const fork = connectFork()
     const opener = testAccount(10_001)
     const control = testAccount(10_002)
@@ -78,12 +75,16 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
       const collateral = 1n * BTC
       const detail = await openerClient.getBorrowingPower({ collateral, account: opener.address })
       const power = detail.ceiling
-      const safeDetail = await safeClient.getBorrowingPower({ collateral, account: safe.address })
-      const recommended = safeDetail.recommended
+      const safeDetail = await safeClient.drawForMargin({
+        collateral,
+        account: safe.address,
+        ...HOLD,
+      })
+      const marginDraw = safeDetail.draw
       expect(safeDetail.ceiling, 'fixture: neither account is fee exempt').toBe(power)
-      expect(safeDetail.margin.windowSeconds).toBe(BORROWING_POWER_MARGIN_WINDOW_SECONDS)
-      expect(safeDetail.margin.priceMoveBps).toBe(BORROWING_POWER_PRICE_MOVE_BPS)
-      expect(recommended, 'fixture: recommended is under the ceiling').toBeLessThan(power)
+      expect(safeDetail.margin.horizonSeconds).toBe(HOLD.horizonSeconds)
+      expect(safeDetail.margin.priceFallBps).toBe(HOLD.priceFallBps)
+      expect(marginDraw, 'fixture: the margin draw is under the ceiling').toBeLessThan(power)
       const controlDraw = (power * 80n) / 100n
       expect(controlDraw, 'fixture: the control draw must clear the debt floor').toBeGreaterThan(
         1_800n * MUSD,
@@ -101,7 +102,7 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
       // in the same wall clock second some of the time (MK-051's `warp 0s` lesson).
       for (const [client, draw] of [
         [controlClient, controlDraw],
-        [safeClient, recommended],
+        [safeClient, marginDraw],
         [openerClient, power],
       ] as const) {
         await fork.warpTime(1)
@@ -124,24 +125,24 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
         const atRecommended = await keeperClient.isLiquidatable(safe.address)
         liquidatableAfter.set(seconds, [atMax, atControl, atRecommended])
         rows.push(
-          `  warp ${String(seconds).padStart(5)}s  ceiling liquidatable=${String(atMax).padEnd(5)}  recommended liquidatable=${String(atRecommended).padEnd(5)}  control(80%) liquidatable=${atControl}`,
+          `  warp ${String(seconds).padStart(5)}s  ceiling liquidatable=${String(atMax).padEnd(5)}  margin draw liquidatable=${String(atRecommended).padEnd(5)}  control(80%) liquidatable=${atControl}`,
         )
         await fork.testClient.revert({ id: base })
         base = await fork.testClient.snapshot()
       }
 
-      // The price part of the margin, an hour in, from both sides. 199 bps is inside the stated
-      // move and 210 bps is outside it; the recommended Trove must be safe at the first and
-      // liquidatable at the second, which is what makes the margin the stated one and no other.
-      const inside = BORROWING_POWER_PRICE_MOVE_BPS - 1n
-      const outside = BORROWING_POWER_PRICE_MOVE_BPS + 10n
+      // The margin at the end of the horizon the caller chose, from both sides. One basis point
+      // inside the chosen fall and ten outside it; the Trove must be safe at the first and
+      // liquidatable at the second, which is what makes the margin the chosen one and no other.
+      const inside = HOLD.priceFallBps - 1n
+      const outside = HOLD.priceFallBps + 10n
       const stress = new Map<bigint, boolean>()
       for (const bps of [inside, outside]) {
-        await fork.warpTime(Number(BORROWING_POWER_MARGIN_WINDOW_SECONDS))
+        await fork.warpTime(Number(HOLD.horizonSeconds))
         await fork.setPrice((atOpen.price * (10_000n - bps)) / 10_000n)
         stress.set(bps, await keeperClient.isLiquidatable(safe.address))
         rows.push(
-          `  warp ${BORROWING_POWER_MARGIN_WINDOW_SECONDS}s and a ${bps} bps fall  recommended liquidatable=${stress.get(bps)}`,
+          `  warp ${HOLD.horizonSeconds}s and a ${bps} bps fall  margin draw liquidatable=${stress.get(bps)}`,
         )
         await fork.testClient.revert({ id: base })
         base = await fork.testClient.snapshot()
@@ -157,9 +158,9 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
 
       console.log(
         [
-          `[MK-100] getBorrowingPower(1 BTC) ceiling=${power} recommended=${recommended} at price=${atOpen.price}`,
-          `  margin: ${safeDetail.margin.priceMoveBps} bps, ${safeDetail.margin.windowSeconds}s at ${safeDetail.margin.interestRateBps} bps interest, stressedPrice=${safeDetail.margin.stressedPrice}`,
-          `  at open: ceiling icr=${atOpen.icr} (MCR=${MCR})  recommended icr=${safeAtOpen.icr} (reported ${safeDetail.recommendedIcr})  control icr=${controlAtOpen.icr}`,
+          `[MK-100, MK-240] getBorrowingPower(1 BTC) ceiling=${power}, drawForMargin draw=${marginDraw} at price=${atOpen.price}`,
+          `  margin: ${safeDetail.margin.priceFallBps} bps, ${safeDetail.margin.horizonSeconds}s at ${safeDetail.margin.interestRateBps} bps interest, stressedPrice=${safeDetail.margin.stressedPrice}`,
+          `  at open: ceiling icr=${atOpen.icr} (MCR=${MCR})  margin draw icr=${safeAtOpen.icr} (reported ${safeDetail.drawIcr})  control icr=${controlAtOpen.icr}`,
           ...rows,
           `  liquidate(max) after 1s: receipt=${liquidation.status} status=${after.status} opener MUSD kept=${keptMusd}`,
         ].join('\n'),
@@ -182,27 +183,27 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
         expect(atControl, `the control at 80% is not liquidatable after ${seconds}s`).toBe(false)
         expect(
           atRecommended,
-          `the position at the recommended figure is NOT liquidatable after ${seconds}s`,
+          `the position at the margin draw is NOT liquidatable after ${seconds}s`,
         ).toBe(false)
       }
 
-      // The recommended Trove opens where the result said it would. `getTrove` reads it after the
+      // The margin draw's Trove opens where the result said it would. `getTrove` reads it after the
       // ceiling's open has mined, a few seconds of interest later, so the observed ratio sits under
       // the at-open projection by that accrual (about 3e-10 of the ratio a second at 1%) and never
-      // above it. The margin itself, `recommendedIcr >= MCR * price / stressedPrice`, is pinned
-      // exactly in `borrowing-power-agreement.test.ts`.
+      // above it. The margin itself, `drawIcr >= MCR * price / stressedPrice`, is pinned exactly in
+      // `borrowing-power-agreement.test.ts`.
       expect(safeAtOpen.icr, 'no higher than the projected at-open ICR').toBeLessThanOrEqual(
-        safeDetail.recommendedIcr,
+        safeDetail.drawIcr,
       )
       expect(
-        safeDetail.recommendedIcr - safeAtOpen.icr,
+        safeDetail.drawIcr - safeAtOpen.icr,
         'and under it by interest, not by a different draw',
-      ).toBeLessThan(safeDetail.recommendedIcr / 10n ** 8n)
-      expect(safeDetail.recommendedIcr).toBeGreaterThanOrEqual(
+      ).toBeLessThan(safeDetail.drawIcr / 10n ** 8n)
+      expect(safeDetail.drawIcr).toBeGreaterThanOrEqual(
         (MCR * safeDetail.price) / safeDetail.margin.stressedPrice,
       )
-      expect(stress.get(inside), `a ${inside} bps fall an hour later leaves it safe`).toBe(false)
-      expect(stress.get(outside), `a ${outside} bps fall an hour later does not`).toBe(true)
+      expect(stress.get(inside), `a ${inside} bps fall a day later leaves it safe`).toBe(false)
+      expect(stress.get(outside), `a ${outside} bps fall a day later does not`).toBe(true)
 
       expect(liquidation.status, 'a keeper can liquidate it').toBe('success')
       expect(after.status, 'and the Trove is closed by liquidation').toBe(
@@ -294,7 +295,11 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
       const perBtc = (BTC * p) / MCR - (BTC * p) / CCR
       const collateral = ((numerator * BTC) / perBtc) * 2n + BTC
       await fork.fundAccount(opener.address, collateral + 10n * BTC)
-      const tcrDetail = await client.getBorrowingPower({ collateral })
+      const tcrDetail = await client.drawForMargin({
+        collateral,
+        horizonSeconds: 3600n,
+        priceFallBps: 200n,
+      })
       const tcrPower = tcrDetail.ceiling
       const icrOnlyCap = (collateral * p) / MCR
       await fork.warpTime(1)
@@ -315,20 +320,20 @@ describe('MK-100, the borrowing power ceiling is the liquidation threshold, and 
       expect(sent, 'system ratio binding: the exact maximum is refused a block later').toBe(
         'threw(SystemRatioBelowCCR)',
       )
-      // The recommended figure is solved at the stressed price, where the system ratio cap is
-      // lower by the margin, so it is ACCEPTED a block later where the ceiling was refused (MK-100).
+      // A margin draw is solved at the stressed price, where the system ratio cap is lower by the
+      // margin, so it is ACCEPTED a block later where the ceiling was refused (MK-100, MK-240).
       await fork.warpTime(1)
-      let recommendedSent: string
+      let marginDrawSent: string
       try {
-        const { hash } = await client.openTrove({ collateral, debt: tcrDetail.recommended })
-        recommendedSent = (await fork.publicClient.waitForTransactionReceipt({ hash })).status
+        const { hash } = await client.openTrove({ collateral, debt: tcrDetail.draw })
+        marginDrawSent = (await fork.publicClient.waitForTransactionReceipt({ hash })).status
       } catch (error) {
-        recommendedSent = `threw(${(error as Error).name})`
+        marginDrawSent = `threw(${(error as Error).name})`
       }
       rows.push(
-        `  System ratio binding: recommended=${tcrDetail.recommended}; open sent 1s later: ${recommendedSent}`,
+        `  System ratio binding: margin draw (3600s, 200 bps)=${tcrDetail.draw}; open sent 1s later: ${marginDrawSent}`,
       )
-      expect(recommendedSent, 'system ratio binding: the recommended figure opens').toBe('success')
+      expect(marginDrawSent, 'system ratio binding: the margin draw opens').toBe('success')
       await fork.testClient.revert({ id: base })
     } finally {
       console.log(['[MK-100] the regimes that do not land on MCR', ...rows].join('\n'))

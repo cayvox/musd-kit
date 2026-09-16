@@ -149,6 +149,9 @@ describe('MK-104, the client does not refuse the advice its own preview gave', (
       price: PRICE,
       eligible: [t0],
       globalInterestRateBps: RATE,
+      troveOwnersCount: 42n,
+      sortedTrovesSize: 42n,
+      canMint: true, // MK-245: a populated system
     }).nextViableAmount
     expect(advice).toBe(t0.netDebt + interest(t0.principal, RATE, REDEMPTION_ADVICE_MARGIN_SECONDS))
 
@@ -163,6 +166,9 @@ describe('MK-104, the client does not refuse the advice its own preview gave', (
       price: PRICE,
       eligible: [t600],
       globalInterestRateBps: RATE,
+      troveOwnersCount: 42n,
+      sortedTrovesSize: 42n,
+      canMint: true,
     }
     const sending = evaluateRedeem({ ...input, marginSeconds: REDEMPTION_SEND_MARGIN_SECONDS })
     expect(sending.viable, 'the sending check accepts it').toBe(true)
@@ -237,8 +243,15 @@ describe('MK-107, maxIterations is not charged for the Troves the contract skips
             return icr[who]
           case 'getEntireDebtAndColl':
             return [1n * BTC, 30_230n * MUSD, 0n, 0n, 0n, 0n]
+          // MK-245. The last Trove rule's counts and flag: a populated system unless a test says otherwise.
+          case 'getTroveOwnersCount':
+            return 42n
+          case 'mintList':
+            return true
           case 'getTroveInterestRate':
             return Number(RATE)
+          case 'getSize':
+            return 42n
           default:
             throw new Error(`unstubbed read: ${functionName}`)
         }
@@ -290,8 +303,15 @@ describe('MK-107, maxIterations is not charged for the Troves the contract skips
             return icr(who)
           case 'getEntireDebtAndColl':
             return [1n * BTC, 30_230n * MUSD, 0n, 0n, 0n, 0n]
+          // MK-245. The last Trove rule's counts and flag: a populated system unless a test says otherwise.
+          case 'getTroveOwnersCount':
+            return 42n
+          case 'mintList':
+            return true
           case 'getTroveInterestRate':
             return Number(RATE)
+          case 'getSize':
+            return 42n
           default:
             throw new Error(`unstubbed read: ${functionName}`)
         }
@@ -327,7 +347,10 @@ function stubWriteDeps(over: Record<string, unknown>): WriteDeps {
     getCurrentICR: 2n * E18,
     redemptionRate: 7_500_000_000_000_000n,
     getRedemptionHints: ['0x00000000000000000000000000000000000000aa', 0n, 0n],
-    getSize: 1n,
+    getSize: 42n,
+    // MK-245. The last Trove rule's counts and flag: a populated system.
+    getTroveOwnersCount: 42n,
+    mintList: true,
     getApproxHint: [ZERO, 0n, 0n],
     findInsertPosition: [ZERO, ZERO],
     ...over,

@@ -128,16 +128,20 @@ export class MaxFeeExceeded extends MusdError {
 }
 
 /**
- * The resulting ICR would fall below MCR. Preview-time sibling of {@link ICRBelowMCR}:
- * the on-chain write path surfaces `ICRBelowMCR` (contract-authoritative); this is
- * for the math/React preview layer, which knows the ICR before sending.
+ * A collateral withdrawal larger than the collateral the Trove holds (MK-243).
+ *
+ * The contract never reaches its `assert(_collWithdrawal <= vars.coll)` (`BorrowerOperations.sol:837`) with
+ * such an input: the checked subtraction in `_getNewTroveAmounts` (`:1319`), called from `:828`, underflows
+ * first with Panic 0x11, so on chain it is a Panic, not a reason string. **This is the only condition this error names.** Until 0.5.0 it was also what the adjust
+ * precheck threw for the individual ratio gate, while the decoder threw {@link ICRBelowMCR} for the same
+ * gate, so one contract rule reached a caller as two codes depending on which path caught it.
  */
 export class InsufficientCollateral extends MusdError {
-  constructor(icr: bigint, mcr: bigint) {
+  constructor(withdrawal: bigint, collateral: bigint) {
     super(
       Codes.INSUFFICIENT_COLLATERAL,
-      `Resulting ICR (${icr}) would be below MCR (${mcr}), add collateral or reduce debt.`,
-      { context: { icr, mcr } },
+      `Withdrawing ${withdrawal} exceeds the Trove's collateral of ${collateral}.`,
+      { context: { withdrawal, collateral } },
     )
     this.name = 'InsufficientCollateral'
   }
@@ -212,13 +216,27 @@ export class InvalidAdjustment extends MusdError {
 // 2. Protocol reverts (mapped from on-chain revert data, ground-truth §11)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The dangerous one: an operation would leave ICR below MCR (110%). */
+/**
+ * The individual ratio gate, `_requireICRisAboveMCR` (`BorrowerOperations.sol:1330-1335`): an operation
+ * would leave the Trove below the 110% minimum collateral ratio.
+ *
+ * **One code for one gate, whichever path reaches it** (MK-243). The adjust precheck throws it with the
+ * numbers it knows; the revert decoder throws it for `An operation that would result in ICR < MCR is not
+ * permitted`, reached by `openTrove` and `refinance`, which have no ratio precheck, and by a precheck the
+ * chain moved past. The gate is ABSOLUTE on the resulting ratio (MK-038): an adjustment that improves a
+ * position still under MCR is refused, and the preview's `minimumCollateralToClearIcr` is what clears it.
+ */
 export class ICRBelowMCR extends MusdError {
-  constructor(cause: unknown) {
+  constructor(cause?: unknown, context?: { resultingIcr?: bigint; mcr?: bigint }) {
     super(
       Codes.ICR_BELOW_MCR,
-      'This operation would leave the Trove below the 110% minimum collateral ratio (MCR).',
-      { cause },
+      context?.resultingIcr !== undefined
+        ? `This operation would leave the Trove at an ICR of ${context.resultingIcr}, below the 110% minimum collateral ratio (MCR, ${context.mcr}).`
+        : 'This operation would leave the Trove below the 110% minimum collateral ratio (MCR).',
+      {
+        ...(cause !== undefined ? { cause } : {}),
+        ...(context !== undefined ? { context } : {}),
+      },
     )
     this.name = 'ICRBelowMCR'
   }
@@ -341,13 +359,23 @@ export class RedemptionPriceFragile extends MusdError {
   }
 }
 
-/** Blocked by Recovery Mode (TCR < CCR): tightened rules require ICR ≥ CCR. */
+/**
+ * Blocked by Recovery Mode (TCR < CCR). Thrown for Recovery Mode's own gates, whichever path reaches them
+ * (MK-243): `_requireICRisAboveCCR` (`BorrowerOperations.sol:1337-1342`), `_requireNewICRisAboveOldICR`
+ * (`:1395-1403`) and `_requireNotInRecoveryMode` (`:1133-1138`). A collateral withdrawal refused outright
+ * is {@link CollateralWithdrawalBlocked} instead (MK-043).
+ */
 export class RecoveryModeRestriction extends MusdError {
-  constructor(cause: unknown) {
+  constructor(cause?: unknown, context?: { resultingIcr?: bigint; ccr?: bigint }) {
     super(
       Codes.RECOVERY_MODE_RESTRICTION,
-      'The system is in Recovery Mode; this operation must leave the Trove with ICR ≥ CCR (150%).',
-      { cause },
+      context?.resultingIcr !== undefined
+        ? `The system is in Recovery Mode; this operation would leave the Trove at an ICR of ${context.resultingIcr}, where Recovery Mode requires at least CCR (${context.ccr}).`
+        : 'The system is in Recovery Mode; this operation must leave the Trove with ICR ≥ CCR (150%).',
+      {
+        ...(cause !== undefined ? { cause } : {}),
+        ...(context !== undefined ? { context } : {}),
+      },
     )
     this.name = 'RecoveryModeRestriction'
   }
@@ -430,8 +458,8 @@ export class LastTroveInSystem extends MusdError {
   constructor(counts?: { troveOwnersCount?: bigint; sortedTrovesSize?: bigint }, cause?: unknown) {
     super(
       Codes.LAST_TROVE_IN_SYSTEM,
-      'Cannot close the last Trove in the system: TroveManager requires more than one ' +
-        '(TroveManager.sol:1488-1496). This clears when another Trove is opened.',
+      'Cannot close the last Trove in the system, by closing it or by a redemption that consumes it: ' +
+        'TroveManager requires more than one (TroveManager.sol:1488-1496). This clears when another Trove is opened.',
       {
         context: {
           ...(counts?.troveOwnersCount !== undefined
@@ -589,6 +617,7 @@ export function assertPositiveAmount(field: string, value: bigint): void {
   if (value <= 0n) throw new InvalidAmount(field, value)
 }
 
-// NOTE: `RedemptionTruncated` is intentionally NOT a thrown error, `redeem` surfaces
-// `truncatedAmount` as DATA on its result (Phase 6 decision). `ApprovalRequired` is not
+// NOTE: `RedemptionTruncated` is intentionally NOT a thrown error: a redemption that redeems less than it
+// asked reports it as DATA, `RedeemResult.settled.unredeemedAmount` since MK-241, where it was the hint
+// helper's `truncatedAmount` from Phase 6 to 0.4.x. `ApprovalRequired` is not
 // shipped, Phase 5 verified repay/close need no approval, so it would be unreachable.

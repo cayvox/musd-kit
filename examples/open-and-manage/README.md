@@ -11,10 +11,10 @@ context with no extra provider (decision O4).
 
 ## What it shows
 
-- **Preview / open** (`OpenCard`): collateral + debt inputs; live `useBorrowingPower` (the
-  recommended draw, which leaves a measured margin) beside the contract ceiling from
-  `useBorrowingPowerDetail` (**a limit, not an amount: a Trove opened at it can be liquidated within
-  seconds, MK-100**), and a `previewOpen` readout (fee, total debt, resulting ICR, liquidation price,
+- **Preview / open** (`OpenCard`): collateral + debt inputs; the contract ceiling from
+  `useBorrowingPower` (**a limit, not an amount: a Trove opened at it can be liquidated within seconds,
+  MK-100**), and two inputs the user fills in, a holding horizon and a price fall, from which
+  `useDrawForMargin` sizes a draw and says what it survives (MK-240); and a `previewOpen` readout (fee, total debt, resulting ICR, liquidation price,
   `meetsMinimum`); `useOpenTrove`, guarded on `viable`, which covers the debt floor, the individual
   ratio, Recovery Mode and the system ratio (MK-108).
 - **Monitor / manage** (`PositionCard`): `useTrove` for the connected address, collateral,

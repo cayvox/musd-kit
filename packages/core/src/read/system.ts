@@ -109,8 +109,9 @@ const collSurplusPoolAbi = [
 ] as const
 
 /**
- * BTC surplus claimable by `address` via `claim()`, left in the CollSurplusPool after a
- * redemption (fully-redeemed Trove) or a Recovery-Mode liquidation of an above-MCR Trove.
+ * BTC surplus claimable by `address` via `claim()`, left in the CollSurplusPool when a redemption
+ * consumes the owner's Trove whole (`TroveManager.sol:1195`), the only writer of surplus. This
+ * protocol has no Recovery Mode liquidation (MK-001), which this comment claimed until MK-246.
  * The pool address is read from `TroveManager.collSurplusPool()` (works on both networks).
  */
 export async function getClaimableCollateral(

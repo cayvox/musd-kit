@@ -1,15 +1,12 @@
-import type { Abi, Hex } from 'viem'
-import {
-  borrowerOperationsAbi,
-  hintHelpersAbi,
-  musdAbi,
-  priceFeedAbi,
-  troveManagerAbi,
-} from '../clients'
+import { type Abi, type Hex, type TransactionReceipt, parseEventLogs } from 'viem'
+import { borrowerOperationsAbi, hintHelpersAbi, musdAbi, troveManagerAbi } from '../clients'
+import { DECIMAL_PRECISION } from '../constants'
 import {
   InsufficientMusdBalance,
+  LastTroveInSystem,
   MaxFeeExceeded,
   RedemptionBreachesDebtFloor,
+  RedemptionFailed,
   RedemptionPriceFragile,
   assertPositiveAmount,
 } from '../errors'
@@ -80,55 +77,77 @@ export interface RedeemParams {
 }
 
 /**
- * Result of {@link MusdClient.redeem}. Every field names its unit (MK-014).
+ * What a redemption SETTLED, read from the `Redemption` event in its receipt (MK-241).
  *
- * The protocol's own naming is a trap here, so the SDK does not copy it:
- * `redemptionRate()` returns the RATE, a 1e18 scaled fraction
- * (`BorrowerOperations.sol:129`, initialized to 0.75% at `:151`), while
- * `getRedemptionRate(collateralDrawn)` returns, despite its name, a fee AMOUNT in BTC wei,
- * `redemptionRate * collateralDrawn / DECIMAL_PRECISION` (`:499-508`). At exactly one BTC of
- * collateral drawn the two print the same digits, which is precisely the coincidence that
- * makes a single field named `fee` dangerous.
+ * `TroveManager.redeemCollateral` emits `Redemption(_attemptedAmount, _actualAmount, _collateralSent,
+ * _collateralFee)` once, after the loop (`TroveManager.sol:420-425`, declared at
+ * `ITroveManager.sol:48-53`). **The contract's own names are a trap here, as they were for the rate
+ * (MK-014)**: `_collateralSent` is passed `totals.totalCollateralDrawn`, which INCLUDES the fee, and
+ * the redeemer is sent `totalCollateralDrawn - collateralFee` (`:416-418`, `:444-447`). So the fields
+ * below are named for what each quantity is, and the one the redeemer receives is derived.
+ */
+export interface SettledRedemption {
+  /** The block the redemption mined in. */
+  blockNumber: bigint
+  /** `_attemptedAmount`: the MUSD the call asked to redeem, the `amount` sent. */
+  attemptedAmount: bigint
+  /**
+   * `_actualAmount`: the MUSD actually redeemed and burned from the caller (`TroveManager.sol:428-431`).
+   * **Can be far less than `attemptedAmount`**: the loop stops at the first cancelled partial
+   * (`:392`, `:1299-1306`), and a call succeeds as long as something was drawn (`:406-408`).
+   */
+  redeemedAmount: bigint
+  /** `attemptedAmount - redeemedAmount`: MUSD asked for and not redeemed, still in the caller's balance. */
+  unredeemedAmount: bigint
+  /** `_collateralSent`, which is collateral DRAWN from the Troves, fee included, in BTC wei. */
+  collateralDrawn: bigint
+  /** `_collateralFee`, the redemption fee in BTC wei, sent to the PCV (`:433-437`). */
+  collateralFee: bigint
+  /** `collateralDrawn - collateralFee`: the BTC wei the redeemer actually received (`:444-447`). */
+  collateralReceived: bigint
+}
+
+/**
+ * Figures computed BEFORE the transaction was sent (MK-241). An estimate is all they are, and the name
+ * says so: the redemption settles against the chain at inclusion, and {@link SettledRedemption} is
+ * what it did.
+ */
+export interface RedemptionEstimateBeforeSend {
+  /**
+   * `previewRedeem(...).redeemable` at the send margin: what the SDK's walk of the sorted list expected
+   * one call to redeem. **Not** `getRedemptionHints`'s `truncatedAmount`, which answers a different
+   * question and over-reports whenever a later partial cancels (MK-048, MK-241).
+   */
+  redeemable: bigint
+  /** `redeemable` converted to collateral at the preview's price, in BTC wei, fee included. */
+  collateralDrawn: bigint
+  /**
+   * The fee on that collateral at the live rate, `redemptionRate * collateralDrawn / 1e18`, the
+   * contract's own formula (`BorrowerOperations.sol:499-508`), in BTC wei.
+   */
+  collateralFee: bigint
+}
+
+/**
+ * Result of {@link MusdClient.redeem}. Every field names its unit (MK-014), and what settled is kept
+ * apart from what was expected (MK-241).
+ *
+ * **`redeem()` resolves once the transaction has MINED**, because what a redemption does is not
+ * determined by its inputs: the amount it redeems depends on the sorted list and the price at
+ * inclusion. A result returned at send time could only restate an estimate, and until 0.5.0 it did,
+ * reporting the hint helper's figures as if they were the outcome (MK-241).
  */
 export interface RedeemResult {
   hash: Hex
+  /** What the redemption did, from its receipt. */
+  settled: SettledRedemption
+  /** What the SDK expected before sending. Kept for comparison; never the outcome. */
+  estimatedBeforeSend: RedemptionEstimateBeforeSend
   /**
-   * What `getRedemptionHints` returned. **Do not size a redemption from this number** (MK-048).
-   *
-   * The old wording here said the actual amount "can be less when a partial of the last Trove is
-   * skipped". That understates it in the way that matters: the actual amount is often ZERO and
-   * the transaction REVERTS, because the helper and the loop answer different questions.
-   * `HintHelpers.sol:143-146` sizes each partial to the target's headroom above the debt floor
-   * and then continues to the next Trove, which needs one call per Trove;
-   * `TroveManager.sol:1218-1221` hands the whole amount to the first Trove and cancels if that
-   * breaches the floor (`:1299-1306`, `:392`, `:406-408`).
-   *
-   * Verified on a fork to the wei: the helper reported `headroom + 1`, `netDebt / 2` and
-   * `netDebt - 1` as fully redeemable, and all three revert.
-   *
-   * **Use `previewRedeem` instead.** It walks the list the way the loop does and reports what a
-   * single call will actually redeem, plus the two edges of the gap. This field is kept because
-   * it is what the contract was handed, which is worth being able to see.
-   */
-  truncatedAmount: bigint
-  /**
-   * The redemption RATE, a 1e18 scaled fraction, read live from `redemptionRate()`.
+   * The redemption RATE, a 1e18 scaled fraction, read live from `redemptionRate()` before sending.
    * Governable. This is a ratio, not an amount of anything.
    */
   redemptionRate: bigint
-  /**
-   * ESTIMATED fee in BTC wei, from `getRedemptionRate(estimatedCollateralDrawn)`.
-   *
-   * It is an estimate because the collateral actually drawn is only known once the
-   * redemption mines: it is derived here from `truncatedAmount` at the price read for the
-   * hint call. The authoritative figure is `collateralFee` on the `Redemption` event.
-   */
-  estimatedFeeCollateral: bigint
-  /**
-   * The collateral the fee estimate was computed against, in BTC wei, so a caller can see
-   * what the estimate assumed rather than having to reconstruct it.
-   */
-  estimatedCollateralDrawn: bigint
   /**
    * How the gas limit on this send was chosen (MK-037), the same field every other write
    * result carries.
@@ -148,6 +167,46 @@ export interface RedeemResult {
 }
 
 /**
+ * Read what a mined redemption settled from its receipt (MK-241).
+ *
+ * Exported so a caller holding a receipt of their own, for a redemption sent some other way, reads it
+ * the same way. Throws {@link RedemptionFailed} for a reverted receipt, which redeemed nothing, and for
+ * a successful receipt with no `Redemption` event from `troveManager`, which is not a redemption.
+ */
+export function settledRedemptionFrom(
+  receipt: Pick<TransactionReceipt, 'status' | 'logs' | 'blockNumber' | 'transactionHash'>,
+  troveManager: `0x${string}`,
+): SettledRedemption {
+  if (receipt.status !== 'success') {
+    throw new RedemptionFailed(
+      `The redemption ${receipt.transactionHash} mined and reverted, so nothing was redeemed. diagnoseRevertedWrite(publicClient, hash) says whether it ran out of gas or was refused.`,
+      receipt,
+    )
+  }
+  const [event] = parseEventLogs({
+    abi: troveManagerAbi,
+    eventName: 'Redemption',
+    logs: receipt.logs.filter((log) => log.address.toLowerCase() === troveManager.toLowerCase()),
+  })
+  if (event === undefined) {
+    throw new RedemptionFailed(
+      `The transaction ${receipt.transactionHash} succeeded but emitted no Redemption event from ${troveManager}, so it is not a redemption this client can read.`,
+      receipt,
+    )
+  }
+  const { _attemptedAmount, _actualAmount, _collateralSent, _collateralFee } = event.args
+  return {
+    blockNumber: receipt.blockNumber,
+    attemptedAmount: _attemptedAmount,
+    redeemedAmount: _actualAmount,
+    unredeemedAmount: _attemptedAmount - _actualAmount,
+    collateralDrawn: _collateralSent,
+    collateralFee: _collateralFee,
+    collateralReceived: _collateralSent - _collateralFee,
+  }
+}
+
+/**
  * Redeem MUSD for BTC against the lowest-ICR Troves. Reads the live redemption rate
  * (verified Phase 6: it applies to ALL redeemers, including loan holders, the
  * "0% for loan holders" rule does not hold in this deployment). The redemption-hint
@@ -155,6 +214,9 @@ export interface RedeemResult {
  * drift invalidates the partial hint). Simulate-before-send routes any revert through the
  * decoder ({@link mapRevert}): a nothing-redeemable / stale-hint revert ("Unable to redeem
  * any amount") becomes `RedemptionFailed`.
+ *
+ * **Resolves after the transaction mines**, with what it settled read from the receipt (MK-241). A
+ * receipt that reverted throws `RedemptionFailed`.
  */
 export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<RedeemResult> {
   const wallet = requireWallet(deps)
@@ -163,12 +225,7 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
   const maxIterations = params.maxIterations ?? DEFAULT_REDEMPTION_MAX_ITERATIONS
   assertMaxIterations(maxIterations)
 
-  const [price, redemptionRate, balance] = await Promise.all([
-    deps.publicClient.readContract({
-      address: deps.addresses.priceFeed,
-      abi: priceFeedAbi,
-      functionName: 'fetchPrice',
-    }),
+  const [redemptionRate, balance] = await Promise.all([
     deps.publicClient.readContract({
       address: deps.addresses.borrowerOperations,
       abi: borrowerOperationsAbi,
@@ -211,6 +268,11 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
       marginSeconds: REDEMPTION_SEND_MARGIN_SECONDS,
     },
   )
+  // MK-245. A whole consumption of the last Trove reverts the call, and the reason is someone else's
+  // position, so it is refused before gas for the same reason the floor gap is.
+  if (!redemption.viable && redemption.bindingConstraint === 'LAST_TROVE_IN_SYSTEM') {
+    throw new LastTroveInSystem()
+  }
   if (!redemption.viable && redemption.bindingConstraint === 'PARTIAL_BREACHES_DEBT_FLOOR') {
     throw new RedemptionBreachesDebtFloor({
       requested: amount,
@@ -241,7 +303,7 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
 
   // The hints are computed at the price the preview evaluated, so the partial's band and the first
   // hint describe the same state.
-  const [firstRedemptionHint, helperNICR, truncatedAmount] = await deps.publicClient.readContract({
+  const [firstRedemptionHint, helperNICR] = await deps.publicClient.readContract({
     address: deps.addresses.hintHelpers,
     abi: hintHelpersAbi,
     functionName: 'getRedemptionHints',
@@ -265,26 +327,26 @@ export async function redeem(deps: WriteDeps, params: RedeemParams): Promise<Red
     { revert: { operation: 'redeem', address: wallet.account.address } },
   )
 
-  // The fee AMOUNT, estimated. `getRedemptionRate` takes COLLATERAL DRAWN, not a MUSD
-  // amount, so convert first: the redemption returns collateral worth `truncatedAmount` of
-  // MUSD at the price used for the hints.
-  const estimatedCollateralDrawn = estimateCollateralDrawn(truncatedAmount, price)
-  const estimatedFeeCollateral =
-    estimatedCollateralDrawn > 0n
-      ? await deps.publicClient.readContract({
-          address: deps.addresses.borrowerOperations,
-          abi: borrowerOperationsAbi,
-          functionName: 'getRedemptionRate',
-          args: [estimatedCollateralDrawn],
-        })
-      : 0n
+  // MK-241. Wait for the transaction and read what it did, rather than returning a restatement of an
+  // estimate. The receipt is the only place the settled amount exists.
+  const receipt = await deps.publicClient.waitForTransactionReceipt({ hash })
+  const settled = settledRedemptionFrom(receipt, deps.addresses.troveManager)
+
+  // The estimate, from the SDK's own walk and named as one. `getRedemptionRate` takes COLLATERAL
+  // DRAWN, not MUSD (MK-014), and its formula is restated rather than read so the estimate cannot
+  // revert on the `fee < collateralDrawn` require (`BorrowerOperations.sol:503-506`) after the send.
+  const estimatedDrawn = estimateCollateralDrawn(redemption.redeemable, redemption.price)
+  const estimatedBeforeSend: RedemptionEstimateBeforeSend = {
+    redeemable: redemption.redeemable,
+    collateralDrawn: estimatedDrawn,
+    collateralFee: (redemptionRate * estimatedDrawn) / DECIMAL_PRECISION,
+  }
 
   return {
     hash,
-    truncatedAmount,
+    settled,
+    estimatedBeforeSend,
     redemptionRate,
-    estimatedFeeCollateral,
-    estimatedCollateralDrawn,
     gas,
     partial,
   }

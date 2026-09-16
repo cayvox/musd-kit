@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BelowMinimumDebt,
   ExceedsBorrowingCapacity,
-  InsufficientCollateral,
+  ICRBelowMCR,
   InsufficientMusdBalance,
   MissingWalletClient,
   RepayExceedsDebt,
@@ -279,7 +279,7 @@ describe('MK-118, adjustTrove, what it sends and what it refuses', () => {
     // 10 BTC at 80,000 is 800,000 USD; drawing 800,000 MUSD more is far under MCR.
     await expect(
       adjustTrove(chain(ACTIVE).deps, { borrow: 800_000n * MUSD }),
-    ).rejects.toBeInstanceOf(InsufficientCollateral)
+    ).rejects.toBeInstanceOf(ICRBelowMCR)
   })
 
   it('asks the preview about the repayment it will send, so a short balance is refused before gas', async () => {

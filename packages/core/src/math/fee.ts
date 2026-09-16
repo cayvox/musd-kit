@@ -40,9 +40,9 @@ export function effectiveBorrowingFee(
  * amount can be estimated. Returns zero for a zero or missing price rather than dividing by
  * it; an estimate of zero is honest, a division by zero is a crash.
  */
-export function estimateCollateralDrawn(truncatedAmount: bigint, price: bigint): bigint {
+export function estimateCollateralDrawn(redeemable: bigint, price: bigint): bigint {
   if (price <= 0n) return 0n
-  return (truncatedAmount * 10n ** 18n) / price
+  return (redeemable * 10n ** 18n) / price
 }
 
 /**

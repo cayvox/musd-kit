@@ -230,6 +230,7 @@ describe('MK-118, computeMaxWithdrawable', () => {
     price: ODD_PRICE,
     systemColl: 1_000_000n * BTC,
     systemDebt: 20_000_000n * MUSD,
+    capacity: 1_000_000n * MUSD,
   }
 
   it('in Recovery Mode allows nothing, and in normal mode it does not report Recovery Mode', () => {
@@ -278,6 +279,7 @@ describe('MK-118, computeMaxWithdrawable', () => {
       price: PRICE,
       systemColl: keepTcr + 5n * BTC,
       systemDebt: 1_000_000n * MUSD,
+      capacity: 0n,
     })
     expect(tie.amount, 'fixture: both allow exactly 5 BTC').toBe(5n * BTC)
     expect(tie.limitedBy).toBe('ICR')
@@ -394,6 +396,9 @@ describe('evaluateRedeem, its gates and edges at their boundary', () => {
   const base = {
     amount: 100n * MUSD,
     globalInterestRateBps: 100n,
+    troveOwnersCount: 42n,
+    sortedTrovesSize: 42n,
+    canMint: true, // MK-245: a populated system
     musdBalance: 100n * MUSD,
     minNetDebt: 1_800n * MUSD,
     tcr: MCR,

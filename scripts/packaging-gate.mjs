@@ -19,6 +19,11 @@
  * because a workspace typecheck resolves `@musd-kit/core` through path mapping and never reads the
  * `exports` map, which is exactly where MK-040 lived for a whole release.
  *
+ * **And it reads the installed packages for claims a closed finding retired** (MK-246), through
+ * `scripts/retired-claims.mjs`: the READMEs, the descriptions, the declarations and the source maps npm
+ * delivered, not the repository's copies of them. 0.4.1 shipped two such claims in its declarations while
+ * the findings that retired them were closed.
+ *
  *   node scripts/packaging-gate.mjs              the four documented rows
  *   node scripts/packaging-gate.mjs --strict     the same, plus skipLibCheck:false, reported
  */
@@ -26,6 +31,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { findRetiredClaims, shippedTexts } from './retired-claims.mjs'
 
 const STRICT = process.argv.includes('--strict')
 const ROOT = process.cwd()
@@ -49,8 +55,8 @@ const run = (cmd, args, cwd, quiet = true) =>
  * since. Keep it updated with any public shape change, and read the failure as "the probe is
  * stale" before reading it as "the package is broken".
  */
-const PROBE = `import { createMusdClient, evaluateRedeem, accruedInterest, netDebtOf, LastTroveInSystem, MCR, BORROWING_POWER_MARGIN_WINDOW_SECONDS, BORROWING_POWER_PRICE_MOVE_BPS, OracleStale, RedemptionPriceFragile, type BorrowingPower, type GasDecision, type OpenPreview, type RedeemResult, type RedemptionPreview, type RefinancePreview, type ClosePreview, type WriteResult } from '@musd-kit/core'
-import { useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useBorrowingPowerDetail, useRefinancePreview, type AdjustPreviewLegs, type BorrowPreview } from '@musd-kit/react'
+const PROBE = `import { createMusdClient, evaluateRedeem, accruedInterest, netDebtOf, LastTroveInSystem, MCR, OracleStale, RedemptionPriceFragile, settledRedemptionFrom, capacityAfterAdjustment, type BorrowingPower, type MarginDraw, type GasDecision, type OpenPreview, type RedeemResult, type RedemptionPreview, type RefinancePreview, type ClosePreview, type AdjustPreview, type MaxWithdrawable, type WriteResult } from '@musd-kit/core'
+import { useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useDrawForMargin, useRefinancePreview, type AdjustPreviewLegs, type BorrowPreview } from '@musd-kit/react'
 const d: GasDecision = { source: 'explicit', limit: 1n }
 const w: WriteResult = { hash: '0x00', gas: d }
 declare const p: OpenPreview
@@ -59,13 +65,23 @@ declare const c: ClosePreview
 // MK-088. Each eligible Trove carries its OWN principal and rate; there is no shared rate.
 const rp: RedemptionPreview = evaluateRedeem({
   amount: 1n, musdBalance: 1n, minNetDebt: 1n, tcr: MCR, price: 1n, globalInterestRateBps: 100n,
+  // MK-245. The last Trove rule's two counts and its switch.
+  troveOwnersCount: 2n, sortedTrovesSize: 2n, canMint: true,
   eligible: [{ owner: '0x00', entireDebt: 1n, principal: 1n, netDebt: 1n, interestRateBps: 100n, collateral: 1n, interestOwed: 0n }],
 })
 // MK-103. The partial a redemption ends on, with its price tolerances.
 const fragile: boolean | undefined = rp.partial?.priceFragile
-// MK-100. Two figures, named, and the margin they differ by.
+// MK-100, MK-240. The ceiling alone, and a draw for a margin the caller chose, which reports that margin.
 declare const power: BorrowingPower
-const figures: [bigint, bigint, bigint, bigint] = [power.ceiling, power.recommended, power.margin.stressedPrice, BORROWING_POWER_PRICE_MOVE_BPS * BORROWING_POWER_MARGIN_WINDOW_SECONDS]
+declare const sized: MarginDraw
+const figures: [bigint, bigint, bigint, bigint] = [power.ceiling, sized.draw, sized.margin.horizonSeconds, sized.margin.priceFallBps]
+// MK-241. What a redemption settled.
+declare const settledFrom: typeof settledRedemptionFrom
+const settled: [bigint, bigint] = [r.settled.redeemedAmount, r.estimatedBeforeSend.redeemable]
+// MK-242. The capacity a withdrawal leaves, and the refinance that would restore it.
+declare const adj: AdjustPreview
+declare const mw: MaxWithdrawable
+const capacity: [bigint, bigint, false, bigint | undefined] = [adj.capacityAfter.lost, mw.capacityAfter.resulting, adj.capacityAfter.restoredByAddingCollateral, adj.capacityAfter.recovery?.fee]
 // MK-101. The rate a refinance moves to and the capacity it resets.
 declare const refi: RefinancePreview
 const refiFigures: [number, bigint] = [refi.resultingInterestRateBps, refi.resultingCapacity]
@@ -77,7 +93,7 @@ const i: bigint = accruedInterest({ principal: 1n, rateBps: 100n, seconds: 600n 
 const check: [boolean, bigint, bigint, bigint, bigint, bigint, bigint, bigint] = [
   p.viable, p.resultingTcr, r.redemptionRate, MCR, rp.accrualMargin, rp.nextViableAmount, c.musdRequired, i,
 ]
-void [createMusdClient, useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useBorrowingPowerDetail, useRefinancePreview, LastTroveInSystem, OracleStale, RedemptionPriceFragile, legs, w, check, figures, refiFigures, borrowPreview]
+void [createMusdClient, useAdjustTrovePreview, useBorrowPreview, useBorrowingCapacity, useDrawForMargin, useRefinancePreview, LastTroveInSystem, OracleStale, RedemptionPriceFragile, capacityAfterAdjustment, settledFrom, legs, w, check, figures, refiFigures, borrowPreview, settled, capacity]
 `
 
 const ROWS = [
@@ -215,6 +231,18 @@ const esmKeys = run(
 ).trim()
 console.log(`\nruntime resolution: require=${cjsKeys} exports, import=${esmKeys} exports`)
 
+// MK-246. The installed packages, read for claims a closed finding retired.
+const installed = ['core', 'react'].map((p) => join(CONSUMER, 'node_modules', '@musd-kit', p))
+const shipped = installed.flatMap(shippedTexts)
+const retired = findRetiredClaims(shipped)
+console.log(
+  `\nretired claims in the installed packages: ${retired.length} found across ${shipped.length} shipped texts`,
+)
+for (const h of retired) {
+  console.log(`  ${h.finding} ${h.path.slice(CONSUMER.length + 1)}:${h.line}\n    ${h.text}`)
+}
+if (retired.length > 0) failed++
+
 const files = run('tar', ['tzf', tarballs[0]], ROOT).trim().split('\n').sort()
 console.log(`tarball contents (core, ${files.length} entries):`)
 for (const f of files) console.log(`  ${f}`)
@@ -222,6 +250,6 @@ for (const f of files) console.log(`  ${f}`)
 console.log(
   failed === 0
     ? '\nGATE PASSED, under the configuration printed above.'
-    : `\nGATE FAILED: ${failed} of ${ROWS.length} gated rows.`,
+    : `\nGATE FAILED: ${failed} failure(s) across the ${ROWS.length} gated rows and the retired claims check.`,
 )
 process.exit(failed === 0 ? 0 : 1)

@@ -1,11 +1,18 @@
 import type { Address } from 'viem'
-import { borrowerOperationsAbi, musdAbi, priceFeedAbi, troveManagerAbi } from '../clients'
+import {
+  borrowerOperationsAbi,
+  interestRateManagerAbi,
+  musdAbi,
+  priceFeedAbi,
+  troveManagerAbi,
+} from '../clients'
 import { CCR, MCR } from '../constants'
 import { withTypedErrors } from '../errors/mapRevert'
 import { TroveStatus } from '../read/types'
-import { computeICR, netDebtOf, troveAmounts } from './compute'
+import { capacityAfterAdjustment, computeICR, netDebtOf, troveAmounts } from './compute'
 import type { MathDeps } from './deps'
 import { isBorrowingFeeCharged } from './fee'
+import { type RefinanceBlockReason, evaluateRefinance } from './previewRefinance'
 
 /**
  * The adjust path, previewed (MK-042). One evaluator, because the contract has one:
@@ -77,7 +84,7 @@ export interface BorrowingCapacity {
    * on a fork at 1s, 60s, 600s and 3600s, and pinned by `zz-limit-figures.fork.test.ts`: the exact
    * figure sent one second after the read is refused with `ExceedsBorrowingCapacity`, before gas.
    *
-   * **Why it has no recommended twin, where `getBorrowingPower` does (MK-100).** `_adjustTrove`
+   * **Why it expires loudly, where the open ceiling expired silently (MK-100).** `_adjustTrove`
    * brings interest current before any gate (`BorrowerOperations.sol:769`), so this exact figure is
    * REFUSED a block later rather than accepted at the threshold; the refusal is loud. An open
    * evaluates its gates with no accrual (`:648-657`), which is why the open time ceiling was
@@ -101,6 +108,64 @@ export interface BorrowingCapacity {
  */
 export function borrowingCapacityOf(capacity: bigint, entireDebt: bigint): BorrowingCapacity {
   return { capacity, entireDebt, remaining: capacity > entireDebt ? capacity - entireDebt : 0n }
+}
+
+/**
+ * What a refinance would cost to win back capacity an adjustment removed (MK-242), projected on the state
+ * the adjustment leaves, at the price it was previewed at, through {@link evaluateRefinance}.
+ *
+ * A refinance is the only write that raises stored capacity (`BorrowerOperations.sol:1077-1084`), and it
+ * is not free: it charges `getBorrowingFee(refinancingFeePercentage * netDebt / 100)` into principal
+ * (`:1029-1040`), moves the Trove to the global interest rate whatever it is (`:1069`, `:1075`), is
+ * refused in Recovery Mode (`:1023`), and needs ICR at or above MCR after its fee (`:1058`).
+ *
+ * **A projection at this block, not a quote.** A refinance sent later is charged on the debt then, at the
+ * rate then, and restores capacity from the collateral and the price then.
+ */
+export interface CapacityRecovery {
+  /** The only write that restores capacity. */
+  via: 'refinance'
+  /** The refinancing fee, in MUSD, added to principal. Zero for a fee exempt account. */
+  fee: bigint
+  /** The rate the Trove carries now, in basis points. */
+  currentInterestRateBps: number
+  /** The global rate a refinance moves it to, in basis points. It can be HIGHER than the current one. */
+  resultingInterestRateBps: number
+  /** The capacity a refinance would write, `resultingCollateral * price / 1.1`, at this price. */
+  capacity: bigint
+  /** Whether the contract would accept that refinance on the resulting state, at this price. */
+  viable: boolean
+  /** Why not, in contract call order, from {@link evaluateRefinance}. */
+  reasons: RefinanceBlockReason[]
+}
+
+/**
+ * The borrowing capacity an adjustment leaves behind (MK-242).
+ *
+ * **A withdrawal can lower capacity permanently.** `_adjustTrove` recomputes it only when collateral
+ * decreases, and stores the smaller of the current and recalculated figures (`BorrowerOperations.sol:879-899`);
+ * adding collateral never raises it (`:880`). So withdrawing during a price fall and adding the same
+ * collateral back later leaves every future borrow gated on the lower figure (`:1358-1365`) until a
+ * refinance.
+ */
+export interface CapacityAfter {
+  /** `getTroveMaxBorrowingCapacity` now, before the adjustment. */
+  current: bigint
+  /** The capacity the adjustment writes: {@link capacityAfterAdjustment}. */
+  resulting: bigint
+  /** `current - resulting`: capacity this adjustment removes. Zero when it removes none. */
+  lost: bigint
+  /**
+   * Always `false`: a later collateral top up does not restore `lost` (`BorrowerOperations.sol:880`). A
+   * literal rather than a boolean a caller could read as conditional.
+   */
+  restoredByAddingCollateral: false
+  /**
+   * What winning `lost` back by refinancing would cost, or `null` when nothing is lost. Also `null` from
+   * the pure {@link evaluateAdjust}, which reads nothing; {@link previewAdjustTrove} and
+   * {@link maxWithdrawableCollateral} fill it whenever `lost` is positive.
+   */
+  recovery: CapacityRecovery | null
 }
 
 /** Why an adjust preview came back not viable. Machine readable, stable strings. */
@@ -174,6 +239,11 @@ export interface AdjustPreview {
    * every adjustment; only enforced when the debt increases (`:850-852`).
    */
   capacity: BorrowingCapacity
+  /**
+   * The capacity this adjustment LEAVES, what it removes, and what winning it back would cost (MK-242).
+   * `capacity` above is the picture before the adjustment; this is the one after.
+   */
+  capacityAfter: CapacityAfter
   /** The Trove's collateral after this adjustment. */
   resultingCollateral: bigint
   /** The Trove's entire debt after this adjustment. */
@@ -218,6 +288,84 @@ export interface PreviewAdjustParams {
   increaseDebt?: bigint
   /** MUSD to repay. Mutually exclusive with `increaseDebt`. */
   repayDebt?: bigint
+}
+
+/** The four legs, resolved the way the contract receives them (MK-244). */
+export interface AdjustLegs {
+  addCollateral: bigint
+  withdrawCollateral: bigint
+  increaseDebt: bigint
+  repayDebt: bigint
+  /** `_adjustTrove`'s `_isDebtIncrease` (`BorrowerOperations.sol:757`): true only for a non zero draw. */
+  isDebtIncrease: boolean
+}
+
+/**
+ * Resolve the SDK's four optional legs into the call the contract receives, by VALUE (MK-244).
+ *
+ * **Why value and not presence, reversing the ruling MK-060 made for this path.** The contract takes the
+ * collateral legs as two amounts and checks them by value, `_assetAmount == 0 || _collWithdrawal == 0`
+ * (`BorrowerOperations.sol:1367-1375`), and the debt as one amount and one flag (`:757-758`). The SDK's
+ * two debt legs are not that flag: they are an input the SDK has to ENCODE. A zero leg can be encoded as
+ * nothing at all, `(0, false)`, which `_requireNonZeroAdjustment` (`:1377-1386`) accepts beside a collateral
+ * change, or as `(0, true)`, which `_requireNonZeroDebtChange` (`:785-787`) refuses. MK-060 chose the refused
+ * encoding, and `trove/index.ts` then refused `{ addCollateral: 0n, withdrawCollateral: x }` on presence
+ * while the preview, reading values, called it viable and the contract accepted it. A zero leg is no leg.
+ *
+ * `(0, true)` remains a real input on the one path that sends it unconditionally, `withdrawMUSD`
+ * (`:243-257`), which `previewBorrow` states through `EvaluateAdjustInput.isDebtIncrease`.
+ */
+export function adjustLegsOf(legs: {
+  addCollateral?: bigint | undefined
+  withdrawCollateral?: bigint | undefined
+  increaseDebt?: bigint | undefined
+  repayDebt?: bigint | undefined
+}): AdjustLegs {
+  const increaseDebt = legs.increaseDebt ?? 0n
+  return {
+    addCollateral: legs.addCollateral ?? 0n,
+    withdrawCollateral: legs.withdrawCollateral ?? 0n,
+    increaseDebt,
+    repayDebt: legs.repayDebt ?? 0n,
+    isDebtIncrease: increaseDebt > 0n,
+  }
+}
+
+/** The reasons an adjustment is refused for its SHAPE alone, which need no chain read. */
+export type AdjustShapeReason = Extract<
+  AdjustBlockReason,
+  | 'ZERO_DEBT_INCREASE'
+  | 'COLLATERAL_ADD_AND_WITHDRAW'
+  | 'DEBT_INCREASE_AND_REPAY'
+  | 'NO_CHANGE_REQUESTED'
+>
+
+/**
+ * The shape rules of `_adjustTrove`, by value, in contract order (MK-077, MK-244): the one copy that
+ * {@link evaluateAdjust} reports from and `adjustTrove` refuses with before it reads the chain.
+ *
+ *   - `ZERO_DEBT_INCREASE`: `(0, true)`, refused at `BorrowerOperations.sol:785-787`. Reachable only when
+ *     the flag is stated true with a zero amount, which `withdrawMUSD` does (`:243-257`).
+ *   - `COLLATERAL_ADD_AND_WITHDRAW`: `_requireSingularCollChange` (`:788`, `:1367-1375`), on values.
+ *   - `DEBT_INCREASE_AND_REPAY`: both debt legs non zero, which one amount and one flag cannot express
+ *     (`:757-758`). SDK input validation, not a contract gate.
+ *   - `NO_CHANGE_REQUESTED`: `_requireNonZeroAdjustment` (`:789`, `:1377-1386`), on values.
+ */
+export function adjustShapeReasons(legs: AdjustLegs): AdjustShapeReason[] {
+  const { addCollateral, withdrawCollateral, increaseDebt, repayDebt, isDebtIncrease } = legs
+  const reasons: AdjustShapeReason[] = []
+  if (isDebtIncrease && increaseDebt === 0n) reasons.push('ZERO_DEBT_INCREASE')
+  if (addCollateral > 0n && withdrawCollateral > 0n) reasons.push('COLLATERAL_ADD_AND_WITHDRAW')
+  if (increaseDebt > 0n && repayDebt > 0n) reasons.push('DEBT_INCREASE_AND_REPAY')
+  if (
+    addCollateral === 0n &&
+    withdrawCollateral === 0n &&
+    increaseDebt === 0n &&
+    repayDebt === 0n
+  ) {
+    reasons.push('NO_CHANGE_REQUESTED')
+  }
+  return reasons
 }
 
 /** Everything {@link evaluateAdjust} needs, already read from the chain. */
@@ -283,10 +431,9 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
     systemDebt,
   } = input
 
-  // MK-060. Presence when the caller states it, value otherwise. The value fallback is the old
-  // behaviour and is kept only so an input built before this field existed still evaluates the
-  // way it did; it cannot express `(true, 0)`, which is the whole defect.
-  const isDebtIncrease = input.isDebtIncrease ?? increaseDebt > 0n
+  // MK-244. The caller's stated flag when the path fixes it (`previewBorrow`, for `withdrawMUSD`, which
+  // always sends `true`), and otherwise the value, through the one resolver the write path also uses.
+  const isDebtIncrease = input.isDebtIncrease ?? adjustLegsOf({ increaseDebt }).isDebtIncrease
   // `netDebtChange` is the draw PLUS its fee on the increase path (`:810-817`), and the bare
   // repayment on the decrease path.
   const netDebtChange = isDebtIncrease ? increaseDebt + fee : repayDebt
@@ -309,23 +456,32 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
     price,
   })
 
-  const reasons: AdjustBlockReason[] = []
-  // Reported in the order `_adjustTrove` checks them, so `bindingConstraint` is the one the
-  // chain would actually report first.
-  if (isDebtIncrease && increaseDebt === 0n) reasons.push('ZERO_DEBT_INCREASE')
-  if (addCollateral > 0n && withdrawCollateral > 0n) reasons.push('COLLATERAL_ADD_AND_WITHDRAW')
-  // MK-077. Value based, matching the collateral test directly above, so `(0, n)` is left to
-  // `ZERO_DEBT_INCREASE` which already refuses it. `trove/index.ts` refuses the same shape on
-  // PRESENCE, which is stricter and safe: a write it rejects is never a write the chain sees.
-  if (increaseDebt > 0n && repayDebt > 0n) reasons.push('DEBT_INCREASE_AND_REPAY')
-  if (
-    addCollateral === 0n &&
-    withdrawCollateral === 0n &&
-    increaseDebt === 0n &&
-    repayDebt === 0n
-  ) {
-    reasons.push('NO_CHANGE_REQUESTED')
+  // MK-242. Through the one copy of `:879-899`. Reported for every input, viable or not, so a caller
+  // deciding on a withdrawal sees the capacity it costs before the verdict matters.
+  const resultingCapacity = capacityAfterAdjustment({
+    currentCapacity: capacity,
+    resultingCollateral: safeColl,
+    collateralDecreases: withdrawCollateral > 0n && addCollateral === 0n,
+    price,
+  })
+  const capacityAfter: CapacityAfter = {
+    current: capacity,
+    resulting: resultingCapacity,
+    lost: capacity - resultingCapacity,
+    restoredByAddingCollateral: false,
+    recovery: null,
   }
+
+  // Reported in the order `_adjustTrove` checks them, so `bindingConstraint` is the one the
+  // chain would actually report first. The shape of the call comes first, from the one helper the
+  // write path also refuses with before any read (MK-244).
+  const reasons: AdjustBlockReason[] = adjustShapeReasons({
+    addCollateral,
+    withdrawCollateral,
+    increaseDebt,
+    repayDebt,
+    isDebtIncrease,
+  })
   // MK-094. The enum, not the literal. `TroveStatus.active` is `1`
   // (`TroveManager` `Status`), and three evaluators spelled it as a bare number while two
   // others used the enum for the same comparison.
@@ -371,6 +527,7 @@ export function evaluateAdjust(input: EvaluateAdjustInput): AdjustPreview {
     fee,
     netDebtChange,
     capacity: capacityPicture,
+    capacityAfter,
     resultingCollateral,
     resultingEntireDebt,
     currentIcr,
@@ -391,21 +548,34 @@ export async function previewAdjustTrove(
   deps: MathDeps,
   params: PreviewAdjustParams,
 ): Promise<AdjustPreview> {
-  return withTypedErrors(() => previewAdjustTroveUnchecked(deps, params), {
+  return withTypedErrors(() => previewAdjustTroveUnchecked(deps, params, true), {
     operation: 'previewAdjustTrove',
   })
+}
+
+/**
+ * The adjust VERDICT the write path prechecks with: {@link previewAdjustTrove}'s reads and evaluator,
+ * without the refinance projection, which a precheck never reads. `capacityAfter.recovery` is `null` on
+ * what this returns. Not exported from the package; the write path is its only caller (MK-242).
+ */
+export function previewAdjustVerdict(
+  deps: MathDeps,
+  params: PreviewAdjustParams,
+): Promise<AdjustPreview> {
+  return previewAdjustTroveUnchecked(deps, params, false)
 }
 
 async function previewAdjustTroveUnchecked(
   deps: MathDeps,
   params: PreviewAdjustParams,
+  projectRecovery: boolean,
 ): Promise<AdjustPreview> {
   const { publicClient, addresses } = deps
   const owner = params.owner
-  const addCollateral = params.addCollateral ?? 0n
-  const withdrawCollateral = params.withdrawCollateral ?? 0n
-  const increaseDebt = params.increaseDebt ?? 0n
-  const repayDebt = params.repayDebt ?? 0n
+  // MK-244. By value, through the resolver `adjustTrove` sends with, so the preview and the write
+  // describe one call.
+  const { addCollateral, withdrawCollateral, increaseDebt, repayDebt, isDebtIncrease } =
+    adjustLegsOf(params)
 
   const price = await publicClient.readContract({
     address: addresses.priceFeed,
@@ -445,9 +615,9 @@ async function previewAdjustTroveUnchecked(
 
   // Read exemption rather than assuming nobody is exempt (MK-018): the cohort is non empty
   // on mainnet, and the fee is what the capacity and ratio gates compare against.
-  const exempt = increaseDebt > 0n ? await deps.isAccountFeeExempt(owner) : false
+  const exempt = isDebtIncrease ? await deps.isAccountFeeExempt(owner) : false
   const fee =
-    increaseDebt > 0n && isBorrowingFeeCharged(isRecoveryMode, exempt)
+    isDebtIncrease && isBorrowingFeeCharged(isRecoveryMode, exempt)
       ? await publicClient.readContract({
           address: addresses.borrowerOperations,
           abi: borrowerOperationsAbi,
@@ -457,7 +627,7 @@ async function previewAdjustTroveUnchecked(
       : 0n
 
   const amounts = troveAmounts(entire)
-  return evaluateAdjust({
+  const preview = evaluateAdjust({
     status,
     collateral: amounts.collateral,
     entireDebt: amounts.entireDebt,
@@ -469,15 +639,103 @@ async function previewAdjustTroveUnchecked(
     withdrawCollateral,
     increaseDebt,
     repayDebt,
-    // MK-060. PRESENCE, matching `trove/index.ts`'s `brw !== undefined` and the contract's
-    // separate `_isDebtIncrease` parameter. `increaseDebt: 0n` is a debt increase of zero,
-    // which the contract refuses at `:786`, and is a different input from no debt leg at all.
-    isDebtIncrease: params.increaseDebt !== undefined,
+    isDebtIncrease,
     isRecoveryMode,
     price,
     systemColl,
     systemDebt,
   })
+  if (!projectRecovery) return preview
+  const capacityAfter = await withCapacityRecovery(deps, owner, preview.capacityAfter, {
+    collateral: preview.resultingCollateral,
+    entireDebt: preview.resultingEntireDebt,
+    price,
+    isRecoveryMode,
+    systemColl: systemColl + addCollateral - withdrawCollateral,
+    systemDebt: systemDebt + preview.resultingEntireDebt - amounts.entireDebt,
+  })
+  return { ...preview, capacityAfter }
+}
+
+/**
+ * Fill {@link CapacityAfter.recovery} when an adjustment removes capacity (MK-242): read what a refinance
+ * needs and project one on the state the adjustment leaves, through {@link evaluateRefinance}, the one
+ * implementation of `_refinance`'s rules. Reads nothing when nothing is lost.
+ *
+ * The projected Trove is the resulting one: its collateral and entire debt, carried as principal with no
+ * separate interest, which is what `_refinance` reads after bringing interest current (`:1021`, `:1050`).
+ * The system totals are the resulting ones, passed in by the caller that knows them.
+ */
+async function withCapacityRecovery(
+  deps: MathDeps,
+  owner: Address,
+  capacityAfter: CapacityAfter,
+  projected: {
+    collateral: bigint
+    entireDebt: bigint
+    price: bigint
+    isRecoveryMode: boolean
+    systemColl: bigint
+    systemDebt: bigint
+  },
+): Promise<CapacityAfter> {
+  if (capacityAfter.lost === 0n) return capacityAfter
+  const { publicClient, addresses } = deps
+  const [percentage, currentRate, globalRate, feeExempt] = await Promise.all([
+    publicClient.readContract({
+      address: addresses.borrowerOperations,
+      abi: borrowerOperationsAbi,
+      functionName: 'refinancingFeePercentage',
+    }),
+    publicClient.readContract({
+      address: addresses.troveManager,
+      abi: troveManagerAbi,
+      functionName: 'getTroveInterestRate',
+      args: [owner],
+    }),
+    publicClient.readContract({
+      address: addresses.interestRateManager,
+      abi: interestRateManagerAbi,
+      functionName: 'interestRate',
+    }),
+    deps.isAccountFeeExempt(owner),
+  ])
+  // `_refinance`'s fee base, `refinancingFeePercentage * _getNetDebt(debt) / 100` (`:1029-1032`), on the
+  // resulting debt, priced by the chain's own getter.
+  const borrowingFeeOnBase = await publicClient.readContract({
+    address: addresses.borrowerOperations,
+    abi: borrowerOperationsAbi,
+    functionName: 'getBorrowingFee',
+    args: [(BigInt(percentage) * netDebtOf(projected.entireDebt)) / 100n],
+  })
+  const refinance = evaluateRefinance({
+    status: TroveStatus.active,
+    collateral: projected.collateral,
+    principal: projected.entireDebt,
+    interestOwed: 0n,
+    refinancingFeePercentage: Number(percentage),
+    borrowingFeeOnBase,
+    feeExempt,
+    isRecoveryMode: projected.isRecoveryMode,
+    price: projected.price,
+    systemColl: projected.systemColl,
+    systemDebt: projected.systemDebt,
+    currentInterestRateBps: Number(currentRate),
+    globalInterestRateBps: Number(globalRate),
+    currentCapacity: capacityAfter.resulting,
+  })
+  return {
+    ...capacityAfter,
+    recovery: {
+      via: 'refinance',
+      fee: refinance.fee,
+      currentInterestRateBps: refinance.currentInterestRateBps,
+      resultingInterestRateBps: refinance.resultingInterestRateBps,
+      capacity: refinance.resultingCapacity,
+      viable: refinance.viable,
+      reasons: refinance.reasons,
+    },
+  }
 }
 
 /** Preview withdrawing collateral. The adjust path with only a withdrawal (`:225-240`). */
@@ -512,10 +770,20 @@ export interface MaxWithdrawable {
    * The SDK refuses it before sending rather than spending gas on it, so the cost is a typed
    * error and not a failed transaction. Withdraw less than this, or recompute at the point of
    * use. MK-051 carries the measurement.
+   *
+   * **A limit, not an amount to withdraw** (MK-247): when the individual ratio caps it, a withdrawal
+   * that is accepted at it leaves the Trove at MCR, where liquidation begins (`TroveManager.sol:1146-1148`).
    */
   amount: bigint
   /** Which gate caps it, or `null` when nothing does and the whole balance can come out. */
   limitedBy: 'RECOVERY_MODE' | 'ICR' | 'TCR' | null
+  /**
+   * The borrowing capacity a withdrawal of `amount` leaves, and what it removes (MK-242). A withdrawal
+   * stores `min(current, (collateral - amount) * price / 1.1)` (`BorrowerOperations.sol:879-899`) and adding
+   * the collateral back never raises it (`:880`), so withdrawing the maximum during a price fall can cut
+   * every later borrow until a refinance, whose cost is in `recovery`.
+   */
+  capacityAfter: CapacityAfter
   /** The collateral the Trove holds now. */
   collateral: bigint
   /** The ICR the Trove would have at `amount`, which is `icrThreshold` when ICR is the cap. */
@@ -564,21 +832,37 @@ async function maxWithdrawableCollateralUnchecked(
     functionName: 'fetchPrice',
   })
   const tm = { address: addresses.troveManager, abi: troveManagerAbi } as const
-  const [entire, isRecoveryMode, systemColl, systemDebt] = await Promise.all([
+  const [entire, isRecoveryMode, systemColl, systemDebt, currentCapacity] = await Promise.all([
     publicClient.readContract({ ...tm, functionName: 'getEntireDebtAndColl', args: [owner] }),
     publicClient.readContract({ ...tm, functionName: 'checkRecoveryMode', args: [price] }),
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemColl' }),
     publicClient.readContract({ ...tm, functionName: 'getEntireSystemDebt' }),
+    // MK-242. The capacity the maximum withdrawal would leave is part of deciding to withdraw it.
+    publicClient.readContract({
+      ...tm,
+      functionName: 'getTroveMaxBorrowingCapacity',
+      args: [owner],
+    }),
   ])
   const amounts = troveAmounts(entire)
-  return computeMaxWithdrawable({
+  const max = computeMaxWithdrawable({
     collateral: amounts.collateral,
     entireDebt: amounts.entireDebt,
     isRecoveryMode,
     price,
     systemColl,
     systemDebt,
+    capacity: currentCapacity,
   })
+  const capacityAfter = await withCapacityRecovery(deps, owner, max.capacityAfter, {
+    collateral: amounts.collateral - max.amount,
+    entireDebt: amounts.entireDebt,
+    price,
+    isRecoveryMode,
+    systemColl: systemColl - max.amount,
+    systemDebt,
+  })
+  return { ...max, capacityAfter }
 }
 
 /** The closed form behind {@link maxWithdrawableCollateral}, as a pure function. */
@@ -589,14 +873,34 @@ export function computeMaxWithdrawable(input: {
   price: bigint
   systemColl: bigint
   systemDebt: bigint
+  /** `getTroveMaxBorrowingCapacity`, for the capacity the withdrawal leaves (MK-242). */
+  capacity: bigint
 }): MaxWithdrawable {
   const { collateral, entireDebt, isRecoveryMode, price, systemColl, systemDebt } = input
   const icrThreshold = isRecoveryMode ? CCR : MCR
+  // MK-242. Through the one copy of `:879-899`, at the amount this returns. A zero amount withdraws
+  // nothing and leaves capacity where it is.
+  const capacityAt = (amount: bigint): CapacityAfter => {
+    const resulting = capacityAfterAdjustment({
+      currentCapacity: input.capacity,
+      resultingCollateral: collateral - amount,
+      collateralDecreases: amount > 0n,
+      price,
+    })
+    return {
+      current: input.capacity,
+      resulting,
+      lost: input.capacity - resulting,
+      restoredByAddingCollateral: false,
+      recovery: null,
+    }
+  }
 
   if (isRecoveryMode) {
     return {
       amount: 0n,
       limitedBy: 'RECOVERY_MODE',
+      capacityAfter: capacityAt(0n),
       collateral,
       resultingIcr: computeICR({ collateral, entireDebt, price }),
       icrThreshold,
@@ -608,6 +912,7 @@ export function computeMaxWithdrawable(input: {
     return {
       amount: 0n,
       limitedBy: 'ICR',
+      capacityAfter: capacityAt(0n),
       collateral,
       resultingIcr: 0n,
       icrThreshold,
@@ -637,6 +942,7 @@ export function computeMaxWithdrawable(input: {
     // Nothing caps it only when the position carries no debt at all, so the whole balance
     // clears both gates.
     limitedBy: entireDebt === 0n && systemDebt === 0n ? null : limitedBy,
+    capacityAfter: capacityAt(amount),
     collateral,
     resultingIcr: computeICR({ collateral: collateral - amount, entireDebt, price }),
     icrThreshold,
