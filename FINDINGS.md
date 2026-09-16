@@ -173,6 +173,10 @@ claim about it was not).
 | MK-250 | A write whose simulation reverts still logs that it is sending without a margin | S3 | open |
 | MK-251 | Two React claims are stronger than the rendered behaviour: a same tick restore serves the old answer, and a wallet switch reports a missing wallet client | S3 | open |
 | MK-252 | Two shipped TSDoc comments still say the preview and the write path read the debt flag from PRESENCE, which MK-244 retired in the same release, and the MK-246 check had no entry for that wording | S3, docs | **fixed** before 0.5.0 was published: both comments corrected and the claim added to `RETIRED_CLAIMS`, so the shipped artifact is checked for it |
+| MK-253 | The live release gate asserts `maxWithdrawableCollateral` against its own preview across two reads, a boundary with 0.349 bps of margin on a chain that moves 1.08 bps between blocks, and a lost race exits before the close and leaves a position open | S2, process | open. Run 2 of the 0.5.0 live runs; runs 1 and 3 passed on identical code |
+| MK-254 | The sweep's expected set still registers the ten MK-079 mismatches, which MK-244 made impossible: the 0.5.0 sweep reported all ten as EXPECTED-BUT-ABSENT | S3, tests | open. A matcher that cannot fire would absorb a future real mismatch of that shape |
+| MK-255 | Three of the five deprecation messages send a reader to a version that is itself deprecated, 0.1.0 to 0.2.0 and 0.2.0 to 0.3.0 among them | S3, registry | open. 0.4.0's was rewritten because its target carried the identical MK-240 defect; the older chain was left, and the test that asserts the property is scoped to the entries written now |
+| MK-256 | The deprecation workflow verifies its write by reading `npm view`, retries only an EMPTY answer, and so fails a successful re-deprecation; the re-dispatch that would fix the colour then fails with E422 because nothing is left to change | S2, process | open. 0.4.0 has no green run and is correct on the registry, checked against the registry document directly |
 
 ---
 
@@ -8609,6 +8613,115 @@ adds the sentence its change retires, in the same commit.
 **What was verified.** `grep -rn "from PRESENCE\|by presence\|from presence" packages/*/src` returns these
 two sites and no others, and `adjustLegsOf` is the one derivation both paths use. The class is S3: no
 behaviour is wrong, only the description a consumer reads, which is MK-246's class exactly.
+
+---
+
+## MK-253 · The live gate asserts a knife edge across two reads, and a lost race costs the close
+
+**Class** S2, process · **Status** open · **Found by** the 0.5.0 release run, on the second of three
+
+`scripts/testnet-e2e.ts` reads `maxWithdrawableCollateral`, then previews a withdrawal AT that amount and
+calls `die()` when the preview refuses. The maximum is by definition the amount that leaves the Trove at
+MCR, so it carries almost no margin: at the failing moment `resultingIcr` was 1100038345703729110 against
+an MCR of 1.1e18, **0.349 bps**. Between the two calls the oracle moves. Sampled at the same hour on the
+same chain, consecutive blocks moved by up to **1.08 bps**, and 3 of 11 samples were negative. So a fall
+of 0.349 bps in the time of one RPC round trip refuses an amount that was correct when it was read, and
+the same pair of calls returned viable a minute later.
+
+**This is checklist row 11 broken by the tool that gates a release**: a boundary that moves with time,
+asserted as an exact equality across a delay, with no margin and no attribution. Run 1 and run 3 passed,
+run 2 failed, on identical code and an unchanged SDK.
+
+**The second half is worse than the flake.** `die()` exits the process, and this assertion sits before the
+close, so the lost race left an open Trove on the account, which is the outcome the script's own redeem
+step is carefully written to avoid ("an optional, flag gated step must never cost the close", MK-052). The
+next run recovered it, because the script closes a pre-existing position first, but recovery by luck is
+not the property that was claimed.
+
+**What would close it.** Either re-read the maximum and the preview atomically at one block, or accept a
+refusal whose cause is a price move by re-reading the price and attributing it, and in both cases keep the
+failure off the path to the close. The assertion itself is worth keeping: an SDK that reports a maximum
+its own preview refuses AT A STABLE PRICE is a real defect, and that is what the fork test
+`withdraw-max-boundary.fork.test.ts` pins.
+
+---
+
+## MK-254 · The sweep's expected set still registers ten mismatches this release made impossible
+
+**Class** S3, tests · **Status** open · **Found by** reading the 0.5.0 sweep's EXPECTED-BUT-ABSENT lines
+rather than its exit code
+
+[sweep run 35065490890](https://github.com/cayvox/musd-kit/actions/runs/35065490890) at the release commit
+passed with `FALSE_VIABLE=0 FALSE_BLOCKED=0 NUMBERS=0` and `expected=0 unexpected=0`, and printed
+`EXPECTED-BUT-ABSENT MK-079` for all ten registered indices: 209, 252, 329, 370, 449, 455, 486, 720, 817,
+893. The 0.4.1 sweep reported those same ten as `EXPECTED MK-079`.
+
+**Why they stopped reproducing, from the matcher rather than by inference.**
+`packages/core/test/differential/expected.ts:56-63` matches an adjust case whose mismatch is
+`FALSE_BLOCKED`, whose detail contains `ZERO_DEBT_INCREASE`, and whose generated debt is under 4 wei, so
+that `adjustDebt = c.debt / 4n` is zero. The harness passed its legs verbatim to the preview and filtered
+them on `> 0n` before sending, so the preview was asked about a zero debt increase while the chain was
+asked for a pure top up. **MK-244 removed the disagreement**: a zero leg is no leg in the preview too, so
+both halves now answer the same question and there is no mismatch to expect.
+
+**What is left open.** The registration outlives the defect. A registered expectation that cannot fire is
+not neutral: it is a matcher that would silently absorb a future real `FALSE_BLOCKED` of that shape, which
+is the one failure mode `expected.ts` exists to prevent. Closing it means removing the entry, recording
+MK-079's sweep symptom as closed by MK-244 with this run as the evidence, and leaving MK-079's harness
+level defect described where it still applies.
+
+---
+
+## MK-255 · The deprecation chain sends readers to deprecated versions
+
+**Class** S3, registry · **Status** open · **Found by** writing 0.4.0's second message for the 0.5.0
+release
+
+`npm deprecate` messages are served at install time, and each of ours ends by naming an upgrade target.
+Three of the five targets are themselves deprecated: 0.1.0 points at 0.2.0, 0.2.0 at 0.3.0, and 0.3.0 and
+0.3.1 at 0.4.0. Each was true when it was sent, and none was rewritten as the next release deprecated its
+target, so a reader on 0.1.0 is walked to a version that warns at install and, since 0.4.0, to the same
+MK-240 default draw they would be leaving 0.4.x to escape.
+
+**0.4.0 is the one that was rewritten, and the reason it could not be left** is that its target, 0.4.1,
+carries the identical MK-240 defect: the message would have moved a reader between two builds of the same
+wrong figure. The rest of the chain is older and points at versions with different defects, which is
+weaker but still wrong.
+
+`packages/core/test/deprecation-message.test.ts` now asserts that a message written now cannot name a
+deprecated target, scoped to the 0.4.0 and 0.4.1 entries, and the comment says this finding is why it is
+scoped rather than universal. Closing it means re-dispatching four more deprecations with rewritten text,
+which is a registry write per package per version and its own decision.
+
+---
+
+## MK-256 · The deprecation workflow reads its own write back through a cache, and calls a success a failure
+
+**Class** S2, process · **Status** open · **Found by** deprecating 0.4.0 for the second time, during the
+0.5.0 release
+
+`.github/workflows/deprecate.yml` writes with `npm deprecate` and then verifies by reading
+`npm view "@musd-kit/$p@$V" deprecated` and comparing it to the text it resolved. The read loop retries
+twelve times for an EMPTY answer, which is the case where the version was not deprecated before, and does
+not retry a NON EMPTY answer that is still the previous message. Re-deprecating a version that already
+carries a message is exactly that case, and it happened for the first time here:
+[run 35073470096](https://github.com/cayvox/musd-kit/actions/runs/35073470096) wrote 0.4.0's new message,
+read back the MK-114 message it had carried since 2026-09-14, and exited 1.
+
+**The write had succeeded.** Fetching `https://registry.npmjs.org/@musd-kit/core` directly, rather than
+through `npm view`, returned the new text for both packages within a minute, matching
+`node scripts/deprecation-message.mjs 0.4.0 <pkg>` byte for byte.
+
+**And the obvious repair makes it worse.** Re-dispatching to get a green run
+([run 35073568874](https://github.com/cayvox/musd-kit/actions/runs/35073568874)) failed with
+`npm error code E422 Unprocessable Entity` from the registry, because the message was already what it was
+being set to. So a correct deprecation can leave two red runs behind it and no green one, which is the
+shape that teaches a reader to ignore this workflow's colour.
+
+**What would close it.** Retry the verification while the answer is the PREVIOUS message as well as while
+it is empty, sourcing the read from the registry document rather than the `npm view` path, and treat an
+E422 whose current text already equals the intended text as success with a line saying so. Until then, the
+evidence a deprecation worked is the registry document, and this runbook records it that way.
 
 ---
 

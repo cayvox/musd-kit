@@ -7,6 +7,94 @@ check** so you can tell it worked, rather than assuming it did.
 
 ---
 
+## The 0.5.0 release, as it actually ran
+
+**Published 2026-09-16** from commit `92d80675e95b3ddd86cff71fbcb0213441aa2b7f`, by
+[release run 35070334659](https://github.com/cayvox/musd-kit/actions/runs/35070334659), whose `publish` and
+`verify-published` jobs both passed. The registry's own SLSA statements for both packages name
+`https://github.com/cayvox/musd-kit`, `refs/heads/main`, `.github/workflows/release.yml` and that commit.
+Tagged `v0.5.0`, annotated, tagger Cayvox Labs, pointing at the published commit rather than at the tip
+`main` had reached by then.
+
+**The consumer audit of 0.4.1, registered before any of it was fixed** (`194ace9`): MK-240 to MK-251. Eight
+fixed in the wave (MK-240 to MK-247), and **MK-252 found while verifying precondition 2 for this release**,
+the claim MK-244 retired still sitting in two comments both packages ship. **Breaking**, on `0.x` where the
+minor slot carries breaking changes, so `^0.4.1` does not resolve to it;
+`docs/16-migration-0.4-to-0.5.md` is the guide.
+
+| Precondition | Evidence at the released commit |
+|---|---|
+| 1, `main` green at its tip | [CI run 35064010379](https://github.com/cayvox/musd-kit/actions/runs/35064010379), `headSha` `92d8067`, success |
+| 2, no open S1 | 19 S1 rows in the index, every one `fixed`. **Reading the closing texts rather than the status column is what found MK-252**, so this check earned its place for the first time |
+| 3, versions intended | core and react at 0.5.0; `npm view @musd-kit/<pkg>@0.5.0 version` returned `E404` for both before publishing; `latest` was 0.4.1 |
+| 4, changelogs | top entry `## 0.5.0` followed by `### Minor Changes` in both |
+| 5, live testnet run | `GO`, exit 0, **22 exercised, 3 skipped**, with `E2E_ALLOW_REDEEM=1` and no `E2E_REDEEM_MUSD`. Three runs, two of them recorded failures, in `docs/13-live-testnet-ledger.md` |
+| 6, packaged artifact | `pnpm gate:packaging`: `GATE PASSED`, including `retired claims: 0 found across 80 shipped texts` |
+| 7, sweep against THIS tree | [sweep run 35065490890](https://github.com/cayvox/musd-kit/actions/runs/35065490890), `headSha` `92d8067`, `seed=20260826 cases=1000` and fork block 15043414 read from its own lines, four slices covering `0..1000`, success in 56 minutes. **0 FALSE_VIABLE, 0 FALSE_BLOCKED, 0 NUMBERS, expected=0 unexpected=0**, and ten `EXPECTED-BUT-ABSENT MK-079` lines, which are MK-254 |
+| 8, previous release's record on `main` | at `92d8067`, `docs/12` and `docs/13` carry sections for 0.4.1, 0.4.0, 0.3.1, 0.3.0 and 0.2.0; 0.1.0 is named as predating both |
+| 9, full mutation gate against THIS tree | [mutation run 35065493493](https://github.com/cayvox/musd-kit/actions/runs/35065493493), `headSha` `92d8067`, success: `Anchors and register` plus all eight `Full gate` shards, each running the unit pass, the fork pass and, on shard 1, the gate entries |
+
+**The full mutation gate's cost, measured for the first time.** Precondition 9 has been in this runbook for
+three releases and the number behind it was never recorded. This run: **28 minutes 11 seconds of wall
+clock**, 06:49:26Z to 07:17:37Z, 578 mutants over 8 shards, slowest shard 1616 s and fastest 1214 s, against
+a `timeout-minutes: 350` per shard. It is under a tenth of what the workflow allows, and it ran in parallel
+with the sweep without either slowing the other. **Budget it as half an hour, not as a reason to skip it.**
+
+**The standing checklist, before the push** (`docs/08-conventions.md` §10), on the release commit rather
+than on an ancestor: unit 579 passed with `anvil` off `PATH` and the RPC URL unset; **five consecutive fork
+runs, 324, 320, 328, 390 and 328 s**, each 114 passed and 1 skipped, on Node 24.19.0, pnpm 9.15.9 and anvil
+1.7.1, with the oracle seeded to `77051107320000000000000` identically in all five and `threw=0` in all
+five; coverage 99.35 / 96.17 / 100 / 99.35 with 693 passed; typecheck; the examples' typecheck; lint over
+176 files and `check:paths` over 246; `build:site` with 611 internal links across 235 pages and 0 broken;
+the packaging gate; `mutation-check --check`, 73 entries and 481 sites with 0 uncaught.
+
+**The window was run three times, and twice discarded on purpose.** A window at `45c6cbf` had one green run
+when MK-252 was found; a second at that same commit was abandoned when the live gate turned out not to
+exercise MK-244 and `scripts/testnet-e2e.ts` had to change. Evidence about a tree that is not the one being
+released is not evidence, so both were thrown away rather than carried forward.
+
+**The version step rewrote the manifests' `files` arrays again**, as MK-097 recorded for 0.3.0 and as every
+release since has. Formatted back with `biome` before the version commit, and the whole checklist ran on
+that commit before the push rather than after it.
+
+**After publishing.** `verify-published` passed inside the release run. The `v0.5.0` tag push re-entered the
+workflow, whose publish step skipped the already published version and whose verification passed again.
+
+**Verified independently, from a clean directory outside the repository.** A fresh `npm install` of both
+packages at 0.5.0: `npm audit signatures` verified registry signatures for 29 packages and attestations for
+16, none invalid or missing; `@musd-kit/react@0.5.0` depends on `@musd-kit/core` `0.5.0` exactly; ESM and
+CJS each expose 115 core and 58 react exports. From the installed build: `drawForMargin` refused a missing
+horizon, a missing fall, and both missing, each with `InvalidAmount` and before any network read;
+`capacityAfterAdjustment` took a capacity of 100 MUSD to 90.909090909090909090 on a collateral decrease and
+left it unchanged on an increase; `evaluateRedeem` reported `LAST_TROVE_IN_SYSTEM` for a system holding one
+Trove and viable for one holding five. **The retired claims check was run against the PUBLISHED tarballs**,
+downloaded with `npm pack` and extracted, rather than against the local build: **13 claims, 80 shipped
+texts, 0 found**, where the same check over published 0.4.1 reports 119. And
+`node scripts/compare-published.mjs --base 0.5.0` printed `identical` for every file in both tarballs and
+`NO BEHAVIOUR CHANGE`.
+
+**The README npm serves.** The registry document's top level `readme` equals the 0.5.0 tarball README by
+sha256 for both packages, 9891 and 6635 bytes, and `latest` is 0.5.0 for both.
+
+**Deprecation of 0.4.0 and 0.4.1, both for the default draw.** 0.4.1 had no entry in
+`scripts/deprecation-message.mjs`, so the workflow refused it by name until one was written and merged
+(pull request 44), which is the MK-084 interlock working. 0.4.0 already carried its MK-114 message from
+2026-09-14, and it ended "Upgrade to 0.4.1.", a sentence that stopped being true the moment 0.4.1 was
+deprecated for the same defect, so it was rewritten with the first text preserved in the file.
+
+- **0.4.1**: [run 35073388457](https://github.com/cayvox/musd-kit/actions/runs/35073388457), success,
+  its own verification included.
+- **0.4.0: the write succeeded and the run went red anyway**
+  ([run 35073470096](https://github.com/cayvox/musd-kit/actions/runs/35073470096)). The verify step read
+  the OLD message back from the registry and failed the run. A re-dispatch
+  ([run 35073568874](https://github.com/cayvox/musd-kit/actions/runs/35073568874)) then failed with
+  `E422 Unprocessable Entity`, because by then there was nothing left to change. **There is no green run
+  for 0.4.0**, and the evidence that it is correct is the registry document itself, fetched directly rather
+  than through `npm view`: all four messages, two packages times two versions, match the reviewed text
+  exactly, `latest` is 0.5.0 and 0.5.0 is not deprecated. Registered as MK-256.
+
+---
+
 ## The 0.4.1 release, as it actually ran
 
 **Published 2026-09-14.** The publish step printed `+ @musd-kit/core@0.4.1` at 15:48:33Z and
