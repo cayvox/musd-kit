@@ -81,40 +81,44 @@ jobs:
             echo "  @musd-kit/$p latest is $LATEST, deprecating $V is safe"
           done
 
+      # **A write that changes nothing is not a failure** (MK-256). Re-dispatching for a version
+      # whose message is already the intended one answers `E422 Unprocessable Entity`, and the run
+      # that hit it had already deprecated the package correctly. So a failed `npm deprecate` is
+      # checked against the registry before it is believed: if what is there is what was being
+      # sent, the step says so and carries on; anything else fails.
       - name: Deprecate both packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           V='${{ github.event.inputs.version }}'
-          npm deprecate "@musd-kit/core@$V"  "$(cat "$RUNNER_TEMP/msg-core.txt")"
-          npm deprecate "@musd-kit/react@$V" "$(cat "$RUNNER_TEMP/msg-react.txt")"
+          for p in core react; do
+            if npm deprecate "@musd-kit/$p@$V" "$(cat "$RUNNER_TEMP/msg-$p.txt")"; then
+              echo "  @musd-kit/$p@$V written"
+              continue
+            fi
+            echo "  npm deprecate failed for @musd-kit/$p@$V; asking the registry what it holds"
+            node scripts/deprecation-verify.mjs "$V" --attempts 1 --interval 1 || {
+              echo "FAIL: the write failed and the registry does not already carry this text" >&2
+              exit 1
+            }
+            echo "  @musd-kit/$p@$V already carried this exact text, so there was nothing to write"
+          done
 
-      # The write is not the result. Read it back from the registry, in a step that carries no
-      # credential, so a silent no-op cannot pass for a deprecation.
+      # The write is not the result. Read it back, in a step that carries no credential, so a
+      # silent no-op cannot pass for a deprecation.
       #
-      # It compares the registry's text against the resolved text rather than merely asserting
-      # that SOMETHING is there (MK-084). A non empty check would pass on a version that was
-      # already deprecated with a different message, which is exactly the state this finding is
-      # about, so the loop is only closed by an equality.
+      # It compares the registry's text against the resolved text rather than merely asserting that
+      # SOMETHING is there (MK-084): a non empty check would pass on a version already deprecated
+      # with a different message, which is the state that finding is about.
+      #
+      # **The reading moved into a script, and why** (MK-256). This step used `npm view` and retried
+      # only while the answer was EMPTY, which is the state of a version never deprecated. Re-
+      # deprecating one has another intermediate state, the PREVIOUS message, and reading that back
+      # failed a run whose write had succeeded. `scripts/deprecation-verify.mjs` reads the registry
+      # document instead of going through `npm view`, retries while the answer is the previous text
+      # as well as while it is absent, and its comparison is unit tested.
       - name: Verify both deprecations from the registry
         run: |
           set -euo pipefail
-          V='${{ github.event.inputs.version }}'
-          for p in core react; do
-            WANT="$(cat "$RUNNER_TEMP/msg-$p.txt")"
-            for i in $(seq 1 12); do
-              MSG="$(npm view "@musd-kit/$p@$V" deprecated 2>/dev/null || true)"
-              [ -n "$MSG" ] && break
-              echo "  attempt $i: @musd-kit/$p@$V not showing deprecated yet, waiting"
-              sleep 10
-            done
-            [ -n "$MSG" ] || { echo "FAIL: @musd-kit/$p@$V is not deprecated on the registry" >&2; exit 1; }
-            if [ "$MSG" != "$WANT" ]; then
-              echo "FAIL: @musd-kit/$p@$V carries a message this commit did not send." >&2
-              echo "  on the registry: $MSG" >&2
-              echo "  resolved here:   $WANT" >&2
-              exit 1
-            fi
-            echo "  @musd-kit/$p@$V deprecated, and the registry text matches: $MSG"
-          done
+          node scripts/deprecation-verify.mjs '${{ github.event.inputs.version }}'

@@ -64,9 +64,37 @@ function unregistered(over: Partial<CaseResult> = {}): CaseResult {
   }
 }
 
+/**
+ * **The registry this file exercises is a FIXTURE now** (MK-254).
+ *
+ * It used to be the live `EXPECTED_MISMATCHES`, which held exactly one entry, MK-079. MK-244 made
+ * that mismatch impossible and the live list is empty, so every assertion below would have been
+ * asserting the mechanism against nothing. The entry is reproduced here, as the fixture it now is,
+ * because the mechanism still has to work the day someone registers the next one: a registered
+ * mismatch must not fail a run, an unregistered one must, and neither may mask the other.
+ *
+ * The live list gets its own assertions at the bottom: empty, and therefore failing on everything.
+ */
+const MK079_FIXTURE: ExpectedMismatch[] = [
+  {
+    finding: 'MK-079',
+    why: 'the harness asked the preview about a zero debt increase while asking the chain for a pure top up, until MK-244 made a zero leg no leg on both sides',
+    matches: (r) =>
+      r.case.op === 'adjust' &&
+      r.mismatch?.direction === 'FALSE_BLOCKED' &&
+      (r.mismatch?.detail ?? '').includes('ZERO_DEBT_INCREASE') &&
+      r.case.debt < 4n,
+    knownAt: {
+      seed: 20260826,
+      cases: 1000,
+      indices: [209, 252, 329, 370, 449, 455, 486, 720, 817, 893],
+    },
+  },
+]
+
 describe('MK-079, the registered mismatch mechanism', () => {
   it('a registered mismatch does NOT fail the run, and is reported with its finding ID', () => {
-    const p = partitionMismatches([mk079(209), mk079(252, 1n)])
+    const p = partitionMismatches([mk079(209), mk079(252, 1n)], MK079_FIXTURE)
     expect(p.unexpected, 'registered mismatches must not fail the sweep').toEqual([])
     expect(p.expected).toHaveLength(1)
     expect(p.expected[0]?.finding).toBe('MK-079')
@@ -74,7 +102,7 @@ describe('MK-079, the registered mismatch mechanism', () => {
   })
 
   it('an UNREGISTERED mismatch fails the run', () => {
-    const p = partitionMismatches([unregistered()])
+    const p = partitionMismatches([unregistered()], MK079_FIXTURE)
     expect(p.unexpected).toHaveLength(1)
     expect(p.unexpected[0]?.case.index).toBe(77)
     expect(p.expected).toEqual([])
@@ -83,7 +111,7 @@ describe('MK-079, the registered mismatch mechanism', () => {
   it('and the two do not mask each other in the same run', () => {
     // The case that matters most: a real defect arriving alongside the known one. The known one
     // must not make the run green.
-    const p = partitionMismatches([mk079(209), unregistered(), mk079(893)])
+    const p = partitionMismatches([mk079(209), unregistered(), mk079(893)], MK079_FIXTURE)
     expect(p.unexpected).toHaveLength(1)
     expect(p.unexpected[0]?.mismatch?.direction).toBe('FALSE_VIABLE')
     expect(p.expected[0]?.results).toHaveLength(2)
@@ -94,32 +122,32 @@ describe('MK-079, the registered mismatch mechanism', () => {
   it('MK-079 does not swallow an adjust FALSE_BLOCKED with a different reason', () => {
     const other = mk079(300)
     other.mismatch = { direction: 'FALSE_BLOCKED', detail: 'reasons=[TCR_BELOW_CCR]' }
-    expect(partitionMismatches([other]).unexpected).toHaveLength(1)
+    expect(partitionMismatches([other], MK079_FIXTURE).unexpected).toHaveLength(1)
   })
 
   it('MK-079 does not swallow a ZERO_DEBT_INCREASE block on a case with a real debt leg', () => {
     // `adjustDebt` is `c.debt / 4n`, so a debt of 4 or more produces a NON zero leg and the
     // defect cannot be the explanation.
-    expect(partitionMismatches([mk079(301, 4n)]).unexpected).toHaveLength(1)
-    expect(partitionMismatches([mk079(302, 3n)]).unexpected).toEqual([])
+    expect(partitionMismatches([mk079(301, 4n)], MK079_FIXTURE).unexpected).toHaveLength(1)
+    expect(partitionMismatches([mk079(302, 3n)], MK079_FIXTURE).unexpected).toEqual([])
   })
 
   it('MK-079 does not swallow the other direction', () => {
     const flipped = mk079(303)
     flipped.mismatch = { direction: 'FALSE_VIABLE', detail: 'reasons=[ZERO_DEBT_INCREASE]' }
-    expect(partitionMismatches([flipped]).unexpected).toHaveLength(1)
+    expect(partitionMismatches([flipped], MK079_FIXTURE).unexpected).toHaveLength(1)
   })
 
   it('MK-079 does not swallow a different operation', () => {
     const borrowed = mk079(304)
     borrowed.case = mkCase({ index: 304, op: 'borrow' as CaseOp, debt: 0n })
-    expect(partitionMismatches([borrowed]).unexpected).toHaveLength(1)
+    expect(partitionMismatches([borrowed], MK079_FIXTURE).unexpected).toHaveLength(1)
   })
 
   /* --- disappearance is information, not a pass and not a failure --- */
 
   it('reports a registered mismatch that stopped reproducing, for a run that covered it', () => {
-    const p = partitionMismatches([mk079(209)], EXPECTED_MISMATCHES, {
+    const p = partitionMismatches([mk079(209)], MK079_FIXTURE, {
       seed: 20260826,
       cases: 1000,
       coveredIndices: [209, 252, 329],
@@ -133,7 +161,7 @@ describe('MK-079, the registered mismatch mechanism', () => {
   it('says nothing about indices the run did not cover', () => {
     // A slice that never reached case 893 has no evidence about it. Claiming a disappearance
     // there would be the same error as reporting a band that never ran as a pass.
-    const p = partitionMismatches([mk079(209)], EXPECTED_MISMATCHES, {
+    const p = partitionMismatches([mk079(209)], MK079_FIXTURE, {
       seed: 20260826,
       cases: 1000,
       coveredIndices: [209],
@@ -144,7 +172,7 @@ describe('MK-079, the registered mismatch mechanism', () => {
   it('says nothing when the run is a different generation from the one knownAt describes', () => {
     // `generateCases` takes the count as an input to the PRNG, so indices from a 1000 case run
     // mean nothing in a 400 case one (MK-069).
-    const p = partitionMismatches([], EXPECTED_MISMATCHES, {
+    const p = partitionMismatches([], MK079_FIXTURE, {
       seed: 20260826,
       cases: 400,
       coveredIndices: [209, 252, 329, 370, 449, 455, 486, 720, 817, 893],
@@ -155,8 +183,7 @@ describe('MK-079, the registered mismatch mechanism', () => {
   /* --- the registry itself --- */
 
   it('every entry carries a finding ID and a reason, so nothing is expected anonymously', () => {
-    expect(EXPECTED_MISMATCHES.length).toBeGreaterThan(0)
-    for (const e of EXPECTED_MISMATCHES) {
+    for (const e of [...EXPECTED_MISMATCHES, ...MK079_FIXTURE]) {
       expect(e.finding, 'an expected mismatch without a finding ID is a silenced one').toMatch(
         /^MK-\d{3}$/,
       )
@@ -167,5 +194,22 @@ describe('MK-079, the registered mismatch mechanism', () => {
   it('an empty registry makes every mismatch unexpected, which is the safe default', () => {
     const empty: ExpectedMismatch[] = []
     expect(partitionMismatches([mk079(209), unregistered()], empty).unexpected).toHaveLength(2)
+  })
+
+  /**
+   * MK-254. The live list is empty, and this is the assertion that makes that a decision rather
+   * than a gap: with nothing registered, the sweep fails on EVERY mismatch, including the shape
+   * that used to be excused. If a finding is ever registered again, this test says so by failing,
+   * and whoever adds it has to say why here.
+   */
+  it('the LIVE registry is empty, so the sweep currently excuses nothing (MK-254)', () => {
+    expect(EXPECTED_MISMATCHES).toEqual([])
+    const p = partitionMismatches([mk079(209), mk079(252, 1n), unregistered()])
+    expect(p.expected, 'nothing is registered, so nothing is expected').toEqual([])
+    expect(
+      p.unexpected.map((r) => r.case.index),
+      'the MK-079 shape now fails the sweep like any other mismatch',
+    ).toEqual([209, 252, 77])
+    expect(p.didNotReproduce, 'an empty registry can report no disappearance').toEqual([])
   })
 })

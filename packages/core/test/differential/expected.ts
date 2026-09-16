@@ -44,30 +44,24 @@ export interface ExpectedMismatch {
   knownAt?: { seed: number; cases: number; indices: readonly number[] }
 }
 
-export const EXPECTED_MISMATCHES: readonly ExpectedMismatch[] = [
-  {
-    finding: 'MK-079',
-    why:
-      'adjustCase passes its legs verbatim to previewAdjustTrove but filters them on > 0n before ' +
-      'calling adjustTrove, so for an adjust case whose generated debt is under 4 wei the preview ' +
-      'is asked about a zero debt increase (correctly ZERO_DEBT_INCREASE) while the chain is asked ' +
-      'for a pure collateral top-up (correctly accepted). Both SDK halves are right about their ' +
-      'own call; the harness compares two different calls.',
-    matches: (r) =>
-      r.case.op === 'adjust' &&
-      r.mismatch?.direction === 'FALSE_BLOCKED' &&
-      // The reason string is what ties it to the defect rather than to "some adjust case failed".
-      (r.mismatch?.detail ?? '').includes('ZERO_DEBT_INCREASE') &&
-      // `adjustDebt` is `c.debt / 4n`, so this is exactly the band that yields a zero debt leg.
-      r.case.debt < 4n,
-    knownAt: {
-      seed: 20260826,
-      cases: 1000,
-      indices: [209, 252, 329, 370, 449, 455, 486, 720, 817, 893],
-    },
-  },
-]
-
+/**
+ * **Empty, and that is a result rather than an oversight** (MK-254).
+ *
+ * It held one entry, MK-079: for an adjust case whose generated debt was under 4 wei the harness
+ * asked `previewAdjustTrove` about a zero debt increase while asking the chain for a pure
+ * collateral top up, and reported its own mis-mapping as ten FALSE_BLOCKED in a 1000 case sweep.
+ * MK-244 made a zero leg no leg on both sides, so the two calls became the same question, and the
+ * 0.5.0 sweep at `92d8067` printed all ten indices as EXPECTED-BUT-ABSENT
+ * ([run 35065490890](https://github.com/cayvox/musd-kit/actions/runs/35065490890)). The harness
+ * filter that made the two calls differ is gone too, so the shape cannot arise from that path.
+ *
+ * **A registered expectation that can no longer fire is not free**, which is why it was removed
+ * rather than left: `partitionMismatches` would keep classifying any future FALSE_BLOCKED of that
+ * shape as expected, and an expectation nothing can trip is a matcher that only ever hides things.
+ * With the list empty, ANY mismatch fails the sweep, which is what this file's own rules say should
+ * happen to a mismatch no finding explains.
+ */
+export const EXPECTED_MISMATCHES: readonly ExpectedMismatch[] = []
 /** What {@link partitionMismatches} returns: the two halves, plus the disappearance report. */
 export interface MismatchPartition {
   /** Mismatches no registered finding explains. **These fail the run.** */

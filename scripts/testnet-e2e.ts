@@ -94,6 +94,23 @@ function die(msg: string): never {
   process.exit(1)
 }
 
+/**
+ * A mismatch that must fail the run, recorded rather than thrown, so the close still happens
+ * (MK-253).
+ *
+ * `die()` exits where it is called. Every call before the close therefore trades one failed
+ * assertion for an open position on a real chain, which is the outcome the redeem step is written
+ * to avoid ("an optional, flag gated step must never cost the close", MK-052) and which a lost race
+ * in the withdrawal maximum produced during the 0.5.0 release. So a fatal finding is collected here,
+ * the run continues to the close, and `main` exits 1 at the end with every one of them printed. The
+ * run is still red; the account is still empty.
+ */
+const fatal: string[] = []
+const recordFatal = (msg: string): void => {
+  console.error(`  ✗ ${msg}`)
+  fatal.push(msg)
+}
+
 function assertEq(label: string, actual: bigint, expected: bigint): void {
   if (actual !== expected) die(`${label}: chain says ${actual}, the preview said ${expected}`)
   console.log(`  ${label}: ${actual} ✓ matches the preview to the wei`)
@@ -479,13 +496,58 @@ async function main(): Promise<void> {
   // The contract's own answer, and the fact that the reported max stops being withdrawable about a
   // second later, is in `packages/core/test/withdraw-max-boundary.fork.test.ts`.
   console.log('\n--- maxWithdrawableCollateral + withdrawCollateral ---')
-  const max = await musd.maxWithdrawableCollateral(owner)
-  console.log(`  max ${formatBtc(max.amount)} BTC, limitedBy ${max.limitedBy}`)
-  const atMax = await musd.previewWithdrawCollateral({ owner, amount: max.amount })
-  const pastMax = await musd.previewWithdrawCollateral({ owner, amount: max.amount + 1n })
-  if (!atMax.viable) die('maxWithdrawableCollateral reported an amount its own preview refuses')
-  if (pastMax.viable) die('maxWithdrawableCollateral is not the maximum: one wei more is viable')
-  console.log('  the reported max is viable and one wei more is not ✓')
+  //
+  // **This pair is a knife edge, and asserting it without saying so cost a red run** (MK-253). The
+  // maximum is by definition the amount that leaves the Trove AT MCR, so the margin it carries is
+  // whatever rounding leaves: 0.349 bps on the run that failed. The maximum and the preview of it
+  // are two RPC round trips, and the oracle moves between them. Sampled on this chain in the same
+  // hour, consecutive blocks moved it by up to 1.08 bps and 3 of 11 samples were negative, so a
+  // fall of a third of a basis point is an ordinary event, not a defect.
+  //
+  // What is still worth asserting is the SDK's claim at a STABLE price: a maximum its own preview
+  // refuses when nothing moved is a real defect, and it is what `withdraw-max-boundary.fork.test.ts`
+  // pins on a fork where no time passes. So the price is read either side, the pair is read again
+  // when it moved, and only a refusal at an unchanged price fails the run.
+  const maxAtStablePrice = async () => {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const before = await musd.getOraclePrice()
+      const max = await musd.maxWithdrawableCollateral(owner)
+      const atMax = await musd.previewWithdrawCollateral({ owner, amount: max.amount })
+      const pastMax = await musd.previewWithdrawCollateral({ owner, amount: max.amount + 1n })
+      const after = await musd.getOraclePrice()
+      if (before === after) return { max, atMax, pastMax, attempt, price: after }
+      const moveBps = ((after - before) * 10_000n) / before
+      console.log(
+        `  attempt ${attempt}: the price moved ${moveBps} bps (${before} to ${after}) between the two reads, so the pair describes two different states; reading again`,
+      )
+    }
+    return undefined
+  }
+  const stable = await maxAtStablePrice()
+  if (stable === undefined) {
+    record(
+      'maxWithdrawableCollateral',
+      'skipped',
+      'the oracle moved between the maximum and its preview on three consecutive attempts, so the pair was never read at one price (MK-253)',
+    )
+  } else {
+    const { max, atMax, pastMax, price, attempt } = stable
+    console.log(
+      `  max ${formatBtc(max.amount)} BTC, limitedBy ${max.limitedBy}, read at an unchanged price ${price} (attempt ${attempt})`,
+    )
+    if (!atMax.viable) {
+      recordFatal(
+        `maxWithdrawableCollateral reported an amount its own preview refuses AT AN UNCHANGED PRICE: ${max.amount} wei, reasons [${atMax.reasons.join(',')}]`,
+      )
+    }
+    if (pastMax.viable) {
+      recordFatal('maxWithdrawableCollateral is not the maximum: one wei more is viable')
+    }
+    if (atMax.viable && !pastMax.viable) {
+      console.log('  the reported max is viable and one wei more is not ✓')
+    }
+  }
+  const max = stable?.max ?? { amount: 0n, limitedBy: 'unread' as const }
   // Withdraw a safe fraction rather than the max, so the position survives for the steps below.
   const withdrawAmount = max.amount / 4n
   if (withdrawAmount > 0n) {
@@ -875,6 +937,13 @@ async function main(): Promise<void> {
     )
   }
   console.log(`  remaining BTC balance: ${formatEther(finalBalance)}`)
+  // MK-253. Recorded mismatches fail the run HERE, after the close, so a red run never leaves a
+  // position open.
+  if (fatal.length > 0) {
+    console.error(`\n✗ NO GO, ${fatal.length} mismatch(es), with the position closed first:`)
+    for (const f of fatal) console.error(`  ${f}`)
+    process.exit(1)
+  }
   console.log('\n✓ GO, live lifecycle verified on Mezo testnet.')
 }
 
