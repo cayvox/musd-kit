@@ -169,7 +169,7 @@ claim about it was not).
 | MK-246 | Claims retired by closed findings survive in the published declarations and in this register, and no gate reads the artifact for them | S3 | **fixed.** Corrected in what ships, a whole declaration review found seven more, and `scripts/retired-claims.mjs` reads the packed artifact in the packaging gate |
 | MK-247 | `useMaxWithdrawableCollateral` is documented as the max button's number, a figure that leaves the Trove at the liquidation threshold | S2 | **fixed.** Documented as a limit, not a withdrawal to send |
 | MK-248 | `GasDecision` documents an `explicit` branch no public write can reach | S3, source | open |
-| MK-249 | `StaleHint` and `Unauthorized` are exported and never thrown | S3, source | open in source; the documentation that presented both as reachable is corrected |
+| MK-249 | `StaleHint` and `Unauthorized` are exported and never thrown | S3, source | **open in the source, and 0.5.0 ships it**: both classes and their `MusdErrorCode` members remain, nothing throws either, and the declarations and both docs now say never thrown. The entry states why that pair ships and what would close it |
 | MK-250 | A write whose simulation reverts still logs that it is sending without a margin | S3 | open |
 | MK-251 | Two React claims are stronger than the rendered behaviour: a same tick restore serves the old answer, and a wallet switch reports a missing wallet client | S3 | open |
 
@@ -8511,16 +8511,47 @@ writes forward `value` and `revert` only. The type documents a caller supplied l
 
 **Class** S3, source · **Status** open · **Found by** the external audit
 
-`packages/core/src/errors/index.ts:373` and `:468` define them, both packages export them, and the 0.4.1
-`dist/index.js` contains no `new StaleHint(` and no `new Unauthorized(`. A stale redemption hint reaches the
-caller as `RedemptionFailed` (`packages/core/src/errors/mapRevert.ts:118-123`). A consumer branching on
-`STALE_HINT` never takes that branch.
+**What the code does, at the 0.5.0 tree.** `packages/core/src/errors/index.ts:401-411` defines `StaleHint`
+and `:496-504` defines `Unauthorized` (the entry first cited `:373` and `:468`, which the MK-243 and MK-245
+error changes moved; corrected here). Both are exported by both packages
+(`packages/core/src/index.ts:202`, `:207`; `packages/react/src/index.ts:85`, `:90`), and their codes
+`STALE_HINT` and `UNAUTHORIZED` are members of `MusdErrorCode` (`packages/core/src/errors/codes.ts:26`,
+`:30`). **No SDK path constructs either**: `new StaleHint(` and `new Unauthorized(` appear nowhere in
+`packages/*/src`, `scripts/` or `examples/`, only in `packages/core/test/phase7.fork.test.ts:174` and `:177`,
+which construct them directly to assert the code mapping. A stale redemption partial hint reaches the caller
+as `RedemptionFailed` from the decoder (`packages/core/src/errors/mapRevert.ts:118-123`), and the SDK calls
+no permission gated function, so `Unauthorized` has no revert to map. A consumer branching on `STALE_HINT`
+or `UNAUTHORIZED` never takes that branch, and no error tells them so at runtime.
 
+**What the documentation now says.** `docs/06-errors.md:48` and `:50` say **never thrown** with this finding
+ID and where the condition does surface; `docs/01-ground-truth.md:446-453` records both as unreachable and
+retained for compatibility. The TSDoc on each class, which is what ships in `dist/index.d.ts` and what a
+consumer reads at the call site, says the same (`errors/index.ts:395-400`, `:491-495`). One line contradicted
+this and is corrected in the same commit as this entry: `docs/06-errors.md:88-90` still gave "redeem against
+a stale hint → assert `StaleHint`" as the fork gate's example, which is the behaviour this finding says does
+not exist.
 
-**Documentation corrected, source unchanged.** `docs/01-ground-truth.md` already recorded both as unreachable,
-while `docs/06-errors.md` presented them as errors a caller would meet; that table now says never thrown.
-Removing the exports is a breaking change with no defect to justify it on its own, so the source part stays
-open for a release that is breaking anyway.
+**Why the pair is acceptable in 0.5.0, stated without hedging.** 0.5.0 IS a breaking release, so the removal
+could have ridden in it, and it does not. The earlier wording here ("stays open for a release that is
+breaking anyway") was therefore self refuting and is withdrawn. The reasons it is acceptable to ship as it
+stands: nothing a consumer can call behaves wrongly, because no path throws either class, so this changes no
+result, no revert mapping and no gas; the claim a consumer reads, in the declarations and in both docs, now
+matches the code exactly, which is the property this programme keeps failing on and the one that is met here;
+and removing two classes plus two `MusdErrorCode` members is a public API removal that belongs in a migration
+guide as its own row, registered before the release's acceptance evidence is measured rather than added after
+it. It was not registered before this wave's evidence was measured at `32e8c59`. What is NOT a reason: that
+0.5.0 is not breaking, or that the defect is documented away. It is an open source defect shipping with an
+accurate description of itself.
+
+**What would close it.** Either a path that throws them, which for `StaleHint` means the decoder
+distinguishing a stale hint from an empty redemption and `TroveManager` giving it a distinct revert reason to
+distinguish (it has one, `require(totals.totalCollateralDrawn > 0, "TroveManager: Unable to redeem any
+amount")`, `TroveManager.sol:406-409`, which a stale hint and a genuinely empty redemption both reach), or
+their removal
+with `STALE_HINT` and `UNAUTHORIZED` from `MusdErrorCode`, registered in the next breaking release's
+migration guide before that release's checklist is run, with the fork mapping test at
+`phase7.fork.test.ts:174-177` updated in the same change. Until one of those, the entry stays open and the
+status line in the register says open in the source, not fixed.
 
 ---
 

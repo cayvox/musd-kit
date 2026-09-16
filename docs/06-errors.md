@@ -86,8 +86,11 @@ reports it (MK-241). This table listed a `RedemptionTruncated` error until MK-24
   the defect, not the shape.
 - **Test each with a real revert.** `06`'s test gate: every mapped protocol
   error is triggered on the fork (e.g. open below `minNetDebt` → assert
-  `BelowMinimumDebt`; redeem against a stale hint → assert `StaleHint`) and the
-  mapping asserted. Validation errors are unit-tested against their guards.
+  `BelowMinimumDebt`; a redemption that can draw nothing → assert `RedemptionFailed`, the one
+  reason `TroveManager.sol:406-409` gives for both an empty redemption and a stale hint) and the
+  mapping asserted. Validation errors are unit-tested against their guards. The example here named
+  `StaleHint` until MK-249: nothing throws it, so no fork test can trigger it, and the rows above
+  say so.
 - **Stable codes.** `MusdErrorCode` values are part of the public API, adding is
   fine, renaming/removing is a breaking change (semver).
 
