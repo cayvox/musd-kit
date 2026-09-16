@@ -264,12 +264,18 @@ export function useMusdBalance({
  * would actually clear it.
  *
  * **An omitted leg stays omitted (MK-085).** This hook used to default all four legs to `0n`
- * and forward them, which made `increaseDebt` present on every call. `previewAdjustTrove`
- * reads `_isDebtIncrease` from PRESENCE (MK-060), mirroring `_adjustTrove`'s own separate
+ * and forward them, which made `increaseDebt` present on every call. `previewAdjustTrove` then
+ * read `_isDebtIncrease` from PRESENCE, mirroring `_adjustTrove`'s own separate
  * `_isDebtIncrease` parameter (`BorrowerOperations.sol:757-758`), so through this hook every
  * adjustment was evaluated as a debt increase: a pure top-up came back
  * `ZERO_DEBT_INCREASE` (`:785-787`, `:1351-1356`) and a pure repayment came back refused with
  * `resultingEntireDebt` and `resultingIcr` computed as though nothing had been repaid.
+ *
+ * **Since 0.5.0 the flag is derived from the VALUE (MK-244; this comment is MK-252).** A leg of
+ * `0n` is no leg, in this hook, in `previewAdjustTrove` and in `adjustTrove`, so
+ * `{ addCollateral: 0n, withdrawCollateral: x }` is a withdrawal rather than a refusal. Absence
+ * still matters here for a different reason: an absent leg is kept out of the query key, so two
+ * different questions cannot share one cache entry.
  */
 export function useAdjustTrovePreview(params: {
   owner: Address | undefined
@@ -280,8 +286,10 @@ export function useAdjustTrovePreview(params: {
 }): UseQueryResult<AdjustPreview, Error> {
   const chainId = useChainId()
   const { owner } = params
-  // MK-085. Built ONCE, from presence, and handed to both the key and the call, so the two
-  // cannot describe different questions. `exactOptionalPropertyTypes` is on, so a conditional
+  // MK-085. Built ONCE, keeping an absent leg absent, and handed to both the key and the call, so
+  // the two cannot describe different questions. The evaluator reads the legs by VALUE since
+  // MK-244; what absence decides here is the cache key, not the verdict (MK-252).
+  // `exactOptionalPropertyTypes` is on, so a conditional
   // spread is the only way to keep an absent leg absent rather than present-and-undefined.
   const legs: AdjustPreviewLegs = {
     ...(params.addCollateral !== undefined ? { addCollateral: params.addCollateral } : {}),

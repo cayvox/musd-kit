@@ -392,11 +392,16 @@ export interface EvaluateAdjustInput {
    * `_adjustTrove`'s own `_isDebtIncrease` parameter (`BorrowerOperations.sol:757`), which the
    * contract takes **independently of `_mUSDChange`** and then reconciles at `:785-787`.
    *
-   * MK-060. Deriving it from `increaseDebt > 0n` instead, as this evaluator used to, makes
-   * `(true, 0)` inexpressible, and `(true, 0)` is exactly the input `_requireNonZeroDebtChange`
-   * (`:1351-1356`) exists to refuse. It is also the input the write path constructs, because
-   * `trove/index.ts` reads the flag from PRESENCE. Optional so existing callers keep the old
-   * derivation; `previewAdjustTrove` passes presence, which is what the write path passes.
+   * MK-060. Deriving it from `increaseDebt > 0n` inside this evaluator would make `(true, 0)`
+   * inexpressible, and `(true, 0)` is exactly the input `_requireNonZeroDebtChange` (`:1351-1356`)
+   * exists to refuse, so the flag stays a separate parameter as the contract has it.
+   *
+   * **MK-244, and MK-252 for this comment**: the flag is now derived FROM THE VALUE, by
+   * `adjustLegsOf` (`increaseDebt > 0n`), and both `previewAdjustTrove` and the write path in
+   * `trove/index.ts` pass what that derivation returns. This comment said both read it from
+   * presence until 0.5.0, which was true only until MK-244. The one caller that still states the
+   * flag itself is `previewBorrow`, because `withdrawMUSD` sends `(mUSDChange, true)`
+   * unconditionally (`:243-257`).
    */
   isDebtIncrease?: boolean
   isRecoveryMode: boolean

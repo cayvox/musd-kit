@@ -120,7 +120,7 @@ claim about it was not).
 | MK-082 | The wave checklist's five run command does not pin the fork, and the same checklist requires the five answers to be byte identical | S3 | fixed. The checklist row and the recipe both carry `MEZO_FORK_BLOCK` now |
 | MK-080 | `docs/07-testing.md` has said since 2026-08-27 that the full sweep runs "on demand and on a schedule". No `schedule:` trigger has ever existed in any workflow, on any branch | S2 | fixed. `.github/workflows/sweep.yml` wires it weekly, and a full sweep against the released tree is now precondition 7 in the release runbook |
 | MK-079 | The sweep compares a preview of one call against execution of a different one whenever a debt leg is zero, so it reports 10 FALSE_BLOCKED that are its own defect | S2 | **open** in the harness. The sweep no longer fails on it: it is registered in `packages/core/test/differential/expected.ts` and prints as `EXPECTED MK-079`, so a red sweep is a mismatch no finding explains. **The claim that no `packages/*/src` file is implicated was FALSE and is withdrawn**: the same mis-mapping was in the React adjust preview hook, which is MK-085, and why nobody looked is MK-086 |
-| MK-085 | `useAdjustTrovePreview` defaults all four legs to `0n` and forwards them, so through the hook every adjustment is a debt increase: a pure top-up is refused and a pure repayment is refused with its debt and ICR reported as though nothing were repaid | S1 | **fixed at the cause.** The legs are built once from presence and drive both the query key and the call, pinned by the repository's first rendered hook test and by two mutations |
+| MK-085 | `useAdjustTrovePreview` defaults all four legs to `0n` and forwards them, so through the hook every adjustment is a debt increase: a pure top-up is refused and a pure repayment is refused with its debt and ICR reported as though nothing were repaid | S1 | **fixed at the cause.** The legs are built once, keeping an absent leg absent, and drive both the query key and the call, pinned by the repository's first rendered hook test. **Amended by MK-244**: the verdict now reads the legs by value, so what absence decides here is the cache key rather than the answer, and the two mutations this row cited were withdrawn with the presence behaviour (MK-252) |
 | MK-086 | The decision-site enumeration MK-069 established was applied to `packages/core` only, so MK-079 and the README assert that this mapping defect implicates no source file, and it does | S2, process | fixed. The claim is withdrawn in both places, and an enumeration is now scoped to the rule rather than to the directory the defect was found in |
 | MK-087 | The coverage gate, the mutation check and the differential sweep all stop at the core boundary, which is why eighty four findings contain nothing about the React package | S2, process | fixed. React is inside coverage and the mutation check, the floor is re-measured at the honest lower number, and the sweep's exclusion is stated rather than implied |
 | MK-088 | `previewRedeem` sizes its accrual margin from the REDEEMER's Trove rate, with a hardcoded `100n` when the redeemer holds none, and swallows a failed read into the same default | S1 | **fixed.** Each Trove in the walk carries its own principal and rate, read in the batch that already fetches its debt; the fallback and the `catch` are gone |
@@ -172,6 +172,7 @@ claim about it was not).
 | MK-249 | `StaleHint` and `Unauthorized` are exported and never thrown | S3, source | **open in the source, and 0.5.0 ships it**: both classes and their `MusdErrorCode` members remain, nothing throws either, and the declarations and both docs now say never thrown. The entry states why that pair ships and what would close it |
 | MK-250 | A write whose simulation reverts still logs that it is sending without a margin | S3 | open |
 | MK-251 | Two React claims are stronger than the rendered behaviour: a same tick restore serves the old answer, and a wallet switch reports a missing wallet client | S3 | open |
+| MK-252 | Two shipped TSDoc comments still say the preview and the write path read the debt flag from PRESENCE, which MK-244 retired in the same release, and the MK-246 check had no entry for that wording | S3, docs | **fixed** before 0.5.0 was published: both comments corrected and the claim added to `RETIRED_CLAIMS`, so the shipped artifact is checked for it |
 
 ---
 
@@ -8576,6 +8577,38 @@ warning has already been printed. Observed by the audit on a refused `openTrove`
 - A write fired in the render after a wallet switch, before `useWalletClient` resolves, throws
   `MissingWalletClient`, whose message says `createMusdClient` was called without a wallet
   (`packages/core/src/errors/index.ts:482-486`). No transaction is sent from the previous account.
+
+---
+
+## MK-252 · The claim MK-244 retired is still in two comments the packages ship
+
+**Class** S3, docs · **Status** fixed · **Found by** checking precondition 2 before the 0.5.0 release,
+reading the S1 closing texts rather than the index column
+
+MK-244 made both the preview and the write path read adjustment legs by VALUE: `adjustLegsOf`
+(`packages/core/src/math/previewAdjust.ts:318-332`) derives `isDebtIncrease` as `increaseDebt > 0n`, and
+`adjustTrove` builds its legs through it (`packages/core/src/trove/index.ts:562`, `:581-582`). Two comments
+still described the behaviour it replaced, and **both ship**: TSDoc reaches `dist/index.d.ts`, and every
+comment reaches the published source maps, which is how the audit read 0.4.1 in the first place.
+
+- `packages/core/src/math/previewAdjust.ts:398-399`: "`trove/index.ts` reads the flag from PRESENCE" and
+  "`previewAdjustTrove` passes presence, which is what the write path passes". Neither is true after MK-244.
+- `packages/react/src/hooks/reads.ts:268`: "`previewAdjustTrove` reads `_isDebtIncrease` from PRESENCE
+  (MK-060)", in the TSDoc of `useAdjustTrovePreview`, where a consumer reads it at the call site.
+
+The MK-085 row's closing text has the same shape, "The legs are built once from presence", and is corrected
+with them: presence is still what the hook preserves for an ABSENT leg in the query key, which is the part
+MK-085 fixed, but the flag the preview derives is a value test now.
+
+**Why the MK-246 check did not catch it.** `RETIRED_CLAIMS` holds the claims the audit found plus the seven
+the wave found; nobody wrote an entry for the wording MK-244 retired, in the same wave that retired it. That
+is the standing hole in that check: **it only knows the claims someone remembered to add**. The entry is
+added here, and the closing rule is written into `scripts/retired-claims.mjs`: a wave that changes behaviour
+adds the sentence its change retires, in the same commit.
+
+**What was verified.** `grep -rn "from PRESENCE\|by presence\|from presence" packages/*/src` returns these
+two sites and no others, and `adjustLegsOf` is the one derivation both paths use. The class is S3: no
+behaviour is wrong, only the description a consumer reads, which is MK-246's class exactly.
 
 ---
 

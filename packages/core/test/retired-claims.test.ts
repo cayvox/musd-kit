@@ -72,6 +72,16 @@ const CASES: { finding: string; was: string; now: string }[] = [
     now: '  /** Required for the write methods, which throw `MissingWalletClient` without one; reads use `publicClient`. */',
   },
   {
+    finding: 'MK-252',
+    was: '   * `trove/index.ts` reads the flag from PRESENCE. Optional so existing callers keep the old',
+    now: '   * **MK-244, and MK-252 for this comment**: the flag is now derived FROM THE VALUE, by',
+  },
+  {
+    finding: 'MK-252',
+    was: " * reads `_isDebtIncrease` from PRESENCE (MK-060), mirroring `_adjustTrove`'s own separate",
+    now: ' * **Since 0.5.0 the flag is derived from the VALUE (MK-244; this comment is MK-252).** A leg of',
+  },
+  {
     finding: 'MK-247',
     was: ' * This is the "max" button\'s number. `limitedBy` says whether the cap is the position\'s own',
     now: ' * rises first, accepted and left at MCR, where the next fall liquidates it. Do not wire it to a "max"',

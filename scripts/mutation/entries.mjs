@@ -642,9 +642,20 @@ export const ENTRIES = [
     what: 'stop recognising the normal mode liquidatability claim MK-001 retired',
     file: 'scripts/retired-claims.mjs',
     scope: 'RETIRED_CLAIMS',
-    fingerprint: '0c957f3c67da8ab6',
+    fingerprint: 'ad5a2e6a0073c042',
     from: '    claim: /Normal-mode liquidatab/i,',
     to: '    claim: /a sentence nobody wrote/i,',
+  },
+  {
+    // MK-252. The entry MK-244's own wave should have added: the check only knows the claims someone
+    // wrote into it, so the claim added after the fact is pinned like every other one.
+    id: 'MK-252 claims',
+    what: 'stop recognising the presence wording MK-244 retired, which two shipped comments still carried',
+    file: 'scripts/retired-claims.mjs',
+    scope: 'RETIRED_CLAIMS',
+    fingerprint: 'ad5a2e6a0073c042',
+    from: '      /reads the flag from PRESENCE|reads `_isDebtIncrease` from PRESENCE|passes presence, which is what the write path passes/,',
+    to: '      /a sentence nobody wrote/,',
   },
   {
     id: 'MK-240 fork',

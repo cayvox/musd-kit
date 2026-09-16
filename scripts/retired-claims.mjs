@@ -15,6 +15,13 @@
  * (`node_modules/@musd-kit/core`) it reads exactly what npm delivered; pointed at `packages/core` after a
  * build, the same files before packing.
  *
+ * **The standing rule this check needs to work, and the hole it had (MK-252).** This list only knows the
+ * claims someone added to it. The P27 wave changed how adjustment legs are read (MK-244) and left two
+ * comments describing the behaviour it had just replaced, in the same wave; nothing failed, because no
+ * entry held that wording. So: **a change that retires a sentence adds that sentence here, in the same
+ * commit as the change**, and the entry names the finding that retired it. An entry added later is a
+ * repair, not the rule.
+ *
  * **Each entry is the retired CLAIM, worded as the claim was, not the name it was about.** A sentence
  * that explains what used to be true ("until 0.5.0 this result carried a `recommended` figure") is the
  * correction, and must not match. When a claim cannot be matched without also matching its correction,
@@ -92,6 +99,13 @@ export const RETIRED_CLAIMS = [
     finding: 'MK-246',
     claim: /writes arrive in Phase 5|typed from Phase 5|layered in from Phase 5/,
     correct: 'The contract bundle is typed read side only; writes are the client methods.',
+  },
+  {
+    finding: 'MK-252',
+    claim:
+      /reads the flag from PRESENCE|reads `_isDebtIncrease` from PRESENCE|passes presence, which is what the write path passes/,
+    correct:
+      'Both the preview and the write path derive isDebtIncrease from the VALUE, through adjustLegsOf (MK-244).',
   },
   {
     finding: 'MK-247',
